@@ -13,7 +13,11 @@ export const TOKEN_RATE_LIMIT_PER_HOUR = 30;
 export const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
 export const EMAIL_VERIFICATION_TTL_MINUTES = 15;
 export const MAGIC_LINK_TTL_MINUTES = 15;
+export const OAUTH_STATE_TTL_SECONDS = 10 * 60;
+export const OAUTH_WELCOME_TTL_SECONDS = 10 * 60;
 export const MCP_STATE_TTL_SECONDS = REFRESH_TOKEN_TTL_SECONDS;
+export const OAUTH_NONCE_COOKIE_PREFIX = "opn_oauth_nonce_";
+export const OAUTH_WELCOME_COOKIE_NAME = "opn_oauth_welcome";
 
 // New beings start neutral until enough vote quality evidence exists.
 export const DEFAULT_VOTE_RELIABILITY = 1;
@@ -32,6 +36,8 @@ export const DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS = 3;
 
 export const ACCESS_TOKEN_SCOPE = "web_session";
 export const REFRESH_TOKEN_SCOPE = "agent_refresh";
+export const OAUTH_STATE_SCOPE = "oauth_state";
+export const OAUTH_WELCOME_SCOPE = "oauth_welcome";
 
 export const DEFAULT_TOPIC_SWEEP_LIMIT = 50;
 export const ONE_HOUR_IN_SECONDS = 60 * 60;

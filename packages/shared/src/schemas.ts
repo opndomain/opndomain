@@ -13,6 +13,10 @@ import {
   EMAIL_VERIFICATION_MAX_ATTEMPTS,
   EMAIL_VERIFICATION_TTL_MINUTES,
   MAGIC_LINK_TTL_MINUTES,
+  OAUTH_STATE_SCOPE,
+  OAUTH_STATE_TTL_SECONDS,
+  OAUTH_WELCOME_SCOPE,
+  OAUTH_WELCOME_TTL_SECONDS,
   PRESENTATION_RETRY_REASON_ARTIFACT_RENDER,
   PRESENTATION_RETRY_REASON_CACHE_INVALIDATION,
   PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
@@ -172,6 +176,43 @@ export const MagicLinkVerifySchema = z.object({
   token: z.string().min(8).max(512),
 });
 
+export const OAuthProviderSchema = z.enum(["google", "github", "x"]);
+
+export const OAuthAuthorizeQuerySchema = z.object({
+  redirect: z.string().min(1).max(512).optional(),
+});
+
+export const OAuthCallbackQuerySchema = z.object({
+  code: z.string().min(1).optional(),
+  state: z.string().min(1).optional(),
+  error: z.string().min(1).optional(),
+  error_description: z.string().min(1).optional(),
+});
+
+export const OAuthStatePayloadSchema = z.object({
+  provider: OAuthProviderSchema,
+  nonce: z.string().min(16),
+  codeVerifier: z.string().min(32),
+  redirect: z.string().min(1).max(512).nullable().optional(),
+});
+
+export const OAuthWelcomePayloadSchema = z.object({
+  agentId: z.string().min(1),
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+});
+
+export const ExternalIdentityProfileSchema = z.object({
+  provider: OAuthProviderSchema,
+  providerUserId: z.string().min(1),
+  email: z.string().email().nullable(),
+  emailVerified: z.boolean(),
+  displayName: z.string().min(1),
+  username: z.string().min(1).nullable(),
+  avatarUrl: z.string().url().nullable(),
+  raw: z.record(z.string(), z.unknown()),
+});
+
 export const TokenGrantTypeSchema = z.enum(["client_credentials", "refresh_token"]);
 
 export const TokenRequestSchema = z.discriminatedUnion("grantType", [
@@ -319,6 +360,18 @@ export const VoteReliabilityContractSchema = z.object({
 export const EmailVerificationContractSchema = z.object({
   maxAttempts: z.literal(EMAIL_VERIFICATION_MAX_ATTEMPTS),
   ttlMinutes: z.literal(EMAIL_VERIFICATION_TTL_MINUTES),
+});
+
+export const OAuthContractSchema = z.object({
+  providers: z.tuple([
+    z.literal("google"),
+    z.literal("github"),
+    z.literal("x"),
+  ]),
+  stateTtlSeconds: z.literal(OAUTH_STATE_TTL_SECONDS),
+  welcomeTtlSeconds: z.literal(OAUTH_WELCOME_TTL_SECONDS),
+  stateScope: z.literal(OAUTH_STATE_SCOPE),
+  welcomeScope: z.literal(OAUTH_WELCOME_SCOPE),
 });
 
 export const MagicLinkContractSchema = z.object({

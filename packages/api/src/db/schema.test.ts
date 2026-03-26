@@ -6,6 +6,7 @@ import {
   PHASE2_INTEGRITY_SQL,
   PHASE3_ALIGNMENT_SQL,
   PHASE6_AUTH_SQL,
+  PHASE7_EXTERNAL_OAUTH_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -15,6 +16,7 @@ describe("schema migrations", () => {
       "002_phase2_integrity",
       "003_phase3_alignment",
       "004_phase6_auth",
+      "005_phase7_external_oauth",
     ]);
   });
 
@@ -53,5 +55,12 @@ describe("schema migrations", () => {
   it("adds magic-link auth storage in phase 6", () => {
     assert.match(PHASE6_AUTH_SQL, /CREATE TABLE IF NOT EXISTS magic_links/);
     assert.match(PHASE6_AUTH_SQL, /CREATE TRIGGER IF NOT EXISTS trg_magic_links_updated_at/);
+  });
+
+  it("adds external OAuth identity storage in phase 7", () => {
+    assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /CREATE TABLE IF NOT EXISTS external_identities/);
+    assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /CHECK \(provider IN \('google', 'github', 'x'\)\)/);
+    assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /UNIQUE\(provider, provider_user_id\)/);
+    assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /CREATE INDEX IF NOT EXISTS idx_external_identities_agent_id/);
   });
 });

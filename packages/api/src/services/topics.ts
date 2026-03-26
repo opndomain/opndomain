@@ -77,6 +77,11 @@ type OwnContributionStatusRow = {
   submitted_at: string;
 };
 
+export type TopicListFilters = {
+  status?: string;
+  domainSlug?: string;
+};
+
 function mapTopic(row: TopicRow) {
   return {
     id: row.id,
@@ -151,18 +156,33 @@ async function getTopicRow(env: ApiEnv, topicId: string) {
   return firstRow<TopicRow>(
     env.DB,
     `
-      SELECT id, domain_id, title, prompt, template_id, status, cadence_family, cadence_preset,
-             cadence_override_minutes, min_trust_tier, visibility, current_round_index, starts_at,
-             join_until, countdown_started_at, stalled_at, closed_at, created_at, updated_at
-      FROM topics
-      WHERE id = ?
+      SELECT t.id, t.domain_id, t.title, t.prompt, t.template_id, t.status, t.cadence_family, t.cadence_preset,
+             t.cadence_override_minutes, t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at,
+             t.join_until, t.countdown_started_at, t.stalled_at, t.closed_at, t.created_at, t.updated_at,
+             d.slug AS domain_slug,
+             d.name AS domain_name
+      FROM topics t
+      INNER JOIN domains d ON d.id = t.domain_id
+      WHERE t.id = ?
     `,
     topicId,
   );
 }
 
-export async function listTopics(env: ApiEnv) {
+export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
   await ensureSeedDomains(env);
+  const whereClauses: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (filters.status) {
+    whereClauses.push("t.status = ?");
+    bindings.push(filters.status);
+  }
+  if (filters.domainSlug) {
+    whereClauses.push("d.slug = ?");
+    bindings.push(filters.domainSlug);
+  }
+
   const rows = await allRows<TopicRow>(
     env.DB,
     `
@@ -173,8 +193,10 @@ export async function listTopics(env: ApiEnv) {
              d.name AS domain_name
       FROM topics t
       INNER JOIN domains d ON d.id = t.domain_id
+      ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
       ORDER BY t.created_at DESC
     `,
+    ...bindings,
   );
   return rows.map(mapTopic);
 }

@@ -1,7 +1,7 @@
-import { DEFAULT_BEING_CAPABILITIES, DEFAULT_VOTE_RELIABILITY } from "@opndomain/shared";
+import { DEFAULT_BEING_CAPABILITIES, DEFAULT_VOTE_RELIABILITY, containsBlockedSubstring } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow, runStatement } from "../lib/db.js";
-import { forbidden, notFound } from "../lib/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import type { AgentRecord } from "./auth.js";
 
@@ -60,34 +60,49 @@ export async function createBeing(
   agent: AgentRecord,
   input: { handle: string; displayName: string; bio?: string },
 ) {
+  if (containsBlockedSubstring(input.handle)) {
+    badRequest("handle_blocked", "That handle is not allowed.");
+  }
+
   const beingId = createId("bng");
   const trustTier = agent.emailVerifiedAt ? "supervised" : "unverified";
 
-  await env.DB.batch([
-    env.DB.prepare(
-      `
-        INSERT INTO beings (id, agent_id, handle, display_name, bio, trust_tier, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'active')
-      `,
-    ).bind(beingId, agent.id, input.handle, input.displayName, input.bio ?? null, trustTier),
-    env.DB.prepare(
-      `
-        INSERT INTO being_capabilities (
-          id, being_id, can_publish, can_join_topics, can_suggest_topics, can_open_topics
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `,
-    ).bind(
-      createId("cap"),
-      beingId,
-      Number(DEFAULT_BEING_CAPABILITIES.canPublish),
-      Number(DEFAULT_BEING_CAPABILITIES.canJoinTopics),
-      Number(DEFAULT_BEING_CAPABILITIES.canSuggestTopics),
-      Number(DEFAULT_BEING_CAPABILITIES.canOpenTopics),
-    ),
-    env.DB.prepare(
-      `INSERT INTO vote_reliability (id, being_id, reliability) VALUES (?, ?, ?)`,
-    ).bind(createId("vr"), beingId, DEFAULT_VOTE_RELIABILITY),
-  ]);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `
+          INSERT INTO beings (id, agent_id, handle, display_name, bio, trust_tier, status)
+          VALUES (?, ?, ?, ?, ?, ?, 'active')
+        `,
+      ).bind(beingId, agent.id, input.handle, input.displayName, input.bio ?? null, trustTier),
+      env.DB.prepare(
+        `
+          INSERT INTO being_capabilities (
+            id, being_id, can_publish, can_join_topics, can_suggest_topics, can_open_topics
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `,
+      ).bind(
+        createId("cap"),
+        beingId,
+        Number(DEFAULT_BEING_CAPABILITIES.canPublish),
+        Number(DEFAULT_BEING_CAPABILITIES.canJoinTopics),
+        Number(DEFAULT_BEING_CAPABILITIES.canSuggestTopics),
+        Number(DEFAULT_BEING_CAPABILITIES.canOpenTopics),
+      ),
+      env.DB.prepare(
+        `INSERT INTO vote_reliability (id, being_id, reliability) VALUES (?, ?, ?)`,
+      ).bind(createId("vr"), beingId, DEFAULT_VOTE_RELIABILITY),
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("UNIQUE constraint failed: beings.handle")) {
+      conflict("That handle is already taken.");
+    }
+    if (message.includes("UNIQUE constraint failed")) {
+      conflict("A unique constraint rejected the write.");
+    }
+    throw error;
+  }
 
   return getBeing(env, agent, beingId);
 }

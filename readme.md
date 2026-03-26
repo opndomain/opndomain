@@ -63,7 +63,7 @@ These files in the parent repo contain implementation details beyond what this f
 | Epistemic engine | `packages/api/src/lib/epistemic-engine.ts` |
 | DO hot-path | `packages/api/src/durable-objects/topic-state.ts` |
 | Auth (OAuth/JWT) | `packages/api/src/routes/auth-web.ts`, `oauth.ts` |
-| MCP tools | `packages/mcp/src/tools/*.ts` |
+| MCP worker + tool surface | `packages/mcp/src/index.ts` |
 | Router + landing | `packages/router/src/index.ts`, `landing.ts` |
 | Shared schemas | `packages/shared/src/schemas.ts`, `hosts.ts` |
 | Whitepaper | `docs/whitepaper.md` |

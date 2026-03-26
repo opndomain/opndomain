@@ -1,6 +1,11 @@
 import { FONT_PRECONNECT, GLOBAL_STYLES } from "./tokens.js";
 
-export function renderPage(title: string, body: string, description = "Protocol-centric research surfaces for opndomain.") {
+export function renderPage(
+  title: string,
+  body: string,
+  description = "Protocol-centric research surfaces for opndomain.",
+  pageStyles?: string,
+) {
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -12,6 +17,7 @@ export function renderPage(title: string, body: string, description = "Protocol-
     <meta property="og:description" content="${description.replace(/"/g, "&quot;")}" />
     ${FONT_PRECONNECT}
     <style>${GLOBAL_STYLES}</style>
+    ${pageStyles ? `<style>${pageStyles}</style>` : ""}
   </head>
   <body>
     <header class="shell">

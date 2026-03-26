@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ApiError } from "../lib/errors.js";
-import { createTopic, joinTopic } from "./topics.js";
+import { createTopic, getTopic, getTopicContext, joinTopic, listTopics } from "./topics.js";
 
 class FakePreparedStatement {
   constructor(
@@ -15,11 +15,11 @@ class FakePreparedStatement {
   }
 
   async first<T>() {
-    return this.db.consumeFirst<T>(this.sql);
+    return this.db.consumeFirst<T>(this.sql, this.bindings);
   }
 
   async all<T>() {
-    return { results: this.db.consumeAll<T>(this.sql) };
+    return { results: this.db.consumeAll<T>(this.sql, this.bindings) };
   }
 
   async run() {
@@ -31,6 +31,8 @@ class FakePreparedStatement {
 class FakeDb {
   readonly executedRuns: Array<{ sql: string; bindings: unknown[] }> = [];
   readonly batchCalls: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
+  readonly firstCalls: Array<{ sql: string; bindings: unknown[] }> = [];
+  readonly allCalls: Array<{ sql: string; bindings: unknown[] }> = [];
   private readonly firstQueue = new Map<string, unknown[]>();
   private readonly allQueue = new Map<string, unknown[]>();
 
@@ -51,7 +53,8 @@ class FakeDb {
     return statements.map(() => ({ success: true }));
   }
 
-  consumeFirst<T>(sql: string): T | null {
+  consumeFirst<T>(sql: string, bindings: unknown[] = []): T | null {
+    this.firstCalls.push({ sql, bindings });
     const entry = Array.from(this.firstQueue.entries()).find(([fragment]) => sql.includes(fragment));
     if (!entry) {
       return null;
@@ -62,7 +65,8 @@ class FakeDb {
     return next ?? null;
   }
 
-  consumeAll<T>(sql: string): T[] {
+  consumeAll<T>(sql: string, bindings: unknown[] = []): T[] {
+    this.allCalls.push({ sql, bindings });
     const entry = Array.from(this.allQueue.entries()).find(([fragment]) => sql.includes(fragment));
     if (!entry) {
       return [];
@@ -381,5 +385,111 @@ describe("createTopic round config persistence", () => {
     assert.ok(openRoundInsert);
     assert.equal(sealedRoundInsert?.bindings[5], sealedRoundInsert?.bindings[6]);
     assert.equal(openRoundInsert?.bindings[4], openRoundInsert?.bindings[6]);
+  });
+});
+
+describe("topic read contracts", () => {
+  it("applies status and domain filters when listing topics", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      status: "started",
+      cadence_family: "quorum",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const topics = await listTopics(buildEnv(db), { status: "started", domainSlug: "ai-safety" });
+
+    assert.equal(topics.length, 1);
+    assert.equal(topics[0]?.domainSlug, "ai-safety");
+    const query = db.allCalls.at(-1);
+    assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ?"));
+    assert.deepEqual(query?.bindings, ["started", "ai-safety"]);
+  });
+
+  it("returns populated domain metadata for topic detail", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      status: "started",
+      cadence_family: "quorum",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", []);
+
+    const topic = await getTopic(buildEnv(db), "top_1");
+
+    assert.equal(topic.domainSlug, "ai-safety");
+    assert.equal(topic.domainName, "AI Safety");
+  });
+
+  it("returns populated domain metadata for topic context", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      status: "started",
+      cadence_family: "quorum",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", []);
+    db.queueAll("FROM topic_members", []);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", []);
+    db.queueAll("FROM contributions c", []);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
+
+    assert.equal(topic.domainSlug, "ai-safety");
+    assert.equal(topic.domainName, "AI Safety");
   });
 });

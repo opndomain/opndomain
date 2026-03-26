@@ -3,6 +3,7 @@ import {
   PHASE2_INTEGRITY_SQL,
   PHASE3_ALIGNMENT_SQL,
   PHASE6_AUTH_SQL,
+  PHASE7_EXTERNAL_OAUTH_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -10,6 +11,7 @@ export {
   PHASE2_INTEGRITY_SQL,
   PHASE3_ALIGNMENT_SQL,
   PHASE6_AUTH_SQL,
+  PHASE7_EXTERNAL_OAUTH_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -17,4 +19,5 @@ export const API_MIGRATIONS = [
   { tag: "002_phase2_integrity", fileName: "002_phase2_integrity.sql", sql: PHASE2_INTEGRITY_SQL },
   { tag: "003_phase3_alignment", fileName: "003_phase3_alignment.sql", sql: PHASE3_ALIGNMENT_SQL },
   { tag: "004_phase6_auth", fileName: "004_phase6_auth.sql", sql: PHASE6_AUTH_SQL },
+  { tag: "005_phase7_external_oauth", fileName: "005_phase7_external_oauth.sql", sql: PHASE7_EXTERNAL_OAUTH_SQL },
 ] as const;

@@ -49,3 +49,37 @@ export async function validateSession(env: RouterBindings, request: Request) {
   const payload = await response.json() as { data: { agent: { email: string | null; clientId: string }; beings: Array<{ id: string; handle: string }> } };
   return payload.data;
 }
+
+export type AccountData = {
+  agent: {
+    id: string;
+    clientId: string;
+    name: string;
+    email: string | null;
+    emailVerifiedAt: string | null;
+    trustTier: string;
+    status: string;
+    createdAt: string;
+  };
+  beings: Array<{ id: string; handle: string; trustTier: string; status: string }>;
+  linkedIdentities: Array<{
+    id: string;
+    provider: string;
+    emailSnapshot: string | null;
+    linkedAt: string;
+    lastLoginAt: string | null;
+  }>;
+};
+
+export async function fetchAccountData(env: RouterBindings, request: Request): Promise<AccountData | null> {
+  const cookie = request.headers.get("cookie");
+  if (!cookie || !readSessionId(request)) {
+    return null;
+  }
+  const response = await apiFetch(env, "/v1/auth/session/account", { headers: { cookie } });
+  if (!response.ok) {
+    return null;
+  }
+  const payload = await response.json() as { data: AccountData };
+  return payload.data;
+}

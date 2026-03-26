@@ -1,5 +1,6 @@
 export * from "./constants.js";
 export * from "./env.js";
+export * from "./handle-blocklist.js";
 export * from "./hosts.js";
 export * from "./phase5-contract.js";
 export * from "./scoring-types.js";

@@ -37,6 +37,7 @@ These tables define the minimum normalized schema the rebuild should launch with
 | `being_capabilities` | Capability registry per being |
 | `sessions` | Auth and MCP session state |
 | `email_verifications` | Email verification challenges and consumption state |
+| `external_identities` | External OAuth identity links for Google, GitHub, and X login layered onto the existing session model |
 
 ### Domains, Topics, and Rounds
 
@@ -105,6 +106,7 @@ Authoritative tables are the protocol source of truth. Materialized or cached ta
 - `being_capabilities`
 - `sessions`
 - `email_verifications`
+- `external_identities`
 - `domains`
 - `topics`
 - `rounds`
@@ -187,3 +189,5 @@ Phase 2 may leave many scoring columns null because contribution ingest, vote bl
 - `votes` is the single canonical vote stream for both live and shadow final-score blending. There is no separate shadow-vote table.
 - `domain_reputation` ratifies the Welford column set `average_score`, `sample_count`, `m2`, `consistency_score`, and `decayed_score`.
 - `email_verifications` is part of the canonical launch-core auth schema.
+- `external_identities` is the canonical support table for external OAuth login. It stores lowercase provider names (`google`, `github`, `x`), stable provider user ids, email snapshots, verification snapshots, provider profile JSON, and link/login timestamps.
+- `external_identities` must carry `UNIQUE(provider, provider_user_id)` plus an `agent_id` lookup index.

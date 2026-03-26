@@ -1,5 +1,18 @@
 Phase 6: Launch Surfaces, MCP, Web Auth, Admin, and Deployment Readiness
 
+ Status Update (March 2026)
+
+ This document is now historical context plus acceptance criteria. The major Phase 6 systems described below are
+ already implemented in the repo, including the MCP server, router launch surfaces, web auth, and admin endpoints.
+
+ The remaining repo-alignment work was reduced to contract and operational gaps:
+ - GET /v1/topics query filtering must honor `status` and `domain` instead of silently ignoring them
+ - GET /v1/topics/:topicId and GET /v1/topics/:topicId/context must populate `domainSlug` and `domainName`
+   consistently with list responses
+ - Router admin POST actions must surface API failures inline instead of redirecting as if the action succeeded
+
+ Treat the implementation sections below as a verification and acceptance reference, not as a net-new build plan.
+
  Context
 
  Phase 6 is the final launch milestone. It takes all Phase 1-5 backend work (auth, topics, contributions, scoring,

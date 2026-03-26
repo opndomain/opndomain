@@ -291,6 +291,15 @@ These are the minimum tables needed for the protocol to function:
 
 Add incrementally: `agent_global_reputation`, `arena_contribution_analysis`, `arena_embeddings`, `arena_contribution_claims`, `being_epistemic_reliability`, `domain_claim_graph`, `claim_resolution_evidence`, prediction tables, analytics tables, harness tables.
 
+## Auth Extension Note
+
+Launch-core keeps the existing `opn_session` cookie plus access-token and refresh-token session model unchanged. External OAuth login is an explicit extension on top of that contract, not a rename of the authority repo's older OAuth terminology.
+
+- Human login providers are `google`, `github`, and `x`.
+- External login finishes by minting the same `sessions` row, `opn_session` cookie, access token, and refresh token used by magic-link and `client_credentials`.
+- Canonical auth support storage includes `external_identities` for provider links keyed by `(provider, provider_user_id)`.
+- Verified Google or GitHub email may auto-link to an existing agent email. X may provision an account without email and must leave `email_verified_at` null in that case.
+
 ---
 
 ## Cron Responsibilities

@@ -1,13 +1,19 @@
 import { Hono } from "hono";
 import {
+  ACCESS_TOKEN_TTL_SECONDS,
   MagicLinkRequestSchema,
   MagicLinkVerifySchema,
+  OAUTH_NONCE_COOKIE_PREFIX,
+  OAuthAuthorizeQuerySchema,
+  OAuthCallbackQuerySchema,
+  OAuthProviderSchema,
   RegisterAgentSchema,
-  TokenContractSchema,
   TokenRequestSchema,
   VerifyEmailSchema,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
+import { buildClearedCookie } from "../lib/cookies.js";
+import { ApiError } from "../lib/errors.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import {
   createMagicLink,
@@ -19,6 +25,7 @@ import {
   verifyMagicLink,
   verifyAgentEmail,
 } from "../services/auth.js";
+import { beginOAuthAuthorize, completeOAuthCallback, consumeOAuthWelcome, listExternalIdentitiesForAgent } from "../services/oauth.js";
 
 export const authRoutes = new Hono<{ Bindings: ApiEnv }>();
 
@@ -52,11 +59,7 @@ authRoutes.post("/magic-link/verify", async (c) => {
     tokenType: "Bearer",
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    expiresIn: TokenContractSchema.parse({
-      issuer: c.env.JWT_ISSUER,
-      audience: c.env.JWT_AUDIENCE,
-      scopes: ["web_session", "agent_refresh"],
-    }).accessTokenTtlSeconds,
+    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
     sessionId: tokens.sessionId,
     agent: tokens.agent,
   });
@@ -75,13 +78,68 @@ authRoutes.post("/token", async (c) => {
     tokenType: "Bearer",
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    expiresIn: TokenContractSchema.parse({
-      issuer: c.env.JWT_ISSUER,
-      audience: c.env.JWT_AUDIENCE,
-      scopes: ["web_session", "agent_refresh"],
-    }).accessTokenTtlSeconds,
+    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
     sessionId: tokens.sessionId,
     agent: tokens.agent,
+  });
+});
+
+authRoutes.get("/oauth/:provider/authorize", async (c) => {
+  const provider = OAuthProviderSchema.parse(c.req.param("provider"));
+  const query = OAuthAuthorizeQuerySchema.parse({
+    redirect: c.req.query("redirect") ?? undefined,
+  });
+  const result = await beginOAuthAuthorize(
+    c.env,
+    c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "0.0.0.0",
+    provider,
+    query.redirect,
+  );
+  c.header("set-cookie", result.nonceCookie, { append: true });
+  return c.redirect(result.location, 302);
+});
+
+authRoutes.get("/oauth/:provider/callback", async (c) => {
+  const provider = OAuthProviderSchema.parse(c.req.param("provider"));
+  const query = OAuthCallbackQuerySchema.parse({
+    code: c.req.query("code") ?? undefined,
+    state: c.req.query("state") ?? undefined,
+    error: c.req.query("error") ?? undefined,
+    error_description: c.req.query("error_description") ?? undefined,
+  });
+  try {
+    const result = await completeOAuthCallback(
+      c.env,
+      c.req.raw,
+      c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "0.0.0.0",
+      provider,
+      {
+        code: query.code,
+        state: query.state,
+        error: query.error,
+        errorDescription: query.error_description,
+      },
+    );
+    for (const cookie of result.setCookies) {
+      c.header("set-cookie", cookie, { append: true });
+    }
+    return c.redirect(result.location, 302);
+  } catch (error) {
+    const message = error instanceof ApiError ? error.message : "OAuth sign-in failed.";
+    const fallback = new URL("/login", c.env.ROUTER_ORIGIN);
+    fallback.searchParams.set("oauth_error", message);
+    fallback.searchParams.set("provider", provider);
+    c.header("set-cookie", buildClearedCookie(c.env, `${OAUTH_NONCE_COOKIE_PREFIX}${provider}`), { append: true });
+    return c.redirect(fallback.toString(), 302);
+  }
+});
+
+authRoutes.get("/oauth/welcome", async (c) => {
+  const welcome = await consumeOAuthWelcome(c.env, c.req.raw);
+  c.header("set-cookie", welcome.clearedCookie, { append: true });
+  return jsonData(c, {
+    clientId: welcome.clientId,
+    clientSecret: welcome.clientSecret,
   });
 });
 
@@ -94,4 +152,10 @@ authRoutes.post("/logout", async (c) => {
 authRoutes.get("/session", async (c) => {
   const session = await getSessionSummary(c.env, c.req.raw);
   return jsonData(c, session);
+});
+
+authRoutes.get("/session/account", async (c) => {
+  const session = await getSessionSummary(c.env, c.req.raw);
+  const linkedIdentities = await listExternalIdentitiesForAgent(c.env, session.agent.id);
+  return jsonData(c, { ...session, linkedIdentities });
 });

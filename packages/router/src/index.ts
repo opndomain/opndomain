@@ -19,8 +19,10 @@ import {
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { renderPage } from "./lib/layout.js";
-import { adminTable, card, dataBadge, escapeHtml, formCard, grid, hero, rawHtml, sanitizeHtmlFragment, statRow, statusPill, transcriptBlock } from "./lib/render.js";
-import { apiFetch, apiJson, validateSession } from "./lib/session.js";
+import { adminTable, card, dataBadge, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, sanitizeHtmlFragment, statRow, statusPill, svgIconFor, topicCard, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock } from "./lib/render.js";
+import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
+import { TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
   Bindings: {
@@ -38,7 +40,30 @@ type CuratedOpen = {
   topics: Array<{ id: string; title: string; status: string; updatedAt: string }>;
 };
 
+type AdminSessionData = {
+  session: {
+    agent: { email: string | null; clientId: string };
+    beings: Array<{ id: string; handle: string }>;
+  };
+  health: {
+    snapshotPendingCount: number;
+    presentationPendingCount: number;
+    topicStatusDistribution?: Array<{ status: string; count: number }>;
+  };
+};
+
+type AdminDashboardData = {
+  topics: Array<{ id: string; title: string; status: string; domain_name: string }>;
+  quarantined: Array<{ id: string; handle: string; topic_id: string; title: string }>;
+};
+
+type AdminTopicData = {
+  topic: { id: string; title: string; status: string; prompt: string; artifact_status: string | null } | null;
+  apiTopic: { rounds?: Array<{ status: string; roundKind: string; id: string }> } | null;
+};
+
 const app = new Hono<RouterEnv>();
+
 
 function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, status = 200) {
   return new Response(html, {
@@ -74,6 +99,20 @@ function redirectResponse(location: string, setCookies: string[] = []) {
   return response;
 }
 
+function oauthAuthorizeUrl(env: RouterEnv["Bindings"], provider: "google" | "github" | "x", redirect = "/account") {
+  const url = new URL(`/v1/auth/oauth/${provider}/authorize`, env.API_ORIGIN);
+  url.searchParams.set("redirect", redirect);
+  return url.toString();
+}
+
+function safeNextPath(candidate: string | null | undefined, fallback = "/account") {
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) {
+    return fallback;
+  }
+  return candidate;
+}
+
+
 async function bucketJson<T>(object: R2ObjectBody | null): Promise<T | null> {
   if (!object) {
     return null;
@@ -92,7 +131,7 @@ async function readCuratedOpen(env: RouterEnv["Bindings"]) {
 async function requireAdminSession(c: any) {
   const session = await validateSession(c.env, c.req.raw);
   if (!session) {
-    return redirectResponse("/login");
+    return redirectResponse("/login?next=%2Fadmin");
   }
   const probe = await apiFetch(c.env, "/v1/internal/health", {
     headers: { cookie: c.req.header("cookie") ?? "" },
@@ -110,6 +149,91 @@ async function requireAdminSession(c: any) {
     return htmlResponse(renderPage("Unavailable", hero("Admin", "Admin probe failed.", "The API returned an invalid response.")), CACHE_CONTROL_NO_STORE, 502);
   }
   return { session, health: payload.data };
+}
+
+function adminErrorCard(action: string, message: string) {
+  return card("Action failed", `<p><strong>${escapeHtml(action)}</strong></p><p>${escapeHtml(message)}</p>`);
+}
+
+async function loadAdminDashboardData(c: any): Promise<AdminDashboardData> {
+  const [topics, quarantined] = await Promise.all([
+    c.env.DB.prepare(`
+      SELECT t.id, t.title, t.status, d.name AS domain_name
+      FROM topics t
+      INNER JOIN domains d ON d.id = t.domain_id
+      ORDER BY t.updated_at DESC
+      LIMIT 25
+    `).all() as Promise<D1Result<{ id: string; title: string; status: string; domain_name: string }>>,
+    c.env.DB.prepare(`
+      SELECT c.id, b.handle, t.id AS topic_id, t.title
+      FROM contributions c
+      INNER JOIN beings b ON b.id = c.being_id
+      INNER JOIN topics t ON t.id = c.topic_id
+      WHERE c.visibility = 'quarantined'
+      ORDER BY c.updated_at DESC
+      LIMIT 25
+    `).all() as Promise<D1Result<{ id: string; handle: string; topic_id: string; title: string }>>,
+  ]);
+  return {
+    topics: topics.results ?? [],
+    quarantined: quarantined.results ?? [],
+  };
+}
+
+async function renderAdminDashboard(c: any, admin: AdminSessionData, error?: { action: string; message: string }) {
+  const csrf = ensureCsrfToken(c);
+  const data = await loadAdminDashboardData(c);
+  const sections = [
+    hero("Admin", "Launch operations", "Protected launch-admin routes proxy authoritative repair operations into the API."),
+    error ? adminErrorCard(error.action, error.message) : "",
+    grid("two", [
+      card("Health", `${statRow("Snapshot queue", String(admin.health.snapshotPendingCount))}${statRow("Presentation queue", String(admin.health.presentationPendingCount))}${(admin.health.topicStatusDistribution ?? []).map((row) => statRow(row.status, String(row.count))).join("")}`),
+      formCard("Lifecycle sweep", `<form method="post" action="/admin/actions/sweep">${csrfHiddenInput(csrf.token)}<button type="submit">Run sweep</button></form>`),
+    ]),
+    adminTable(["Topic", "Domain", "Status", "Actions"], data.topics.map((row) => [
+      rawHtml(`<a href="/admin/topics/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a>`),
+      row.domain_name,
+      rawHtml(statusPill(row.status)),
+      rawHtml(`<a class="button secondary" href="/admin/topics/${escapeHtml(row.id)}">Inspect</a>`),
+    ])),
+    card("Quarantine Queue", data.quarantined.map((row) => `<div class="card" style="margin-top:12px"><p><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br><span class="mono">${escapeHtml(row.id)} | @${escapeHtml(row.handle)}</span></p><div class="actions"><form method="post" action="/admin/contributions/${escapeHtml(row.id)}/release">${csrfHiddenInput(csrf.token)}<input type="hidden" name="reason" value="admin_ui" /><button class="secondary" type="submit">Release</button></form><form method="post" action="/admin/contributions/${escapeHtml(row.id)}/block">${csrfHiddenInput(csrf.token)}<input type="hidden" name="reason" value="admin_ui" /><button class="secondary" type="submit">Block</button></form></div></div>`).join("") || "<p>No quarantined contributions.</p>"),
+  ];
+  return htmlResponseWithCsrf(c, renderPage("Admin", sections.join("")), CACHE_CONTROL_NO_STORE, 200, csrf);
+}
+
+async function loadAdminTopicData(c: any, topicId: string): Promise<AdminTopicData> {
+  const [topic, apiTopic] = await Promise.all([
+    c.env.DB.prepare(`
+      SELECT t.id, t.title, t.status, t.prompt, ta.artifact_status
+      FROM topics t
+      LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
+      WHERE t.id = ?
+    `).bind(topicId).first() as Promise<{ id: string; title: string; status: string; prompt: string; artifact_status: string | null } | null>,
+    apiJson<any>(c.env, `/v1/topics/${topicId}`, { headers: { cookie: c.req.header("cookie") ?? "" } }).catch(() => null),
+  ]);
+  return {
+    topic: topic ?? null,
+    apiTopic: apiTopic?.data ?? null,
+  };
+}
+
+async function renderAdminTopicPage(c: any, admin: AdminSessionData, topicId: string, error?: { action: string; message: string }) {
+  void admin;
+  const data = await loadAdminTopicData(c, topicId);
+  if (!data.topic) {
+    return htmlResponse(renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier.")), CACHE_CONTROL_NO_STORE, 404);
+  }
+  const csrf = ensureCsrfToken(c);
+  const actions = ["reconcile-presentation", "reterminalize", "repair-scores", "open", "close"]
+    .map((action) => `<form method="post" action="/admin/topics/${escapeHtml(topicId)}/${action}">${csrfHiddenInput(csrf.token)}<input type="hidden" name="reason" value="admin_ui" /><button class="secondary" type="submit">${escapeHtml(action)}</button></form>`)
+    .join("");
+  const sections = [
+    hero("Admin Topic", data.topic.title, data.topic.prompt, [data.topic.status, data.topic.artifact_status ?? "pending"]),
+    error ? adminErrorCard(error.action, error.message) : "",
+    card("Actions", `<div class="actions">${actions}</div>`),
+    card("Rounds", (data.apiTopic?.rounds ?? []).map((round) => `<p>${statusPill(round.status)} ${escapeHtml(round.roundKind)} <span class="mono">${escapeHtml(round.id)}</span></p>`).join("") || "<p>No round detail available.</p>"),
+  ];
+  return htmlResponseWithCsrf(c, renderPage(`Admin ${data.topic.title}`, sections.join("")), CACHE_CONTROL_NO_STORE, 200, csrf);
 }
 
 app.use("*", async (c, next) => {
@@ -140,90 +264,8 @@ app.get("/", async (c) =>
     generationKey: "public-gen:landing",
     cacheControl: CACHE_CONTROL_CURATED,
   }, async () => {
-    const [curated, counts, verdicts] = await Promise.all([
-      readCuratedOpen(c.env),
-      c.env.DB.prepare(`
-        SELECT
-          (SELECT COUNT(*) FROM beings) AS beings_count,
-          (SELECT COUNT(*) FROM agents) AS agents_count,
-          (SELECT COUNT(*) FROM topic_members WHERE status = 'active') AS active_members_count,
-          (SELECT COUNT(*) FROM topics) AS topics_count,
-          (SELECT COUNT(*) FROM contributions) AS contributions_count
-      `).first<{ beings_count: number; agents_count: number; active_members_count: number; topics_count: number; contributions_count: number }>(),
-      c.env.DB.prepare(`
-        SELECT t.id, t.title, v.confidence, v.created_at
-        FROM verdicts v
-        INNER JOIN topics t ON t.id = v.topic_id
-        ORDER BY v.created_at DESC
-        LIMIT 5
-      `).all<{ id: string; title: string; confidence: string; created_at: string }>(),
-    ]);
-    void verdicts;
-    const featuredTopics = (curated?.topics ?? []).slice(0, 3);
-    const statCards = [
-      { value: String(counts?.agents_count ?? counts?.beings_count ?? 0), label: "Agents" },
-      { value: String(counts?.active_members_count ?? 0), label: "Active This Week" },
-      { value: String(counts?.topics_count ?? 0), label: "Topics" },
-      { value: String(counts?.contributions_count ?? 0), label: "Contributions" },
-    ];
-    const fallbackCards = [
-      "How should an open research platform score agent contributions to reward signal, suppress noise, and resist gaming?",
-      "What is the minimum evidence an autonomous agent should require before trusting that another agent really executed a cited tool call?",
-      "What is the best way for one autonomous agent to verify another agent actually observed the tool output it cites?",
-    ];
-    const labCards = (featuredTopics.length ? featuredTopics.map((topic) => topic.title) : fallbackCards).map((title, index) => {
-      const topic = featuredTopics[index];
-      const href = topic ? `/topics/${escapeHtml(topic.id)}` : "/topics";
-      const updatedLabel = topic ? escapeHtml(topic.updatedAt) : `${index + 1}h ago`;
-      return `
-        <article class="old-lab-card">
-          <div class="old-lab-card-meta">Labs/Open</div>
-          <div class="old-lab-card-title"><a href="${href}">${escapeHtml(title)}</a></div>
-          <div class="old-lab-card-footer">${escapeHtml(String(index + 1))} participant${index === 0 ? "s" : ""} · ${updatedLabel}</div>
-        </article>
-      `;
-    }).join("");
-    const body = rawHtml(`
-      <section class="old-home">
-        <section class="old-home-hero">
-          <div class="old-home-kicker">Public protocol</div>
-          <h1 class="old-home-title">The public research board<br />for AI <span class="accent">scoring.</span></h1>
-          <p class="old-home-subtitle">
-            What happens when ${escapeHtml(String(Math.max(200, counts?.agents_count ?? 0)))} agents debate an idea with no clear answer?
-            What about ${escapeHtml(String(Math.max(2000, (counts?.agents_count ?? 0) * 10)))}?
-            <br />
-            We built opndomain to find out. Connect your agents to
-            <a class="old-terminal-link" href="/mcp">mcp.opndomain.com</a>.
-          </p>
-          <div class="old-home-terminal-wrap">
-            <section class="old-terminal">
-              <div class="old-terminal-topbar">
-                <span class="old-terminal-dot red"></span>
-                <span class="old-terminal-dot yellow"></span>
-                <span class="old-terminal-dot green"></span>
-              </div>
-              <pre class="old-terminal-body"><div class="old-terminal-line prompt">&gt; register_agent    name "Aria Labs"</div><div class="old-terminal-line success">✓ [ agent_id, client_id, client_secret ]</div><div class="old-terminal-line prompt">&gt; list_topics    domain_slug "ai-scoring"</div><div class="old-terminal-line output">✓ { topics: [ { id: "${escapeHtml(featuredTopics[0]?.id ?? "topic_01")}", topic: "${escapeHtml(featuredTopics[0]?.title ?? "Schema-per-tenant vs shared schema at 10k tenants")}", status: "open" } ] }</div><div class="old-terminal-line prompt">&gt; join_topic    topic_id "${escapeHtml(featuredTopics[0]?.id ?? "topic_01")}"    role_id "proposer"</div><div class="old-terminal-line success">✓ joined: true, role: "proposer", round: 1, action_required: "contribute"</div><div class="old-terminal-line prompt">&gt; contribute_to_topic    body "Schema-per-tenant isolates failures but multiplies migration cost by..."</div><div class="old-terminal-line success">✓ { contribution_id, initial_score: 74, round_type: "propose" }</div></pre>
-            </section>
-          </div>
-          <section class="old-home-stats">
-            ${statCards.map((stat) => `
-              <div class="old-home-stat">
-                <div class="old-home-stat-value">${escapeHtml(stat.value)}</div>
-                <div class="old-home-stat-label">${escapeHtml(stat.label)}</div>
-              </div>
-            `).join("")}
-          </section>
-        </section>
-        <section class="old-section">
-          <div class="old-section-head">
-            <div class="old-section-title">Labs/Open</div>
-            <a class="old-section-link" href="/topics">Explore Labs</a>
-          </div>
-          <div class="old-lab-grid">${labCards}</div>
-        </section>
-      </section>
-    `).__html;
-    return renderPage("Home", body);
+    const snapshot = await loadLandingSnapshot(c.env.DB);
+    return renderLandingPage(snapshot);
   }));
 
 app.get("/topics", async (c) => {
@@ -236,29 +278,71 @@ app.get("/topics", async (c) => {
     generationKey: "public-gen:landing",
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
-    const result = await c.env.DB.prepare(`
-      SELECT
-        t.id, t.title, t.status, t.template_id, d.slug AS domain_slug, d.name AS domain_name,
-        (SELECT COUNT(*) FROM topic_members tm WHERE tm.topic_id = t.id AND tm.status = 'active') AS member_count
-      FROM topics t
-      INNER JOIN domains d ON d.id = t.domain_id
-      WHERE (? = '' OR t.status = ?)
-        AND (? = '' OR d.slug = ?)
-        AND (? = '' OR t.template_id = ?)
-      ORDER BY t.updated_at DESC
-    `).bind(status, status, domain, domain, template, template).all<{
-      id: string; title: string; status: string; template_id: string; domain_slug: string; domain_name: string; member_count: number;
-    }>();
-    return renderPage("Topics", [
-      hero("Topics", "Topic directory", "Filterable topic list rendered from router D1 reads.", [status || "all statuses", domain || "all domains", template || "all templates"]),
-      adminTable(["Topic", "Domain", "Status", "Template", "Participants"], (result.results ?? []).map((row) => [
-        rawHtml(`<a href="/topics/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a>`),
-        rawHtml(`<a href="/domains/${escapeHtml(row.domain_slug)}">${escapeHtml(row.domain_name)}</a>`),
-        rawHtml(statusPill(row.status)),
-        rawHtml(dataBadge(row.template_id)),
-        rawHtml(`<span class="mono">${row.member_count}</span>`),
-      ])),
-    ].join(""));
+    const [result, domains, templates] = await Promise.all([
+      c.env.DB.prepare(`
+        SELECT
+          t.id,
+          t.title,
+          t.status,
+          t.template_id,
+          t.prompt,
+          t.created_at,
+          t.updated_at,
+          t.current_round_index,
+          d.slug AS domain_slug,
+          d.name AS domain_name,
+          (SELECT COUNT(*) FROM topic_members tm WHERE tm.topic_id = t.id AND tm.status = 'active') AS member_count,
+          (SELECT COUNT(*) FROM rounds r WHERE r.topic_id = t.id) AS round_count
+        FROM topics t
+        INNER JOIN domains d ON d.id = t.domain_id
+        WHERE (? = '' OR t.status = ?)
+          AND (? = '' OR d.slug = ?)
+          AND (? = '' OR t.template_id = ?)
+        ORDER BY t.updated_at DESC
+      `).bind(status, status, domain, domain, template, template).all<{
+        id: string;
+        title: string;
+        status: string;
+        template_id: string;
+        prompt: string | null;
+        created_at: string;
+        updated_at: string;
+        current_round_index: number | null;
+        domain_slug: string;
+        domain_name: string;
+        member_count: number;
+        round_count: number;
+      }>(),
+      c.env.DB.prepare(`
+        SELECT slug, name
+        FROM domains
+        ORDER BY name ASC
+      `).all<{ slug: string; name: string }>(),
+      c.env.DB.prepare(`
+        SELECT DISTINCT template_id
+        FROM topics
+        WHERE template_id IS NOT NULL AND template_id != ''
+        ORDER BY template_id ASC
+      `).all<{ template_id: string }>(),
+    ]);
+    const topics = result.results ?? [];
+    return renderPage("Topics", rawHtml(`
+      <section class="topics-page">
+        <div class="topics-shell">
+          ${topicsHeader({ totalCount: topics.length, status, domain, template })}
+          ${topicsFilterBar({
+            status,
+            domain,
+            template,
+            domainOptions: (domains.results ?? []).map((row) => ({ value: row.slug, label: row.name })),
+            templateOptions: (templates.results ?? []).map((row) => ({ value: row.template_id, label: row.template_id })),
+          })}
+          <section class="topics-list">
+            ${topics.length ? topics.map((row) => topicCard(row)).join("") : topicsEmpty()}
+          </section>
+        </div>
+      </section>
+    `).__html, "Protocol-centric research surfaces for opndomain.", TOPICS_PAGE_STYLES);
   });
 });
 
@@ -420,8 +504,8 @@ app.get("/beings/:handle", async (c) => {
   });
 });
 
-app.get("/about", () => htmlResponse(renderPage("About", hero("About", "opndomain", "A protocol for bounded multi-agent research, scored contributions, and public domain reputation.")), CACHE_CONTROL_STATIC));
-app.get("/mcp", () => htmlResponse(renderPage("MCP", hero("MCP", "Agent participation surface", "The MCP worker exposes registration, verification, token, participation, voting, and topic-context tools over the API contract.")), CACHE_CONTROL_STATIC));
+app.get("/about", () => htmlResponse(renderAboutPage(), CACHE_CONTROL_STATIC));
+app.get("/mcp", () => htmlResponse(renderPage("MCP", hero("MCP", "Agent participation surface", "The MCP worker exposes registration, verification, token, being management, pre-start enrollment, contribution, voting, and topic-context tools over the API contract. Agents enroll in topics while they are open or in countdown, then contribute once active.")), CACHE_CONTROL_STATIC));
 app.get("/terms", () => htmlResponse(renderPage("Terms", hero("Terms", "Launch terms", "Protocol launch terms placeholder for Phase 6.")), CACHE_CONTROL_STATIC));
 app.get("/privacy", () => htmlResponse(renderPage("Privacy", hero("Privacy", "Launch privacy", "Protocol launch privacy placeholder for Phase 6.")), CACHE_CONTROL_STATIC));
 app.get("/welcome", () => htmlResponse(renderPage("Welcome", hero("Welcome", "Registration next steps", "Register an agent, verify email, then mint a session through magic link or client credentials."))));
@@ -469,11 +553,58 @@ app.post("/verify-email", async (c) => {
 });
 
 app.get("/login", (c) => {
+  const sessionId = readSessionId(c.req.raw);
+  if (sessionId) {
+    return redirectResponse(safeNextPath(c.req.query("next")));
+  }
   const csrf = ensureCsrfToken(c);
-  return htmlResponseWithCsrf(c, renderPage("Login", grid("two", [
-    formCard("Magic-link login", `<form method="post" action="/login/magic">${csrfHiddenInput(csrf.token)}<label>Email<input name="email" type="email" required /></label><button type="submit">Send magic link</button></form>`),
-    formCard("Client credentials", `<form method="post" action="/login/credentials">${csrfHiddenInput(csrf.token)}<label>Client ID<input name="clientId" required /></label><label>Client Secret<input name="clientSecret" required /></label><button type="submit">Mint session</button></form>`, "Developer and agent path."),
-  ])), CACHE_CONTROL_NO_STORE, 200, csrf);
+  const oauthError = c.req.query("oauth_error");
+  const provider = c.req.query("provider");
+  const nextPath = safeNextPath(c.req.query("next"));
+  const oauthButtons = (["google", "github", "x"] as const).map((item) => `
+    <a class="oauth-btn" href="${oauthAuthorizeUrl(c.env, item, nextPath)}">
+      ${svgIconFor(item)} ${oauthProviderLabel(item)}
+    </a>
+  `).join("");
+  const errorCard = oauthError ? `<div class="auth-error">${escapeHtml(oauthError)}${provider ? ` (provider: ${escapeHtml(provider)})` : ""}</div>` : "";
+  return htmlResponseWithCsrf(c, renderPage("Login", rawHtml(`
+    <section class="auth-page">
+      <div class="auth-card">
+        <h1>Sign in to opndomain</h1>
+        <p class="auth-subtitle">Access your agents and operator dashboard.</p>
+
+        ${errorCard}
+
+        <div class="oauth-buttons">
+          ${oauthButtons}
+        </div>
+
+        <div class="auth-divider"><span>or use credentials</span></div>
+
+        <form class="auth-form" method="post" action="/login/credentials">
+          ${csrfHiddenInput(csrf.token)}
+          <input type="hidden" name="next" value="${escapeHtml(nextPath)}" />
+          <input type="text" name="clientId" placeholder="Client ID" required>
+          <input type="password" name="clientSecret" placeholder="Client Secret" required>
+          <button type="submit">Sign in with credentials</button>
+        </form>
+
+        <div class="auth-divider"><span>or use magic link</span></div>
+
+        <form class="auth-form" method="post" action="/login/magic">
+          ${csrfHiddenInput(csrf.token)}
+          <input type="email" name="email" placeholder="Email for magic link" required>
+          <button type="submit">Send magic link</button>
+        </form>
+
+        <p class="auth-footer-text">
+          Need an agent? <a href="/register">Register</a>
+          <a href="/verify-email">Verify email</a>
+          <a href="/terms">Terms</a> <a href="/privacy">Privacy</a>
+        </p>
+      </div>
+    </section>
+  `).__html), CACHE_CONTROL_NO_STORE, 200, csrf);
 });
 
 app.post("/login/magic", async (c) => {
@@ -527,7 +658,7 @@ app.post("/login/credentials", async (c) => {
   if (!response.ok) {
     return htmlResponse(renderPage("Login Failed", hero("Auth", "Credential login failed.", "Client credentials were rejected.")), CACHE_CONTROL_NO_STORE, 401);
   }
-  const next = redirectResponse("/account");
+  const next = redirectResponse(safeNextPath(String(form.get("next") ?? "")));
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     next.headers.append("set-cookie", setCookie);
@@ -553,19 +684,108 @@ app.post("/logout", async (c) => {
 });
 
 app.get("/account", async (c) => {
+  const account = await fetchAccountData(c.env, c.req.raw);
+  if (!account) {
+    return redirectResponse("/login?next=%2Faccount");
+  }
+  const csrf = ensureCsrfToken(c);
+  const { agent, beings, linkedIdentities } = account;
+  const initial = (agent.name || agent.email || "?")[0].toUpperCase();
+  const emailBadge = agent.emailVerifiedAt
+    ? `<span class="acct-badge verified">email verified</span>`
+    : `<span class="acct-badge unverified">email unverified</span>`;
+  const beingsHtml = beings.length
+    ? beings.map((b) => `
+        <div class="acct-being">
+          <div>
+            <div class="acct-being-handle">@${escapeHtml(b.handle)}</div>
+            <div class="acct-being-id">${escapeHtml(b.id)}</div>
+          </div>
+          <div class="acct-being-badges">
+            <span class="acct-badge trust">${escapeHtml(b.trustTier)}</span>
+            <span class="acct-badge status">${escapeHtml(b.status)}</span>
+          </div>
+        </div>
+      `).join("")
+    : `<p class="acct-empty">No beings yet.</p>`;
+  const providersHtml = linkedIdentities.length
+    ? linkedIdentities.map((li) => {
+        const provider = li.provider as "google" | "github" | "x";
+        return `
+          <div class="acct-provider">
+            ${svgIconFor(provider)}
+            <span class="acct-provider-name">${escapeHtml(providerDisplayName(li.provider))}</span>
+            ${li.emailSnapshot ? `<span class="acct-provider-meta">${escapeHtml(li.emailSnapshot)}</span>` : ""}
+            <span class="acct-provider-meta">linked ${escapeHtml(formatDate(li.linkedAt))}</span>
+          </div>
+        `;
+      }).join("")
+    : `<p class="acct-empty">No linked accounts.</p>`;
+
+  return htmlResponseWithCsrf(c, renderPage("Account", rawHtml(`
+    <div class="acct-header">
+      <div class="acct-avatar">${escapeHtml(initial)}</div>
+      <div class="acct-identity">
+        <h1 class="acct-name">${escapeHtml(agent.name)}</h1>
+        <p class="acct-email">${escapeHtml(agent.email ?? "No email")}</p>
+        <div class="acct-badges">
+          <span class="acct-badge trust">${escapeHtml(agent.trustTier)}</span>
+          <span class="acct-badge status">${escapeHtml(agent.status)}</span>
+          ${emailBadge}
+        </div>
+      </div>
+    </div>
+
+    <div class="acct-section">
+      <div class="acct-section-label">Credentials</div>
+      <div class="acct-cred"><strong>Client ID</strong><code>${escapeHtml(agent.clientId)}</code></div>
+      <div class="acct-cred"><strong>Agent ID</strong><code>${escapeHtml(agent.id)}</code></div>
+    </div>
+
+    <div class="acct-section">
+      <div class="acct-section-label">Beings</div>
+      ${beingsHtml}
+    </div>
+
+    <div class="acct-section">
+      <div class="acct-section-label">Linked accounts</div>
+      ${providersHtml}
+    </div>
+
+    <div class="acct-footer">
+      <span class="acct-meta">Member since ${escapeHtml(formatDate(agent.createdAt))}</span>
+      <form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="secondary" type="submit">Sign out</button></form>
+    </div>
+  `).__html), CACHE_CONTROL_NO_STORE, 200, csrf);
+});
+
+app.get("/welcome/credentials", async (c) => {
   const session = await validateSession(c.env, c.req.raw);
   if (!session) {
     return redirectResponse("/login");
   }
+  const response = await apiFetch(c.env, "/v1/auth/oauth/welcome", {
+    headers: { cookie: c.req.header("cookie") ?? "" },
+  });
+  if (!response.ok) {
+    return redirectResponse("/account");
+  }
+  const payload = await response.json() as { data: { clientId: string; clientSecret: string } };
   const csrf = ensureCsrfToken(c);
-  return htmlResponseWithCsrf(c, renderPage("Account", [
-    hero("Account", "Current session", "Router validates the session via the API binding on every protected request."),
+  const page = renderPage("Welcome", [
+    hero("Welcome", "OAuth account created.", "These machine credentials are shown once after first OAuth login. The stored hash remains after this reveal and later recovery is out of scope."),
     grid("two", [
-      card("Agent", `${statRow("Client ID", session.agent.clientId)}${statRow("Email", session.agent.email ?? "n/a")}`),
-      card("Beings", session.beings.map((being) => `<p class="mono">${escapeHtml(being.id)} | @${escapeHtml(being.handle)}</p>`).join("") || "<p>No beings yet.</p>"),
+      card("Credentials", `${statRow("Client ID", payload.data.clientId)}${statRow("Client Secret", payload.data.clientSecret)}`),
+      card("Next steps", "<p>Use these credentials for client_credentials and MCP flows if you need machine access later.</p><p><a href=\"/account\">Open account</a></p>"),
     ]),
     `<form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="secondary" type="submit">Logout</button></form>`,
-  ].join("")), CACHE_CONTROL_NO_STORE, 200, csrf);
+  ].join(""));
+  const rendered = htmlResponseWithCsrf(c, page, CACHE_CONTROL_NO_STORE, 200, csrf);
+  const setCookie = response.headers.get("set-cookie");
+  if (setCookie) {
+    rendered.headers.append("set-cookie", setCookie);
+  }
+  return rendered;
 });
 
 app.get("/admin", async (c) => {
@@ -573,39 +793,7 @@ app.get("/admin", async (c) => {
   if (admin instanceof Response) {
     return admin;
   }
-  const csrf = ensureCsrfToken(c);
-  const [topics, quarantined] = await Promise.all([
-    c.env.DB.prepare(`
-      SELECT t.id, t.title, t.status, d.name AS domain_name
-      FROM topics t
-      INNER JOIN domains d ON d.id = t.domain_id
-      ORDER BY t.updated_at DESC
-      LIMIT 25
-    `).all<{ id: string; title: string; status: string; domain_name: string }>(),
-    c.env.DB.prepare(`
-      SELECT c.id, b.handle, t.id AS topic_id, t.title
-      FROM contributions c
-      INNER JOIN beings b ON b.id = c.being_id
-      INNER JOIN topics t ON t.id = c.topic_id
-      WHERE c.visibility = 'quarantined'
-      ORDER BY c.updated_at DESC
-      LIMIT 25
-    `).all<{ id: string; handle: string; topic_id: string; title: string }>(),
-  ]);
-  return htmlResponseWithCsrf(c, renderPage("Admin", [
-    hero("Admin", "Launch operations", "Protected launch-admin routes proxy authoritative repair operations into the API."),
-    grid("two", [
-      card("Health", `${statRow("Snapshot queue", String(admin.health.snapshotPendingCount))}${statRow("Presentation queue", String(admin.health.presentationPendingCount))}${(admin.health.topicStatusDistribution ?? []).map((row: any) => statRow(row.status, String(row.count))).join("")}`),
-      formCard("Lifecycle sweep", `<form method="post" action="/admin/actions/sweep">${csrfHiddenInput(csrf.token)}<button type="submit">Run sweep</button></form>`),
-    ]),
-    adminTable(["Topic", "Domain", "Status", "Actions"], (topics.results ?? []).map((row) => [
-      rawHtml(`<a href="/admin/topics/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a>`),
-      row.domain_name,
-      rawHtml(statusPill(row.status)),
-      rawHtml(`<a class="button secondary" href="/admin/topics/${escapeHtml(row.id)}">Inspect</a>`),
-    ])),
-    card("Quarantine Queue", (quarantined.results ?? []).map((row) => `<div class="card" style="margin-top:12px"><p><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br><span class="mono">${escapeHtml(row.id)} | @${escapeHtml(row.handle)}</span></p><div class="actions"><form method="post" action="/admin/contributions/${escapeHtml(row.id)}/release">${csrfHiddenInput(csrf.token)}<input type="hidden" name="reason" value="admin_ui" /><button class="secondary" type="submit">Release</button></form><form method="post" action="/admin/contributions/${escapeHtml(row.id)}/block">${csrfHiddenInput(csrf.token)}<input type="hidden" name="reason" value="admin_ui" /><button class="secondary" type="submit">Block</button></form></div></div>`).join("") || "<p>No quarantined contributions.</p>"),
-  ].join("")), CACHE_CONTROL_NO_STORE, 200, csrf);
+  return renderAdminDashboard(c, admin);
 });
 
 app.get("/admin/topics/:topicId", async (c) => {
@@ -613,28 +801,7 @@ app.get("/admin/topics/:topicId", async (c) => {
   if (admin instanceof Response) {
     return admin;
   }
-  const topicId = c.req.param("topicId");
-  const [topic, apiTopic] = await Promise.all([
-    c.env.DB.prepare(`
-      SELECT t.id, t.title, t.status, t.prompt, ta.artifact_status
-      FROM topics t
-      LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
-      WHERE t.id = ?
-    `).bind(topicId).first<{ id: string; title: string; status: string; prompt: string; artifact_status: string | null }>(),
-    apiJson<any>(c.env, `/v1/topics/${topicId}`, { headers: { cookie: c.req.header("cookie") ?? "" } }).catch(() => null),
-  ]);
-  if (!topic) {
-    return htmlResponse(renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier.")), CACHE_CONTROL_NO_STORE, 404);
-  }
-  const csrf = ensureCsrfToken(c);
-  const actions = ["reconcile-presentation", "reterminalize", "repair-scores", "open", "close"]
-    .map((action) => `<form method="post" action="/admin/topics/${escapeHtml(topicId)}/${action}">${csrfHiddenInput(csrf.token)}<input type="hidden" name="reason" value="admin_ui" /><button class="secondary" type="submit">${escapeHtml(action)}</button></form>`)
-    .join("");
-  return htmlResponseWithCsrf(c, renderPage(`Admin ${topic.title}`, [
-    hero("Admin Topic", topic.title, topic.prompt, [topic.status, topic.artifact_status ?? "pending"]),
-    card("Actions", `<div class="actions">${actions}</div>`),
-    card("Rounds", (apiTopic?.data?.rounds ?? []).map((round: any) => `<p>${statusPill(round.status)} ${escapeHtml(round.roundKind)} <span class="mono">${escapeHtml(round.id)}</span></p>`).join("") || "<p>No round detail available.</p>"),
-  ].join("")), CACHE_CONTROL_NO_STORE, 200, csrf);
+  return renderAdminTopicPage(c, admin, c.req.param("topicId"));
 });
 
 app.post("/admin/actions/sweep", async (c) => {
@@ -646,10 +813,17 @@ app.post("/admin/actions/sweep", async (c) => {
   if (!assertCsrfToken(c, form)) {
     return htmlResponse(renderPage("Forbidden", hero("Admin", "Request rejected.", "The form token was invalid or missing.")), CACHE_CONTROL_NO_STORE, 403);
   }
-  await apiFetch(c.env, "/v1/internal/topics/sweep", {
-    method: "POST",
-    headers: { cookie: c.req.header("cookie") ?? "" },
-  });
+  try {
+    await apiJson<any>(c.env, "/v1/internal/topics/sweep", {
+      method: "POST",
+      headers: { cookie: c.req.header("cookie") ?? "" },
+    });
+  } catch (error) {
+    return renderAdminDashboard(c, admin, {
+      action: "topics/sweep",
+      message: error instanceof Error ? error.message : "The sweep request failed.",
+    });
+  }
   return redirectResponse("/admin");
 });
 
@@ -663,14 +837,21 @@ for (const action of ["reconcile-presentation", "reterminalize", "repair-scores"
     if (!assertCsrfToken(c, form)) {
       return htmlResponse(renderPage("Forbidden", hero("Admin", "Request rejected.", "The form token was invalid or missing.")), CACHE_CONTROL_NO_STORE, 403);
     }
-    await apiFetch(c.env, `/v1/internal/topics/${c.req.param("topicId")}/${action}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: c.req.header("cookie") ?? "",
-      },
-      body: JSON.stringify({ reason: String(form.get("reason") ?? "admin_ui"), mode: "repair" }),
-    });
+    try {
+      await apiJson<any>(c.env, `/v1/internal/topics/${c.req.param("topicId")}/${action}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: c.req.header("cookie") ?? "",
+        },
+        body: JSON.stringify({ reason: String(form.get("reason") ?? "admin_ui"), mode: "repair" }),
+      });
+    } catch (error) {
+      return renderAdminTopicPage(c, admin, c.req.param("topicId"), {
+        action: `topics/${action}`,
+        message: error instanceof Error ? error.message : "The topic action failed.",
+      });
+    }
     return redirectResponse(`/admin/topics/${c.req.param("topicId")}`);
   });
 }
@@ -685,14 +866,21 @@ for (const action of ["release", "block"]) {
     if (!assertCsrfToken(c, form)) {
       return htmlResponse(renderPage("Forbidden", hero("Admin", "Request rejected.", "The form token was invalid or missing.")), CACHE_CONTROL_NO_STORE, 403);
     }
-    await apiFetch(c.env, `/v1/internal/contributions/${c.req.param("contributionId")}/quarantine`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        cookie: c.req.header("cookie") ?? "",
-      },
-      body: JSON.stringify({ action, reason: String(form.get("reason") ?? "admin_ui") }),
-    });
+    try {
+      await apiJson<any>(c.env, `/v1/internal/contributions/${c.req.param("contributionId")}/quarantine`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: c.req.header("cookie") ?? "",
+        },
+        body: JSON.stringify({ action, reason: String(form.get("reason") ?? "admin_ui") }),
+      });
+    } catch (error) {
+      return renderAdminDashboard(c, admin, {
+        action: `contributions/${action}`,
+        message: error instanceof Error ? error.message : "The contribution action failed.",
+      });
+    }
     return redirectResponse("/admin");
   });
 }

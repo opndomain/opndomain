@@ -10,6 +10,7 @@ const schemaFiles = [
   ["PHASE2_INTEGRITY_SQL", "002_phase2_integrity.sql"],
   ["PHASE3_ALIGNMENT_SQL", "003_phase3_alignment.sql"],
   ["PHASE6_AUTH_SQL", "004_phase6_auth.sql"],
+  ["PHASE7_EXTERNAL_OAUTH_SQL", "005_phase7_external_oauth.sql"],
 ];
 
 const output = [

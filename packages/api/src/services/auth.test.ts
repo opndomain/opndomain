@@ -5,6 +5,7 @@ import { sha256 } from "../lib/crypto.js";
 import { ApiError } from "../lib/errors.js";
 import { signJwt } from "../lib/jwt.js";
 import { authenticateRequest, createMagicLink, exchangeClientCredentials, logoutSession, verifyMagicLink } from "./auth.js";
+import { beginOAuthAuthorize, completeOAuthCallback } from "./oauth.js";
 
 class FakePreparedStatement {
   constructor(
@@ -80,10 +81,21 @@ type TestEnv = {
   REFRESH_TOKEN_TTL_SECONDS: number;
   TOKEN_RATE_LIMIT_PER_HOUR: number;
   MAGIC_LINK_TTL_MINUTES: number;
+  OAUTH_STATE_TTL_SECONDS: number;
+  OAUTH_WELCOME_TTL_SECONDS: number;
   JWT_AUDIENCE: string;
   JWT_ISSUER: string;
   JWT_PUBLIC_KEY_PEM: string;
   JWT_PRIVATE_KEY_PEM: string;
+  API_ORIGIN: string;
+  ROUTER_ORIGIN: string;
+  OAUTH_CALLBACK_BASE_URL: string;
+  GOOGLE_OAUTH_CLIENT_ID: string;
+  GOOGLE_OAUTH_CLIENT_SECRET: string;
+  GITHUB_OAUTH_CLIENT_ID: string;
+  GITHUB_OAUTH_CLIENT_SECRET: string;
+  X_OAUTH_CLIENT_ID: string;
+  X_OAUTH_CLIENT_SECRET: string;
   EMAIL_PROVIDER: string;
   OPNDOMAIN_ENV: string;
 };
@@ -105,10 +117,21 @@ function buildEnv(db: FakeDb): TestEnv {
     REFRESH_TOKEN_TTL_SECONDS: 60 * 60 * 24 * 30,
     TOKEN_RATE_LIMIT_PER_HOUR: 100,
     MAGIC_LINK_TTL_MINUTES: 15,
+    OAUTH_STATE_TTL_SECONDS: 600,
+    OAUTH_WELCOME_TTL_SECONDS: 600,
     JWT_AUDIENCE: "https://api.opndomain.com",
     JWT_ISSUER: "https://api.opndomain.com",
     JWT_PUBLIC_KEY_PEM: publicKey,
     JWT_PRIVATE_KEY_PEM: privateKey,
+    API_ORIGIN: "https://api.opndomain.com",
+    ROUTER_ORIGIN: "https://opndomain.com",
+    OAUTH_CALLBACK_BASE_URL: "https://api.opndomain.com",
+    GOOGLE_OAUTH_CLIENT_ID: "google-client",
+    GOOGLE_OAUTH_CLIENT_SECRET: "google-secret",
+    GITHUB_OAUTH_CLIENT_ID: "github-client",
+    GITHUB_OAUTH_CLIENT_SECRET: "github-secret",
+    X_OAUTH_CLIENT_ID: "x-client",
+    X_OAUTH_CLIENT_SECRET: "x-secret",
     EMAIL_PROVIDER: "stub",
     OPNDOMAIN_ENV: "development",
   };
@@ -334,5 +357,198 @@ describe("magic-link auth", () => {
     assert.match(result.cookie, /opn_session=/);
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE magic_links") && entry.sql.includes("consumed_at IS NULL")));
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO sessions")));
+  });
+});
+
+describe("oauth auth", () => {
+  it("rejects a tampered state token", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const authorize = await beginOAuthAuthorize(env as never, "127.0.0.1", "google", "/account");
+    const url = new URL(authorize.location);
+    const state = `${url.searchParams.get("state") ?? ""}x`;
+
+    await expectUnauthorized(
+      completeOAuthCallback(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/oauth/google/callback", {
+          headers: { cookie: authorize.nonceCookie },
+        }),
+        "127.0.0.1",
+        "google",
+        { code: "code_1", state },
+      ),
+    );
+  });
+
+  it("rejects an expired state token", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const state = await signJwt(env as never, {
+      iss: env.JWT_ISSUER,
+      aud: env.JWT_AUDIENCE,
+      sub: "google",
+      scope: "oauth_state",
+      exp: Math.floor(Date.now() / 1000) - 60,
+      iat: Math.floor(Date.now() / 1000) - 120,
+      jti: "ost_1",
+      provider: "google",
+      nonce: "nonce_1234567890123456",
+      codeVerifier: "verifier_12345678901234567890123456789012",
+      redirect: "/account",
+    });
+
+    await expectUnauthorized(
+      completeOAuthCallback(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/oauth/google/callback", {
+          headers: { cookie: "opn_oauth_nonce_google=nonce_1234567890123456" },
+        }),
+        "127.0.0.1",
+        "google",
+        { code: "code_1", state },
+      ),
+    );
+  });
+
+  it("rejects a wrong-provider callback for a valid state", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const authorize = await beginOAuthAuthorize(env as never, "127.0.0.1", "google", "/account");
+    const url = new URL(authorize.location);
+    const state = url.searchParams.get("state") ?? "";
+    const cookieValue = authorize.nonceCookie.match(/^[^=]+=([^;]+)/)?.[1] ?? "";
+
+    await expectUnauthorized(
+      completeOAuthCallback(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/oauth/github/callback", {
+          headers: { cookie: `opn_oauth_nonce_github=${cookieValue}` },
+        }),
+        "127.0.0.1",
+        "github",
+        { code: "code_1", state },
+      ),
+    );
+  });
+
+  it("rejects replay after the nonce cookie is gone", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const authorize = await beginOAuthAuthorize(env as never, "127.0.0.1", "github", "/account");
+    const url = new URL(authorize.location);
+    const state = url.searchParams.get("state") ?? "";
+
+    await expectUnauthorized(
+      completeOAuthCallback(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/oauth/github/callback"),
+        "127.0.0.1",
+        "github",
+        { code: "code_1", state },
+      ),
+    );
+  });
+
+  it("signs in an existing linked external identity", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const authorize = await beginOAuthAuthorize(env as never, "127.0.0.1", "google", "/account");
+    const state = new URL(authorize.location).searchParams.get("state") ?? "";
+
+    db.queueFirst("FROM external_identities", [{
+      id: "eid_1",
+      agent_id: "agt_1",
+      provider: "google",
+      provider_user_id: "google-user",
+      email_snapshot: "agent@example.com",
+      email_verified: 1,
+      profile_json: "{}",
+      linked_at: "2026-03-25T00:00:00.000Z",
+      last_login_at: "2026-03-25T00:00:00.000Z",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    queueAgentLookup(db, "agt_1");
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("oauth2.googleapis.com/token")) {
+        return Response.json({ access_token: "google-access" });
+      }
+      if (url.includes("openidconnect.googleapis.com")) {
+        return Response.json({
+          sub: "google-user",
+          email: "agent@example.com",
+          email_verified: true,
+          name: "Agent",
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    try {
+      const result = await completeOAuthCallback(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/oauth/google/callback", {
+          headers: { cookie: authorize.nonceCookie },
+        }),
+        "127.0.0.1",
+        "google",
+        { code: "code_1", state },
+      );
+
+      assert.equal(result.location, "https://opndomain.com/account");
+      assert.ok(result.setCookies.some((value) => value.includes("opn_session=")));
+      assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE external_identities")));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("auto-creates an unverified X account with no email", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const authorize = await beginOAuthAuthorize(env as never, "127.0.0.1", "x", "/account");
+    const state = new URL(authorize.location).searchParams.get("state") ?? "";
+    queueAgentLookup(db, "agt_1");
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("api.x.com/2/oauth2/token")) {
+        return Response.json({ access_token: "x-access" });
+      }
+      if (url.includes("api.x.com/2/users/me")) {
+        return Response.json({
+          data: {
+            id: "x-user-1",
+            username: "x_agent",
+            name: "X Agent",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    try {
+      const result = await completeOAuthCallback(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/oauth/x/callback", {
+          headers: { cookie: authorize.nonceCookie },
+        }),
+        "127.0.0.1",
+        "x",
+        { code: "code_1", state },
+      );
+
+      assert.equal(result.location, "https://opndomain.com/welcome/credentials");
+      assert.ok(result.setCookies.some((value) => value.includes("opn_oauth_welcome=")));
+      assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
+      assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO external_identities")));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

@@ -1,6 +1,6 @@
 import { ACCESS_TOKEN_SCOPE, loginUrl, REFRESH_TOKEN_SCOPE } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { buildClearedSessionCookie, buildSessionCookie } from "../lib/cookies.js";
+import { buildClearedSessionCookie, buildSessionCookie, readCookieValue } from "../lib/cookies.js";
 import { allRows, firstRow, requireRow, runStatement } from "../lib/db.js";
 import { safeEqualHash, sha256 } from "../lib/crypto.js";
 import { conflict, unauthorized } from "../lib/errors.js";
@@ -244,7 +244,7 @@ async function mintToken(
   });
 }
 
-async function createSessionTokens(env: ApiEnv, agent: AgentRecord) {
+export async function createSessionTokens(env: ApiEnv, agent: AgentRecord) {
   const sessionId = createId("ses");
   const accessTokenId = createId("atk");
   const refreshTokenId = createId("rtk");
@@ -344,20 +344,6 @@ export async function exchangeRefreshToken(env: ApiEnv, ipAddress: string, refre
   };
 }
 
-function parseCookieHeader(cookieHeader: string | undefined, cookieName: string): string | null {
-  if (!cookieHeader) {
-    return null;
-  }
-
-  for (const fragment of cookieHeader.split(";")) {
-    const [name, ...rest] = fragment.trim().split("=");
-    if (name === cookieName) {
-      return decodeURIComponent(rest.join("="));
-    }
-  }
-  return null;
-}
-
 export async function authenticateRequest(env: ApiEnv, request: Request) {
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
@@ -388,7 +374,7 @@ export async function authenticateRequest(env: ApiEnv, request: Request) {
     return { agent, sessionId: session.id, tokenScope: String(payload.scope) };
   }
 
-  const sessionId = parseCookieHeader(request.headers.get("cookie") ?? undefined, env.SESSION_COOKIE_NAME);
+  const sessionId = readCookieValue(request.headers.get("cookie"), env.SESSION_COOKIE_NAME);
   if (!sessionId) {
     unauthorized();
   }
@@ -413,7 +399,7 @@ export async function authenticateRequest(env: ApiEnv, request: Request) {
 }
 
 export async function logoutSession(env: ApiEnv, request: Request) {
-  const sessionId = parseCookieHeader(request.headers.get("cookie") ?? undefined, env.SESSION_COOKIE_NAME);
+  const sessionId = readCookieValue(request.headers.get("cookie"), env.SESSION_COOKIE_NAME);
   if (sessionId) {
     await runStatement(
       env.DB.prepare(

@@ -4,35 +4,90 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { parseBaseEnv, z } from "@opndomain/shared";
 import { loadBootstrapClientId, loadMcpSessionState, saveMcpSessionState, storeBootstrapClientId, type McpSessionState } from "./lib/state.js";
 
+export type McpBindings = {
+  DB: D1Database;
+  STORAGE: R2Bucket;
+  MCP_STATE: KVNamespace;
+  API_SERVICE: Fetcher;
+} & ReturnType<typeof parseBaseEnv>;
+
 type McpEnv = {
-  Bindings: {
-    DB: D1Database;
-    STORAGE: R2Bucket;
-    MCP_STATE: KVNamespace;
-    API_SERVICE: Fetcher;
-  } & ReturnType<typeof parseBaseEnv>;
+  Bindings: McpBindings;
 };
 
-const app = new Hono<McpEnv>();
+export const MCP_TOOL_NAMES = [
+  "register",
+  "verify-email",
+  "establish-launch-state",
+  "get-token",
+  "request-magic-link",
+  "recover-launch-state",
+  "list-beings",
+  "ensure-being",
+  "list-topics",
+  "list-joinable-topics",
+  "join-topic",
+  "contribute",
+  "vote",
+  "get-topic-context",
+  "participate",
+] as const;
+
+type ToolResult = {
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent: Record<string, unknown>;
+};
+
+type ToolHandlers = Record<(typeof MCP_TOOL_NAMES)[number], (input: any) => Promise<ToolResult>>;
+
+type LaunchStatus =
+  | "awaiting_verification"
+  | "authenticated"
+  | "launch_ready"
+  | "reauth_required"
+  | "recovery_required"
+  | "awaiting_magic_link";
+
+type LaunchPayload = {
+  agentId: string | null;
+  clientId: string;
+  accessToken: string | null;
+  refreshToken: string | null;
+  expiresAt: string | null;
+  mcpUrl: string;
+  apiOrigin: string;
+  rootDomain: string;
+  clientSecret?: string;
+};
 
 function createLocalId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
-async function apiFetch(env: McpEnv["Bindings"], path: string, init?: RequestInit) {
+function randomSuffix(len = 4): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+async function apiFetch(env: McpBindings, path: string, init?: RequestInit) {
   return env.API_SERVICE.fetch(new Request(`https://api.internal${path}`, init));
 }
 
-async function apiJson<T>(env: McpEnv["Bindings"], path: string, init?: RequestInit): Promise<T> {
+async function parseApiResponse<T>(response: Response): Promise<{ data?: T; message?: string; error?: string }> {
+  return await response.json() as { data?: T; message?: string; error?: string };
+}
+
+async function apiJson<T>(env: McpBindings, path: string, init?: RequestInit): Promise<T> {
   const response = await apiFetch(env, path, init);
-  const payload = await response.json() as { data: T; message?: string; error?: string };
+  const payload = await parseApiResponse<T>(response);
   if (!response.ok) {
     throw new Error(payload.message ?? payload.error ?? response.statusText);
   }
-  return payload.data;
+  return payload.data as T;
 }
 
-async function ensureAccessToken(env: McpEnv["Bindings"], state: McpSessionState): Promise<McpSessionState> {
+export async function ensureAccessToken(env: McpBindings, state: McpSessionState): Promise<McpSessionState> {
   if (state.accessToken && state.expiresAt && new Date(state.expiresAt).getTime() > Date.now() + 10_000) {
     return state;
   }
@@ -56,18 +111,108 @@ async function ensureAccessToken(env: McpEnv["Bindings"], state: McpSessionState
   return nextState;
 }
 
-async function resolveState(env: McpEnv["Bindings"], input: { clientId?: string; email?: string }) {
+function mcpUrl(env: McpBindings): string {
+  return `${env.MCP_ORIGIN.replace(/\/+$/, "")}/mcp`;
+}
+
+function buildLaunchPayload(env: McpBindings, state: McpSessionState, clientSecret?: string): LaunchPayload {
+  const payload: LaunchPayload = {
+    agentId: state.agentId,
+    clientId: state.clientId,
+    accessToken: state.accessToken,
+    refreshToken: state.refreshToken,
+    expiresAt: state.expiresAt,
+    mcpUrl: mcpUrl(env),
+    apiOrigin: env.API_ORIGIN,
+    rootDomain: env.ROOT_DOMAIN,
+  };
+  if (clientSecret) {
+    payload.clientSecret = clientSecret;
+  }
+  return payload;
+}
+
+function launchStateResult(
+  env: McpBindings,
+  status: LaunchStatus,
+  state: McpSessionState | null,
+  options?: {
+    clientSecret?: string;
+    email?: string;
+    message?: string;
+  },
+) {
+  return {
+    status,
+    agentId: state?.agentId ?? null,
+    clientId: state?.clientId ?? null,
+    email: options?.email ?? null,
+    launch: state ? buildLaunchPayload(env, state, options?.clientSecret) : null,
+    message: options?.message ?? null,
+  };
+}
+
+async function persistLaunchState(
+  env: McpBindings,
+  state: McpSessionState,
+  options?: { email?: string },
+): Promise<McpSessionState> {
+  await saveMcpSessionState(env.MCP_STATE, state, env.REFRESH_TOKEN_TTL_SECONDS);
+  if (options?.email) {
+    await storeBootstrapClientId(env.MCP_STATE, options.email, state.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
+  }
+  return state;
+}
+
+function stateFromTokenPayload(token: any, beingId?: string | null): McpSessionState {
+  return {
+    clientId: token.agent.clientId,
+    agentId: token.agent.id ?? null,
+    accessToken: token.accessToken,
+    refreshToken: token.refreshToken,
+    beingId: beingId ?? null,
+    expiresAt: new Date(Date.now() + Number(token.expiresIn ?? 3600) * 1000).toISOString(),
+  };
+}
+
+async function resolveStateStrict(env: McpBindings, input: { clientId?: string; email?: string }) {
   const resolvedClientId = input.clientId ?? (input.email ? await loadBootstrapClientId(env.MCP_STATE, input.email) ?? undefined : undefined);
   if (!resolvedClientId) {
     return null;
   }
   const state = await loadMcpSessionState(env.MCP_STATE, resolvedClientId);
-  return state ? ensureAccessToken(env, state) : null;
+  if (!state) {
+    return null;
+  }
+  return ensureAccessToken(env, state);
 }
 
-function toToolResult(payload: unknown) {
+function extractMagicLinkToken(tokenOrUrl: string): string {
+  const trimmed = tokenOrUrl.trim();
+  if (!trimmed) {
+    throw new Error("tokenOrUrl is required.");
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const token = url.searchParams.get("token");
+    if (token) {
+      return token;
+    }
+  } catch {
+    // Treat non-URL input as a raw token.
+  }
+
+  return trimmed;
+}
+
+export async function resolveState(env: McpBindings, input: { clientId?: string; email?: string }) {
+  return resolveStateStrict(env, input);
+}
+
+function toToolResult(payload: unknown): ToolResult {
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
     structuredContent: payload as Record<string, unknown>,
   };
 }
@@ -77,59 +222,492 @@ function createHandle(seed: string): string {
   return (normalized || "being").slice(0, 48);
 }
 
-async function getOrCreateBeing(env: McpEnv["Bindings"], state: McpSessionState, input: { email?: string; name?: string; handle?: string }) {
-  if (state.beingId) {
-    return state;
+async function listOwnedBeings(env: McpBindings, accessToken: string) {
+  return apiJson<Array<{ id: string; handle: string }>>(env, "/v1/beings", {
+    headers: { authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export async function getOrCreateBeing(env: McpBindings, state: McpSessionState, input: { email?: string; name?: string; handle?: string }) {
+  if (state.beingId && state.accessToken) {
+    const beings = await listOwnedBeings(env, state.accessToken);
+    if (beings.some((being) => being.id === state.beingId)) {
+      return state;
+    }
   }
   const handle = input.handle ?? createHandle(input.email ?? input.name ?? `being-${state.clientId.slice(-6)}`);
-  const being = await apiJson<any>(env, "/v1/beings", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${state.accessToken}`,
-    },
-    body: JSON.stringify({
-      handle,
-      displayName: input.name ?? handle,
-      bio: "Provisioned through MCP participate().",
-    }),
-  });
+  const createBeingRequest = (nextHandle: string) =>
+    apiFetch(env, "/v1/beings", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${state.accessToken}`,
+      },
+      body: JSON.stringify({
+        handle: nextHandle,
+        displayName: input.name ?? nextHandle,
+        bio: "Provisioned through MCP participate().",
+      }),
+    });
+
+  let response = await createBeingRequest(handle);
+  let payload = await parseApiResponse<any>(response);
+  if (!response.ok && response.status === 409) {
+    const suffix = randomSuffix();
+    const retryHandle = `${handle.slice(0, 64 - suffix.length - 1)}-${suffix}`;
+    response = await createBeingRequest(retryHandle);
+    payload = await parseApiResponse<any>(response);
+  }
+  if (!response.ok) {
+    throw new Error(payload.message ?? payload.error ?? response.statusText);
+  }
+
+  const being = payload.data;
   const nextState = { ...state, beingId: being.id };
   await saveMcpSessionState(env.MCP_STATE, nextState, env.REFRESH_TOKEN_TTL_SECONDS);
   return nextState;
 }
 
-async function buildServer(env: McpEnv["Bindings"]) {
+export function createToolHandlers(env: McpBindings): ToolHandlers {
+  return {
+    register: async ({ name, email }) => {
+      const data = await apiJson<any>(env, "/v1/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, email }),
+      });
+      await storeBootstrapClientId(env.MCP_STATE, email, data.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
+      return toToolResult(data);
+    },
+    "verify-email": async ({ clientId, email, code }) => {
+      const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
+      if (!resolvedClientId) {
+        throw new Error("clientId or bootstrap email is required.");
+      }
+      const data = await apiJson<any>(env, "/v1/auth/verify-email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: resolvedClientId, code }),
+      });
+      return toToolResult(data);
+    },
+    "establish-launch-state": async ({ clientId, clientSecret, email, refreshToken, accessToken, beingId }) => {
+      const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
+
+      if (resolvedClientId) {
+        const storedState = await loadMcpSessionState(env.MCP_STATE, resolvedClientId);
+        if (storedState) {
+          try {
+            const nextState = await ensureAccessToken(env, storedState);
+            if (nextState.accessToken) {
+              return toToolResult(launchStateResult(env, "launch_ready", nextState, { email }));
+            }
+            return toToolResult(launchStateResult(env, "authenticated", nextState, {
+              email,
+              message: "Authenticated state exists, but no access token is currently available.",
+            }));
+          } catch {
+            return toToolResult(launchStateResult(env, "reauth_required", storedState, {
+              email,
+              message: "Stored launch state could not be refreshed. Use recover-launch-state or provide credentials again.",
+            }));
+          }
+        }
+      }
+
+      if (refreshToken) {
+        const token = await apiJson<any>(env, "/v1/auth/token", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grantType: "refresh_token", refreshToken }),
+        });
+        const nextState = await persistLaunchState(env, stateFromTokenPayload(token, beingId ?? null), { email });
+        return toToolResult(launchStateResult(env, "launch_ready", nextState, { email }));
+      }
+
+      if (accessToken && resolvedClientId) {
+        const nextState = await persistLaunchState(env, {
+          clientId: resolvedClientId,
+          agentId: null,
+          accessToken,
+          refreshToken: null,
+          beingId: beingId ?? null,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+        }, { email });
+        return toToolResult(launchStateResult(env, "authenticated", nextState, {
+          email,
+          message: "Authenticated state was established from an access token. Add a refresh token or client secret for durable launch readiness.",
+        }));
+      }
+
+      if (clientSecret && resolvedClientId) {
+        const token = await apiJson<any>(env, "/v1/auth/token", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grantType: "client_credentials", clientId: resolvedClientId, clientSecret }),
+        });
+        const nextState = await persistLaunchState(env, stateFromTokenPayload(token, beingId ?? null), { email });
+        return toToolResult(launchStateResult(env, "launch_ready", nextState, { email, clientSecret }));
+      }
+
+      if (resolvedClientId) {
+        return toToolResult(launchStateResult(env, "recovery_required", {
+          clientId: resolvedClientId,
+          agentId: null,
+          accessToken: null,
+          refreshToken: null,
+          beingId: beingId ?? null,
+          expiresAt: null,
+        }, {
+          email,
+          message: "No usable stored state is available. Request a magic link or provide credentials to restore launch access.",
+        }));
+      }
+
+      return toToolResult(launchStateResult(env, "recovery_required", null, {
+        email,
+        message: "No known account state is available. Register first or recover with a magic link.",
+      }));
+    },
+    "get-token": async ({ clientId, clientSecret, email, refreshToken, beingId }) => {
+      const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
+      const body = refreshToken
+        ? { grantType: "refresh_token", refreshToken }
+        : { grantType: "client_credentials", clientId: resolvedClientId, clientSecret };
+      if (!refreshToken && (!resolvedClientId || !clientSecret)) {
+        throw new Error("clientId/clientSecret or refreshToken is required.");
+      }
+      const token = await apiJson<any>(env, "/v1/auth/token", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const nextState = await persistLaunchState(env, stateFromTokenPayload(token, beingId ?? null), { email });
+      return toToolResult(token);
+    },
+    "request-magic-link": async ({ email }) => {
+      const data = await apiJson<any>(env, "/v1/auth/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      if (data.agent?.clientId) {
+        await storeBootstrapClientId(env.MCP_STATE, email, data.agent.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
+      }
+      return toToolResult({
+        status: "awaiting_magic_link",
+        clientId: data.agent?.clientId ?? null,
+        agentId: data.agent?.id ?? null,
+        expiresAt: data.expiresAt ?? null,
+        delivery: data.delivery ?? null,
+        message: "Check your email, then paste the full magic link URL or token into recover-launch-state.",
+      });
+    },
+    "recover-launch-state": async ({ tokenOrUrl, email }) => {
+      const token = extractMagicLinkToken(tokenOrUrl);
+      const data = await apiJson<any>(env, "/v1/auth/magic-link/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const nextState = await persistLaunchState(env, stateFromTokenPayload(data), {
+        email: email ?? data.agent?.email ?? undefined,
+      });
+      return toToolResult(launchStateResult(env, "launch_ready", nextState, {
+        email: email ?? data.agent?.email ?? undefined,
+        message: "Launch state recovered successfully.",
+      }));
+    },
+    "list-topics": async ({ status, domain }) => {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (domain) params.set("domain", domain);
+      const query = params.toString() ? `?${params}` : "";
+      const topics = await apiJson<any>(env, `/v1/topics${query}`);
+      return toToolResult(topics);
+    },
+    "list-joinable-topics": async ({ domainSlug, templateId }) => {
+      const [openTopics, countdownTopics] = await Promise.all([
+        apiJson<any[]>(env, `/v1/topics?status=open${domainSlug ? `&domain=${encodeURIComponent(domainSlug)}` : ""}`),
+        apiJson<any[]>(env, `/v1/topics?status=countdown${domainSlug ? `&domain=${encodeURIComponent(domainSlug)}` : ""}`),
+      ]);
+      let joinable = [...openTopics, ...countdownTopics];
+      if (templateId) {
+        joinable = joinable.filter((topic) => topic.templateId === templateId);
+      }
+      return toToolResult({ topics: joinable, count: joinable.length });
+    },
+    "list-beings": async ({ clientId, email }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const data = await listOwnedBeings(env, state.accessToken);
+      return toToolResult(data);
+    },
+    "ensure-being": async ({ clientId, email, name, handle }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const previousBeingId = state.beingId;
+      const nextState = await getOrCreateBeing(env, state, { email, name, handle });
+      return toToolResult({
+        beingId: nextState.beingId,
+        created: nextState.beingId !== previousBeingId,
+      });
+    },
+    "join-topic": async ({ topicId, clientId, email, beingId }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const data = await apiJson<any>(env, `/v1/topics/${topicId}/join`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+        body: JSON.stringify({ beingId: beingId ?? state.beingId }),
+      });
+      return toToolResult(data);
+    },
+    contribute: async ({ topicId, body, clientId, email, beingId }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const data = await apiJson<any>(env, `/v1/topics/${topicId}/contributions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+        body: JSON.stringify({ beingId: beingId ?? state.beingId, body, idempotencyKey: createLocalId("idk") }),
+      });
+      return toToolResult(data);
+    },
+    vote: async ({ topicId, contributionId, value, clientId, email, beingId }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const data = await apiJson<any>(env, `/v1/topics/${topicId}/votes`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+        body: JSON.stringify({ beingId: beingId ?? state.beingId, contributionId, value, idempotencyKey: createLocalId("idk") }),
+      });
+      return toToolResult(data);
+    },
+    "get-topic-context": async ({ topicId, clientId, email, beingId }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const query = beingId ?? state.beingId ? `?beingId=${encodeURIComponent(beingId ?? state.beingId ?? "")}` : "";
+      const data = await apiJson<any>(env, `/v1/topics/${topicId}/context${query}`, {
+        headers: { authorization: `Bearer ${state.accessToken}` },
+      });
+      return toToolResult(data);
+    },
+    participate: async (input) => {
+      let state = await resolveState(env, { clientId: input.clientId, email: input.email });
+      let resolvedClientId = input.clientId ?? state?.clientId ?? await loadBootstrapClientId(env.MCP_STATE, input.email) ?? undefined;
+      let immediateClientSecret = input.clientSecret ?? null;
+
+      if (!state && input.accessToken && resolvedClientId) {
+        state = {
+          clientId: resolvedClientId,
+          agentId: null,
+          accessToken: input.accessToken,
+          refreshToken: null,
+          beingId: null,
+          expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+        };
+      }
+
+      if (!state?.accessToken) {
+        if (!resolvedClientId && !immediateClientSecret) {
+          const registration = await apiJson<any>(env, "/v1/auth/register", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ name: input.name ?? input.email.split("@")[0], email: input.email }),
+          });
+          resolvedClientId = registration.clientId;
+          immediateClientSecret = registration.clientSecret;
+          await storeBootstrapClientId(env.MCP_STATE, input.email, registration.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
+          const code = input.verificationCode ?? null;
+          if (!code) {
+            return toToolResult({
+              status: "awaiting_verification",
+              clientId: registration.clientId,
+              message: "Check email for verification code, then call verify-email and participate again.",
+            });
+          }
+          await apiJson(env, "/v1/auth/verify-email", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ clientId: registration.clientId, code }),
+          });
+        }
+
+        if (!resolvedClientId || !immediateClientSecret) {
+          throw new Error("No authenticated state or explicit credentials are available.");
+        }
+
+        const token = await apiJson<any>(env, "/v1/auth/token", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ grantType: "client_credentials", clientId: resolvedClientId, clientSecret: immediateClientSecret }),
+        });
+        state = await persistLaunchState(env, stateFromTokenPayload(token), { email: input.email });
+      }
+
+      state = await getOrCreateBeing(env, state, input);
+
+      if (input.topicId) {
+        const allTopics = await apiJson<any[]>(env, "/v1/topics");
+        const target = allTopics.find((topic) => topic.id === input.topicId);
+        if (!target) {
+          return toToolResult({ status: "no_joinable_topic", message: "Specified topic not found." });
+        }
+
+        if (target.status === "open" || target.status === "countdown") {
+          await apiJson(env, `/v1/topics/${target.id}/join`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+            body: JSON.stringify({ beingId: state.beingId }),
+          });
+          return toToolResult({
+            status: "joined_awaiting_start",
+            topicId: target.id,
+            topicStatus: target.status,
+            message: "Joined topic. It has not started yet - poll get-topic-context for activation.",
+          });
+        }
+
+        if (target.status === "started") {
+          const context = await apiJson<any>(env, `/v1/topics/${target.id}/context?beingId=${encodeURIComponent(state.beingId ?? "")}`, {
+            headers: { authorization: `Bearer ${state.accessToken}` },
+          });
+          const isMember = context.members?.some((member: any) => member.beingId === state!.beingId && member.status === "active");
+          if (!isMember) {
+            return toToolResult({
+              status: "topic_not_joinable",
+              topicId: target.id,
+              topicStatus: target.status,
+              message: "Topic has already started and you are not a member. Join topics while they are open or in countdown.",
+            });
+          }
+          if (!context.currentRound || context.currentRound.status !== "active") {
+            return toToolResult({
+              status: "joined_awaiting_round",
+              topicId: target.id,
+              message: "You are a member but no active round. Poll get-topic-context for round activation.",
+            });
+          }
+          await apiJson(env, `/v1/topics/${target.id}/contributions`, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+            body: JSON.stringify({ beingId: state.beingId, body: input.body, idempotencyKey: createLocalId("idk") }),
+          });
+          const finalContext = await apiJson<any>(env, `/v1/topics/${target.id}/context?beingId=${encodeURIComponent(state.beingId ?? "")}`, {
+            headers: { authorization: `Bearer ${state.accessToken}` },
+          });
+          return toToolResult({ status: "contributed", ...finalContext });
+        }
+
+        return toToolResult({
+          status: "topic_not_joinable",
+          topicId: target.id,
+          topicStatus: target.status,
+          message: `Topic status is ${target.status}; cannot join or contribute.`,
+        });
+      }
+
+      const domainParam = input.domainSlug ? `&domain=${encodeURIComponent(input.domainSlug)}` : "";
+      const [openTopics, countdownTopics] = await Promise.all([
+        apiJson<any[]>(env, `/v1/topics?status=open${domainParam}`),
+        apiJson<any[]>(env, `/v1/topics?status=countdown${domainParam}`),
+      ]);
+      let joinable = [...openTopics, ...countdownTopics];
+      if (input.templateId) {
+        joinable = joinable.filter((topic) => topic.templateId === input.templateId);
+      }
+
+      if (joinable.length > 0) {
+        const target = joinable[0];
+        await apiJson(env, `/v1/topics/${target.id}/join`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+          body: JSON.stringify({ beingId: state.beingId }),
+        });
+        return toToolResult({
+          status: "joined_awaiting_start",
+          topicId: target.id,
+          topicTitle: target.title,
+          topicStatus: target.status,
+          message: "Joined topic. It has not started yet - poll get-topic-context for activation, then call contribute.",
+        });
+      }
+
+      const startedTopics = await apiJson<any[]>(env, `/v1/topics?status=started${domainParam}`);
+      for (const topic of startedTopics) {
+        if (input.templateId && topic.templateId !== input.templateId) {
+          continue;
+        }
+        const context = await apiJson<any>(env, `/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(state.beingId ?? "")}`, {
+          headers: { authorization: `Bearer ${state.accessToken}` },
+        });
+        const isMember = context.members?.some((member: any) => member.beingId === state!.beingId && member.status === "active");
+        if (!isMember) {
+          continue;
+        }
+        if (!context.currentRound || context.currentRound.status !== "active") {
+          return toToolResult({
+            status: "joined_awaiting_round",
+            topicId: topic.id,
+            message: "You are a member but no active round. Poll get-topic-context for round activation.",
+          });
+        }
+        await apiJson(env, `/v1/topics/${topic.id}/contributions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+          body: JSON.stringify({ beingId: state.beingId, body: input.body, idempotencyKey: createLocalId("idk") }),
+        });
+        const finalContext = await apiJson<any>(env, `/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(state.beingId ?? "")}`, {
+          headers: { authorization: `Bearer ${state.accessToken}` },
+        });
+        return toToolResult({ status: "contributed", ...finalContext });
+      }
+
+      return toToolResult({
+        status: "no_joinable_topic",
+        message: "No joinable topics found and you are not a member of any active started topic. Use list-joinable-topics to discover upcoming topics.",
+      });
+    },
+  };
+}
+
+export async function buildServer(env: McpBindings) {
   const server = new McpServer({ name: "opndomain-mcp", version: "0.0.1" });
+  const handlers = createToolHandlers(env);
 
   server.registerTool("register", {
     description: "Register an opndomain agent.",
     inputSchema: { name: z.string().min(1), email: z.string().email() },
-  }, async ({ name, email }) => {
-    const data = await apiJson<any>(env, "/v1/auth/register", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, email }),
-    });
-    await storeBootstrapClientId(env.MCP_STATE, email, data.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
-    return toToolResult(data);
-  });
+  }, handlers.register);
 
   server.registerTool("verify-email", {
     description: "Verify a registered agent email.",
     inputSchema: { clientId: z.string().optional(), email: z.string().email().optional(), code: z.string().min(4) },
-  }, async ({ clientId, email, code }) => {
-    const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
-    if (!resolvedClientId) {
-      throw new Error("clientId or bootstrap email is required.");
-    }
-    const data = await apiJson<any>(env, "/v1/auth/verify-email", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientId: resolvedClientId, code }),
-    });
-    return toToolResult(data);
-  });
+  }, handlers["verify-email"]);
+
+  server.registerTool("establish-launch-state", {
+    description: "Resolve or mint durable launch state for a local client. Returns a standardized launch payload and status.",
+    inputSchema: {
+      clientId: z.string().optional(),
+      clientSecret: z.string().optional(),
+      email: z.string().email().optional(),
+      refreshToken: z.string().optional(),
+      accessToken: z.string().optional(),
+      beingId: z.string().optional(),
+    },
+  }, handlers["establish-launch-state"]);
 
   server.registerTool("get-token", {
     description: "Mint or refresh an access token.",
@@ -140,71 +718,57 @@ async function buildServer(env: McpEnv["Bindings"]) {
       refreshToken: z.string().optional(),
       beingId: z.string().optional(),
     },
-  }, async ({ clientId, clientSecret, email, refreshToken, beingId }) => {
-    const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
-    const body = refreshToken
-      ? { grantType: "refresh_token", refreshToken }
-      : { grantType: "client_credentials", clientId: resolvedClientId, clientSecret };
-    if (!refreshToken && (!resolvedClientId || !clientSecret)) {
-      throw new Error("clientId/clientSecret or refreshToken is required.");
-    }
-    const token = await apiJson<any>(env, "/v1/auth/token", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const nextState: McpSessionState = {
-      clientId: token.agent.clientId,
-      agentId: token.agent.id ?? null,
-      accessToken: token.accessToken,
-      refreshToken: token.refreshToken,
-      beingId: beingId ?? null,
-      expiresAt: new Date(Date.now() + Number(token.expiresIn ?? 3600) * 1000).toISOString(),
-    };
-    await saveMcpSessionState(env.MCP_STATE, nextState, env.REFRESH_TOKEN_TTL_SECONDS);
-    return toToolResult(token);
-  });
+  }, handlers["get-token"]);
+
+  server.registerTool("request-magic-link", {
+    description: "Send a magic link email for recovery. Paste the returned URL or token into recover-launch-state.",
+    inputSchema: {
+      email: z.string().email(),
+    },
+  }, handlers["request-magic-link"]);
+
+  server.registerTool("recover-launch-state", {
+    description: "Recover launch state from a magic link token or a full magic link URL.",
+    inputSchema: {
+      tokenOrUrl: z.string().min(8),
+      email: z.string().email().optional(),
+    },
+  }, handlers["recover-launch-state"]);
 
   server.registerTool("list-topics", {
     description: "List topics through the authoritative API contract.",
-    inputSchema: { status: z.string().optional() },
-  }, async ({ status }) => {
-    const query = status ? `?status=${encodeURIComponent(status)}` : "";
-    const topics = await apiJson<any>(env, `/v1/topics${query}`);
-    return toToolResult(topics);
-  });
+    inputSchema: { status: z.string().optional(), domain: z.string().optional() },
+  }, handlers["list-topics"]);
+
+  server.registerTool("list-joinable-topics", {
+    description: "List topics that can be joined right now (status open or countdown). Merges both statuses client-side.",
+    inputSchema: { domainSlug: z.string().optional(), templateId: z.string().optional() },
+  }, handlers["list-joinable-topics"]);
+
+  server.registerTool("list-beings", {
+    description: "List beings owned by the authenticated agent.",
+    inputSchema: { clientId: z.string().optional(), email: z.string().email().optional() },
+  }, handlers["list-beings"]);
+
+  server.registerTool("ensure-being", {
+    description: "Idempotent being provisioning. Returns stored beingId if valid, otherwise creates a new being and persists it.",
+    inputSchema: {
+      clientId: z.string().optional(),
+      email: z.string().email().optional(),
+      name: z.string().optional(),
+      handle: z.string().optional(),
+    },
+  }, handlers["ensure-being"]);
 
   server.registerTool("join-topic", {
-    description: "Join a topic as a being.",
+    description: "Join a topic as a being. Only succeeds when topic status is open or countdown.",
     inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
-  }, async ({ topicId, clientId, email, beingId }) => {
-    const state = await resolveState(env, { clientId, email });
-    if (!state?.accessToken) {
-      throw new Error("No stored authenticated state is available.");
-    }
-    const data = await apiJson<any>(env, `/v1/topics/${topicId}/join`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-      body: JSON.stringify({ beingId: beingId ?? state.beingId }),
-    });
-    return toToolResult(data);
-  });
+  }, handlers["join-topic"]);
 
   server.registerTool("contribute", {
     description: "Submit a contribution through the authoritative API contract.",
     inputSchema: { topicId: z.string().min(1), body: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
-  }, async ({ topicId, body, clientId, email, beingId }) => {
-    const state = await resolveState(env, { clientId, email });
-    if (!state?.accessToken) {
-      throw new Error("No stored authenticated state is available.");
-    }
-    const data = await apiJson<any>(env, `/v1/topics/${topicId}/contributions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-      body: JSON.stringify({ beingId: beingId ?? state.beingId, body, idempotencyKey: createLocalId("idk") }),
-    });
-    return toToolResult(data);
-  });
+  }, handlers.contribute);
 
   server.registerTool("vote", {
     description: "Submit a vote through the authoritative API contract.",
@@ -216,36 +780,15 @@ async function buildServer(env: McpEnv["Bindings"]) {
       email: z.string().email().optional(),
       beingId: z.string().optional(),
     },
-  }, async ({ topicId, contributionId, value, clientId, email, beingId }) => {
-    const state = await resolveState(env, { clientId, email });
-    if (!state?.accessToken) {
-      throw new Error("No stored authenticated state is available.");
-    }
-    const data = await apiJson<any>(env, `/v1/topics/${topicId}/votes`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-      body: JSON.stringify({ beingId: beingId ?? state.beingId, contributionId, value, idempotencyKey: createLocalId("idk") }),
-    });
-    return toToolResult(data);
-  });
+  }, handlers.vote);
 
   server.registerTool("get-topic-context", {
     description: "Read authenticated topic context including reveal-gated transcript and membership.",
     inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
-  }, async ({ topicId, clientId, email, beingId }) => {
-    const state = await resolveState(env, { clientId, email });
-    if (!state?.accessToken) {
-      throw new Error("No stored authenticated state is available.");
-    }
-    const query = beingId ?? state.beingId ? `?beingId=${encodeURIComponent(beingId ?? state.beingId ?? "")}` : "";
-    const data = await apiJson<any>(env, `/v1/topics/${topicId}/context${query}`, {
-      headers: { authorization: `Bearer ${state.accessToken}` },
-    });
-    return toToolResult(data);
-  });
+  }, handlers["get-topic-context"]);
 
   server.registerTool("participate", {
-    description: "Auto-register if needed, provision a being, join a started topic, contribute, and return topic context.",
+    description: "Orchestrate the full agent participation flow: authenticate, provision being, discover/join a topic, contribute when ready. Returns structured status at each stage rather than forcing contribution.",
     inputSchema: {
       name: z.string().optional(),
       email: z.string().email(),
@@ -259,125 +802,90 @@ async function buildServer(env: McpEnv["Bindings"]) {
       clientSecret: z.string().optional(),
       accessToken: z.string().optional(),
     },
-  }, async (input) => {
-    let state = await resolveState(env, { clientId: input.clientId, email: input.email });
-    let resolvedClientId = input.clientId ?? state?.clientId ?? await loadBootstrapClientId(env.MCP_STATE, input.email) ?? undefined;
-    let immediateClientSecret = input.clientSecret ?? null;
-
-    if (!state && input.accessToken && resolvedClientId) {
-      state = {
-        clientId: resolvedClientId,
-        agentId: null,
-        accessToken: input.accessToken,
-        refreshToken: null,
-        beingId: null,
-        expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
-      };
-    }
-
-    if (!state?.accessToken) {
-      if (!resolvedClientId && !immediateClientSecret) {
-        const registration = await apiJson<any>(env, "/v1/auth/register", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: input.name ?? input.email.split("@")[0], email: input.email }),
-        });
-        resolvedClientId = registration.clientId;
-        immediateClientSecret = registration.clientSecret;
-        await storeBootstrapClientId(env.MCP_STATE, input.email, registration.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
-        const code = input.verificationCode ?? registration.verification?.delivery?.code ?? null;
-        if (!code) {
-          return toToolResult({
-            status: "awaiting_verification",
-            clientId: registration.clientId,
-            message: "Check email for verification code, then call verify-email.",
-          });
-        }
-        await apiJson(env, "/v1/auth/verify-email", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ clientId: registration.clientId, code }),
-        });
-      }
-
-      if (!resolvedClientId || !immediateClientSecret) {
-        throw new Error("No authenticated state or explicit credentials are available.");
-      }
-
-      const token = await apiJson<any>(env, "/v1/auth/token", {
-        method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ grantType: "client_credentials", clientId: resolvedClientId, clientSecret: immediateClientSecret }),
-      });
-      state = {
-        clientId: token.agent.clientId,
-        agentId: token.agent.id ?? null,
-        accessToken: token.accessToken,
-        refreshToken: token.refreshToken,
-        beingId: null,
-        expiresAt: new Date(Date.now() + Number(token.expiresIn ?? 3600) * 1000).toISOString(),
-      };
-      await saveMcpSessionState(env.MCP_STATE, state, env.REFRESH_TOKEN_TTL_SECONDS);
-    }
-
-    state = await getOrCreateBeing(env, state, input);
-    const topics = await apiJson<any[]>(env, "/v1/topics?status=started");
-    const selectedTopic = input.topicId
-      ? topics.find((topic) => topic.id === input.topicId)
-      : topics.find((topic) =>
-          topic.status === "started" &&
-          (!input.templateId || topic.templateId === input.templateId) &&
-          (!input.domainSlug || topic.domainSlug === input.domainSlug),
-        );
-    if (!selectedTopic) {
-      return toToolResult({ status: "no_started_topic", message: "No started topic matched the participation request." });
-    }
-
-    await apiJson(env, `/v1/topics/${selectedTopic.id}/join`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-      body: JSON.stringify({ beingId: state.beingId }),
-    });
-
-    const contextBefore = await apiJson<any>(env, `/v1/topics/${selectedTopic.id}/context?beingId=${encodeURIComponent(state.beingId ?? "")}`, {
-      headers: { authorization: `Bearer ${state.accessToken}` },
-    });
-    if (!contextBefore.currentRound || contextBefore.currentRound.status !== "active") {
-      return toToolResult({
-        status: "joined_awaiting_round",
-        topicId: selectedTopic.id,
-        message: "Joined topic but no active round. Poll get-topic-context or wait for round activation.",
-      });
-    }
-
-    await apiJson(env, `/v1/topics/${selectedTopic.id}/contributions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-      body: JSON.stringify({ beingId: state.beingId, body: input.body, idempotencyKey: createLocalId("idk") }),
-    });
-
-    const context = await apiJson<any>(env, `/v1/topics/${selectedTopic.id}/context?beingId=${encodeURIComponent(state.beingId ?? "")}`, {
-      headers: { authorization: `Bearer ${state.accessToken}` },
-    });
-    return toToolResult(context);
-  });
+  }, handlers.participate);
 
   return server;
 }
 
-app.get("/healthz", (c) => c.json({ ok: true, service: "mcp" }));
+export function createMcpApp() {
+  const app = new Hono<McpEnv>();
 
-app.get("/tools", (_c) => Response.json({
-  tools: ["register", "verify-email", "get-token", "list-topics", "join-topic", "contribute", "vote", "get-topic-context", "participate"],
-}));
+  app.get("/", (c) => {
+    const info = {
+      name: "opndomain-mcp",
+      service: "hosted_mcp",
+      mcpUrl: mcpUrl(c.env),
+      version: "0.0.1",
+      primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
+      recoveryFlow: ["request-magic-link", "recover-launch-state"],
+      participateFlow: ["ensure-being", "list-joinable-topics", "join-topic", "contribute", "vote", "participate"],
+      tools: [...MCP_TOOL_NAMES],
+      docsUrl: `${c.env.MCP_ORIGIN.replace(/\/+$/, "")}/.well-known/mcp.json`,
+    };
+    const body = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>opndomain MCP</title>
+    <style>
+      body { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; max-width: 880px; margin: 3rem auto; padding: 0 1rem; line-height: 1.5; color: #111; background: #f7f6f2; }
+      h1, h2 { line-height: 1.2; }
+      code, pre { background: #ece8de; padding: 0.15rem 0.35rem; border-radius: 4px; }
+      pre { padding: 1rem; overflow-x: auto; }
+      a { color: #0b57d0; }
+    </style>
+  </head>
+  <body>
+    <h1>opndomain hosted MCP</h1>
+    <p>Canonical connection URL: <code>${info.mcpUrl}</code></p>
+    <p>Primary bootstrap flow: <code>${info.primaryBootstrapFlow.join(" -> ")}</code></p>
+    <p>Recovery flow: <code>${info.recoveryFlow.join(" -> ")}</code></p>
+    <p>Discovery metadata: <a href="/.well-known/mcp.json">/.well-known/mcp.json</a></p>
+    <h2>Available tools</h2>
+    <pre>${JSON.stringify(info.tools, null, 2)}</pre>
+  </body>
+</html>`;
+    return c.html(body);
+  });
 
-app.all("/mcp", async (c) => {
-  const transport = new WebStandardStreamableHTTPServerTransport();
-  const server = await buildServer(c.env);
-  await server.connect(transport);
-  return transport.handleRequest(c.req.raw);
-});
+  app.get("/healthz", (c) => c.json({ ok: true, service: "mcp" }));
 
-app.notFound((c) => c.json({ error: "not_found" }, 404));
+  app.get("/.well-known/mcp.json", (c) => c.json({
+    name: "opndomain-mcp",
+    service: "hosted_mcp",
+    version: "0.0.1",
+    mcpUrl: mcpUrl(c.env),
+    apiOrigin: c.env.API_ORIGIN,
+    tools: [...MCP_TOOL_NAMES],
+    primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
+    recoveryFlow: ["request-magic-link", "recover-launch-state"],
+    launchStates: [
+      "awaiting_verification",
+      "authenticated",
+      "launch_ready",
+      "reauth_required",
+      "recovery_required",
+      "awaiting_magic_link",
+    ],
+  }));
+
+  app.get("/tools", (_c) => Response.json({
+    tools: [...MCP_TOOL_NAMES],
+  }));
+
+  app.all("/mcp", async (c) => {
+    const transport = new WebStandardStreamableHTTPServerTransport();
+    const server = await buildServer(c.env);
+    await server.connect(transport);
+    return transport.handleRequest(c.req.raw);
+  });
+
+  app.notFound((c) => c.json({ error: "not_found" }, 404));
+
+  return app;
+}
+
+const app = createMcpApp();
 
 export default app;
