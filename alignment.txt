@@ -1,0 +1,491 @@
+ Phases 1-3 Audit: Alignment vs. Authority Docs
+
+ Context
+
+ This audit cross-references the current implementation in D:\opndomain\packages\ against the five authority documents:
+  SCHEMA-CONTRACT.md, LAUNCH-CORE.md, IDEAS-BANK.md, REBUILD-CONTRACT.md, and PORTING-GUIDE.md. The goal is to identify
+  where implementation aligns with spec and where it has drifted.
+
+ ---
+ PHASE 1: Monorepo & Project Setup
+
+ Aligned
+
+ ┌──────────────────────────────────────────────────────────────────────────┬────────┐
+ │                                  Check                                   │ Status │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ 4-package monorepo (api, router, mcp, shared)                            │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ pnpm workspaces                                                          │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Normalized naming throughout (topic, contribution, domain, being, agent) │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ No legacy residue (no arena_*, being_channel_*, store*)                  │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ TypeScript strict, shared path alias @opndomain/shared                   │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Wrangler configs for 3 workers (api, router, mcp)                        │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ D1, KV, R2, Durable Object bindings declared                             │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ updated_at on every mutable table + auto-triggers                        │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Service binding (ROUTER_SERVICE) declared                                │ PASS   │
+ └──────────────────────────────────────────────────────────────────────────┴────────┘
+
+ Drift: None detected
+
+ Phase 1 is clean.
+
+ ---
+ PHASE 2: Database Schema + Auth + CRUD
+
+ Aligned
+
+ ┌───────────────────────────────────────────────────────────────────────────────────┬─────────────────────────────┐
+ │                                       Check                                       │           Status            │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ All 15 launch-core tables present with correct normalized names                   │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ agents, beings, being_capabilities, sessions                                      │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ domains, topics, rounds, round_configs                                            │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ contributions, contribution_scores                                                │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ votes, vote_reliability, domain_reputation                                        │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ verdicts, policy_settings, text_restrictions                                      │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ domain_daily_rollups, topic_artifacts, topic_members                              │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Plural table names, domain-language-first                                         │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ contribution_scores has all canonical columns (substance_score, relevance,        │ PASS                        │
+ │ novelty, reframe, role_bonus, initial_score, final_score, shadow_final_score)     │                             │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Compatibility mirrors (heuristic_score, semantic_score, live_score, shadow_score) │ PASS                        │
+ │  present but not source of truth                                                  │                             │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ OAuth 2.1 client credentials flow                                                 │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ RS256 JWT (issuer/audience = https://api.opndomain.com)                           │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Rate limits: 5 reg/hr, 30 token/hr per IP                                         │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Token TTLs: access 1h, refresh 30d                                                │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Session cookie: opn_session, .opndomain.com, 7d, Lax                              │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Scopes: web_session, agent_refresh                                                │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Email verify flow: code → supervised trust tier                                   │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Being trust tier cascades on agent email verification                             │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ 6 topic templates stored as data (debate_v1/v2, research, deep, socratic, chaos)  │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Template round counts match docs (7, 5, 8, 11, 7, 1)                              │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ 6 round kinds match (propose, critique, refine, synthesize, predict, vote)        │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Cadence families (scheduled, quorum, rolling)                                     │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Cadence presets (3h, 9h, 24h)                                                     │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Topic state machine (open, countdown, started, stalled, closed)                   │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │                                                                                   │ PASS (explicit              │
+ │ Phase 2 round execution deferred to deadline_only                                 │ phase2Execution             │
+ │                                                                                   │ annotations)                │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Enrollment fallback chain schema defined                                          │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ Matchmaking cron: */5 * * * *                                                     │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ min_trust_tier on topics, default supervised                                      │ PASS                        │
+ ├───────────────────────────────────────────────────────────────────────────────────┼─────────────────────────────┤
+ │ 5 trust tiers in schema (unverified, supervised, verified, established, trusted)  │ PASS                        │
+ └───────────────────────────────────────────────────────────────────────────────────┴─────────────────────────────┘
+
+ Drift
+
+ D1. topics table missing quorum-family columns
+
+ Spec (LAUNCH-CORE.md): Topics need min_distinct_participants (default 3) and countdown_seconds for quorum cadence.
+ Implementation: These columns don't exist in topics. The constant DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS = 3 exists
+ in shared but has nowhere to persist per-topic.
+ Impact: Medium. All quorum topics will use a hardcoded default; per-topic override is impossible.
+ Fix: Add min_distinct_participants INTEGER DEFAULT 3 and countdown_seconds INTEGER to topics.
+
+ D2. votes table column naming mismatch
+
+ Spec (SCHEMA-CONTRACT.md): voter (being_id), target_message/target_contribution (contribution_id), direction (-1, 0, 1
+  numeric scale), weight (computed).
+ Implementation: voter_being_id, contribution_id, value TEXT (enum "up"/"down"), weighted_value REAL.
+ Impact: Medium. Column names differ from spec. Text enum value loses the 0/neutral direction the spec defines.
+ weighted_value vs weight is a naming divergence.
+ Fix: Rename to match spec or update SCHEMA-CONTRACT to ratify current names. Add neutral vote support if the 0
+ direction matters.
+
+ D3. domain_reputation column naming mismatch
+
+ Spec (SCHEMA-CONTRACT.md): score, consistency, contribution_count, variance.
+ Implementation: average_score, consistency_score, sample_count, m2 (Welford variance accumulator), decayed_score.
+ Impact: Low-Medium. The implementation actually has better columns (Welford m2 enables online variance; decayed_score
+ is pre-computed). But the names don't match the spec.
+ Fix: Update SCHEMA-CONTRACT to ratify the improved column set, or rename. The Welford approach is a design win per
+ WORKING-TRUTH.md.
+
+ D4. email_verifications table not in SCHEMA-CONTRACT
+
+ Spec: Not mentioned in the 15-table launch-core set.
+ Implementation: Created in 002_phase2_integrity.sql to support the auth email verification flow.
+ Impact: Low. This table is necessary for the auth flow the spec requires. It's an omission in the spec, not an
+ invention.
+ Fix: Add email_verifications to SCHEMA-CONTRACT.md as an identity/auth support table.
+
+ D5. Scoring profile values don't match docs
+
+ Spec (IDEAS-BANK.md): 4 scoring profiles: adversarial, exploratory, dialectical, unscored.
+ Implementation (templates.ts): ScoringProfileSchema = ["balanced", "debate", "research", "adversarial",
+ "exploratory"].
+ - debate_v1 → "debate" (spec: "adversarial")
+ - socratic → "balanced" (spec: "dialectical")
+ - chaos → "exploratory" (spec: "unscored")
+ - research/deep → "research" (spec: "exploratory")
+
+ Impact: High when scoring profiles are wired in Phase 4+. The weight adjustments in IDEAS-BANK are keyed on
+ adversarial/exploratory/dialectical/unscored. If code uses different keys, the profile lookup will break or produce
+ wrong weights.
+ Fix: Align enum values to IDEAS-BANK exactly: adversarial, exploratory, dialectical, unscored. Update template
+ assignments accordingly.
+
+ D6. Cadence presets lose min_duration
+
+ Spec (IDEAS-BANK.md): Three values per preset: min_duration, response_window, vote_window.
+ - 3h: 900s / 3600s / 1800s
+ - 9h: 1800s / 10800s / 3600s
+ - 24h: 3600s / 28800s / 10800s
+
+ Implementation: Collapses to two: roundDurationMinutes and voteWindowMinutes.
+ Impact: Low-Medium. min_duration controls minimum elapsed time before a round can complete even if contribution
+ criteria are met. Without it, aggressive completion may close rounds too fast.
+ Fix: Add minDurationSeconds to cadence preset shape. Wire into round advancement logic.
+
+ ---
+ PHASE 3: Contribution Ingest, Scoring, Guardrails, Buffering
+
+ Aligned
+
+ ┌──────────────────────────────────────────────────────────────────────────────────────────────────────┬────────┐
+ │                                                Check                                                 │ Status │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Guardrail pipeline: sanitize → risk score → decision/visibility                                      │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Guardrail thresholds: <35 allow, 35-59 queue, 60-84 quarantine, 85+ block                            │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Visibility mapping: allow→normal, queue→low_confidence, quarantine→quarantined                       │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Restriction precedence: mute/read_only block pre-scoring, queue raises floor                         │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Block always wins over restriction                                                                   │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ 10-step sanitization pipeline (NFKC, control chars, hidden Unicode, etc.)                            │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Substance formula matches IDEAS-BANK exactly                                                         │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Sentence contribution scores (12/17/20/22/23/24)                                                     │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Unique term ratio (cap 20), specificity (cap 30), evidence (5pts, cap 20), vagueness (10pts, cap 30) │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Density normalizer: max(0.72, sqrt(80/wordCount)) for wordCount > 80                                 │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Role detection: 5 families (critique/evidence/synthesis/question/agreement)                          │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Role bonuses: synthesis=20, critique=14, evidence=12, claim/question=6, agreement/echo/other=0       │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Echo detection: role=agreement AND substance<45                                                      │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Meta detection: >=2 refusal pattern matches                                                          │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Echo penalties: live low=0.5 mid=0.72, shadow=0.55                                                   │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Meta penalties: live=0.12, shadow=0.10                                                               │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Agreement novelty dampening: live 0.62/0.78/0.92, shadow 0.58/0.74/0.90                              │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Semantic scoring via Workers AI embeddings (relevance, novelty, reframe)                             │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Score versions: live=6, shadow=7                                                                     │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ DO hot-path buffering (15s flush, 60s idle check, 300s timeout, 80 batch)                            │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Idempotency keys (24h retention)                                                                     │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Snapshot sync (transcript before state write-order invariant)                                        │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Snapshot outputs: topics/{id}/transcript.json, topics/{id}/state.json, curated/open.json             │ PASS   │
+ ├──────────────────────────────────────────────────────────────────────────────────────────────────────┼────────┤
+ │ Contribution body max 6000 chars, idempotency key 8-120 chars                                        │ PASS   │
+ └──────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┘
+
+ Drift
+
+ D7. No composite initial_score / final_score computation
+
+ Spec (IDEAS-BANK.md): Phase 3 should compute:
+ initial = relevance × w.relevance + novelty × w.novelty + reframe × w.reframe
+         + substance × w.substance + roleBonus × w.role
+ With 6 round-type-specific weight profiles (propose, critique, synthesize, predict, vote, default) and
+ without-semantics fallback (substance × 0.82 + roleBonus × 0.18 live; × 0.78 + × 0.22 shadow).
+
+ Implementation: scoreContribution() returns raw component scores (substance, role, semantic dimensions) and
+ multipliers but never computes initial_score. The contribution_scores table columns initial_score, final_score,
+ shadow_initial_score, shadow_final_score are schema'd but never written.
+
+ Impact: Critical. Without initial_score, the scoring pipeline produces components but no composite. Downstream
+ consumers (round advancement, reranking by selection_score, reputation updates) have nothing to read.
+ Fix: Implement the composite formula with round-type weight lookup. Port the 6 weight profiles from IDEAS-BANK.md
+ Table "Live v6 Round-Type Weight Profiles."
+
+ D8. No round-type weight profiles
+
+ Spec (IDEAS-BANK.md): 6 weight profiles (propose, critique, synthesize, predict, vote, default), each distributing
+ weights across relevance/novelty/reframe/substance/role. Plus shadow v7 variants.
+ Implementation: Completely absent. No weight profile data structure or lookup anywhere in the codebase.
+ Impact: Critical. Blocks D7 above. Without weights, composite scores can't be computed.
+ Fix: Port the weight profile tables from IDEAS-BANK.md as a data constant in shared or scoring.
+
+ D9. No scoring profile adjustments
+
+ Spec (IDEAS-BANK.md): 4 template-level scoring profiles modify weight distributions:
+ - adversarial: boost reframe on critique/vote, boost substance elsewhere, voteInfluence ×1.25
+ - exploratory: boost novelty, reduce reframe, voteInfluence ×0.8
+ - dialectical: boost reframe, reduce substance, voteInfluence ×0.7
+ - unscored: boost substance to 0.42, flatten, voteInfluence ×0.25
+
+ Implementation: Template definitions assign scoring profiles (D5 naming issues aside) but no code reads them or
+ adjusts weights.
+ Impact: High. All templates will score identically regardless of profile until this lands.
+ Fix: Implement profile adjustment layer that modifies base weight profiles per template's scoring profile.
+
+ D10. No role-round alignment multipliers
+
+ Spec (IDEAS-BANK.md): Standard and Socratic alignment tables:
+ - Standard: propose+evidence=1.08, critique+critique=1.10, synthesize+synthesis=1.12, predict+question/evidence=1.04,
+ any+agreement=0.92, vote+question=1.02
+ - Socratic: different multiplier set (e.g., synthesize+synthesis=1.15, agreement/echo=0.88)
+
+ Implementation: Absent.
+ Impact: Medium. Alignment multipliers are a refinement on the composite score. Without them, all role-round
+ combinations are weighted equally.
+ Fix: Port alignment tables as data constants. Apply as a multiplier on the initial_score computation.
+
+ D11. No reputation boost on initial score
+
+ Spec (IDEAS-BANK.md): initial * (1 + reputationFactor * 0.2), capped at 20% boost.
+ Implementation: REPUTATION_BOOST_CAP = 0.2 constant exists but no code applies it during scoring.
+ Impact: Medium. Reputation has no effect on scores until this is wired.
+ Fix: After initial_score computation, apply reputation boost. This requires reading domain_reputation during scoring.
+
+ D12. RiskFamily enum drift
+
+ Spec (IDEAS-BANK.md guardrail families): 8 families: vote_manipulation, consensus_laundering, authority_spoofing,
+ fake_evidence, cross_turn_steering, off_platform_coordination, transcript_stuffing, repeated_suspicion.
+ Implementation: Has prompt_wrapper instead of repeated_suspicion.
+ Impact: Low. The risk pattern detection still works; this is a naming inconsistency.
+ Fix: Rename prompt_wrapper → repeated_suspicion in the enum, or add both if they represent distinct concepts. Check
+ risk-patterns.ts to see which patterns map to which family.
+
+ D13. Semantic scoring constants may need verification
+
+ Implementation has several semantic constants (SEMANTIC_ON_TOPIC_COSINE_WEIGHT=0.58,
+ SEMANTIC_ON_TOPIC_OVERLAP_WEIGHT=0.42, SEMANTIC_ON_TOPIC_EXPONENT=0.86, etc.) that I could not find explicit
+ counterparts for in the authority docs.
+ Impact: Low-Medium. These may be ported from legacy code (which is acceptable per REBUILD-CONTRACT) or invented.
+ Fix: Verify against legacy implementation. If ported, document provenance. If invented, mark as assumptions.
+
+ ---
+ Summary: Severity Matrix
+
+ ┌─────┬───────────────────────────────────────────────────────────────────────────────┬──────────┬───────┐
+ │ ID  │                                     Issue                                     │ Severity │ Phase │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D7  │ No composite initial_score/final_score computation                            │ CRITICAL │ 3     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D8  │ No round-type weight profiles                                                 │ CRITICAL │ 3     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D9  │ No scoring profile adjustments (adversarial/exploratory/dialectical/unscored) │ HIGH     │ 3     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D5  │ Scoring profile enum values don't match docs                                  │ HIGH     │ 2     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D10 │ No role-round alignment multipliers                                           │ MEDIUM   │ 3     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D11 │ No reputation boost on initial score                                          │ MEDIUM   │ 3     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D1  │ topics table missing min_distinct_participants, countdown_seconds             │ MEDIUM   │ 2     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D2  │ votes table column naming mismatch (value/direction, voter_being_id/voter)    │ MEDIUM   │ 2     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D3  │ domain_reputation column naming mismatch                                      │ LOW-MED  │ 2     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D6  │ Cadence presets missing min_duration                                          │ LOW-MED  │ 2     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D4  │ email_verifications not in SCHEMA-CONTRACT                                    │ LOW      │ 2     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D12 │ RiskFamily prompt_wrapper vs repeated_suspicion                               │ LOW      │ 3     │
+ ├─────┼───────────────────────────────────────────────────────────────────────────────┼──────────┼───────┤
+ │ D13 │ Semantic scoring constants unverified provenance                              │ LOW-MED  │ 3     │
+ └─────┴───────────────────────────────────────────────────────────────────────────────┴──────────┴───────┘
+
+ ---
+ Decisions (Resolved)
+
+ ┌────────────────────────────────────┬───────────────────────────────────────────────────────────────────────┐
+ │              Decision              │                              Resolution                               │
+ ├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ D7+D8: Composite score computation │ Fix in Phase 3 — implement weight profiles + composite formula now    │
+ ├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ D5: Scoring profile naming         │ Align code to docs — use adversarial/exploratory/dialectical/unscored │
+ ├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ D2: Votes schema                   │ Align to spec — INTEGER direction (-1, 0, 1)                          │
+ ├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ D3: domain_reputation naming       │ Update spec — ratify Welford implementation as the better design      │
+ └────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
+
+ ---
+ Fix Plan
+
+ Fixes are ordered by dependency. Schema changes first (they unblock everything), then scoring engine, then doc
+ updates.
+
+ Step 1: Schema Migration (003_phase3_alignment.sql)
+
+ File: packages/api/src/db/003_phase3_alignment.sql
+
+ 1. D1 — Add quorum columns to topics:
+ ALTER TABLE topics ADD COLUMN min_distinct_participants INTEGER NOT NULL DEFAULT 3;
+ ALTER TABLE topics ADD COLUMN countdown_seconds INTEGER;
+ 2. D2 — Fix votes table:
+   - D1 SQLite doesn't support ALTER COLUMN, so we need to recreate the table:
+   - Replace value TEXT → direction INTEGER NOT NULL (-1, 0, 1 CHECK constraint)
+   - Replace weighted_value REAL → weight REAL
+   - Keep voter_being_id as-is (more explicit than bare voter), update SCHEMA-CONTRACT instead
+   - Recreate unique index on (round_id, contribution_id, voter_being_id)
+
+ Step 2: Scoring Profile Enum Alignment (D5)
+
+ Files:
+ - packages/shared/src/templates.ts — Change ScoringProfileSchema to ["adversarial", "exploratory", "dialectical",
+ "unscored"]
+ - Update template assignments:
+   - debate_v1: "adversarial" (was "debate")
+   - debate_v2: "adversarial" (already correct)
+   - research: "exploratory" (was "research")
+   - deep: "exploratory" (was "research")
+   - socratic: "dialectical" (was "balanced")
+   - chaos: "unscored" (was "exploratory")
+
+ Step 3: Round-Type Weight Profiles (D8)
+
+ File: packages/shared/src/weight-profiles.ts (new — cross-package data constant)
+
+ Port from IDEAS-BANK.md:
+
+ // Live v6 Round-Type Weight Profiles
+ export const LIVE_WEIGHT_PROFILES = {
+   propose:    { relevance: 0.22, novelty: 0.18, reframe: 0.14, substance: 0.31, role: 0.15 },
+   critique:   { relevance: 0.20, novelty: 0.12, reframe: 0.20, substance: 0.32, role: 0.16 },
+   synthesize: { relevance: 0.24, novelty: 0.10, reframe: 0.24, substance: 0.25, role: 0.17 },
+   predict:    { relevance: 0.21, novelty: 0.14, reframe: 0.18, substance: 0.29, role: 0.18 },
+   vote:       { relevance: 0.20, novelty: 0.16, reframe: 0.16, substance: 0.31, role: 0.17 },
+   default:    { relevance: 0.20, novelty: 0.18, reframe: 0.15, substance: 0.32, role: 0.15 },
+ } as const;
+ // Shadow v7 variants (shift ~2-4 from substance toward role)
+
+ Also port:
+ - Without-semantics fallback weights (live: 0.82/0.18, shadow: 0.78/0.22)
+ - Scoring profile adjustments (adversarial/exploratory/dialectical/unscored weight overrides + voteInfluence
+ multipliers)
+ - Role-round alignment multipliers (standard + socratic tables)
+
+ Step 4: Composite Score Computation (D7, D9, D10, D11)
+
+ File: packages/api/src/lib/scoring/composite.ts (new)
+
+ Implement computeCompositeScore():
+ 1. Look up base weight profile by round kind (Step 3 data)
+ 2. Apply scoring profile adjustments (D9) — modify weights based on template's scoring profile
+ 3. Apply role-round alignment multiplier (D10) — multiply initial by alignment factor
+ 4. Compute initial_score:
+   - With semantics: relevance×w.r + novelty×w.n + reframe×w.rf + substance×w.s + roleBonus×w.role
+   - Without semantics fallback: substance×0.82 + roleBonus×0.18 (live), ×0.78 + ×0.22 (shadow)
+ 5. Apply echo/meta/agreement multipliers (already computed in scoreContribution)
+ 6. Apply reputation boost (D11): initial × (1 + reputationFactor × 0.2), capped at 20%
+ 7. Set final_score = initial_score (vote blending deferred to Phase 4)
+ 8. Compute shadow variants in parallel using shadow weight profiles
+
+ Integrate into: packages/api/src/lib/scoring/index.ts — call computeCompositeScore() after scoreContribution() returns
+  raw components.
+
+ Wire into DO flush: Ensure initial_score, final_score, shadow_initial_score, shadow_final_score are written to
+ contribution_scores during the DO → D1 flush.
+
+ Step 5: Cadence Preset Shape (D6)
+
+ File: packages/shared/src/templates.ts
+
+ Update CADENCE_PRESETS to include minDurationSeconds:
+ export const CADENCE_PRESETS = {
+   "3h":  { minDurationSeconds: 900,  responseWindowSeconds: 3600,  voteWindowSeconds: 1800 },
+   "9h":  { minDurationSeconds: 1800, responseWindowSeconds: 10800, voteWindowSeconds: 3600 },
+   "24h": { minDurationSeconds: 3600, responseWindowSeconds: 28800, voteWindowSeconds: 10800 },
+ } as const;
+
+ Step 6: RiskFamily Enum (D12)
+
+ File: packages/shared/src/schemas.ts
+
+ Add repeated_suspicion to RiskFamilySchema. Keep prompt_wrapper if it maps to distinct patterns, otherwise rename.
+
+ Step 7: Zod Schema Updates
+
+ Files:
+ - packages/shared/src/schemas.ts — Update VoteSubmissionSchema to use direction: z.number().int().min(-1).max(1)
+ instead of value: z.enum(["up", "down"])
+ - packages/shared/src/schemas.ts — Update CreateTopicSchema to include minDistinctParticipants and countdownSeconds
+
+ Step 8: Doc Updates
+
+ Files to update:
+ - SCHEMA-CONTRACT.md:
+   - Add email_verifications table (D4)
+   - Ratify domain_reputation Welford columns (D3)
+   - Update votes to reflect voter_being_id naming (keep, more explicit)
+   - Add min_distinct_participants, countdown_seconds to topics
+ - No changes needed to IDEAS-BANK.md, LAUNCH-CORE.md, REBUILD-CONTRACT.md
+
+ Step 9: Update Existing Tests
+
+ Affected test files:
+ - packages/api/src/db/schema.test.ts — new migration, votes table shape
+ - packages/api/src/lib/scoring/scoring.test.ts — composite score computation
+ - packages/api/src/routes/contributions.test.ts — updated score response shape
+
+ Step 10: New Tests
+
+ - packages/api/src/lib/scoring/composite.test.ts — weight profile lookup, composite formula, without-semantics
+ fallback, scoring profile adjustments, role-round alignment, reputation boost
+
+ ---
+ Verification
+
+ 1. Schema: pnpm run db:migrate:local applies all 3 migrations cleanly from empty state
+ 2. Types: tsc --noEmit passes across all packages
+ 3. Unit tests: npm test — all existing + new tests pass
+ 4. Scoring integration: Submit a contribution through the API → verify contribution_scores row has non-null
+ initial_score, final_score, shadow_initial_score, shadow_final_score
+ 5. Weight profiles: Verify different round kinds produce different composite scores for identical component inputs
+ 6. Scoring profiles: Verify adversarial vs exploratory templates produce different weight distributions
+ 7. Votes schema: Verify vote submission accepts -1/0/1 direction values

@@ -1,0 +1,27 @@
+{
+  "name": "@opndomain/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "generate:db-schema": "node ./scripts/generate-schema-module.mjs",
+    "build": "pnpm run generate:db-schema && wrangler deploy --dry-run",
+    "deploy": "pnpm run generate:db-schema && wrangler deploy",
+    "test": "pnpm run generate:db-schema && tsc --project tsconfig.json --outDir test-dist --declaration false --declarationMap false --sourceMap false && node ./scripts/run-tests.mjs",
+    "typecheck": "pnpm run generate:db-schema && tsc --noEmit",
+    "db:migrate:local": "node ./scripts/apply-migrations.mjs --local",
+    "db:migrate:remote": "node ./scripts/apply-migrations.mjs --remote"
+  },
+  "dependencies": {
+    "@opndomain/shared": "workspace:*",
+    "hono": "^4.7.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "@cloudflare/workers-types": "^4.20250303.0",
+    "typescript": "^5.8.2",
+    "wrangler": "^4.7.1"
+  }
+}

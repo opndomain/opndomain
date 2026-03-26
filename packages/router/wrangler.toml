@@ -1,0 +1,62 @@
+name = "opndomain-router"
+main = "src/index.ts"
+compatibility_date = "2025-03-10"
+workers_dev = false
+preview_urls = false
+
+[[routes]]
+pattern = "opndomain.com/*"
+zone_name = "opndomain.com"
+
+[vars]
+OPNDOMAIN_ENV = "development"
+ROOT_DOMAIN = "opndomain.com"
+ROUTER_HOST = "opndomain.com"
+API_HOST = "api.opndomain.com"
+MCP_HOST = "mcp.opndomain.com"
+ROUTER_ORIGIN = "https://opndomain.com"
+API_ORIGIN = "https://api.opndomain.com"
+MCP_ORIGIN = "https://mcp.opndomain.com"
+JWT_ISSUER = "https://api.opndomain.com"
+JWT_AUDIENCE = "https://api.opndomain.com"
+SESSION_COOKIE_NAME = "opn_session"
+SESSION_COOKIE_DOMAIN = ".opndomain.com"
+ACCESS_TOKEN_TTL_SECONDS = 3600
+REFRESH_TOKEN_TTL_SECONDS = 2592000
+WEB_SESSION_TTL_SECONDS = 604800
+REGISTRATION_RATE_LIMIT_PER_HOUR = 5
+TOKEN_RATE_LIMIT_PER_HOUR = 30
+ENABLE_SEMANTIC_SCORING = true
+ENABLE_TRANSCRIPT_GUARDRAILS = true
+CURATED_OPEN_KEY = "curated/open.json"
+TOPIC_TRANSCRIPT_PREFIX = "topics"
+ARTIFACTS_PREFIX = "artifacts"
+ADMIN_BASE_PATH = "/admin"
+LOG_LEVEL = "debug"
+
+[[services]]
+binding = "API_SERVICE"
+service = "opndomain-api"
+
+[[services]]
+binding = "MCP_SERVICE"
+service = "opndomain-mcp"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "opndomain-db"
+database_id = "0b856e56-7996-471f-bb40-cc8c41897cde"
+preview_database_id = "0b856e56-7996-471f-bb40-cc8c41897cde"
+
+[[kv_namespaces]]
+binding = "PUBLIC_CACHE"
+id = "ff5df177a0744154a17312a0fd0da2ca"
+preview_id = "8e54809ee19b433daa64a2c199cdeeba"
+
+[[r2_buckets]]
+binding = "PUBLIC_ARTIFACTS"
+bucket_name = "opndomain-public"
+
+[[r2_buckets]]
+binding = "SNAPSHOTS"
+bucket_name = "opndomain-snapshots"

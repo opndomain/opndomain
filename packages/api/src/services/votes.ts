@@ -1,0 +1,409 @@
+import { DEFAULT_MAX_VOTES_PER_ACTOR, RoundConfigSchema, TOPIC_TEMPLATES, type VoteTargetPolicy } from "@opndomain/shared";
+import type { DetectedRole, RoundKind, ScoringProfile, TopicTemplateId } from "@opndomain/shared";
+import type { ApiEnv } from "../lib/env.js";
+import { badRequest, forbidden, notFound } from "../lib/errors.js";
+import { createId } from "../lib/ids.js";
+import { computeCompositeScore } from "../lib/scoring/composite.js";
+import { aggregateWeightedVotes, computeEffectiveVoteWeight, computeVoteInfluence } from "../lib/scoring/votes.js";
+import { allRows, firstRow } from "../lib/db.js";
+import { isTranscriptVisibleContribution } from "../lib/visibility.js";
+
+type VoteContextRow = {
+  substance_score: number | null;
+  role_bonus: number | null;
+  details_json: string | null;
+  relevance: number | null;
+  novelty: number | null;
+  reframe: number | null;
+  initial_score: number | null;
+  shadow_initial_score: number | null;
+  scoring_profile: string | null;
+  round_kind: string;
+  template_id: string;
+  topic_id: string;
+};
+
+type PersistedVoteRow = {
+  direction: number;
+  weight: number | null;
+  voter_being_id: string;
+};
+
+type TopicVoteStatsRow = {
+  distinct_voter_count: number | null;
+  topic_vote_count: number | null;
+};
+
+type VoteTargetRow = {
+  id: string;
+  round_id: string;
+  sequence_index: number;
+  being_id: string;
+  visibility: string;
+  round_visibility: string | null;
+  reveal_at: string | null;
+};
+
+type RoundRow = {
+  id: string;
+  sequence_index: number;
+};
+
+type VoteReliabilityRow = {
+  reliability: number | null;
+};
+
+export type VoteRouteContext = {
+  topicId: string;
+  templateId: keyof typeof TOPIC_TEMPLATES;
+  activeRoundId: string;
+  activeRoundSequenceIndex: number;
+  voterBeingId: string;
+  voterTrustTier: string;
+  roundConfig: unknown;
+};
+
+export type ResolvedVotePolicy = {
+  voteRequired: boolean;
+  voteTargetPolicy: VoteTargetPolicy | null;
+  minVotesPerActor: number | null;
+  maxVotesPerActor: number;
+  earlyVoteWeightMode: string | null;
+};
+
+export type VoteSubmissionResult = {
+  id: string;
+  topicId: string;
+  roundId: string;
+  contributionId: string;
+  voterBeingId: string;
+  direction: number;
+  weight: number;
+  value: "up" | "down";
+  weightedValue: number;
+  acceptedAt: string;
+  replayed: boolean;
+  pendingFlush: boolean;
+};
+
+type ResolvedVoteTargets = {
+  targetRoundId: string;
+  eligibleContributionIds: string[];
+  policy: ResolvedVotePolicy;
+};
+
+export function resolveVotePolicyDefaults(
+  templateId: keyof typeof TOPIC_TEMPLATES,
+  sequenceIndex: number,
+  rawConfig: unknown,
+): ResolvedVotePolicy {
+  const parsed = RoundConfigSchema.parse(rawConfig);
+  const templatePolicy = TOPIC_TEMPLATES[templateId]?.rounds[sequenceIndex]?.votePolicy ?? null;
+  return {
+    voteRequired: parsed.voteRequired ?? templatePolicy?.required ?? false,
+    voteTargetPolicy: parsed.voteTargetPolicy ?? templatePolicy?.targetPolicy ?? null,
+    minVotesPerActor: parsed.minVotesPerActor ?? null,
+    maxVotesPerActor: parsed.maxVotesPerActor ?? DEFAULT_MAX_VOTES_PER_ACTOR,
+    earlyVoteWeightMode: parsed.earlyVoteWeightMode ?? null,
+  };
+}
+
+async function resolveAllowedTargetRound(
+  env: ApiEnv,
+  topicId: string,
+  activeSequenceIndex: number,
+  targetPolicy: VoteTargetPolicy,
+): Promise<RoundRow> {
+  if (targetPolicy === "prior_round") {
+    if (activeSequenceIndex <= 0) {
+      forbidden("The active round does not have a prior round to vote on.");
+    }
+    const round = await firstRow<RoundRow>(
+      env.DB,
+      `
+        SELECT id, sequence_index
+        FROM rounds
+        WHERE topic_id = ? AND sequence_index = ?
+        LIMIT 1
+      `,
+      topicId,
+      activeSequenceIndex - 1,
+    );
+    if (!round) {
+      notFound("The prior round for this vote window was not found.");
+    }
+    return round;
+  }
+
+  const round = await firstRow<RoundRow>(
+    env.DB,
+    `
+      SELECT r.id, r.sequence_index
+      FROM rounds r
+      WHERE r.topic_id = ?
+        AND r.sequence_index < ?
+        AND EXISTS (
+          SELECT 1
+          FROM contributions c
+          INNER JOIN round_configs rc ON rc.round_id = r.id
+          WHERE c.round_id = r.id
+            AND c.visibility IN ('normal', 'low_confidence')
+            AND (
+              json_extract(rc.config_json, '$.visibility') != 'sealed'
+              OR (r.reveal_at IS NOT NULL AND r.reveal_at <= CURRENT_TIMESTAMP)
+            )
+        )
+      ORDER BY r.sequence_index DESC
+      LIMIT 1
+    `,
+    topicId,
+    activeSequenceIndex,
+  );
+  if (!round) {
+    notFound("No prior round with transcript-visible contributions is available for voting.");
+  }
+  return round;
+}
+
+export async function resolveVoteTargets(
+  env: ApiEnv,
+  topicId: string,
+  currentRoundSequenceIndex: number,
+  voterBeingId: string,
+  rawConfig: unknown,
+  templateId: keyof typeof TOPIC_TEMPLATES,
+): Promise<{ targetRoundId: string; eligibleContributionIds: string[]; policy: ResolvedVotePolicy }> {
+  const policy = resolveVotePolicyDefaults(templateId, currentRoundSequenceIndex, rawConfig);
+  if (!policy.voteRequired || !policy.voteTargetPolicy) {
+    badRequest("votes_disabled", "The active round is not accepting votes.");
+  }
+
+  const allowedRound = await resolveAllowedTargetRound(env, topicId, currentRoundSequenceIndex, policy.voteTargetPolicy);
+  const rows = await allRows<VoteTargetRow>(
+    env.DB,
+    `
+      SELECT
+        c.id,
+        c.round_id,
+        r.sequence_index,
+        c.being_id,
+        c.visibility,
+        json_extract(rc.config_json, '$.visibility') AS round_visibility,
+        r.reveal_at
+      FROM contributions c
+      INNER JOIN rounds r ON r.id = c.round_id
+      INNER JOIN round_configs rc ON rc.round_id = r.id
+      WHERE c.topic_id = ?
+        AND c.round_id = ?
+        AND c.visibility IN ('normal', 'low_confidence')
+        AND c.being_id <> ?
+      ORDER BY c.submitted_at ASC, c.created_at ASC
+    `,
+    topicId,
+    allowedRound.id,
+    voterBeingId,
+  );
+
+  return {
+    targetRoundId: allowedRound.id,
+    eligibleContributionIds: rows.filter((row) => isTranscriptVisibleContribution(row)).map((row) => row.id),
+    policy,
+  };
+}
+
+function parseDetectedRole(detailsJson: string | null): DetectedRole {
+  if (!detailsJson) {
+    return "claim";
+  }
+  try {
+    const parsed = JSON.parse(detailsJson) as {
+      role?: string;
+      roleAnalysis?: { detectedRole?: string };
+    };
+    return (parsed.roleAnalysis?.detectedRole ?? parsed.role ?? "claim") as DetectedRole;
+  } catch {
+    return "claim";
+  }
+}
+
+export async function recomputeContributionFinalScore(
+  env: ApiEnv,
+  contributionId: string,
+): Promise<{ finalScore: number; shadowFinalScore: number } | null> {
+  const contributionContext = await env.DB
+    .prepare(
+      `
+        SELECT
+          cs.substance_score,
+          cs.role_bonus,
+          cs.details_json,
+          cs.relevance,
+          cs.novelty,
+          cs.reframe,
+          cs.initial_score,
+          cs.shadow_initial_score,
+          cs.scoring_profile,
+          r.round_kind,
+          t.template_id,
+          c.topic_id
+        FROM contribution_scores cs
+        INNER JOIN contributions c ON c.id = cs.contribution_id
+        INNER JOIN rounds r ON r.id = c.round_id
+        INNER JOIN topics t ON t.id = c.topic_id
+        WHERE cs.contribution_id = ?
+      `,
+    )
+    .bind(contributionId)
+    .first<VoteContextRow>();
+  if (!contributionContext) {
+    return null;
+  }
+
+  const votes = await env.DB
+    .prepare(
+      `
+        SELECT direction, weight, voter_being_id
+        FROM votes
+        WHERE contribution_id = ?
+      `,
+    )
+    .bind(contributionId)
+    .all<PersistedVoteRow>();
+  const topicStats = await env.DB
+    .prepare(
+      `
+        SELECT
+          COUNT(DISTINCT CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN voter_being_id END) AS distinct_voter_count,
+          COUNT(CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN 1 END) AS topic_vote_count
+        FROM votes
+        WHERE topic_id = ?
+      `,
+    )
+    .bind(contributionContext.topic_id)
+    .first<TopicVoteStatsRow>();
+
+  const aggregate = aggregateWeightedVotes(
+    (votes.results ?? []).map((vote) => ({
+      direction: vote.direction,
+      weight: Number(vote.weight ?? 0),
+      voterBeingId: vote.voter_being_id,
+    })),
+  );
+  const voteInfluence = computeVoteInfluence({
+    voteCount: aggregate.voteCount,
+    distinctVoterCount: Number(topicStats?.distinct_voter_count ?? 0),
+    topicVoteCount: Number(topicStats?.topic_vote_count ?? 0),
+    scoringProfile: (contributionContext.scoring_profile ?? "adversarial") as ScoringProfile,
+    roundKind: contributionContext.round_kind as RoundKind,
+    templateId: contributionContext.template_id as TopicTemplateId,
+  });
+  const recomputed = computeCompositeScore({
+    roundKind: contributionContext.round_kind as RoundKind,
+    templateId: contributionContext.template_id as TopicTemplateId,
+    scoringProfile: (contributionContext.scoring_profile ?? "adversarial") as ScoringProfile,
+    reputationFactor: 0,
+    substanceScore: Number(contributionContext.substance_score ?? 0),
+    roleBonus: Number(contributionContext.role_bonus ?? 0),
+    detectedRole: parseDetectedRole(contributionContext.details_json),
+    relevance: contributionContext.relevance,
+    novelty: contributionContext.novelty,
+    reframe: contributionContext.reframe,
+    liveMultiplier: 1,
+    shadowMultiplier: 1,
+    weightedVoteScore: aggregate.weightedVoteScore,
+    voteCount: aggregate.voteCount,
+    distinctVoterCount: Number(topicStats?.distinct_voter_count ?? 0),
+    topicVoteCount: Number(topicStats?.topic_vote_count ?? 0),
+    liveVoteInfluenceCap: voteInfluence,
+  });
+  const initialScore = Number(contributionContext.initial_score ?? 0);
+  const shadowInitialScore = Number(contributionContext.shadow_initial_score ?? 0);
+  const finalScore = Math.max(
+    0,
+    Math.min(initialScore * (1 - voteInfluence) + aggregate.weightedVoteScore * voteInfluence, 100),
+  );
+  const shadowDenominator = aggregate.weightedVoteScore - recomputed.shadowInitialScore;
+  const shadowVoteInfluence =
+    Math.abs(shadowDenominator) < Number.EPSILON
+      ? 0
+      : (recomputed.shadowFinalScore - recomputed.shadowInitialScore) / shadowDenominator;
+  const shadowFinalScore = Math.max(
+    0,
+    Math.min(shadowInitialScore * (1 - shadowVoteInfluence) + aggregate.weightedVoteScore * shadowVoteInfluence, 100),
+  );
+
+  await env.DB
+    .prepare(
+      `
+        UPDATE contribution_scores
+        SET
+          -- Compatibility mirrors stay frozen at ingest-time initial values.
+          final_score = ?,
+          shadow_final_score = ?
+        WHERE contribution_id = ?
+      `,
+    )
+    .bind(finalScore, shadowFinalScore, contributionId)
+    .run();
+
+  return { finalScore, shadowFinalScore };
+}
+
+export async function submitVote(
+  env: ApiEnv,
+  input: VoteRouteContext & {
+    contributionId: string;
+    value: "up" | "down";
+    idempotencyKey: string;
+    resolvedTargets?: ResolvedVoteTargets;
+  },
+): Promise<Response> {
+  const resolvedTargets =
+    input.resolvedTargets ??
+    (await resolveVoteTargets(
+      env,
+      input.topicId,
+      input.activeRoundSequenceIndex,
+      input.voterBeingId,
+      input.roundConfig,
+      input.templateId,
+    ));
+  const { targetRoundId, eligibleContributionIds } = resolvedTargets;
+  if (!eligibleContributionIds.includes(input.contributionId)) {
+    notFound("The requested contribution was not found in the policy-allowed vote target set.");
+  }
+
+  const reliability = await firstRow<VoteReliabilityRow>(
+    env.DB,
+    `
+      SELECT reliability
+      FROM vote_reliability
+      WHERE being_id = ?
+    `,
+    input.voterBeingId,
+  );
+  const direction = input.value === "up" ? 1 : -1;
+  const weight = computeEffectiveVoteWeight(input.voterTrustTier, Number(reliability?.reliability ?? 1));
+  const acceptedAt = new Date().toISOString();
+
+  const namespaceId = env.TOPIC_STATE_DO.idFromName(input.topicId);
+  const stub = env.TOPIC_STATE_DO.get(namespaceId);
+  return stub.fetch("https://topic-state.internal/vote", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      voteId: createId("vot"),
+      topicId: input.topicId,
+      roundId: input.activeRoundId,
+      contributionId: input.contributionId,
+      voterBeingId: input.voterBeingId,
+      direction,
+      weight,
+      value: input.value,
+      weightedValue: direction * weight,
+      acceptedAt,
+      idempotencyKey: input.idempotencyKey,
+      targetRoundId,
+    }),
+  });
+}

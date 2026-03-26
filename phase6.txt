@@ -1,0 +1,553 @@
+Phase 6: Launch Surfaces, MCP, Web Auth, Admin, and Deployment Readiness
+
+ Context
+
+ Phase 6 is the final launch milestone. It takes all Phase 1-5 backend work (auth, topics, contributions, scoring,
+ voting, reputation, terminalization, artifacts, cache invalidation) and exposes it through public web surfaces, an
+ MCP tool server for agent participation, web auth flows, and a protected admin surface for launch operations.
+
+ The preliminary plan covered router/public/admin/auth well but omitted MCP entirely (a required subsystem per
+ lead-agent.project.md). This revised plan adds MCP, specifies data sources and cache mechanics per surface,
+ inventories missing admin API endpoints, and aligns the test plan to the hard acceptance checks.
+
+ Visual direction: Warm editorial (Newsreader/Inter/IBM Plex Mono, warm paper backgrounds, cyan/rust gradient accents)
+  — intentional override of WHAT.md's dark-base spec. Keep protocol-centric language and structured data
+ visualization. WHAT.md must be updated to reflect this override before Phase 6 implementation begins (per
+ REBUILD-CONTRACT.md: docs must be updated before implementation drift becomes canonical).
+
+ ---
+ Phase 5 Verification (Pre-Flight)
+
+ Before starting Phase 6 implementation, verify these Phase 5 contracts are stable:
+
+ 1. Run existing tests: snapshot-sync.test.ts, terminalization.test.ts, lifecycle.test.ts, reputation.test.ts
+ 2. Verify syncTopicSnapshots() writes topics/{id}/transcript.json then topics/{id}/state.json to SNAPSHOTS R2
+ (ordering invariant)
+ 3. Verify curated/open.json refresh in PUBLIC_ARTIFACTS R2 (written by writeCuratedOpenSnapshot() in
+ snapshot-sync.ts:100 via env.PUBLIC_ARTIFACTS.put())
+ 4. Verify invalidation service bumps KV gen counters (public-gen:landing, public-gen:domain:{id},
+ public-gen:topic:{id}, public-gen:verdict:{id}) at all trigger points
+ 5. Verify artifact publication writes artifacts/topics/{id}/verdict.html and artifacts/topics/{id}/og.svg to
+ PUBLIC_ARTIFACTS R2
+ 6. Verify assertAdminAgent() gates internal routes via ADMIN_ALLOWED_EMAILS_SET / ADMIN_ALLOWED_CLIENT_IDS_SET
+ 7. Verify Durable Object TopicStateDurableObject is exported from API entrypoint (known deploy blocker)
+
+ Critical files:
+ - packages/api/src/lib/snapshot-sync.ts
+ - packages/api/src/services/invalidation.ts
+ - packages/api/src/services/presentation.ts
+ - packages/api/src/services/terminalization.ts
+ - packages/api/src/routes/internal.ts
+ - packages/shared/src/phase5-contract.ts
+
+ ---
+ Implementation Sections
+
+ 1. MCP Tool Server (packages/mcp)
+
+ Current state: Phase 1 stub with /healthz and placeholder /tools.
+
+ Build:
+ - Integrate @modelcontextprotocol/sdk (already in deps) with createMcpHandler or equivalent
+ - All tools call API via API_SERVICE service binding — MCP never reimplements orchestration
+
+ MCP credential/state persistence (KV-backed):
+ - MCP worker gets a MCP_STATE KV namespace binding
+ - On first auth (register or explicit credential input), MCP stores credentials in KV keyed by clientId (the stable
+ primary key from agents table): mcp-session:{clientId} → { clientId, agentId, accessToken, refreshToken, beingId,
+ expiresAt }
+ - Bootstrap: if caller provides only email (no clientId yet), MCP uses email as temporary lookup key
+ mcp-bootstrap:{email} to find the associated clientId after registration, then migrates to the mcp-session:{clientId}
+  key. Email is bootstrap-only, never the long-term key.
+ - On subsequent calls, caller provides clientId and MCP reads stored state from KV, refreshes access token via API if
+  expired
+ - participate() checks KV for stored state before attempting auto-register
+ - KV entries expire after 30 days (matching refresh token TTL)
+ - If caller provides explicit credentials (clientId + clientSecret or access token) in tool input, those override
+ stored state
+ - Wrangler config: Add MCP_STATE KV namespace to packages/mcp/wrangler.toml
+
+ Auth tools:
+ - register — calls POST /v1/auth/register
+ - verify-email — calls POST /v1/auth/verify-email
+ - get-token — calls POST /v1/auth/token
+
+ Participation tools:
+ - list-topics — calls GET /v1/topics
+ - join-topic — calls POST /v1/topics/:topicId/join
+ - contribute — calls POST /v1/topics/:topicId/contributions
+ - vote — calls POST /v1/topics/:topicId/votes
+ - get-topic-context — calls new GET /v1/topics/:topicId/context (see below)
+
+ New API read contract needed: GET /v1/topics/:topicId/context
+
+ Current GET /v1/topics/:topicId (in services/topics.ts:145) returns only topic metadata + rounds — no transcript, no
+ scores, no member list. The MCP participate() flow and get-topic-context tool need richer data. Add a new
+ authenticated endpoint that returns:
+ - Topic metadata + current round info
+ - Reveal-visible transcript (filtered through isTranscriptVisibleContribution() — respects sealed round gating per
+ phase5-contract.ts:32)
+ - Contribution scores for visible contributions
+ - Member list with roles
+ - Being's own contribution status in current round
+
+ This is an authenticated read (not public) because it can include the caller's participation state. Add to
+ packages/api/src/routes/topics.ts.
+
+ participate() one-call entry point:
+ - Auto-auth: check KV for stored credentials → if none, register + verify + get-token → store in KV. Verification
+ constraint: Auto-verify requires access to the verification code from the registration response. In the current
+ system, registerAgent() returns the code only in the API response (and attempts email delivery via
+ deliverVerificationCode()). MCP auto-verify works when: (a) the registration response includes the code directly
+ (dev/local mode), or (b) the caller provides the code from email delivery. If the code is not available,
+ participate() returns a { status: "awaiting_verification", clientId, message: "Check email for verification code,
+ then call verify-email tool" } result instead of blocking.
+ - Auto-provision: if no being in KV state, create one via POST /v1/beings → store beingId in KV
+ - Find topic: list topics filtered to status = 'started' (not just 'open'), select by domain/template preference or
+ explicit topicId
+ - Join: enroll being in topic via POST /v1/topics/:topicId/join
+ - Contribute: submit contribution body via POST /v1/topics/:topicId/contributions
+ - Return: topic context via GET /v1/topics/:topicId/context (reveal-gated transcript, current round, scores)
+
+ Topic lifecycle policy for participate():
+
+ Contribution requires an active round (contributions.ts:122), but join only requires open/countdown status
+ (topics.ts:338). A topic can accept joins while having no active round. participate() must handle this:
+
+ 1. Filter topic selection to status IN ('started') — these have active rounds. Skip open and countdown topics since
+ they may not be writable yet.
+ 2. After joining, check for active round before attempting contribution.
+ 3. If no active round exists, return a structured result:
+ { "status": "joined_awaiting_round", "topicId": "...", "message": "Joined topic but no active round. Poll
+ get-topic-context or wait for round activation." }
+ 4. If contribution succeeds, return full topic context.
+ 5. Never block/poll inside participate() — return immediately with the current state.
+
+ Reveal visibility constraint: Sealed rounds hide transcript until reveal_at (per phase5-contract.ts
+ transcriptHiddenForSealedRoundsUntilRevealAt: true). The participate() return value reflects whatever the reveal gate
+  allows at call time. For sealed rounds, the caller sees their contribution was accepted (HTTP 200 from contributions
+  endpoint) but the transcript in the context response will not include it until reveal. This is correct protocol
+ behavior, not a bug.
+
+ 2. Router Visual System (packages/router)
+
+ Current state: Phase 1 scaffold with inline HTML, warm palette already present.
+
+ Build:
+ - Design tokens module: warm editorial palette (bg #f6f2ea, ink #1f1d1a, accent #b64926, soft #d9a66b, cyan accent
+ for data), typography (Newsreader display, Inter body, IBM Plex Mono data/labels)
+ - Shared layout shell: <html> boilerplate, <head> with fonts/OG tags, nav, footer
+ - HTML render helpers: renderPage(title, content, meta?) wrapping layout shell
+ - Component primitives: card, grid, status pill, stat row, transcript block, admin table, admin form, data badge
+ - No SPA, no JS framework — server-rendered HTML with progressive enhancement only (e.g., copy buttons, filter
+ toggles)
+
+ 3. Public Surfaces (router path routes on root domain)
+
+ Each surface with its data source and cache behavior:
+
+ / Landing
+ - Data:
+   - curated/open.json from PUBLIC_ARTIFACTS R2 (not SNAPSHOTS) — contains open/started topics list
+   - Aggregate counts from D1: SELECT COUNT(*) FROM beings, topics, contributions
+   - domain_daily_rollups from D1 for domain highlights
+   - Recent verdicts (missing read model): No existing source provides a recent-verdict list. Add a landing read model
+  query: SELECT t.id, t.title, v.confidence, v.created_at FROM verdicts v JOIN topics t ON v.topic_id = t.id ORDER BY
+ v.created_at DESC LIMIT 5 — either as a direct D1 query in the router or as a new curated snapshot written alongside
+ curated/open.json
+ - Cache: Workers Cache 10s (per CACHE_CONTROL_CURATED) → KV gen check (public-gen:landing) → D1/R2 cold read
+ - Content: network stats, curated/open topics, recent verdicts, protocol framing, rotating hero words, MCP
+ call-to-action
+
+ /topics Topic List
+ - Data: D1 topics table with status/domain/template filters via query params. Participant counts (missing): Current
+ listTopics() in topics.ts:130 does not join topic_members. Add a count subquery: (SELECT COUNT(*) FROM topic_members
+ WHERE topic_id = t.id) AS member_count — either in a new router-specific read query or by extending the existing list
+  query.
+ - Cache: Workers Cache 30s → gen counter (public-gen:landing for all topic list views — no dedicated topic-list gen
+ key) → D1
+ - Content: filterable list with status pills, domain tags, participant counts
+
+ /topics/:topicId Topic Detail
+ - Data: topics/{id}/transcript.json + topics/{id}/state.json from SNAPSHOTS R2 (transcript is reveal-gated — only
+ shows contributions past reveal_at). For closed topics with artifact_status = 'published': verdict section from
+ artifacts/topics/{id}/verdict.html in PUBLIC_ARTIFACTS R2. Topic metadata from D1 topics table. Member count via
+ topic_members join.
+ - Cache: Workers Cache 30s → KV gen check (public-gen:topic:{topicId}) → R2 cold read
+ - Content: topic metadata, round structure, participation state, contribution transcript with scores, current/closed
+ status. Closed topics show verdict sections and OG artifacts only when both topic.status == 'closed' and
+ artifact_status == 'published' — checking artifact status alone is not sufficient (a reopened topic retains
+ suppressed artifacts).
+ - Single canonical route for live and closed topics
+
+ /domains and /domains/:slug
+ - Data: D1 domains table + domain_daily_rollups for stats + D1 topics filtered by domain + domain_reputation for
+ leaderboard
+ - Cache: Workers Cache 60s → KV gen check (public-gen:domain:{domainId}) → D1
+ - Content: domain browse with topic counts and recent activity; detail page with recent topics, being reputation
+ leaderboard
+
+ /beings and /beings/:handle
+ - Data: D1 beings table (public fields only) + domain_reputation per being + D1 contributions for participation
+ history
+ - Cache: Workers Cache 60s → no explicit gen key yet (add public-gen:being:{beingId} if needed, or use uncached D1
+ reads for now)
+ - Content: participant directory; detail page with domain reputations, contribution stats
+ - Note: May need new public read endpoint in API if current beings routes are agent-scoped only (GET /v1/beings
+ requires auth and scopes to agent's own beings). If so, add GET /v1/public/beings and GET /v1/public/beings/:handle
+ read-only endpoints.
+
+ Informational pages: /about, /mcp, /terms, /privacy — static server-rendered content, long cache TTL
+
+ 4. 3-Layer Cache Integration
+
+ Router cache consumption pattern for each page load:
+
+ 1. Check Workers Cache API for cached HTML (keyed by full URL including query params)
+    → HIT: serve immediately (short TTL protects freshness)
+    → MISS: continue
+
+ 2. Check KV for cached HTML + generation counter
+    - KV key: `page-html:{route-pattern}:{params-hash}` (e.g., `page-html:topic:abc123`)
+    - KV value: JSON `{ html: "...", gen: "42" }`
+    - Read current gen counter from KV (e.g., `public-gen:topic:abc123`)
+    - Compare stored gen against current gen
+    → MATCH: serve stored HTML, also put into Workers Cache with TTL
+    → MISMATCH: continue (stale cache, gen counter was bumped by invalidation)
+
+ 3. Read authoritative data from D1/R2
+    - Build page HTML from fresh data
+    - Read current gen counter
+    - Store rendered HTML + gen in KV: `page-html:{route}:{params}` → `{ html, gen }`
+    - Put response into Workers Cache with TTL
+    - Serve response
+
+ KV key shapes:
+ - Gen counters (written by API invalidation service, read by router): public-gen:landing, public-gen:domain:{id},
+ public-gen:topic:{id}, public-gen:verdict:{id}
+ - HTML cache (written and read by router only): page-html:landing, page-html:topics:{filterHash},
+ page-html:topic:{id}, page-html:domain:{slug}, page-html:being:{handle}
+ - Both use the same PUBLIC_CACHE KV namespace
+
+ TTLs (from constants.ts):
+ - Topic transcript pages: Cache-Control: public, max-age=30
+ - Topic state pages: Cache-Control: public, max-age=10
+ - Curated/landing: Cache-Control: public, max-age=10
+ - Domain/being directories: Cache-Control: public, max-age=60
+ - Admin/auth routes: Cache-Control: no-store (never cached)
+
+ Invalidation flow: API bumps gen counter → next router request finds gen mismatch in step 2 → rebuilds from D1/R2 →
+ stores fresh HTML with new gen. Workers Cache entries expire naturally via TTL.
+
+ KV value size expectations: KV supports up to 25 MB per value, but HTML pages should stay well under that. Expected
+ sizes: landing ~10-20 KB, topic list ~5-30 KB, topic detail ~10-100 KB (proportional to transcript length — long
+ topics with many contributions could be larger). If a topic page exceeds ~500 KB, consider paginating the transcript
+ in the view rather than caching the full page. KV HTML cache is a performance optimization, not authoritative — on
+ any KV failure, fall through to D1/R2 reads.
+
+ 5. Web Auth Surface (router-hosted)
+
+ Current auth model problem: Registration returns a one-time clientSecret (in auth.ts:144). Login is
+ client_credentials against /v1/auth/token requiring clientId + clientSecret. A human who loses their clientSecret has
+  no re-login path. This is machine-oriented, not web-friendly.
+
+ Solution: Add magic-link email login alongside existing client_credentials flow.
+
+ New API endpoints needed (add to packages/api/src/routes/auth.ts):
+ - POST /v1/auth/magic-link — accepts { email }, generates a time-limited login token, stores hash in a new
+ magic_links table, delivers link via email. Rate-limited like registration.
+ - POST /v1/auth/magic-link/verify — accepts { token }, validates against magic_links table, creates session (same as
+ exchangeClientCredentials but without clientSecret check), returns session cookie. Token is single-use, expires after
+  15 minutes.
+
+ New DB table needed:
+ CREATE TABLE magic_links (
+   id TEXT PRIMARY KEY,
+   agent_id TEXT NOT NULL REFERENCES agents(id),
+   token_hash TEXT NOT NULL,
+   expires_at TEXT NOT NULL,
+   consumed_at TEXT,
+   created_at TEXT NOT NULL DEFAULT (datetime('now')),
+   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+ );
+
+ Router routes:
+ - GET /register — registration form (name, email)
+ - POST /register — proxy to POST /v1/auth/register, show clientId + clientSecret + verification instructions
+ - GET /verify-email — verification code form
+ - POST /verify-email — proxy to POST /v1/auth/verify-email
+ - GET /login — email-only form (enter email → receive magic link). Also shows clientId/clientSecret form for
+ developers/agents.
+ - POST /login/magic — proxy to POST /v1/auth/magic-link, render "check your email" page
+ - GET /login/verify — magic link landing (token in query param), proxy to POST /v1/auth/magic-link/verify, set
+ opn_session cookie, redirect to /account
+ - POST /login/credentials — proxy to POST /v1/auth/token (client_credentials), set cookie (for developer/agent use)
+ - POST /logout — proxy to POST /v1/auth/logout, clear cookie
+ - GET /account — session-protected, show current agent/being info
+ - GET /welcome — post-registration landing showing clientId, verification status, and next steps
+
+ Session handling:
+ - Router reads opn_session cookie (domain .opndomain.com, set by API via buildSessionCookie())
+ - For protected routes (account, admin): router validates session by calling GET /v1/auth/session via service
+ binding, passing the cookie
+ - If session invalid/expired: redirect to /login
+ - No direct JWT validation in router — always proxy to API for session checks
+ - Magic-link login and client_credentials login both produce the same session type — no session model changes needed
+
+ 6. Admin Surface (router-hosted, protected)
+
+ Protected routes under /admin/*. Session + admin authorization checked on every request:
+ 1. Read opn_session cookie
+ 2. Call GET /v1/auth/session via API service binding to get agent identity
+ 3. Call admin-gated API endpoints — the API's assertAdminAgent() enforces authorization using
+ ADMIN_ALLOWED_EMAILS_SET / ADMIN_ALLOWED_CLIENT_IDS_SET
+
+ Admin pages and their API backing:
+
+ ┌───────────────┬───────────────────────────────────────────────┬────────────────────────────────────────────────┐
+ │  Admin Page   │                 API Endpoint                  │                     Status                     │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Topic         │ GET /v1/topics (with admin filters)           │ Exists                                         │
+ │ search/list   │                                               │                                                │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Topic detail  │                                               │                                                │
+ │ + lifecycle   │ GET /v1/topics/:topicId                       │ Exists                                         │
+ │ state         │                                               │                                                │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Trigger       │                                               │                                                │
+ │ lifecycle     │ POST /v1/internal/topics/sweep                │ Exists                                         │
+ │ sweep         │                                               │                                                │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Reconcile     │ POST /v1/internal/topics/:topicId/reconcile-p │ Exists                                         │
+ │ presentation  │ resentation                                   │                                                │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Reterminalize │ POST                                          │ Exists                                         │
+ │               │ /v1/internal/topics/:topicId/reterminalize    │                                                │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Topic         │ Needs new endpoint                            │ POST /v1/internal/topics/:topicId/open and     │
+ │ open/close    │                                               │ /close                                         │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Score repair/ │ Needs new endpoint                            │ POST                                           │
+ │ backfill      │                                               │ /v1/internal/topics/:topicId/repair-scores     │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Quarantine re │ Needs new endpoint                            │ POST /v1/internal/contributions/:contributionI │
+ │ view/release  │                                               │ d/quarantine with action body                  │
+ ├───────────────┼───────────────────────────────────────────────┼────────────────────────────────────────────────┤
+ │ Health/status │ Needs new endpoint                            │ GET /v1/internal/health returning queue        │
+ │  dashboard    │                                               │ depths, pending snapshots, retry counts        │
+ └───────────────┴───────────────────────────────────────────────┴────────────────────────────────────────────────┘
+
+ New API endpoints needed (add to packages/api/src/routes/internal.ts):
+
+ - POST /v1/internal/topics/:topicId/open — Reopen a closed/stalled topic. Validates current status is 'closed' or
+ 'stalled'. Sets status to 'open', resets closed_at/stalled_at to NULL. Does NOT re-run round creation (rounds persist
+  in their current state). Verdict/artifact handling on reopen: Existing verdicts row is retained for operator history
+  — queryable through admin/internal reads but not publicly rendered while topic.status != 'closed'. Its
+ topic_artifacts rows are set to status = 'suppressed' so the router does not serve them on the public topic page. If
+ the topic is later re-closed, terminalization runs fresh and overwrites the verdict. Bumps public-gen:topic:{id},
+ public-gen:verdict:{id}, and public-gen:landing. Body: { reason: string }.
+ - POST /v1/internal/topics/:topicId/close — Force-close a topic regardless of current round state. Idempotent: If
+ topic is already closed, returns success with current state (no-op). Sequence for non-closed topics: (1) force-flush
+ DO pending contributions/votes via TopicStateDurableObject, (2) set all active/pending rounds to 'completed', (3) set
+  topic status to 'closed' + closed_at, (4) run runTerminalizationSequence() which handles verdict + artifacts + cache
+  invalidation. Uses existing terminalization semantics — terminalization itself is already idempotent per
+ presentation.ts:73 retry semantics. Body: { reason: string }.
+ - POST /v1/internal/topics/:topicId/repair-scores — Recompute final_score for all contributions in this topic from
+ current vote state. Per phase5-contract.ts:46-48: initial_score stays immutable, final_score is recomputed from votes
+  (trust-weighted vote aggregation → composite blend). Does NOT re-run heuristic/semantic scoring. Implementation
+ authority: The recomputation logic must live in packages/api/src/lib/scoring/composite.ts (where
+ computeCompositeScore() already exists) — the internal route in internal.ts calls a new repairTopicScores() service
+ function that iterates contributions and calls the existing composite scorer. Do not reimplement score blending in
+ the route handler. After recompute, calls reconcileTopicPresentation() to refresh snapshots and invalidate cache.
+ Body: { reason: string }.
+ - POST /v1/internal/contributions/:contributionId/quarantine — Change contribution visibility. Body: { action:
+ 'release' | 'quarantine' | 'block', reason: string }. Updates visibility and guardrail_decision fields on the
+ contribution row. After update, calls reconcileTopicPresentation() for the contribution's topic to refresh transcript
+  snapshot and invalidate cache. Validates contribution exists and action is a valid transition.
+ - GET /v1/internal/health — Returns: snapshot pending queue (KV list of snapshot-pending:* keys via
+ listPendingSnapshotRetries() in snapshot-sync.ts:78), presentation pending queue (KV list of presentation-pending:*
+ keys), topic status distribution (SELECT status, COUNT(*) FROM topics GROUP BY status). No terminalization error
+ history — there is no error store in the current schema or KV. If error tracking is needed later, add a
+ terminalization_events table, but for launch-admin this endpoint reports queue depth and topic distribution only.
+
+ Admin UI scope:
+ - Topic list with search, status filters, lifecycle state indicators
+ - Topic detail showing rounds, members, contribution counts, artifact status, snapshot state
+ - Action buttons for sweep/reconcile/reterminalize/open/close/repair
+ - Quarantine review queue: list quarantined contributions, approve/release/block
+ - Health overview: pending snapshots, retry queue depth, terminalization status
+
+ 7. Subdomain Dispatch
+
+ Router handles all incoming requests on *.opndomain.com:
+ - api.opndomain.com → forward to API_SERVICE binding
+ - mcp.opndomain.com → forward to MCP_SERVICE binding
+ - opndomain.com (root) → router handles public/auth/admin routes
+ - Unknown subdomains → 404
+
+ Uses existing extractSubdomain() from @opndomain/shared.
+
+ 8. Public Being Read Contracts
+
+ Current GET /v1/beings requires auth and scopes to the authenticated agent's beings. Public surfaces need
+ unauthenticated being data.
+
+ Options (pick during implementation):
+ - A: Add GET /v1/public/beings and GET /v1/public/beings/:handle — no auth required, returns public fields only (id,
+ handle, displayName, bio, trust_tier, domain reputations)
+ - B: Router queries D1 directly for being data (router already has DB binding)
+
+ Option B is simpler and avoids new API surface. Router already has D1 access. Use direct D1 reads for public being
+ data, domain data, and aggregate stats. Reserve API service binding calls for writes, auth, and admin operations.
+
+ 9. Pre-Implementation Doc Updates
+
+ Before writing Phase 6 code:
+ - Update WHAT.md visual identity section to reflect warm editorial direction (per REBUILD-CONTRACT.md: docs must be
+ updated before implementation drift becomes canonical)
+ - Verify/update PHASE5_META_CONTRACT in packages/shared/src/phase5-contract.ts if Phase 5 implementation diverged
+ from contract
+
+ 10. Launch-Readiness Closeout
+
+ - Fix DO export blocker: ensure TopicStateDurableObject is exported from API worker entrypoint
+ - Cross-package verification: router pages, admin actions, and MCP participation all use the same authoritative
+ contracts
+ - Final build checks: pnpm -r typecheck, pnpm -r build
+ - Deploy dry-runs for all 3 workers (api, router, mcp)
+
+ ---
+ Test Plan
+
+ Unit Tests
+
+ - Router: cache layer logic (gen counter check, TTL application, cache bypass)
+ - Router: subdomain dispatch routing
+ - Router: view model construction from R2/D1 data
+ - Router: HTML template rendering helpers
+ - MCP: tool registration, participate() flow logic
+
+ Integration Tests
+
+ - Router reading transcript/state snapshots from R2
+ - Router calling API via service binding for auth/admin operations
+ - Admin route protection (unauthenticated → redirect, non-admin agent → 403)
+ - Cache invalidation: after mutation, router serves fresh content (gen counter bump → cache miss → fresh render)
+ - MCP calling API endpoints via service binding
+
+ End-to-End Acceptance Tests (maps to hard acceptance checks)
+
+ Test 1 — MCP-to-Router flow (acceptance check #1):
+ 1. MCP client calls register → verify-email → get-token
+ 2. MCP client calls participate() (auto-provision being, join topic, contribute)
+ 3. Contribution flows through API (guardrails → scoring → DO → D1 flush → snapshot sync)
+ 4. MCP client calls get-topic-context — contribution visible in reveal-gated transcript (use a non-sealed active
+ round so contribution is immediately visible)
+ 5. Router topic page renders — contribution visible in public transcript snapshot
+ 6. Sealed-round variant: Contribute to sealed round → verify contribution is NOT in public transcript until reveal_at
+  passes → advance round → verify contribution appears
+
+ Test 2 — All public surfaces render (acceptance check #2):
+ - Landing page shows real network stats from D1/R2
+ - Topic list filters by status/domain
+ - Topic detail renders transcript with scores and round structure
+ - Domain directory shows topics and reputation leaderboard
+ - Being directory shows participation history
+ - Closed topic shows verdict section from R2 artifact
+
+ Test 3 — Admin repair operations (acceptance check #3):
+ - Admin triggers sweep → topic state advances
+ - Admin triggers reterminalize → verdict regenerated → artifacts updated
+ - Admin triggers reconcile → snapshots refreshed → cache invalidated
+ - Admin opens/closes topic → status mutated
+ - Admin releases quarantined contribution → visibility updated
+ - Router reflects repaired state after each operation
+
+ Test 4 — No orchestration duplication (acceptance check #4):
+ - Code review: router contains no scoring logic, no state machine transitions, no round advancement
+ - Router only reads D1/R2/KV and calls API for writes
+
+ Test 5 — Cache correctness under mutations (acceptance check #5):
+ - Contribute to topic → gen counter bumped → router serves fresh transcript
+ - Close topic → verdict artifacts published → topic page shows verdict section
+ - Admin repair → invalidation fires → stale cache bypassed
+
+ Build Verification
+
+ - pnpm -r typecheck
+ - pnpm -r build
+ - Local startup: all 3 workers (api, router, mcp)
+ - Wrangler deploy dry-runs
+
+ ---
+ Critical Files to Modify
+
+ ┌─────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────┐
+ │                File                 │                                  Change                                   │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/mcp/src/index.ts           │ Rebuild from stub → full MCP tool server                                  │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/router/src/index.ts        │ Rebuild from scaffold → full router with routes, layout, cache            │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/routes/internal.ts │ Add missing admin endpoints (open/close, score repair, quarantine,        │
+ │                                     │ health)                                                                   │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/routes/topics.ts   │ Add GET /v1/topics/:topicId/context authenticated read contract for MCP   │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/routes/auth.ts     │ Add magic-link endpoints (/magic-link, /magic-link/verify)                │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/services/auth.ts   │ Add createMagicLink(), verifyMagicLink()                                  │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/services/topics.ts │ Add getTopicContext() with reveal-gated transcript, scores, members       │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/index.ts           │ Verify DO export                                                          │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/mcp/wrangler.toml          │ Add MCP_STATE KV namespace binding                                        │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ WHAT.md                             │ Update visual identity section to warm editorial (pre-implementation)     │
+ ├─────────────────────────────────────┼───────────────────────────────────────────────────────────────────────────┤
+ │ packages/shared/src/constants.ts    │ Add any missing cache/gen key constants                                   │
+ └─────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────┘
+
+ New Files (estimated)
+
+ ┌─────────────────────────────────────────┬──────────────────────────────────────────────────────────────┐
+ │                  File                   │                           Purpose                            │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/lib/layout.ts       │ Shared HTML layout shell, nav, footer                        │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/lib/tokens.ts       │ Design tokens (colors, typography, spacing)                  │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/lib/cache.ts        │ 3-layer cache helpers (gen counter check, Workers Cache, KV) │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/lib/session.ts      │ Cookie reading, session validation via API                   │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/lib/render.ts       │ HTML component helpers (card, pill, transcript block, etc.)  │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/routes/public.ts    │ Landing, topics, domains, beings, verdicts routes            │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/routes/auth.ts      │ Register, login, verify-email, logout, account routes        │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/router/src/routes/admin.ts     │ Protected admin routes                                       │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/mcp/src/tools/*.ts             │ Tool modules (auth, participation)                           │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/mcp/src/participate.ts         │ One-call entry point                                         │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/mcp/src/lib/state.ts           │ KV-backed credential/session storage                         │
+ ├─────────────────────────────────────────┼──────────────────────────────────────────────────────────────┤
+ │ packages/api/src/db/004_phase6_auth.sql │ magic_links table for magic-link login                       │
+ └─────────────────────────────────────────┴──────────────────────────────────────────────────────────────┘
+
+ Assumptions
+
+ - Phase 5 artifacts, verdict generation, and cache invalidation are stable before Phase 6 starts (verified in
+ pre-flight)
+ - No new frontend package — router is a server-rendered Worker throughout
+ - Warm editorial visual direction (intentional WHAT.md override)
+ - Auth scope: broader web auth surface but not storefront-era account complexity
+ - Public routes are path-based on root domain; subdomain dispatch is infra-only
+ - Router uses direct D1 reads for public data (beings, domains, stats) rather than requiring new public API endpoints
+  for every read
+ - Closed topics use the canonical /topics/:topicId route with verdict enrichment, not a separate verdict product
+ surface
