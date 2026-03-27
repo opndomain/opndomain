@@ -227,6 +227,70 @@ export const TokenRequestSchema = z.discriminatedUnion("grantType", [
   }),
 ]);
 
+export const AuthAgentIdentitySchema = z.object({
+  id: z.string().min(1),
+  clientId: z.string().min(1).max(120),
+});
+
+export const AuthAgentProfileSchema = AuthAgentIdentitySchema.extend({
+  email: z.string().email(),
+  trustTier: TrustTierSchema,
+  status: z.string().min(1),
+});
+
+export const EmailVerificationDeliverySchema = z.object({
+  provider: z.string().min(1),
+  to: z.string().email(),
+  code: z.string().min(1).optional(),
+});
+
+export const MagicLinkDeliverySchema = z.object({
+  provider: z.string().min(1),
+  to: z.string().email(),
+  loginUrl: z.string().url(),
+});
+
+export const RegisterAgentResponseSchema = z.object({
+  agent: AuthAgentProfileSchema,
+  clientId: z.string().min(1).max(120),
+  clientSecret: z.string().min(1),
+  verification: z.object({
+    expiresAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+    maxAttempts: z.number().int().positive(),
+    delivery: EmailVerificationDeliverySchema,
+  }),
+});
+
+export const VerifyEmailResponseSchema = AuthAgentProfileSchema;
+
+export const TokenResponseSchema = z.object({
+  tokenType: z.literal("Bearer"),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresIn: z.number().int().positive(),
+  sessionId: z.string().min(1),
+  agent: AuthAgentIdentitySchema,
+});
+
+export const MagicLinkResponseSchema = z.object({
+  agent: AuthAgentIdentitySchema.extend({
+    email: z.string().email(),
+  }),
+  expiresAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  delivery: MagicLinkDeliverySchema,
+});
+
+export const MagicLinkVerifyResponseSchema = z.object({
+  tokenType: z.literal("Bearer"),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresIn: z.number().int().positive(),
+  sessionId: z.string().min(1),
+  agent: AuthAgentIdentitySchema.extend({
+    email: z.string().email(),
+  }),
+});
+
 export const CreateBeingSchema = z.object({
   handle: z.string().min(3).max(64).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
   displayName: z.string().min(1).max(160),
@@ -338,6 +402,133 @@ export const QuarantineContributionRequestSchema = z.object({
   reason: z.string().min(1),
 });
 
+export const AdminArchivedFilterSchema = z.enum(["exclude", "include", "only"]).default("exclude");
+
+export const AdminListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  q: z.string().trim().min(1).max(200).optional(),
+  status: z.string().trim().min(1).max(100).optional(),
+  archived: AdminArchivedFilterSchema,
+});
+
+export const AdminListMetaSchema = z.object({
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+  totalCount: z.number().int().nonnegative(),
+  hasNextPage: z.boolean(),
+});
+
+export const AdminExternalIdentitySchema = z.object({
+  id: z.string().min(1),
+  provider: OAuthProviderSchema,
+  providerUserId: z.string().min(1),
+  email: z.string().email().nullable(),
+  emailVerified: z.boolean(),
+  linkedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  lastLoginAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminAgentSummarySchema = z.object({
+  id: z.string().min(1),
+  clientId: z.string().min(1),
+  name: z.string().min(1),
+  email: z.string().email().nullable(),
+  trustTier: TrustTierSchema,
+  status: z.string().min(1),
+  archived: z.boolean(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminAgentDetailSchema = AdminAgentSummarySchema.extend({
+  activeBeingCount: z.number().int().nonnegative(),
+  activeSessionCount: z.number().int().nonnegative(),
+  linkedExternalIdentityCount: z.number().int().nonnegative(),
+  linkedExternalIdentities: z.array(AdminExternalIdentitySchema),
+});
+
+export const AdminBeingSummarySchema = z.object({
+  id: z.string().min(1),
+  agentId: z.string().min(1),
+  agentName: z.string().min(1),
+  handle: z.string().min(1),
+  displayName: z.string().min(1),
+  trustTier: TrustTierSchema,
+  status: z.string().min(1),
+  archived: z.boolean(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminBeingCapabilitySchema = z.object({
+  canPublish: z.boolean(),
+  canJoinTopics: z.boolean(),
+  canSuggestTopics: z.boolean(),
+  canOpenTopics: z.boolean(),
+});
+
+export const AdminBeingDetailSchema = AdminBeingSummarySchema.extend({
+  bio: z.string().nullable(),
+  capabilities: AdminBeingCapabilitySchema,
+  ownerAgentEmail: z.string().email().nullable(),
+  ownerAgentActiveSessionCount: z.number().int().nonnegative(),
+  ownerAgentLinkedExternalIdentityCount: z.number().int().nonnegative(),
+});
+
+export const AdminDomainSummarySchema = z.object({
+  id: z.string().min(1),
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  status: z.string().min(1),
+  archived: z.boolean(),
+  topicCount: z.number().int().nonnegative(),
+  activeTopicCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminDomainDetailSchema = AdminDomainSummarySchema.extend({
+  activeBeingCount: z.number().int().nonnegative(),
+  closedTopicCount: z.number().int().nonnegative(),
+});
+
+export const AdminTopicSummarySchema = z.object({
+  id: z.string().min(1),
+  domainId: z.string().min(1),
+  domainSlug: z.string().min(1),
+  domainName: z.string().min(1),
+  title: z.string().min(1),
+  status: TopicStatusSchema,
+  archived: z.boolean(),
+  archivedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminTopicDetailSchema = AdminTopicSummarySchema.extend({
+  prompt: z.string().min(1),
+  templateId: TopicTemplateIdSchema,
+  cadenceFamily: CadenceFamilySchema,
+  cadencePreset: CadencePresetSchema.nullable(),
+  cadenceOverrideMinutes: z.number().int().positive().nullable(),
+  minTrustTier: TrustTierSchema,
+  visibility: z.string().min(1),
+  currentRoundIndex: z.number().int().nonnegative(),
+  startsAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  joinUntil: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  countdownStartedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  stalledAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  closedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  archivedByAgentId: z.string().min(1).nullable(),
+  archivedByAgentName: z.string().min(1).nullable(),
+  archiveReason: z.string().min(1).nullable(),
+  activeMemberCount: z.number().int().nonnegative(),
+  contributionCount: z.number().int().nonnegative(),
+  roundCount: z.number().int().nonnegative(),
+});
+
 export const TopicArtifactMetadataSchema = z.object({
   transcriptSnapshotKey: z.string().min(1).nullable().optional(),
   stateSnapshotKey: z.string().min(1).nullable().optional(),
@@ -389,3 +580,24 @@ export type ArtifactStatus = z.infer<typeof ArtifactStatusSchema>;
 export type PresentationRetryReason = z.infer<typeof PresentationRetryReasonSchema>;
 export type DetectedRole = z.infer<typeof DetectedRoleSchema>;
 export type RiskFamily = z.infer<typeof RiskFamilySchema>;
+export type AuthAgentIdentity = z.infer<typeof AuthAgentIdentitySchema>;
+export type AuthAgentProfile = z.infer<typeof AuthAgentProfileSchema>;
+export type EmailVerificationDelivery = z.infer<typeof EmailVerificationDeliverySchema>;
+export type MagicLinkDelivery = z.infer<typeof MagicLinkDeliverySchema>;
+export type RegisterAgentResponse = z.infer<typeof RegisterAgentResponseSchema>;
+export type VerifyEmailResponse = z.infer<typeof VerifyEmailResponseSchema>;
+export type TokenResponse = z.infer<typeof TokenResponseSchema>;
+export type MagicLinkResponse = z.infer<typeof MagicLinkResponseSchema>;
+export type MagicLinkVerifyResponse = z.infer<typeof MagicLinkVerifyResponseSchema>;
+export type AdminArchivedFilter = z.infer<typeof AdminArchivedFilterSchema>;
+export type AdminListQuery = z.infer<typeof AdminListQuerySchema>;
+export type AdminListMeta = z.infer<typeof AdminListMetaSchema>;
+export type AdminExternalIdentity = z.infer<typeof AdminExternalIdentitySchema>;
+export type AdminAgentSummary = z.infer<typeof AdminAgentSummarySchema>;
+export type AdminAgentDetail = z.infer<typeof AdminAgentDetailSchema>;
+export type AdminBeingSummary = z.infer<typeof AdminBeingSummarySchema>;
+export type AdminBeingDetail = z.infer<typeof AdminBeingDetailSchema>;
+export type AdminDomainSummary = z.infer<typeof AdminDomainSummarySchema>;
+export type AdminDomainDetail = z.infer<typeof AdminDomainDetailSchema>;
+export type AdminTopicSummary = z.infer<typeof AdminTopicSummarySchema>;
+export type AdminTopicDetail = z.infer<typeof AdminTopicDetailSchema>;
