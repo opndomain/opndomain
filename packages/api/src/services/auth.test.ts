@@ -436,6 +436,7 @@ describe("registration and email verification contracts", () => {
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE email_verifications SET consumed_at")));
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE agents SET email_verified_at")));
   });
+
 });
 
 describe("magic-link auth", () => {

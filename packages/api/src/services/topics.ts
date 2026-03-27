@@ -1,4 +1,4 @@
-import { CADENCE_PRESETS, TOPIC_TEMPLATES, type TrustTier } from "@opndomain/shared";
+import { CADENCE_PRESETS, RoundConfigSchema, TOPIC_TEMPLATES, type TrustTier } from "@opndomain/shared";
 import { DEFAULT_MAX_VOTES_PER_ACTOR, ROUND_VISIBILITY_SEALED } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow, runStatement } from "../lib/db.js";
@@ -10,6 +10,7 @@ import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import type { AgentRecord } from "./auth.js";
 import { findActingBeingForTopicCreation } from "./beings.js";
 import { ensureSeedDomains, getDomain } from "./domains.js";
+import { resolveVotePolicyDefaults, resolveVoteTargets } from "./votes.js";
 
 type TopicRow = {
   id: string;
@@ -77,6 +78,25 @@ type OwnContributionStatusRow = {
   submitted_at: string;
 };
 
+type CurrentRoundConfigRow = {
+  config_json: string | null;
+};
+
+type VoteTargetDetailRow = {
+  contribution_id: string;
+  being_id: string;
+  being_handle: string;
+};
+
+type PendingRoundScheduleRow = {
+  id: string;
+  sequence_index: number;
+  status: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  config_json: string;
+};
+
 export type TopicListFilters = {
   status?: string;
   domainSlug?: string;
@@ -121,6 +141,55 @@ function mapRound(row: RoundRow) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function getRoundDurationMs(round: Pick<PendingRoundScheduleRow, "starts_at" | "ends_at">) {
+  const startsAt = round.starts_at ? new Date(round.starts_at).getTime() : Number.NaN;
+  const endsAt = round.ends_at ? new Date(round.ends_at).getTime() : Number.NaN;
+  if (!Number.isFinite(startsAt) || !Number.isFinite(endsAt) || endsAt <= startsAt) {
+    return 0;
+  }
+  return endsAt - startsAt;
+}
+
+async function rewritePendingRoundSchedules(env: ApiEnv, topicId: string, anchorStartsAtIso: string) {
+  const rounds = await allRows<PendingRoundScheduleRow>(
+    env.DB,
+    `
+      SELECT r.id, r.sequence_index, r.status, r.starts_at, r.ends_at, rc.config_json
+      FROM rounds r
+      INNER JOIN round_configs rc ON rc.round_id = r.id
+      WHERE r.topic_id = ?
+      ORDER BY r.sequence_index ASC
+    `,
+    topicId,
+  );
+
+  let cursor = new Date(anchorStartsAtIso);
+  for (const round of rounds) {
+    if (round.status !== "pending") {
+      continue;
+    }
+
+    const durationMs = getRoundDurationMs(round);
+    const startsAt = new Date(cursor);
+    const endsAt = new Date(startsAt.getTime() + durationMs);
+    const config = RoundConfigSchema.parse(JSON.parse(round.config_json));
+    const revealAt =
+      config.visibility === ROUND_VISIBILITY_SEALED
+        ? endsAt.toISOString()
+        : startsAt.toISOString();
+
+    await runStatement(
+      env.DB.prepare(`UPDATE rounds SET starts_at = ?, ends_at = ?, reveal_at = ? WHERE id = ? AND status = 'pending'`).bind(
+        startsAt.toISOString(),
+        endsAt.toISOString(),
+        revealAt,
+        round.id,
+      ),
+    );
+    cursor = endsAt;
+  }
 }
 
 function resolveCadence(
@@ -303,6 +372,21 @@ export async function getTopicContext(env: ApiEnv, agent: AgentRecord, topicId: 
     }));
 
   const currentRound = rounds.find((round) => round.status === "active") ?? rounds.find((round) => round.sequence_index === topic.current_round_index) ?? null;
+  const currentRoundConfigRow = currentRound
+    ? await firstRow<CurrentRoundConfigRow>(
+        env.DB,
+        `
+          SELECT config_json
+          FROM round_configs
+          WHERE round_id = ?
+          LIMIT 1
+        `,
+        currentRound.id,
+      )
+    : null;
+  const parsedCurrentRoundConfig = currentRoundConfigRow?.config_json
+    ? RoundConfigSchema.parse(JSON.parse(currentRoundConfigRow.config_json))
+    : null;
   const ownContributionStatus =
     currentRound && ownedBeingIds.size > 0
       ? await allRows<OwnContributionStatusRow>(
@@ -319,6 +403,59 @@ export async function getTopicContext(env: ApiEnv, agent: AgentRecord, topicId: 
           currentRound.id,
           ...Array.from(ownedBeingIds),
         )
+      : [];
+  const currentRoundConfig = parsedCurrentRoundConfig
+    ? {
+        roundKind: currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
+        voteRequired: Boolean(parsedCurrentRoundConfig.voteRequired),
+        voteTargetPolicy: parsedCurrentRoundConfig.voteTargetPolicy ?? null,
+      }
+    : null;
+  const voteTargets =
+    currentRound &&
+    parsedCurrentRoundConfig &&
+    beingId
+      ? await (async () => {
+          const votePolicy = resolveVotePolicyDefaults(
+            topic.template_id,
+            currentRound.sequence_index,
+            parsedCurrentRoundConfig,
+          );
+          if (!votePolicy.voteRequired || !votePolicy.voteTargetPolicy) {
+            return [];
+          }
+          const resolvedTargets = await resolveVoteTargets(
+            env,
+            topicId,
+            currentRound.sequence_index,
+            beingId,
+            parsedCurrentRoundConfig,
+            topic.template_id,
+          );
+          if (resolvedTargets.eligibleContributionIds.length === 0) {
+            return [];
+          }
+          const placeholders = resolvedTargets.eligibleContributionIds.map(() => "?").join(", ");
+          const rows = await allRows<VoteTargetDetailRow>(
+            env.DB,
+            `
+              SELECT c.id AS contribution_id, c.being_id, b.handle AS being_handle
+              FROM contributions c
+              INNER JOIN beings b ON b.id = c.being_id
+              WHERE c.id IN (${placeholders})
+            `,
+            ...resolvedTargets.eligibleContributionIds,
+          );
+          const rowsByContributionId = new Map(rows.map((row) => [row.contribution_id, row]));
+          return resolvedTargets.eligibleContributionIds
+            .map((contributionId) => rowsByContributionId.get(contributionId))
+            .filter((row): row is VoteTargetDetailRow => Boolean(row))
+            .map((row) => ({
+              contributionId: row.contribution_id,
+              beingId: row.being_id,
+              beingHandle: row.being_handle,
+            }));
+        })()
       : [];
 
   return {
@@ -339,6 +476,8 @@ export async function getTopicContext(env: ApiEnv, agent: AgentRecord, topicId: 
       visibility: row.visibility,
       submittedAt: row.submitted_at,
     })),
+    currentRoundConfig,
+    voteTargets,
   };
 }
 
@@ -429,7 +568,7 @@ export async function createTopic(
           completionStyle: roundDefinition.completionStyle,
           voteRequired: roundDefinition.votePolicy?.required ?? false,
           voteTargetPolicy: roundDefinition.votePolicy?.targetPolicy,
-          minVotesPerActor: roundDefinition.votePolicy?.minVotesPerActor ?? null,
+          minVotesPerActor: roundDefinition.votePolicy?.minVotesPerActor,
           maxVotesPerActor: roundDefinition.votePolicy?.maxVotesPerActor ?? DEFAULT_MAX_VOTES_PER_ACTOR,
           earlyVoteWeightMode: roundDefinition.votePolicy?.earlyVoteWeightMode ?? null,
           fallbackChain: roundDefinition.fallbackChain,
@@ -492,6 +631,10 @@ export async function updateTopic(
       topicId,
     ),
   );
+
+  if (typeof input.startsAt === "string") {
+    await rewritePendingRoundSchedules(env, topicId, input.startsAt);
+  }
   return getTopic(env, topicId);
 }
 

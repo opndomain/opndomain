@@ -77,6 +77,13 @@ type MagicLinkRow = {
   consumed_at: string | null;
 };
 
+type CreateAgentRecordInput = {
+  name: string;
+  email: string;
+  emailVerifiedAt?: string | null;
+  trustTier: TrustTier;
+};
+
 function mapAgent(row: AgentRow): AgentRecord {
   return {
     id: row.id,
@@ -104,6 +111,52 @@ function mapAuthAgentProfile(agent: AgentRecord, fallbackEmail?: string): AuthAg
     email: agent.email ?? fallbackEmail ?? "",
     trustTier: agent.trustTier as TrustTier,
     status: agent.status,
+  };
+}
+
+async function createAgentRecord(env: ApiEnv, input: CreateAgentRecordInput) {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const existingAgent = await firstRow<{ id: string }>(
+    env.DB,
+    `SELECT id FROM agents WHERE lower(email) = ?`,
+    normalizedEmail,
+  );
+  if (existingAgent) {
+    conflict("That email is already registered.");
+  }
+
+  const agentId = createId("agt");
+  const clientId = createClientId();
+  const clientSecret = createSecret();
+
+  await runStatement(
+    env.DB.prepare(
+      `
+        INSERT INTO agents (
+          id, client_id, client_secret_hash, name, email, email_verified_at, trust_tier, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+      `,
+    ).bind(
+      agentId,
+      clientId,
+      await sha256(clientSecret),
+      input.name.trim(),
+      normalizedEmail,
+      input.emailVerifiedAt ?? null,
+      input.trustTier,
+    ),
+  );
+
+  const agent = await getAgentById(env, agentId);
+  if (!agent) {
+    unauthorized("Agent provisioning failed.");
+  }
+
+  return {
+    agent,
+    normalizedEmail,
+    clientId,
+    clientSecret,
   };
 }
 
@@ -155,19 +208,12 @@ export async function registerAgent(
     env.REGISTRATION_RATE_LIMIT_PER_HOUR,
   );
 
-  const normalizedEmail = input.email.trim().toLowerCase();
-  const existingAgent = await firstRow<{ id: string }>(
-    env.DB,
-    `SELECT id FROM agents WHERE lower(email) = ?`,
-    normalizedEmail,
-  );
-  if (existingAgent) {
-    conflict("That email is already registered.");
-  }
-
-  const agentId = createId("agt");
-  const clientId = createClientId();
-  const clientSecret = createSecret();
+  const { agent, normalizedEmail, clientId, clientSecret } = await createAgentRecord(env, {
+    name: input.name,
+    email: input.email,
+    emailVerifiedAt: null,
+    trustTier: "unverified",
+  });
   const verificationCode = createNumericCode();
   const verificationId = createId("ev");
   const expiresAt = nowIso(addMinutes(new Date(), env.EMAIL_VERIFICATION_TTL_MINUTES));
@@ -175,22 +221,14 @@ export async function registerAgent(
   await env.DB.batch([
     env.DB.prepare(
       `
-        INSERT INTO agents (
-          id, client_id, client_secret_hash, name, email, trust_tier, status
-        ) VALUES (?, ?, ?, ?, ?, 'unverified', 'active')
-      `,
-    ).bind(agentId, clientId, await sha256(clientSecret), input.name.trim(), normalizedEmail),
-    env.DB.prepare(
-      `
         INSERT INTO email_verifications (
           id, agent_id, email, code_hash, attempts, expires_at
         ) VALUES (?, ?, ?, ?, 0, ?)
       `,
-    ).bind(verificationId, agentId, normalizedEmail, await sha256(verificationCode), expiresAt),
+    ).bind(verificationId, agent.id, normalizedEmail, await sha256(verificationCode), expiresAt),
   ]);
 
   const delivery = await deliverVerificationCode(env, normalizedEmail, verificationCode);
-  const agent = (await getAgentById(env, agentId)) as AgentRecord;
   return {
     agent: mapAuthAgentProfile(agent, normalizedEmail),
     clientId,

@@ -529,6 +529,18 @@ export const AdminTopicDetailSchema = AdminTopicSummarySchema.extend({
   roundCount: z.number().int().nonnegative(),
 });
 
+export const TopicContextCurrentRoundConfigSchema = z.object({
+  roundKind: RoundKindSchema,
+  voteRequired: z.boolean(),
+  voteTargetPolicy: VoteTargetPolicySchema.nullable(),
+});
+
+export const TopicContextVoteTargetSchema = z.object({
+  contributionId: z.string().min(1),
+  beingId: z.string().min(1),
+  beingHandle: z.string().min(1),
+});
+
 export const TopicArtifactMetadataSchema = z.object({
   transcriptSnapshotKey: z.string().min(1).nullable().optional(),
   stateSnapshotKey: z.string().min(1).nullable().optional(),
@@ -601,3 +613,5 @@ export type AdminDomainSummary = z.infer<typeof AdminDomainSummarySchema>;
 export type AdminDomainDetail = z.infer<typeof AdminDomainDetailSchema>;
 export type AdminTopicSummary = z.infer<typeof AdminTopicSummarySchema>;
 export type AdminTopicDetail = z.infer<typeof AdminTopicDetailSchema>;
+export type TopicContextCurrentRoundConfig = z.infer<typeof TopicContextCurrentRoundConfigSchema>;
+export type TopicContextVoteTarget = z.infer<typeof TopicContextVoteTargetSchema>;

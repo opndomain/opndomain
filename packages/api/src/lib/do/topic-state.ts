@@ -7,7 +7,6 @@ import {
   TOPIC_STATE_SNAPSHOT_PENDING_KEY,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../env.js";
-import { ApiError } from "../errors.js";
 import { createId } from "../ids.js";
 import { flushPendingTopicState } from "./flush.js";
 import {
@@ -37,6 +36,14 @@ function sqlFirst<T>(state: DurableObjectState, sql: string, ...bindings: unknow
     return row;
   }
   return null;
+}
+
+async function withStorageTransaction<T>(state: DurableObjectState, callback: () => Promise<T> | T): Promise<T> {
+  return (
+    state.storage as DurableObjectStorage & {
+      transaction: <R>(closure: () => Promise<R> | R) => Promise<R>;
+    }
+  ).transaction(callback);
 }
 
 function publicResponseFromPayload(payload: TopicStateIngestRequest): TopicStatePublicResponse {
@@ -224,8 +231,7 @@ export class TopicStateDurableObject {
       }
 
       const responseJson = voteResponseFromPayload(payload);
-      sqlExec(this.state, "BEGIN");
-      try {
+      await withStorageTransaction(this.state, async () => {
         sqlExec(
           this.state,
           `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
@@ -250,14 +256,7 @@ export class TopicStateDurableObject {
           JSON.stringify(responseJson),
           payload.acceptedAt,
         );
-        sqlExec(this.state, "COMMIT");
-      } catch (error) {
-        sqlExec(this.state, "ROLLBACK");
-        if (error instanceof ApiError) {
-          throw error;
-        }
-        throw error;
-      }
+      });
 
       await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.acceptedAt);
       await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));
@@ -328,8 +327,7 @@ export class TopicStateDurableObject {
       details_json: payload.scores.details,
     };
 
-    sqlExec(this.state, "BEGIN");
-    try {
+    await withStorageTransaction(this.state, async () => {
       sqlExec(
         this.state,
         `INSERT INTO pending_messages (id, topic_id, payload_json, flushed, created_at) VALUES (?, ?, ?, 0, ?)`,
@@ -372,11 +370,7 @@ export class TopicStateDurableObject {
         payload.visibility,
         payload.submittedAt,
       );
-      sqlExec(this.state, "COMMIT");
-    } catch (error) {
-      sqlExec(this.state, "ROLLBACK");
-      throw error;
-    }
+    });
 
     await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.submittedAt);
     await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));

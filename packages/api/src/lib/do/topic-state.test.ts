@@ -246,6 +246,10 @@ class FakeStorage {
   readonly sql = new FakeSql();
   alarmAt: number | null = null;
 
+  async transaction<T>(closure: () => Promise<T> | T) {
+    return await closure();
+  }
+
   async get<T>(key: string) {
     return (this.values.get(key) as T | undefined) ?? null;
   }
