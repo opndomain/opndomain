@@ -7,81 +7,32 @@ import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-
-type LaunchStatus =
-  | "awaiting_verification"
-  | "authenticated"
-  | "launch_ready"
-  | "reauth_required"
-  | "recovery_required"
-  | "awaiting_magic_link";
-
-type LaunchPayload = {
-  agentId: string | null;
-  clientId: string;
-  accessToken: string | null;
-  refreshToken: string | null;
-  expiresAt: string | null;
-  mcpUrl: string;
-  apiOrigin: string;
-  rootDomain: string;
-  clientSecret?: string;
-};
-
-type CliState = {
-  version: 1;
-  status: LaunchStatus;
-  email: string | null;
-  name: string | null;
-  clientId: string | null;
-  clientSecret: string | null;
-  agentId: string | null;
-  accessToken: string | null;
-  refreshToken: string | null;
-  expiresAt: string | null;
-  mcpUrl: string;
-  apiOrigin: string | null;
-  rootDomain: string | null;
-};
-
-type ToolResponse = {
-  status?: LaunchStatus;
-  clientId?: string | null;
-  agentId?: string | null;
-  email?: string | null;
-  launch?: LaunchPayload | null;
-  delivery?: unknown;
-  expiresAt?: string | null;
-  message?: string | null;
-  verification?: {
-    expiresAt?: string | null;
-  };
-  clientSecret?: string;
-};
+import { loadParticipationConfig } from "./config.js";
+import { runParticipate, type CliState, type LaunchPayload, type LaunchStatus, type ToolResponse } from "./participate.js";
 
 const DEFAULT_MCP_URL = "https://mcp.opndomain.com/mcp";
-const STATE_PATH = join(homedir(), ".opndomain", "launch-state.json");
+const DEFAULT_STATE_PATH = join(homedir(), ".opndomain", "launch-state.json");
 
 function printJson(value: unknown) {
   output.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-async function loadState(): Promise<CliState | null> {
+async function loadState(statePath = DEFAULT_STATE_PATH): Promise<CliState | null> {
   try {
-    const raw = await readFile(STATE_PATH, "utf8");
+    const raw = await readFile(statePath, "utf8");
     return JSON.parse(raw) as CliState;
   } catch {
     return null;
   }
 }
 
-async function saveState(state: CliState): Promise<void> {
-  await mkdir(dirname(STATE_PATH), { recursive: true });
-  await writeFile(STATE_PATH, JSON.stringify(state, null, 2));
+async function saveState(state: CliState, statePath = DEFAULT_STATE_PATH): Promise<void> {
+  await mkdir(dirname(statePath), { recursive: true });
+  await writeFile(statePath, JSON.stringify(state, null, 2));
 }
 
-async function clearState(): Promise<void> {
-  await rm(STATE_PATH, { force: true });
+async function clearState(statePath = DEFAULT_STATE_PATH): Promise<void> {
+  await rm(statePath, { force: true });
 }
 
 async function withClient<T>(mcpUrl: string, fn: (client: Client) => Promise<T>): Promise<T> {
@@ -136,6 +87,11 @@ function coerceOption(value: string | boolean | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function resolveStatePath(options: Record<string, string | boolean>, fallback?: string): string {
+  const configured = coerceOption(options["state-path"]) ?? fallback ?? DEFAULT_STATE_PATH;
+  return resolve(configured);
+}
+
 async function prompt(question: string): Promise<string> {
   const rl = createInterface({ input, output });
   try {
@@ -148,11 +104,11 @@ async function prompt(question: string): Promise<string> {
 function stateFromLaunchResult(result: ToolResponse, fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string }): CliState {
   return {
     version: 1,
-    status: result.status ?? "launch_ready",
+    status: (result.status as LaunchStatus | undefined) ?? "launch_ready",
     email: result.email ?? fallback.email ?? null,
     name: fallback.name ?? null,
     clientId: result.launch?.clientId ?? result.clientId ?? null,
-    clientSecret: result.launch?.clientSecret ?? fallback.clientSecret ?? null,
+    clientSecret: result.launch?.clientSecret ?? result.clientSecret ?? fallback.clientSecret ?? null,
     agentId: result.launch?.agentId ?? result.agentId ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
@@ -164,7 +120,8 @@ function stateFromLaunchResult(result: ToolResponse, fallback: { email?: string;
 }
 
 async function commandLogin(options: Record<string, string | boolean>) {
-  const existing = await loadState();
+  const statePath = resolveStatePath(options);
+  const existing = await loadState(statePath);
   const mcpUrl = coerceOption(options["mcp-url"]) ?? existing?.mcpUrl ?? DEFAULT_MCP_URL;
   const email = coerceOption(options.email) ?? existing?.email ?? await prompt("Email: ");
   const name = coerceOption(options.name) ?? existing?.name ?? defaultNameFromEmail(email);
@@ -178,7 +135,7 @@ async function commandLogin(options: Record<string, string | boolean>) {
       const tokenOrUrl = coerceOption(options.token) ?? await prompt("Paste the magic link URL or token: ");
       const recovered = await callTool<ToolResponse>(client, "recover-launch-state", { tokenOrUrl, email });
       const state = stateFromLaunchResult(recovered, { email, name, mcpUrl });
-      await saveState(state);
+      await saveState(state, statePath);
       printJson(recovered);
       return;
     }
@@ -201,7 +158,7 @@ async function commandLogin(options: Record<string, string | boolean>) {
         apiOrigin: null,
         rootDomain: null,
       };
-      await saveState(workingState);
+      await saveState(workingState, statePath);
       printJson({
         status: "awaiting_verification",
         clientId: workingState.clientId,
@@ -228,7 +185,7 @@ async function commandLogin(options: Record<string, string | boolean>) {
         clientSecret: workingState.clientSecret ?? undefined,
         mcpUrl,
       });
-      await saveState(nextState);
+      await saveState(nextState, statePath);
       printJson(launch);
       return;
     }
@@ -246,13 +203,14 @@ async function commandLogin(options: Record<string, string | boolean>) {
       clientSecret: workingState.clientSecret ?? undefined,
       mcpUrl,
     });
-    await saveState(nextState);
+    await saveState(nextState, statePath);
     printJson(launch);
   });
 }
 
 async function commandStatus(options: Record<string, string | boolean>) {
-  const existing = await loadState();
+  const statePath = resolveStatePath(options);
+  const existing = await loadState(statePath);
   if (!existing) {
     printJson({ status: "recovery_required", message: "No local launch state found." });
     return;
@@ -278,7 +236,7 @@ async function commandStatus(options: Record<string, string | boolean>) {
         clientSecret: existing.clientSecret ?? undefined,
         mcpUrl: existing.mcpUrl,
       });
-      await saveState(nextState);
+      await saveState(nextState, statePath);
       printJson(launch);
     } catch (error) {
       printJson({
@@ -291,7 +249,8 @@ async function commandStatus(options: Record<string, string | boolean>) {
 }
 
 async function commandLaunch(options: Record<string, string | boolean>) {
-  const existing = await loadState();
+  const statePath = resolveStatePath(options);
+  const existing = await loadState(statePath);
   if (!existing) {
     throw new Error("No local launch state found. Run `opndomain login` first.");
   }
@@ -312,7 +271,7 @@ async function commandLaunch(options: Record<string, string | boolean>) {
         clientSecret: existing.clientSecret ?? undefined,
         mcpUrl: existing.mcpUrl,
       });
-      await saveState(nextState);
+      await saveState(nextState, statePath);
       launchPayload = launch.launch ?? null;
     });
   }
@@ -344,8 +303,31 @@ async function commandLaunch(options: Record<string, string | boolean>) {
   printJson(launchPayload);
 }
 
-async function commandLogout() {
-  await clearState();
+async function commandParticipate(options: Record<string, string | boolean>) {
+  const configPath = coerceOption(options.config);
+  if (!configPath) {
+    throw new Error("Missing required option: --config <path>");
+  }
+
+  const config = await loadParticipationConfig(configPath);
+  const statePath = resolveStatePath(options, config.launchStatePath);
+  const mcpUrl = config.mcpUrl ?? DEFAULT_MCP_URL;
+
+  const result = await withClient(mcpUrl, async (client) => runParticipate(
+    { ...config, mcpUrl },
+    {
+      loadState: async () => loadState(statePath),
+      saveState: async (state) => saveState(state, statePath),
+      callTool: async <T>(name: string, args: Record<string, unknown>) => callTool<T>(client, name, args),
+    },
+  ));
+
+  printJson(result);
+}
+
+async function commandLogout(options: Record<string, string | boolean>) {
+  const statePath = resolveStatePath(options);
+  await clearState(statePath);
   printJson({ ok: true, message: "Local launch state cleared." });
 }
 
@@ -361,8 +343,11 @@ async function main() {
     case "launch":
       await commandLaunch(options);
       return;
+    case "participate":
+      await commandParticipate(options);
+      return;
     case "logout":
-      await commandLogout();
+      await commandLogout(options);
       return;
     default:
       throw new Error(`Unknown command: ${command}`);
