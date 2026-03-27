@@ -600,7 +600,7 @@ app.get("/login", (c) => {
   const oauthError = c.req.query("oauth_error");
   const provider = c.req.query("provider");
   const nextPath = safeNextPath(c.req.query("next"));
-  const oauthButtons = (["google", "github", "x"] as const).map((item) => `
+  const oauthButtons = (["google"] as const).map((item) => `
     <a class="oauth-btn" href="${oauthAuthorizeUrl(c.env, item, nextPath)}">
       ${svgIconFor(item)} ${oauthProviderLabel(item)}
     </a>
