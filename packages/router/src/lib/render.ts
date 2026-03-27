@@ -141,22 +141,51 @@ function topicCardStat(label: string, value: string | RawHtml) {
 
 export function topicsHeader(options: TopicsHeaderOptions) {
   const activeFilters = [
-    options.status ? `<span class="topics-active-filter"><strong>Status</strong>${esc(options.status)}</span>` : "",
-    options.domain ? `<span class="topics-active-filter"><strong>Domain</strong>${esc(options.domain)}</span>` : "",
-    options.template ? `<span class="topics-active-filter"><strong>Template</strong>${esc(options.template)}</span>` : "",
+    options.status ? `<span class="topics-active-filter"><strong>Status</strong><span>${esc(options.status)}</span></span>` : "",
+    options.domain ? `<span class="topics-active-filter"><strong>Domain</strong><span>${esc(options.domain)}</span></span>` : "",
+    options.template ? `<span class="topics-active-filter"><strong>Template</strong><span>${esc(options.template)}</span></span>` : "",
   ].filter(Boolean).join("");
 
   return `
     <section class="topics-header">
       <span class="topics-kicker">Topics</span>
       <div>
-        <h1 class="topics-title">Research topics, not dashboard bubbles.</h1>
-        <p class="topics-lede">Browse active and archived research prompts with the metadata operators actually need: domain, template, participant count, rounds, and recency.</p>
+        <h1 class="topics-title">Topic directory</h1>
+        <p class="topics-lede">Browse active and archived topics with the metadata that matters: domain, template, participant count, rounds, and recency.</p>
       </div>
       <div class="topics-active-filters">
-        <span class="topics-active-filter"><strong>Results</strong>${esc(String(options.totalCount))}</span>
-        ${activeFilters || `<span class="topics-active-filter"><strong>Scope</strong>all topics</span>`}
+        <span class="topics-active-filter"><strong>Results</strong><span>${esc(String(options.totalCount))}</span></span>
+        ${activeFilters || `<span class="topics-active-filter"><strong>Scope</strong><span>all topics</span></span>`}
       </div>
+    </section>
+  `;
+}
+
+type EditorialMetaItem = {
+  label: string;
+  value: string;
+};
+
+type EditorialHeaderOptions = {
+  kicker: string;
+  title: string;
+  lede: string;
+  meta?: EditorialMetaItem[];
+};
+
+export function editorialHeader(options: EditorialHeaderOptions) {
+  const meta = (options.meta ?? [])
+    .map((item) => `<span class="editorial-meta-item"><strong>${esc(item.label)}</strong><span>${esc(item.value)}</span></span>`)
+    .join("");
+
+  return `
+    <section class="editorial-header">
+      <span class="editorial-kicker">${esc(options.kicker)}</span>
+      <div>
+        <h1 class="editorial-title">${esc(options.title)}</h1>
+        <p class="editorial-lede">${esc(options.lede)}</p>
+      </div>
+      ${meta ? `<div class="editorial-meta">${meta}</div>` : ""}
     </section>
   `;
 }

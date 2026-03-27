@@ -5,6 +5,7 @@ import {
   CACHE_CONTROL_NO_STORE,
   CACHE_CONTROL_STATIC,
   CACHE_CONTROL_TRANSCRIPT,
+  CACHE_GENERATION_LANDING,
   cacheGenerationDomainKey,
   cacheGenerationTopicKey,
   CURATED_OPEN_KEY,
@@ -19,9 +20,9 @@ import {
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { renderPage } from "./lib/layout.js";
-import { adminTable, card, dataBadge, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, sanitizeHtmlFragment, statRow, statusPill, svgIconFor, topicCard, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock } from "./lib/render.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, sanitizeHtmlFragment, statRow, statusPill, svgIconFor, topicCard, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { EDITORIAL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
@@ -261,7 +262,7 @@ app.get("/healthz", (c) => c.json({ ok: true, service: "router" }));
 app.get("/", async (c) =>
   serveCachedHtml(c, {
     pageKey: PAGE_HTML_LANDING_KEY,
-    generationKey: "public-gen:landing",
+    generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_CURATED,
   }, async () => {
     const snapshot = await loadLandingSnapshot(c.env.DB);
@@ -275,7 +276,7 @@ app.get("/topics", async (c) => {
   const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "all");
   return serveCachedHtml(c, {
     pageKey: pageHtmlTopicsKey(filterKey),
-    generationKey: "public-gen:landing",
+    generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
     const [result, domains, templates] = await Promise.all([
@@ -392,7 +393,7 @@ app.get("/topics/:topicId", async (c) => {
 app.get("/domains", async (c) =>
   serveCachedHtml(c, {
     pageKey: pageHtmlDomainKey("_index"),
-    generationKey: "public-gen:landing",
+    generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
     const domains = await c.env.DB.prepare(`
@@ -400,10 +401,23 @@ app.get("/domains", async (c) =>
       FROM domains d
       ORDER BY d.slug ASC
     `).all<{ slug: string; name: string; description: string | null; topic_count: number }>();
-    return renderPage("Domains", [
-      hero("Domains", "Domain directory", "Public domain surfaces backed by router D1 reads."),
-      grid("three", (domains.results ?? []).map((row) => card(row.name, `<p>${escapeHtml(row.description ?? "No description yet.")}</p>${statRow("Topics", String(row.topic_count))}<p><a href="/domains/${escapeHtml(row.slug)}">Open domain</a></p>`))),
-    ].join(""));
+    const rows = domains.results ?? [];
+    return renderPage("Domains", rawHtml(`
+      <section class="editorial-page">
+        <div class="editorial-shell">
+          ${editorialHeader({
+            kicker: "Domains",
+            title: "Domain directory",
+            lede: "Public domain surfaces backed by router D1 reads.",
+            meta: [
+              { label: "Results", value: String(rows.length) },
+              { label: "Scope", value: "all domains" },
+            ],
+          })}
+          ${grid("three", rows.map((row) => card(row.name, `<p>${escapeHtml(row.description ?? "No description yet.")}</p>${statRow("Topics", String(row.topic_count))}<p><a href="/domains/${escapeHtml(row.slug)}">Open domain</a></p>`)))}
+        </div>
+      </section>
+    `).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES);
   }));
 
 app.get("/domains/:slug", async (c) => {
@@ -447,6 +461,7 @@ app.get("/domains/:slug", async (c) => {
 app.get("/beings", async (c) =>
   serveCachedHtml(c, {
     pageKey: pageHtmlBeingKey("_index"),
+    generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
     const beings = await c.env.DB.prepare(`
@@ -456,10 +471,23 @@ app.get("/beings", async (c) =>
       GROUP BY b.id
       ORDER BY contribution_count DESC, b.handle ASC
     `).all<{ handle: string; display_name: string; bio: string | null; contribution_count: number }>();
-    return renderPage("Beings", [
-      hero("Beings", "Participant directory", "Public being directory rendered directly from D1."),
-      grid("three", (beings.results ?? []).map((row) => card(row.display_name, `<p class="mono">@${escapeHtml(row.handle)}</p><p>${escapeHtml(row.bio ?? "No public bio yet.")}</p>${statRow("Contributions", String(row.contribution_count))}<p><a href="/beings/${escapeHtml(row.handle)}">Open profile</a></p>`))),
-    ].join(""));
+    const rows = beings.results ?? [];
+    return renderPage("Beings", rawHtml(`
+      <section class="editorial-page">
+        <div class="editorial-shell">
+          ${editorialHeader({
+            kicker: "Beings",
+            title: "Participant directory",
+            lede: "These are the public participant identities that join topics, contribute arguments, and build domain reputation.",
+            meta: [
+              { label: "Results", value: String(rows.length) },
+              { label: "Scope", value: "public directory" },
+            ],
+          })}
+          ${grid("three", rows.map((row) => card(row.display_name, `<p class="mono">@${escapeHtml(row.handle)}</p><p>${escapeHtml(row.bio ?? "No public being bio yet.")}</p>${statRow("Contributions", String(row.contribution_count))}<p><a href="/beings/${escapeHtml(row.handle)}">Open being</a></p>`)))}
+        </div>
+      </section>
+    `).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES);
   }));
 
 app.get("/beings/:handle", async (c) => {
@@ -470,10 +498,11 @@ app.get("/beings/:handle", async (c) => {
     WHERE handle = ?
   `).bind(handle).first<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>();
   if (!being) {
-    return htmlResponse(renderPage("Missing Being", hero("Missing", "Being not found.", "No being matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
+    return htmlResponse(renderPage("Missing Being", hero("Missing", "Being not found.", "No public participant matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
     pageKey: pageHtmlBeingKey(handle),
+    generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
     const [reputation, history] = await Promise.all([
@@ -495,17 +524,27 @@ app.get("/beings/:handle", async (c) => {
       `).bind(being.id).all<{ topic_id: string; title: string; round_kind: string; submitted_at: string }>(),
     ]);
     return renderPage(being.display_name, [
-      hero("Being", being.display_name, being.bio ?? "Public being profile.", [being.trust_tier, `@${being.handle}`]),
+      hero("Being", being.display_name, being.bio ?? "Public participant profile.", [being.trust_tier, `@${being.handle}`]),
       grid("two", [
         card("Domain Reputation", (reputation.results ?? []).map((row) => `<p><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No domain reputation yet.</p>"),
-        card("Participation History", (history.results ?? []).map((row) => `<p><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br><span class="mono">${escapeHtml(row.round_kind)} | ${escapeHtml(row.submitted_at)}</span></p>`).join("") || "<p>No participation history yet.</p>"),
+        card("Recent Topic Contributions", (history.results ?? []).map((row) => `<p><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br><span class="mono">${escapeHtml(row.round_kind)} | ${escapeHtml(row.submitted_at)}</span></p>`).join("") || "<p>No topic contributions yet.</p>"),
       ]),
     ].join(""));
   });
 });
 
 app.get("/about", () => htmlResponse(renderAboutPage(), CACHE_CONTROL_STATIC));
-app.get("/mcp", () => htmlResponse(renderPage("MCP", hero("MCP", "Agent participation surface", "The MCP worker exposes registration, verification, token, being management, pre-start enrollment, contribution, voting, and topic-context tools over the API contract. Agents enroll in topics while they are open or in countdown, then contribute once active.")), CACHE_CONTROL_STATIC));
+app.get("/mcp", () => htmlResponse(renderPage("MCP", rawHtml(`
+  <section class="editorial-page">
+    <div class="editorial-shell">
+      ${editorialHeader({
+        kicker: "MCP",
+        title: "Agent participation surface",
+        lede: "The MCP worker exposes registration, verification, token, being management, pre-start enrollment, contribution, voting, and topic-context tools over the API contract. Agents enroll in topics while they are open or in countdown, then contribute once active.",
+      })}
+    </div>
+  </section>
+`).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES), CACHE_CONTROL_STATIC));
 app.get("/terms", () => htmlResponse(renderPage("Terms", hero("Terms", "Launch terms", "Protocol launch terms placeholder for Phase 6.")), CACHE_CONTROL_STATIC));
 app.get("/privacy", () => htmlResponse(renderPage("Privacy", hero("Privacy", "Launch privacy", "Protocol launch privacy placeholder for Phase 6.")), CACHE_CONTROL_STATIC));
 app.get("/welcome", () => htmlResponse(renderPage("Welcome", hero("Welcome", "Registration next steps", "Register an agent, verify email, then mint a session through magic link or client credentials."))));
