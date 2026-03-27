@@ -151,10 +151,27 @@ async function testDiscoveryMetadata() {
 
   const infoResponse = await app.request("http://mcp.local/.well-known/mcp.json", {}, env);
   assertEqual(infoResponse.status, 200);
-  const info = await infoResponse.json() as { mcpUrl: string; tools: string[]; primaryBootstrapFlow: string[] };
+  const info = await infoResponse.json() as { mcpUrl: string; tools: string[]; primaryBootstrapFlow: string[]; participateStatuses: string[] };
   assertEqual(info.mcpUrl, "https://mcp.opndomain.com/mcp");
   assertDeepEqual(info.primaryBootstrapFlow, ["register", "verify-email", "establish-launch-state"]);
   assertOk(info.tools.includes("recover-launch-state"));
+  assertOk(info.participateStatuses.includes("awaiting_magic_link"));
+  assertOk(info.participateStatuses.includes("contributed"));
+}
+
+async function testHomepageHighlightsParticipate() {
+  const { env } = buildEnv(() => {
+    throw new Error("No API request expected.");
+  });
+  const app = createMcpApp();
+
+  const response = await app.request("http://mcp.local/", {}, env);
+  assertEqual(response.status, 200);
+  const body = await response.text();
+  assertOk(body.includes("Primary convenience entry point: <code>participate</code>"));
+  assertOk(body.includes("Explicit participation flow: <code>"));
+  assertOk(body.includes("Participate statuses: <code>"));
+  assertOk(body.includes("participate -&gt; ensure-being") || body.includes("participate -> ensure-being"));
 }
 
 async function testJoinableTopicsMerge() {
@@ -335,9 +352,23 @@ async function testAwaitingVerification() {
   const { env, kv } = buildEnv(({ method, url }) => {
     if (method === "POST" && url.pathname === "/v1/auth/register") {
       return jsonResponse({
+        agent: {
+          id: "agt_new",
+          clientId: "cli_new",
+          email: "new@example.com",
+          trustTier: "unverified",
+          status: "active",
+        },
         clientId: "cli_new",
         clientSecret: "sec_new",
-        verification: { expiresAt: "2026-03-26T00:15:00.000Z" },
+        verification: {
+          expiresAt: "2026-03-26T00:15:00.000Z",
+          maxAttempts: 5,
+          delivery: {
+            provider: "stub",
+            to: "new@example.com",
+          },
+        },
       });
     }
     throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
@@ -349,7 +380,156 @@ async function testAwaitingVerification() {
   }));
   assertEqual(result.status, "awaiting_verification");
   assertEqual(result.clientId, "cli_new");
+  assertEqual((result.verification as { delivery: { to: string } }).delivery.to, "new@example.com");
+  assertEqual((result.nextAction as { tool: string }).tool, "participate");
   assertEqual(await kv.get(mcpBootstrapKey("new@example.com")), "cli_new");
+}
+
+async function testInlineVerificationAutoProgressesThroughJoin() {
+  const { env, fetcher } = buildEnv(({ method, url, body }) => {
+    if (method === "POST" && url.pathname === "/v1/auth/register") {
+      return jsonResponse({
+        agent: {
+          id: "agt_new",
+          clientId: "cli_new",
+          email: "new@example.com",
+          trustTier: "unverified",
+          status: "active",
+        },
+        clientId: "cli_new",
+        clientSecret: "sec_new",
+        verification: {
+          expiresAt: "2026-03-26T00:15:00.000Z",
+          maxAttempts: 5,
+          delivery: {
+            provider: "stub",
+            to: "new@example.com",
+            code: "123456",
+          },
+        },
+      });
+    }
+    if (method === "POST" && url.pathname === "/v1/auth/verify-email") {
+      assertEqual(body.clientId, "cli_new");
+      assertEqual(body.code, "123456");
+      return jsonResponse({
+        id: "agt_new",
+        clientId: "cli_new",
+        email: "new@example.com",
+        trustTier: "supervised",
+        status: "active",
+      });
+    }
+    if (method === "POST" && url.pathname === "/v1/auth/token") {
+      assertEqual(body.grantType, "client_credentials");
+      return jsonResponse({
+        tokenType: "Bearer",
+        agent: { clientId: "cli_new", id: "agt_new" },
+        accessToken: "access",
+        refreshToken: "refresh",
+        expiresIn: 3600,
+        sessionId: "ses_1",
+      });
+    }
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([]);
+    }
+    if (method === "POST" && url.pathname === "/v1/beings") {
+      return jsonResponse({ id: "bng_1" });
+    }
+    if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "open") {
+      return jsonResponse([{ id: "top_open", title: "Open Topic", status: "open", templateId: "debate_v2" }]);
+    }
+    if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "countdown") {
+      return jsonResponse([]);
+    }
+    if (method === "POST" && url.pathname === "/v1/topics/top_open/join") {
+      assertEqual(body.beingId, "bng_1");
+      return jsonResponse({ ok: true });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+
+  const result = structured(await createToolHandlers(env).participate({
+    email: "new@example.com",
+    body: "hello world",
+  }));
+  assertEqual(result.status, "joined_awaiting_start");
+  assertEqual((result.nextAction as { tool: string }).tool, "get-topic-context");
+  assertOk(fetcher.requests.some((request) => request.pathname === "/v1/auth/verify-email"));
+}
+
+async function testRecoveryMagicLinkParticipationPath() {
+  const { env, kv } = buildEnv(({ method, url }) => {
+    if (method === "POST" && url.pathname === "/v1/auth/magic-link") {
+      return jsonResponse({
+        agent: {
+          id: "agt_1",
+          clientId: "cli_1",
+          email: "recover@example.com",
+        },
+        expiresAt: "2026-03-26T00:15:00.000Z",
+        delivery: {
+          provider: "stub",
+          to: "recover@example.com",
+          loginUrl: "https://opndomain.com/login?token=magic-token",
+        },
+      });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpBootstrapKey("recover@example.com"), "cli_1");
+
+  const result = structured(await createToolHandlers(env).participate({
+    email: "recover@example.com",
+    clientId: "cli_1",
+    body: "body",
+  }));
+  assertEqual(result.status, "awaiting_magic_link");
+  assertEqual((result.delivery as { loginUrl: string }).loginUrl, "https://opndomain.com/login?token=magic-token");
+  assertEqual((result.nextAction as { tool: string }).tool, "recover-launch-state");
+}
+
+async function testRefreshTokenParticipationPath() {
+  const { env } = buildEnv(({ method, url, body }) => {
+    if (method === "POST" && url.pathname === "/v1/auth/token") {
+      assertEqual(body.grantType, "refresh_token");
+      assertEqual(body.refreshToken, "refresh-token");
+      return jsonResponse({
+        tokenType: "Bearer",
+        agent: { clientId: "cli_1", id: "agt_1" },
+        accessToken: "access",
+        refreshToken: "refresh-rotated",
+        expiresIn: 3600,
+        sessionId: "ses_1",
+      });
+    }
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([]);
+    }
+    if (method === "POST" && url.pathname === "/v1/beings") {
+      return jsonResponse({ id: "bng_1" });
+    }
+    if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "open") {
+      return jsonResponse([{ id: "top_open", title: "Open Topic", status: "open" }]);
+    }
+    if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "countdown") {
+      return jsonResponse([]);
+    }
+    if (method === "POST" && url.pathname === "/v1/topics/top_open/join") {
+      assertEqual(body.beingId, "bng_1");
+      return jsonResponse({ ok: true });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+
+  const result = structured(await createToolHandlers(env).participate({
+    email: "refresh@example.com",
+    refreshToken: "refresh-token",
+    body: "body",
+  }));
+  assertEqual(result.status, "joined_awaiting_start");
+  assertEqual(result.clientId, "cli_1");
 }
 
 async function testEstablishLaunchStateFromStoredSession() {
@@ -555,6 +735,7 @@ async function testStartedTopicContribution() {
 export async function runAllTests() {
   await testStableToolsList();
   await testDiscoveryMetadata();
+  await testHomepageHighlightsParticipate();
   await testJoinableTopicsMerge();
   await testRefreshesExpiredStoredState();
   await testStaleBeingRecovery();
@@ -562,8 +743,11 @@ export async function runAllTests() {
   await testHandleCollisionSecondFailurePropagates();
   await testBlockedHandleDoesNotRetry();
   await testAwaitingVerification();
+  await testInlineVerificationAutoProgressesThroughJoin();
   await testEstablishLaunchStateFromStoredSession();
   await testRecoverLaunchStateFromMagicLinkUrl();
+  await testRecoveryMagicLinkParticipationPath();
+  await testRefreshTokenParticipationPath();
   await testJoinableTopicParticipation();
   await testStartedTopicNotJoinable();
   await testStartedTopicAwaitingRound();
