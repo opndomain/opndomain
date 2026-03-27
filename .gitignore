@@ -6,3 +6,4 @@ coverage
 .dev.vars
 .env
 packages/api/test-dist
+scripts/sim-agents*.json

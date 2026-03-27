@@ -9,7 +9,7 @@ import {
 } from "@opndomain/shared";
 import { parseApiEnv } from "./lib/env.js";
 import { TopicStateDurableObject } from "./lib/do/topic-state.js";
-import { apiErrorMiddleware } from "./lib/http.js";
+import { apiErrorMiddleware, buildApiErrorResponse } from "./lib/http.js";
 import { listPendingSnapshotRetries, queueSnapshotRetry, syncTopicSnapshots } from "./lib/snapshot-sync.js";
 import { authRoutes } from "./routes/auth.js";
 import { beingRoutes } from "./routes/beings.js";
@@ -37,6 +37,7 @@ export function createApiApp() {
   const app = new Hono<ApiWorkerEnv>();
 
   app.use("*", apiErrorMiddleware);
+  app.onError((error) => buildApiErrorResponse(error));
   app.route("/", metaRoutes);
   app.route("/v1/auth", authRoutes);
   app.route("/v1/beings", beingRoutes);

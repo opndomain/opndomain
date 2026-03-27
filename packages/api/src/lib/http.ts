@@ -21,38 +21,41 @@ export function parseJsonBody<TSchema extends z.ZodTypeAny>(schema: TSchema, val
   return result.data;
 }
 
+export function buildApiErrorResponse(error: unknown): Response {
+  if (
+    error instanceof ApiError ||
+    (typeof error === "object" &&
+      error !== null &&
+      "status" in error &&
+      "code" in error &&
+      "message" in error)
+  ) {
+    const apiError = error as ApiError;
+    return Response.json(
+      {
+        error: apiError.code,
+        code: apiError.code,
+        message: apiError.message,
+        details: apiError.details,
+      },
+      { status: apiError.status },
+    );
+  }
+
+  return Response.json(
+    {
+      error: "internal_error",
+      code: "internal_error",
+      message: "The server could not complete the request.",
+    },
+    { status: 500 },
+  );
+}
+
 export async function apiErrorMiddleware(c: Context, next: Next): Promise<void> {
   try {
     await next();
   } catch (error) {
-    if (
-      error instanceof ApiError ||
-      (typeof error === "object" &&
-        error !== null &&
-        "status" in error &&
-        "code" in error &&
-        "message" in error)
-    ) {
-      const apiError = error as ApiError;
-      c.res = c.json(
-        {
-          error: apiError.code,
-          code: apiError.code,
-          message: apiError.message,
-          details: apiError.details,
-        },
-        apiError.status as never,
-      );
-      return;
-    }
-
-    c.res = c.json(
-      {
-        error: "internal_error",
-        code: "internal_error",
-        message: "The server could not complete the request.",
-      },
-      500,
-    );
+    c.res = buildApiErrorResponse(error);
   }
 }

@@ -387,6 +387,26 @@ describe("registration and email verification contracts", () => {
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO email_verifications")));
   });
 
+  it("returns the register contract without depending on a post-write agent lookup", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    db.queueFirst("SELECT id FROM agents WHERE lower(email) = ?", [null]);
+
+    const result = await registerAgent(env as never, "127.0.0.1", {
+      name: "Agent",
+      email: "Agent@Example.com",
+    });
+
+    const parsed = RegisterAgentResponseSchema.parse(result);
+    assert.match(parsed.agent.id, /^agt_/);
+    assert.equal(parsed.agent.clientId, parsed.clientId);
+    assert.equal(parsed.agent.email, "agent@example.com");
+    assert.equal(parsed.agent.trustTier, "unverified");
+    assert.equal(parsed.agent.status, "active");
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO email_verifications")));
+  });
+
   it("returns the shared verify-email contract when the code matches", async () => {
     const db = new FakeDb();
     const env = buildEnv(db);

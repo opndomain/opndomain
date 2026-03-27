@@ -84,6 +84,15 @@ type CreateAgentRecordInput = {
   trustTier: TrustTier;
 };
 
+type PreparedAgentRecord = {
+  agentId: string;
+  normalizedEmail: string;
+  clientId: string;
+  clientSecret: string;
+  agentProfile: AuthAgentProfile;
+  insertStatement: D1PreparedStatement;
+};
+
 function mapAgent(row: AgentRow): AgentRecord {
   return {
     id: row.id,
@@ -114,7 +123,7 @@ function mapAuthAgentProfile(agent: AgentRecord, fallbackEmail?: string): AuthAg
   };
 }
 
-async function createAgentRecord(env: ApiEnv, input: CreateAgentRecordInput) {
+async function prepareAgentRecord(env: ApiEnv, input: CreateAgentRecordInput): Promise<PreparedAgentRecord> {
   const normalizedEmail = input.email.trim().toLowerCase();
   const existingAgent = await firstRow<{ id: string }>(
     env.DB,
@@ -128,9 +137,19 @@ async function createAgentRecord(env: ApiEnv, input: CreateAgentRecordInput) {
   const agentId = createId("agt");
   const clientId = createClientId();
   const clientSecret = createSecret();
-
-  await runStatement(
-    env.DB.prepare(
+  return {
+    agentId,
+    normalizedEmail,
+    clientId,
+    clientSecret,
+    agentProfile: {
+      id: agentId,
+      clientId,
+      email: normalizedEmail,
+      trustTier: input.trustTier,
+      status: "active",
+    },
+    insertStatement: env.DB.prepare(
       `
         INSERT INTO agents (
           id, client_id, client_secret_hash, name, email, email_verified_at, trust_tier, status
@@ -145,18 +164,6 @@ async function createAgentRecord(env: ApiEnv, input: CreateAgentRecordInput) {
       input.emailVerifiedAt ?? null,
       input.trustTier,
     ),
-  );
-
-  const agent = await getAgentById(env, agentId);
-  if (!agent) {
-    unauthorized("Agent provisioning failed.");
-  }
-
-  return {
-    agent,
-    normalizedEmail,
-    clientId,
-    clientSecret,
   };
 }
 
@@ -208,7 +215,7 @@ export async function registerAgent(
     env.REGISTRATION_RATE_LIMIT_PER_HOUR,
   );
 
-  const { agent, normalizedEmail, clientId, clientSecret } = await createAgentRecord(env, {
+  const { agentId, normalizedEmail, clientId, clientSecret, agentProfile, insertStatement } = await prepareAgentRecord(env, {
     name: input.name,
     email: input.email,
     emailVerifiedAt: null,
@@ -219,18 +226,19 @@ export async function registerAgent(
   const expiresAt = nowIso(addMinutes(new Date(), env.EMAIL_VERIFICATION_TTL_MINUTES));
 
   await env.DB.batch([
+    insertStatement,
     env.DB.prepare(
       `
         INSERT INTO email_verifications (
           id, agent_id, email, code_hash, attempts, expires_at
         ) VALUES (?, ?, ?, ?, 0, ?)
       `,
-    ).bind(verificationId, agent.id, normalizedEmail, await sha256(verificationCode), expiresAt),
+    ).bind(verificationId, agentId, normalizedEmail, await sha256(verificationCode), expiresAt),
   ]);
 
   const delivery = await deliverVerificationCode(env, normalizedEmail, verificationCode);
   return {
-    agent: mapAuthAgentProfile(agent, normalizedEmail),
+    agent: agentProfile,
     clientId,
     clientSecret,
     verification: {
