@@ -263,3 +263,102 @@ describe("scheduled worker", () => {
     assert.equal(cache.values.get("cron/phase5-maintenance-stub"), "2026-03-26T02:00:00.000Z");
   });
 });
+
+describe("worker fetch env parsing", () => {
+  it("parses admin allowlist sets before routing requests", async () => {
+    const log: string[] = [];
+    const db = new FakeDb(log);
+    const cache = new FakeCache(log);
+
+    db.queueFirst("FROM sessions", [{
+      id: "ses_1",
+      agent_id: "agt_1",
+      scope: "web_session",
+      access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z",
+      revoked_at: null,
+    }]);
+    db.queueFirst("FROM agents", [{
+      id: "agt_1",
+      client_id: "cli_1",
+      name: "Admin",
+      email: "admin@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z",
+      trust_tier: "supervised",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM topics GROUP BY status", [{ status: "started", count: 1 }]);
+
+    const response = await worker.fetch(
+      new Request("https://api.opndomain.com/v1/internal/health", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      {
+        DB: db as never,
+        PUBLIC_CACHE: cache as never,
+        SNAPSHOTS: new FakeBucket(log) as never,
+        PUBLIC_ARTIFACTS: new FakeBucket(log) as never,
+        TOPIC_STATE_DO: {} as never,
+        OPNDOMAIN_ENV: "development",
+        ROOT_DOMAIN: "opndomain.com",
+        ROUTER_HOST: "opndomain.com",
+        API_HOST: "api.opndomain.com",
+        MCP_HOST: "mcp.opndomain.com",
+        ROUTER_ORIGIN: "https://opndomain.com",
+        API_ORIGIN: "https://api.opndomain.com",
+        MCP_ORIGIN: "https://mcp.opndomain.com",
+        JWT_ISSUER: "https://api.opndomain.com",
+        JWT_AUDIENCE: "https://api.opndomain.com",
+        SESSION_COOKIE_NAME: "opn_session",
+        SESSION_COOKIE_DOMAIN: ".opndomain.com",
+        ACCESS_TOKEN_TTL_SECONDS: 3600,
+        REFRESH_TOKEN_TTL_SECONDS: 2592000,
+        WEB_SESSION_TTL_SECONDS: 604800,
+        REGISTRATION_RATE_LIMIT_PER_HOUR: 5,
+        TOKEN_RATE_LIMIT_PER_HOUR: 30,
+        EMAIL_VERIFICATION_MAX_ATTEMPTS: 5,
+        EMAIL_VERIFICATION_TTL_MINUTES: 15,
+        MAGIC_LINK_TTL_MINUTES: 15,
+        OAUTH_STATE_TTL_SECONDS: 600,
+        OAUTH_WELCOME_TTL_SECONDS: 600,
+        ADMIN_ALLOWED_EMAILS: "admin@example.com",
+        ADMIN_ALLOWED_CLIENT_IDS: "",
+        ENABLE_SEMANTIC_SCORING: false,
+        ENABLE_TRANSCRIPT_GUARDRAILS: true,
+        CURATED_OPEN_KEY: "curated/open.json",
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        ARTIFACTS_PREFIX: "artifacts",
+        ADMIN_BASE_PATH: "/admin",
+        LOG_LEVEL: "debug",
+        EMAIL_PROVIDER: "stub",
+        EMAIL_FROM: "noreply@opndomain.com",
+        EMAIL_REPLY_TO: "noreply@opndomain.com",
+        EMAIL_PROVIDER_API_KEY: "",
+        AWS_SES_ACCESS_KEY_ID: "",
+        AWS_SES_SECRET_ACCESS_KEY: "",
+        AWS_SES_REGION: "us-east-2",
+        AWS_SES_SESSION_TOKEN: "",
+        EMAIL_VERIFICATION_BASE_URL: "https://api.opndomain.com",
+        GOOGLE_OAUTH_CLIENT_ID: "",
+        GOOGLE_OAUTH_CLIENT_SECRET: "",
+        GITHUB_OAUTH_CLIENT_ID: "",
+        GITHUB_OAUTH_CLIENT_SECRET: "",
+        X_OAUTH_CLIENT_ID: "",
+        X_OAUTH_CLIENT_SECRET: "",
+        JWT_PRIVATE_KEY_PEM: "",
+        JWT_PUBLIC_KEY_PEM: "",
+      } as never,
+      {
+        waitUntil() {},
+        passThroughOnException() {},
+        props: {},
+      } as unknown as ExecutionContext,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as { data: { topicStatusDistribution: Array<{ status: string; count: number }> } };
+    assert.deepEqual(payload.data.topicStatusDistribution, [{ status: "started", count: 1 }]);
+  });
+});

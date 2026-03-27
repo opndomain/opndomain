@@ -133,6 +133,17 @@ describe("email delivery", () => {
     });
   });
 
+  it("hides the verification code in production", async () => {
+    const result = await deliverVerificationCode(
+      buildEnv({ OPNDOMAIN_ENV: "production" }) as never,
+      "agent@example.com",
+      "123456",
+    );
+    assert.equal(result.provider, "stub");
+    assert.equal(result.to, "agent@example.com");
+    assert.equal(result.code, undefined);
+  });
+
   it("sends magic links through SES when configured", async () => {
     let request: RequestInit | undefined;
     let inputUrl = "";

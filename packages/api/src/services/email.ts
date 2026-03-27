@@ -1,18 +1,10 @@
 import type { ApiEnv } from "../lib/env.js";
+import type {
+  EmailVerificationDelivery,
+  MagicLinkDelivery,
+} from "@opndomain/shared";
 import { ApiError } from "../lib/errors.js";
 import { sendSesEmail } from "../lib/ses-email.js";
-
-export type EmailVerificationDelivery = {
-  provider: string;
-  to: string;
-  code?: string;
-};
-
-export type MagicLinkDelivery = {
-  provider: string;
-  to: string;
-  loginUrl: string;
-};
 
 export async function deliverVerificationCode(
   env: ApiEnv,

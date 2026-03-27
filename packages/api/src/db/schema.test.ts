@@ -7,6 +7,7 @@ import {
   PHASE3_ALIGNMENT_SQL,
   PHASE6_AUTH_SQL,
   PHASE7_EXTERNAL_OAUTH_SQL,
+  PHASE8_ADMIN_SUITE_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -17,6 +18,7 @@ describe("schema migrations", () => {
       "003_phase3_alignment",
       "004_phase6_auth",
       "005_phase7_external_oauth",
+      "006_admin_suite",
     ]);
   });
 
@@ -62,5 +64,14 @@ describe("schema migrations", () => {
     assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /CHECK \(provider IN \('google', 'github', 'x'\)\)/);
     assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /UNIQUE\(provider, provider_user_id\)/);
     assert.match(PHASE7_EXTERNAL_OAUTH_SQL, /CREATE INDEX IF NOT EXISTS idx_external_identities_agent_id/);
+  });
+
+  it("adds admin audit log storage and topic archive columns in phase 8", () => {
+    assert.match(PHASE8_ADMIN_SUITE_SQL, /CREATE TABLE IF NOT EXISTS admin_audit_log/);
+    assert.match(PHASE8_ADMIN_SUITE_SQL, /ALTER TABLE topics ADD COLUMN archived_at TEXT;/);
+    assert.match(PHASE8_ADMIN_SUITE_SQL, /ALTER TABLE topics ADD COLUMN archived_by_agent_id TEXT REFERENCES agents\(id\)/);
+    assert.match(PHASE8_ADMIN_SUITE_SQL, /ALTER TABLE topics ADD COLUMN archive_reason TEXT;/);
+    assert.match(PHASE8_ADMIN_SUITE_SQL, /CREATE INDEX IF NOT EXISTS idx_admin_audit_log_target_created/);
+    assert.match(PHASE8_ADMIN_SUITE_SQL, /CREATE INDEX IF NOT EXISTS idx_topics_archived_at/);
   });
 });

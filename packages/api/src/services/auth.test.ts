@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
+import {
+  MagicLinkResponseSchema,
+  MagicLinkVerifyResponseSchema,
+  RegisterAgentResponseSchema,
+  TokenResponseSchema,
+  VerifyEmailResponseSchema,
+} from "@opndomain/shared";
 import { sha256 } from "../lib/crypto.js";
 import { ApiError } from "../lib/errors.js";
 import { signJwt } from "../lib/jwt.js";
-import { authenticateRequest, createMagicLink, exchangeClientCredentials, logoutSession, verifyMagicLink } from "./auth.js";
+import {
+  authenticateRequest,
+  createMagicLink,
+  exchangeClientCredentials,
+  logoutSession,
+  registerAgent,
+  verifyAgentEmail,
+  verifyMagicLink,
+} from "./auth.js";
 import { beginOAuthAuthorize, completeOAuthCallback } from "./oauth.js";
 
 class FakePreparedStatement {
@@ -39,6 +54,13 @@ class FakeDb {
 
   queueFirst(sqlFragment: string, rows: unknown[]) {
     this.firstQueue.set(sqlFragment, rows);
+  }
+
+  async batch(statements: FakePreparedStatement[]) {
+    for (const statement of statements) {
+      await statement.run();
+    }
+    return [];
   }
 
   prepare(sql: string) {
@@ -98,6 +120,9 @@ type TestEnv = {
   X_OAUTH_CLIENT_SECRET: string;
   EMAIL_PROVIDER: string;
   OPNDOMAIN_ENV: string;
+  REGISTRATION_RATE_LIMIT_PER_HOUR: number;
+  EMAIL_VERIFICATION_MAX_ATTEMPTS: number;
+  EMAIL_VERIFICATION_TTL_MINUTES: number;
 };
 
 function buildEnv(db: FakeDb): TestEnv {
@@ -116,6 +141,9 @@ function buildEnv(db: FakeDb): TestEnv {
     ACCESS_TOKEN_TTL_SECONDS: 60 * 15,
     REFRESH_TOKEN_TTL_SECONDS: 60 * 60 * 24 * 30,
     TOKEN_RATE_LIMIT_PER_HOUR: 100,
+    REGISTRATION_RATE_LIMIT_PER_HOUR: 20,
+    EMAIL_VERIFICATION_MAX_ATTEMPTS: 5,
+    EMAIL_VERIFICATION_TTL_MINUTES: 15,
     MAGIC_LINK_TTL_MINUTES: 15,
     OAUTH_STATE_TTL_SECONDS: 600,
     OAUTH_WELCOME_TTL_SECONDS: 600,
@@ -275,6 +303,15 @@ describe("authenticateRequest bearer hardening", () => {
       clientId: "cli_1",
       clientSecret,
     });
+    const parsedTokenSet = TokenResponseSchema.parse({
+      tokenType: "Bearer",
+      accessToken: tokenSet.accessToken,
+      refreshToken: tokenSet.refreshToken,
+      expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
+      sessionId: tokenSet.sessionId,
+      agent: tokenSet.agent,
+    });
+    assert.equal(parsedTokenSet.agent.clientId, "cli_1");
 
     await logoutSession(
       env as never,
@@ -315,6 +352,92 @@ describe("authenticateRequest bearer hardening", () => {
   });
 });
 
+describe("registration and email verification contracts", () => {
+  it("returns the shared register contract with a verification code outside production", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    db.queueFirst("SELECT id FROM agents WHERE lower(email) = ?", [null]);
+    db.queueFirst("FROM agents", [{
+      id: "agt_1",
+      client_id: "cli_1",
+      client_secret_hash: "hash",
+      name: "Agent",
+      email: "agent@example.com",
+      email_verified_at: null,
+      trust_tier: "unverified",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const result = await registerAgent(env as never, "127.0.0.1", {
+      name: "Agent",
+      email: "Agent@Example.com",
+    });
+
+    const parsed = RegisterAgentResponseSchema.parse(result);
+    assert.equal(parsed.agent.email, "agent@example.com");
+    assert.equal(parsed.agent.trustTier, "unverified");
+    assert.equal(parsed.agent.status, "active");
+    assert.match(parsed.clientId, /^cli_/);
+    assert.match(parsed.clientSecret, /^[a-f0-9]+$/);
+    assert.equal(parsed.verification.delivery.to, "agent@example.com");
+    assert.match(parsed.verification.delivery.code ?? "", /^\d{6}$/);
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO email_verifications")));
+  });
+
+  it("returns the shared verify-email contract when the code matches", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    db.queueFirst("FROM agents", [
+      {
+        id: "agt_1",
+        client_id: "cli_1",
+        name: "Agent",
+        email: "agent@example.com",
+        email_verified_at: null,
+        trust_tier: "unverified",
+        status: "active",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z",
+      },
+      {
+        id: "agt_1",
+        client_id: "cli_1",
+        name: "Agent",
+        email: "agent@example.com",
+        email_verified_at: "2026-03-25T00:15:00.000Z",
+        trust_tier: "supervised",
+        status: "active",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:15:00.000Z",
+      },
+    ]);
+    db.queueFirst("FROM email_verifications", [{
+      id: "ev_1",
+      agent_id: "agt_1",
+      email: "agent@example.com",
+      code_hash: await sha256("123456"),
+      attempts: 0,
+      expires_at: "3026-03-25T00:00:00.000Z",
+      consumed_at: null,
+    }]);
+
+    const result = await verifyAgentEmail(env as never, {
+      clientId: "cli_1",
+      code: "123456",
+    });
+
+    const parsed = VerifyEmailResponseSchema.parse(result);
+    assert.equal(parsed.email, "agent@example.com");
+    assert.equal(parsed.trustTier, "supervised");
+    assert.equal(parsed.status, "active");
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE email_verifications SET consumed_at")));
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE agents SET email_verified_at")));
+  });
+});
+
 describe("magic-link auth", () => {
   it("creates a magic link for a registered agent", async () => {
     const db = new FakeDb();
@@ -332,9 +455,11 @@ describe("magic-link auth", () => {
     }]);
 
     const result = await createMagicLink(env as never, "127.0.0.1", "agent@example.com");
+    const parsed = MagicLinkResponseSchema.parse(result);
 
-    assert.equal(result.agent.clientId, "cli_1");
-    assert.match(result.delivery.loginUrl, /\/login\/verify\?token=/);
+    assert.equal(parsed.agent.clientId, "cli_1");
+    assert.equal(parsed.agent.email, "agent@example.com");
+    assert.match(parsed.delivery.loginUrl, /\/login\/verify\?token=/);
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO magic_links")));
   });
 
@@ -352,8 +477,17 @@ describe("magic-link auth", () => {
     queueAgentLookup(db, "agt_1");
 
     const result = await verifyMagicLink(env as never, token);
+    const parsed = MagicLinkVerifyResponseSchema.parse({
+      tokenType: "Bearer",
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
+      sessionId: result.sessionId,
+      agent: result.agent,
+    });
 
-    assert.equal(result.agent.clientId, "cli_1");
+    assert.equal(parsed.agent.clientId, "cli_1");
+    assert.equal(parsed.agent.email, "agent@example.com");
     assert.match(result.cookie, /opn_session=/);
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE magic_links") && entry.sql.includes("consumed_at IS NULL")));
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO sessions")));

@@ -67,17 +67,19 @@ export { TopicStateDurableObject };
 export default {
   fetch(
     request: Request,
-    env: ReturnType<typeof parseApiEnv>,
+    rawEnv: unknown,
     executionContext: ExecutionContext,
   ) {
+    const env = parseApiEnv(rawEnv);
     executionContext.waitUntil(ensureSeedDomains(env));
     return app.fetch(request, env, executionContext);
   },
   async scheduled(
     controller: ScheduledController,
-    env: ReturnType<typeof parseApiEnv>,
+    rawEnv: unknown,
     executionContext: ExecutionContext,
   ) {
+    const env = parseApiEnv(rawEnv);
     const now = new Date(controller.scheduledTime);
     executionContext.waitUntil(
       Promise.resolve().then(async () => {

@@ -2,6 +2,7 @@ import {
   LAUNCH_CORE_SCHEMA_SQL,
   PHASE2_INTEGRITY_SQL,
   PHASE3_ALIGNMENT_SQL,
+  PHASE8_ADMIN_SUITE_SQL,
   PHASE6_AUTH_SQL,
   PHASE7_EXTERNAL_OAUTH_SQL,
 } from "./schema.generated.js";
@@ -10,6 +11,7 @@ export {
   LAUNCH_CORE_SCHEMA_SQL,
   PHASE2_INTEGRITY_SQL,
   PHASE3_ALIGNMENT_SQL,
+  PHASE8_ADMIN_SUITE_SQL,
   PHASE6_AUTH_SQL,
   PHASE7_EXTERNAL_OAUTH_SQL,
 };
@@ -20,4 +22,5 @@ export const API_MIGRATIONS = [
   { tag: "003_phase3_alignment", fileName: "003_phase3_alignment.sql", sql: PHASE3_ALIGNMENT_SQL },
   { tag: "004_phase6_auth", fileName: "004_phase6_auth.sql", sql: PHASE6_AUTH_SQL },
   { tag: "005_phase7_external_oauth", fileName: "005_phase7_external_oauth.sql", sql: PHASE7_EXTERNAL_OAUTH_SQL },
+  { tag: "006_admin_suite", fileName: "006_admin_suite.sql", sql: PHASE8_ADMIN_SUITE_SQL },
 ] as const;

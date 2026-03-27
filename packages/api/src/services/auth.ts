@@ -1,4 +1,18 @@
-import { ACCESS_TOKEN_SCOPE, loginUrl, REFRESH_TOKEN_SCOPE } from "@opndomain/shared";
+import {
+  ACCESS_TOKEN_SCOPE,
+  loginUrl,
+  REFRESH_TOKEN_SCOPE,
+} from "@opndomain/shared";
+import type {
+  AuthAgentIdentity,
+  AuthAgentProfile,
+  MagicLinkResponse,
+  MagicLinkVerifyResponse,
+  RegisterAgentResponse,
+  TokenResponse,
+  VerifyEmailResponse,
+} from "@opndomain/shared";
+import type { TrustTier } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { buildClearedSessionCookie, buildSessionCookie, readCookieValue } from "../lib/cookies.js";
 import { allRows, firstRow, requireRow, runStatement } from "../lib/db.js";
@@ -77,6 +91,25 @@ function mapAgent(row: AgentRow): AgentRecord {
   };
 }
 
+function mapAuthAgentIdentity(agent: AgentRecord): AuthAgentIdentity {
+  return {
+    id: agent.id,
+    clientId: agent.clientId,
+  };
+}
+
+function mapAuthAgentProfile(agent: AgentRecord, fallbackEmail?: string): AuthAgentProfile {
+  return {
+    ...mapAuthAgentIdentity(agent),
+    email: agent.email ?? fallbackEmail ?? "",
+    trustTier: agent.trustTier as TrustTier,
+    status: agent.status,
+  };
+}
+
+type TokenExchangeResult = Omit<TokenResponse, "tokenType" | "expiresIn"> & { cookie: string };
+type MagicLinkVerifyResult = Omit<MagicLinkVerifyResponse, "tokenType" | "expiresIn"> & { cookie: string };
+
 export async function getAgentById(env: ApiEnv, agentId: string): Promise<AgentRecord | null> {
   const row = await firstRow<AgentRow>(
     env.DB,
@@ -115,7 +148,7 @@ export async function registerAgent(
   env: ApiEnv,
   ipAddress: string,
   input: { name: string; email: string },
-) {
+): Promise<RegisterAgentResponse> {
   await enforceHourlyRateLimit(
     env.PUBLIC_CACHE,
     `rate-limit:register:${ipAddress}`,
@@ -159,7 +192,7 @@ export async function registerAgent(
   const delivery = await deliverVerificationCode(env, normalizedEmail, verificationCode);
   const agent = (await getAgentById(env, agentId)) as AgentRecord;
   return {
-    agent,
+    agent: mapAuthAgentProfile(agent, normalizedEmail),
     clientId,
     clientSecret,
     verification: {
@@ -173,7 +206,7 @@ export async function registerAgent(
 export async function verifyAgentEmail(
   env: ApiEnv,
   input: { clientId: string; code: string },
-): Promise<AgentRecord> {
+): Promise<VerifyEmailResponse> {
   const agent = await getAgentByClientId(env, input.clientId);
   if (!agent) {
     unauthorized("Verification credentials are invalid.");
@@ -218,7 +251,7 @@ export async function verifyAgentEmail(
     ).bind(verifiedAt, agent.id),
   ]);
 
-  return (await getAgentById(env, agent.id)) as AgentRecord;
+  return mapAuthAgentProfile((await getAgentById(env, agent.id)) as AgentRecord, agent.email ?? verification.email);
 }
 
 async function mintToken(
@@ -268,7 +301,7 @@ export async function exchangeClientCredentials(
   env: ApiEnv,
   ipAddress: string,
   input: { clientId: string; clientSecret: string },
-) {
+): Promise<TokenExchangeResult> {
   await enforceHourlyRateLimit(env.PUBLIC_CACHE, `rate-limit:token:${ipAddress}`, env.TOKEN_RATE_LIMIT_PER_HOUR);
 
   const agentRow = await requireRow<AgentRow>(
@@ -285,10 +318,18 @@ export async function exchangeClientCredentials(
   }
 
   const agent = mapAgent(agentRow);
-  return createSessionTokens(env, agent);
+  const session = await createSessionTokens(env, agent);
+  return {
+    ...session,
+    agent: mapAuthAgentIdentity(session.agent),
+  };
 }
 
-export async function exchangeRefreshToken(env: ApiEnv, ipAddress: string, refreshToken: string) {
+export async function exchangeRefreshToken(
+  env: ApiEnv,
+  ipAddress: string,
+  refreshToken: string,
+): Promise<TokenExchangeResult> {
   await enforceHourlyRateLimit(env.PUBLIC_CACHE, `rate-limit:token:${ipAddress}`, env.TOKEN_RATE_LIMIT_PER_HOUR);
 
   const payload = await verifyJwt(env, refreshToken);
@@ -336,7 +377,7 @@ export async function exchangeRefreshToken(env: ApiEnv, ipAddress: string, refre
   );
 
   return {
-    agent,
+    agent: mapAuthAgentIdentity(agent),
     sessionId: session.id,
     accessToken: nextAccessToken,
     refreshToken: nextRefreshToken,
@@ -437,7 +478,7 @@ export async function getSessionSummary(env: ApiEnv, request: Request) {
   };
 }
 
-export async function createMagicLink(env: ApiEnv, ipAddress: string, email: string) {
+export async function createMagicLink(env: ApiEnv, ipAddress: string, email: string): Promise<MagicLinkResponse> {
   await enforceHourlyRateLimit(env.PUBLIC_CACHE, `rate-limit:magic-link:${ipAddress}`, env.TOKEN_RATE_LIMIT_PER_HOUR);
 
   const agent = await getAgentByEmail(env, email);
@@ -461,13 +502,19 @@ export async function createMagicLink(env: ApiEnv, ipAddress: string, email: str
   );
 
   return {
-    agent,
+    agent: {
+      ...mapAuthAgentIdentity(agent),
+      email: agent.email ?? email.trim().toLowerCase(),
+    },
     expiresAt,
     delivery: await deliverMagicLink(env, agent.email ?? email.trim().toLowerCase(), link),
   };
 }
 
-export async function verifyMagicLink(env: ApiEnv, token: string) {
+export async function verifyMagicLink(
+  env: ApiEnv,
+  token: string,
+): Promise<MagicLinkVerifyResult> {
   const tokenHash = await sha256(token);
   const magicLink = await firstRow<MagicLinkRow>(
     env.DB,
@@ -498,7 +545,14 @@ export async function verifyMagicLink(env: ApiEnv, token: string) {
     unauthorized("Magic link is no longer valid.");
   }
 
-  return createSessionTokens(env, agent);
+  const session = await createSessionTokens(env, agent);
+  return {
+    ...session,
+    agent: {
+      ...mapAuthAgentIdentity(session.agent),
+      email: session.agent.email ?? agent.email ?? "",
+    },
+  };
 }
 
 export async function purgeExpiredMagicLinks(env: ApiEnv, now = new Date()) {

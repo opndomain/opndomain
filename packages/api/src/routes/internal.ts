@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {
+  AdminListQuerySchema,
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
   ReterminalizeTopicRequestSchema,
@@ -7,17 +8,78 @@ import {
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { assertAdminAgent } from "../lib/admin.js";
+import { ApiError } from "../lib/errors.js";
 import { allRows, firstRow, runStatement } from "../lib/db.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import { listPendingSnapshotRetries } from "../lib/snapshot-sync.js";
 import { authenticateRequest } from "../services/auth.js";
+import {
+  getAdminAgentDetail,
+  getAdminBeingDetail,
+  getAdminDomainDetail,
+  getAdminTopicDetail,
+  listAdminAgents,
+  listAdminBeings,
+  listAdminDomains,
+  listAdminTopics,
+} from "../services/admin.js";
 import { sweepTopicLifecycle } from "../services/lifecycle.js";
 import { reconcileTopicPresentation } from "../services/presentation.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "../services/terminalization.js";
 import { recomputeContributionFinalScore } from "../services/votes.js";
 
 export const internalRoutes = new Hono<{ Bindings: ApiEnv }>();
+
+function apiErrorResponse(error: unknown): Response | null {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    "code" in error &&
+    "message" in error
+  ) {
+    return Response.json(
+      {
+        error: String(error.code),
+        code: String(error.code),
+        message: String(error.message),
+        details: "details" in error ? error.details : undefined,
+      },
+      { status: Number(error.status) },
+    );
+  }
+  return null;
+}
+
+async function withAdminReadAccess(c: { env: ApiEnv; req: { raw: Request } }, action: () => Promise<Response>) {
+  try {
+    const { agent } = await authenticateRequest(c.env, c.req.raw);
+    assertAdminAgent(c.env, agent);
+    return await action();
+  } catch (error) {
+    const response = apiErrorResponse(error);
+    if (response) {
+      return response;
+    }
+    throw error;
+  }
+}
+
+function parseAdminListQuery(request: Request) {
+  const url = new URL(request.url);
+  const result = AdminListQuerySchema.safeParse({
+    page: url.searchParams.get("page") ?? undefined,
+    pageSize: url.searchParams.get("pageSize") ?? undefined,
+    q: url.searchParams.get("q") ?? undefined,
+    status: url.searchParams.get("status") ?? undefined,
+    archived: url.searchParams.get("archived") ?? undefined,
+  });
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
+  }
+  return result.data;
+}
 
 async function repairTopicScores(env: ApiEnv, topicId: string) {
   const rows = await allRows<{ id: string }>(
@@ -174,6 +236,38 @@ internalRoutes.post("/contributions/:contributionId/quarantine", async (c) => {
 
   const result = await reconcileTopicPresentation(c.env, contribution.topic_id);
   return jsonData(c, { ...result, contributionId, action: body.action, reason: body.reason });
+});
+
+internalRoutes.get("/admin/agents", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listAdminAgents(c.env, parseAdminListQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/agents/:agentId", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminAgentDetail(c.env, c.req.param("agentId"))));
+});
+
+internalRoutes.get("/admin/beings", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listAdminBeings(c.env, parseAdminListQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/beings/:beingId", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminBeingDetail(c.env, c.req.param("beingId"))));
+});
+
+internalRoutes.get("/admin/domains", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listAdminDomains(c.env, parseAdminListQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/domains/:domainId", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminDomainDetail(c.env, c.req.param("domainId"))));
+});
+
+internalRoutes.get("/admin/topics", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listAdminTopics(c.env, parseAdminListQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/topics/:topicId", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminTopicDetail(c.env, c.req.param("topicId"))));
 });
 
 internalRoutes.get("/health", async (c) => {

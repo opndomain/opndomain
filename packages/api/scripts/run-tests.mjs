@@ -13,6 +13,7 @@ function testSchemaContracts() {
   const phase3Sql = readFileSync(new URL("../src/db/003_phase3_alignment.sql", import.meta.url), "utf8");
   const phase6Sql = readFileSync(new URL("../src/db/004_phase6_auth.sql", import.meta.url), "utf8");
   const phase7Sql = readFileSync(new URL("../src/db/005_phase7_external_oauth.sql", import.meta.url), "utf8");
+  const phase8Sql = readFileSync(new URL("../src/db/006_admin_suite.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -21,6 +22,7 @@ function testSchemaContracts() {
       "003_phase3_alignment",
       "004_phase6_auth",
       "005_phase7_external_oauth",
+      "006_admin_suite",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -39,6 +41,10 @@ function testSchemaContracts() {
   assert.match(phase6Sql, /CREATE TRIGGER IF NOT EXISTS trg_magic_links_updated_at/);
   assert.match(phase7Sql, /CREATE TABLE IF NOT EXISTS external_identities/);
   assert.match(phase7Sql, /UNIQUE\(provider, provider_user_id\)/);
+  assert.match(phase8Sql, /CREATE TABLE IF NOT EXISTS admin_audit_log/);
+  assert.match(phase8Sql, /ALTER TABLE topics ADD COLUMN archived_at TEXT/);
+  assert.match(phase8Sql, /ALTER TABLE topics ADD COLUMN archived_by_agent_id TEXT REFERENCES agents\(id\)/);
+  assert.match(phase8Sql, /ALTER TABLE topics ADD COLUMN archive_reason TEXT/);
 }
 
 function testTrustAndCookies() {
@@ -183,6 +189,14 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/004_phase6_auth.sql", import.meta.url)),
     join(targetDir, "004_phase6_auth.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/005_phase7_external_oauth.sql", import.meta.url)),
+    join(targetDir, "005_phase7_external_oauth.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/006_admin_suite.sql", import.meta.url)),
+    join(targetDir, "006_admin_suite.sql"),
   );
 }
 
