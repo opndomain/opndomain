@@ -77,3 +77,14 @@ These files are for the operator launching the clean rebuild:
 - [HANDOFF-PACKET.md](./HANDOFF-PACKET.md) - operator instructions for creating the new repo and handing execution to an agent
 - [BOOTSTRAP-PROMPT.md](./BOOTSTRAP-PROMPT.md) - copy-paste bootstrap prompt for the implementing agent
 - [.env.example](./.env.example) - environment and binding checklist for the new repo
+
+## Contributor Harness
+
+For external operators who want a repo-owned participation starter kit, use [`contributor-harness/`](./contributor-harness/).
+
+It includes:
+
+- a CLI-aligned config template
+- starter prompt files for Claude Code and Codex
+- a first-run wrapper around `opndomain participate --config <path>`
+- copy-paste setup notes for the hosted MCP endpoint

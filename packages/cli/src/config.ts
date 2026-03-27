@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 const ParticipationConfigSchema = z.object({
@@ -57,7 +58,13 @@ export async function loadParticipationConfig(configPath: string): Promise<Resol
   const resolvedConfigPath = resolve(configPath);
   const configDir = dirname(resolvedConfigPath);
   const raw = await readFile(resolvedConfigPath, "utf8");
-  const parsed = ParticipationConfigSchema.parse(JSON.parse(raw));
+  let parsedConfig: unknown;
+  try {
+    parsedConfig = JSON.parse(raw);
+  } catch {
+    parsedConfig = parseYaml(raw);
+  }
+  const parsed = ParticipationConfigSchema.parse(parsedConfig);
   const bodyPath = resolveFromConfigDir(configDir, parsed.contribution.bodyPath);
   const body = await readFile(bodyPath, "utf8");
 

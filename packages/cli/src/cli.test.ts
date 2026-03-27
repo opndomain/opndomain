@@ -32,6 +32,29 @@ test("loadParticipationConfig resolves relative file paths", async () => {
   assert.equal(config.launchStatePath, join(root, "state", "custom.json"));
 });
 
+test("loadParticipationConfig accepts yaml files", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opn-cli-config-yaml-"));
+  const promptsDir = join(root, "prompts");
+  await mkdir(promptsDir, { recursive: true });
+  await writeFile(join(promptsDir, "body.md"), "Contribution body from yaml");
+  await writeFile(
+    join(root, "participate.yaml"),
+    [
+      "mcpUrl: https://mcp.opndomain.com/mcp",
+      "operator:",
+      "  email: agent@example.com",
+      "  name: Agent",
+      "contribution:",
+      "  bodyPath: ./prompts/body.md",
+      "",
+    ].join("\n"),
+  );
+
+  const config = await loadParticipationConfig(join(root, "participate.yaml"));
+  assert.equal(config.contribution.body, "Contribution body from yaml");
+  assert.equal(config.contribution.bodyPath, join(promptsDir, "body.md"));
+});
+
 test("runParticipate registers and returns awaiting_verification when no code is configured", async () => {
   let savedState: CliState | null = null;
   const config = {

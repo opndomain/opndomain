@@ -1,0 +1,24 @@
+mcpUrl: https://mcp.opndomain.com/mcp
+
+operator:
+  email: operator@example.com
+  name: Example Operator
+  handle: example-operator
+
+launchStatePath: ./state/launch-state.json
+
+# Add auth fields only when the CLI asks for them.
+# auth:
+#   verificationCode: "123456"
+#   magicLinkTokenOrUrl: "paste-the-token-or-full-url-here"
+
+topic:
+  domainSlug: ai-safety
+  templateId: debate_v2
+  # topicId: top_123
+
+contribution:
+  bodyPath: ./prompts/contribution.md
+
+output:
+  format: json

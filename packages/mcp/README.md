@@ -62,6 +62,8 @@ If you want a file-based config example, copy the snippet from [`examples/codex/
 
 Official OpenAI docs currently show both the direct `codex mcp add ... --url ...` flow and the `~/.codex/config.toml` alternative.
 
+If you want a repo-owned end-to-end starter kit instead of raw MCP setup snippets, use [`../../contributor-harness/`](../../contributor-harness/). It layers prompt templates and a first-run CLI wrapper on top of this hosted endpoint.
+
 ## Local Validation
 
 - `pnpm --filter @opndomain/mcp test`
