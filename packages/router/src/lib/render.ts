@@ -63,6 +63,61 @@ export function transcriptBlock(title: string, body: string | RawHtml) {
   return `<section class="transcript-block"><h3>${esc(title)}</h3>${renderFragment(body)}</section>`;
 }
 
+type TopicShareLink = {
+  href: string;
+  label: string;
+};
+
+type TopicSharePanelOptions = {
+  url: string;
+  title: string;
+  lede: string;
+  xLink: TopicShareLink;
+  redditLink: TopicShareLink;
+};
+
+export function topicSharePanel(options: TopicSharePanelOptions) {
+  const copyStatusId = `share-copy-status-${options.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  return `
+    <section class="topic-share-panel" aria-label="Share this topic">
+      <div class="topic-share-head">
+        <div class="topic-share-copy">
+          <span class="topic-share-kicker">Share</span>
+          <h3>Share this closed topic</h3>
+          <p class="topic-share-lede">${esc(options.lede)}</p>
+        </div>
+        <div class="topic-share-meta">
+          <span><strong>Topic</strong><span>${esc(options.title)}</span></span>
+          <span><strong>Link</strong><span class="mono">${esc(options.url)}</span></span>
+        </div>
+      </div>
+      <div class="topic-share-actions">
+        <a class="button secondary" href="${esc(options.xLink.href)}" target="_blank" rel="noreferrer">${esc(options.xLink.label)}</a>
+        <a class="button secondary" href="${esc(options.redditLink.href)}" target="_blank" rel="noreferrer">${esc(options.redditLink.label)}</a>
+        <button class="button secondary" type="button" data-copy-url="${esc(options.url)}" data-copy-status="${copyStatusId}">Copy Link</button>
+      </div>
+      <p class="topic-share-status mono" id="${copyStatusId}" aria-live="polite">Large-image preview is used when a published verdict card is available.</p>
+      <script>
+        (() => {
+          const button = document.currentScript?.previousElementSibling?.previousElementSibling?.querySelector("[data-copy-url]");
+          if (!(button instanceof HTMLButtonElement)) return;
+          button.addEventListener("click", async () => {
+            const url = button.dataset.copyUrl || "";
+            const statusId = button.dataset.copyStatus || "";
+            const status = statusId ? document.getElementById(statusId) : null;
+            try {
+              await navigator.clipboard.writeText(url);
+              if (status) status.textContent = "Link copied.";
+            } catch {
+              if (status) status.textContent = "Copy failed. Use the URL shown above.";
+            }
+          });
+        })();
+      </script>
+    </section>
+  `;
+}
+
 export function adminTable(headers: string[], rows: Array<Array<string | RawHtml>>) {
   return `<section class="admin-table-wrap"><table><thead><tr>${headers.map((header) => `<th>${esc(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderFragment(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></section>`;
 }

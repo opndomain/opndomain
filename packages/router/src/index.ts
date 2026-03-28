@@ -19,10 +19,10 @@ import {
 } from "@opndomain/shared";
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
-import { renderPage } from "./lib/layout.js";
-import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, sanitizeHtmlFragment, statRow, statusPill, svgIconFor, topicCard, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock } from "./lib/render.js";
+import { renderPage, type PageHeadMetadata } from "./lib/layout.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, sanitizeHtmlFragment, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { EDITORIAL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
@@ -61,6 +61,22 @@ type AdminDashboardData = {
 type AdminTopicData = {
   topic: { id: string; title: string; status: string; prompt: string; artifact_status: string | null } | null;
   apiTopic: { rounds?: Array<{ status: string; roundKind: string; id: string }> } | null;
+};
+
+type TopicPageMeta = {
+  id: string;
+  title: string;
+  status: string;
+  prompt: string;
+  template_id: string;
+  domain_name: string;
+  artifact_status: string | null;
+  verdict_html_key: string | null;
+  og_image_key: string | null;
+  verdict_summary: string | null;
+  verdict_confidence: string | null;
+  member_count: number;
+  contribution_count: number;
 };
 
 const app = new Hono<RouterEnv>();
@@ -113,6 +129,80 @@ function safeNextPath(candidate: string | null | undefined, fallback = "/account
   return candidate;
 }
 
+function trimCopy(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function topicPageUrl(env: RouterEnv["Bindings"], topicId: string, suffix = "") {
+  return new URL(`/topics/${encodeURIComponent(topicId)}${suffix}`, env.ROUTER_ORIGIN).toString();
+}
+
+function buildTopicShareDescription(meta: TopicPageMeta): string {
+  const countSummary = `${meta.member_count} participants, ${meta.contribution_count} contributions`;
+  if (meta.status === "closed" && meta.verdict_summary) {
+    const confidence = meta.verdict_confidence ? ` Confidence: ${meta.verdict_confidence}.` : "";
+    return trimCopy(`${meta.domain_name}. ${meta.verdict_summary}${confidence} ${countSummary}.`, 220);
+  }
+  return trimCopy(`${meta.domain_name}. ${meta.prompt} ${countSummary}.`, 220);
+}
+
+function buildTopicHeadMetadata(env: RouterEnv["Bindings"], meta: TopicPageMeta, description: string): PageHeadMetadata {
+  const canonicalUrl = topicPageUrl(env, meta.id);
+  const hasOgImage = meta.status === "closed" && meta.artifact_status === "published" && Boolean(meta.og_image_key);
+
+  return {
+    canonicalUrl,
+    ogType: "article",
+    ogUrl: canonicalUrl,
+    ogTitle: `${meta.title} | opndomain`,
+    ogDescription: description,
+    ogImageUrl: hasOgImage ? topicPageUrl(env, meta.id, "/og.png") : undefined,
+    ogImageAlt: hasOgImage ? `Verdict card for ${meta.title}` : undefined,
+    twitterCard: hasOgImage ? "summary_large_image" : "summary",
+    twitterTitle: `${meta.title} | opndomain`,
+    twitterDescription: description,
+    twitterImageUrl: hasOgImage ? topicPageUrl(env, meta.id, "/og.png") : undefined,
+    twitterImageAlt: hasOgImage ? `Verdict card for ${meta.title}` : undefined,
+  };
+}
+
+function topicShareLinks(meta: TopicPageMeta, canonicalUrl: string) {
+  const xUrl = new URL("https://twitter.com/intent/tweet");
+  xUrl.searchParams.set("url", canonicalUrl);
+  xUrl.searchParams.set("text", trimCopy(`${meta.title} · ${meta.domain_name} topic on opndomain`, 110));
+
+  const redditUrl = new URL("https://www.reddit.com/submit");
+  redditUrl.searchParams.set("url", canonicalUrl);
+  redditUrl.searchParams.set("title", trimCopy(`${meta.title} | ${meta.domain_name} | opndomain`, 120));
+
+  return {
+    x: xUrl.toString(),
+    reddit: redditUrl.toString(),
+  };
+}
+
+function pngResponse(body: ReadableStream | ArrayBuffer | ArrayBufferView, status = 200) {
+  return new Response(body, {
+    status,
+    headers: {
+      "content-type": "image/png",
+      "cache-control": "public, max-age=3600",
+    },
+  });
+}
+
+function pngNotFoundResponse() {
+  return new Response("Not found.", {
+    status: 404,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "public, max-age=3600",
+    },
+  });
+}
 
 async function bucketJson<T>(object: R2ObjectBody | null): Promise<T | null> {
   if (!object) {
@@ -347,6 +437,27 @@ app.get("/topics", async (c) => {
   });
 });
 
+app.get("/topics/:topicId/og.png", async (c) => {
+  const topicId = c.req.param("topicId");
+  const artifact = await c.env.DB.prepare(`
+    SELECT t.id, ta.artifact_status, ta.og_image_key
+    FROM topics t
+    LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
+    WHERE t.id = ?
+  `).bind(topicId).first<{ id: string; artifact_status: string | null; og_image_key: string | null }>();
+
+  if (!artifact || artifact.artifact_status !== "published" || !artifact.og_image_key) {
+    return pngNotFoundResponse();
+  }
+
+  const object = await c.env.PUBLIC_ARTIFACTS.get(artifact.og_image_key);
+  if (!object) {
+    return pngNotFoundResponse();
+  }
+
+  return pngResponse(object.body);
+});
+
 app.get("/topics/:topicId", async (c) => {
   const topicId = c.req.param("topicId");
   return serveCachedHtml(c, {
@@ -354,21 +465,42 @@ app.get("/topics/:topicId", async (c) => {
     generationKey: cacheGenerationTopicKey(topicId),
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
-    const [state, transcript, meta, verdictObject] = await Promise.all([
+    const [state, transcript, meta] = await Promise.all([
       bucketJson<any>(await c.env.SNAPSHOTS.get(`topics/${topicId}/state.json`)),
       bucketJson<any>(await c.env.SNAPSHOTS.get(`topics/${topicId}/transcript.json`)),
       c.env.DB.prepare(`
-        SELECT t.id, t.title, t.status, t.prompt, t.template_id, d.name AS domain_name, ta.artifact_status
+        SELECT
+          t.id,
+          t.title,
+          t.status,
+          t.prompt,
+          t.template_id,
+          d.name AS domain_name,
+          ta.artifact_status,
+          ta.verdict_html_key,
+          ta.og_image_key,
+          v.summary AS verdict_summary,
+          v.confidence AS verdict_confidence,
+          (SELECT COUNT(*) FROM topic_members tm WHERE tm.topic_id = t.id AND tm.status = 'active') AS member_count,
+          (SELECT COUNT(*) FROM contributions c2 WHERE c2.topic_id = t.id) AS contribution_count
         FROM topics t
         INNER JOIN domains d ON d.id = t.domain_id
         LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
+        LEFT JOIN verdicts v ON v.topic_id = t.id
         WHERE t.id = ?
-      `).bind(topicId).first<{ id: string; title: string; status: string; prompt: string; template_id: string; domain_name: string; artifact_status: string | null }>(),
-      c.env.PUBLIC_ARTIFACTS.get(`artifacts/topics/${topicId}/verdict.html`),
+      `).bind(topicId).first<TopicPageMeta>(),
     ]);
     if (!meta) {
       return renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier."));
     }
+    const description = buildTopicShareDescription(meta);
+    const head = buildTopicHeadMetadata(c.env, meta, description);
+    const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
+    const shareLinks = topicShareLinks(meta, canonicalUrl);
+    const verdictObject =
+      meta.status === "closed" && meta.artifact_status === "published" && meta.verdict_html_key
+        ? await c.env.PUBLIC_ARTIFACTS.get(meta.verdict_html_key)
+        : null;
     const transcriptHtml = (transcript?.rounds ?? []).map((round: any) => `
       <section class="card">
         <div class="actions"><span class="data-badge">${escapeHtml(round.roundKind)}</span><span class="status-pill">${escapeHtml(String(round.sequenceIndex))}</span></div>
@@ -378,15 +510,25 @@ app.get("/topics/:topicId", async (c) => {
     const verdictHtml = meta.status === "closed" && meta.artifact_status === "published" && verdictObject
       ? sanitizeHtmlFragment(await verdictObject.text())
       : "";
+    const sharePanel = meta.status === "closed"
+      ? topicSharePanel({
+          url: canonicalUrl,
+          title: meta.title,
+          lede: "Send readers to the full topic page with the verdict card preview, transcript, and score context intact.",
+          xLink: { href: shareLinks.x, label: "Share on X" },
+          redditLink: { href: shareLinks.reddit, label: "Share on Reddit" },
+        })
+      : "";
     return renderPage(meta.title, [
       hero("Topic", meta.title, meta.prompt, [meta.status, meta.template_id, meta.domain_name]),
       grid("two", [
-        card("Topic State", `${statRow("Members", String(state?.memberCount ?? 0))}${statRow("Contributions", String(state?.contributionCount ?? 0))}${statRow("Transcript Version", String(state?.transcriptVersion ?? 0))}`),
+        card("Topic State", `${statRow("Members", String(state?.memberCount ?? meta.member_count ?? 0))}${statRow("Contributions", String(state?.contributionCount ?? meta.contribution_count ?? 0))}${statRow("Transcript Version", String(state?.transcriptVersion ?? 0))}`),
         card("Rounds", (state?.rounds ?? []).map((round: any) => `<p>${statusPill(round.status)} ${escapeHtml(round.roundKind)} <span class="mono">${escapeHtml(round.revealAt ?? "")}</span></p>`).join("") || "<p>No rounds yet.</p>"),
       ]),
       transcriptBlock("Reveal-Gated Transcript", rawHtml(transcriptHtml)),
+      sharePanel,
       verdictHtml ? transcriptBlock("Published Verdict", rawHtml(verdictHtml)) : "",
-    ].join(""));
+    ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
   });
 });
 

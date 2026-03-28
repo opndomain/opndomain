@@ -73,11 +73,11 @@ class FakeDb {
 }
 
 class FakeBucket {
-  writes: Array<{ key: string; options?: { httpMetadata?: { contentType?: string } } }> = [];
+  writes: Array<{ key: string; body: unknown; options?: { httpMetadata?: { contentType?: string } } }> = [];
   deletes: string[] = [];
 
-  async put(key: string, _body: string, options?: { httpMetadata?: { contentType?: string } }) {
-    this.writes.push({ key, options });
+  async put(key: string, body: unknown, options?: { httpMetadata?: { contentType?: string } }) {
+    this.writes.push({ key, body, options });
   }
 
   async delete(key: string) {
@@ -344,6 +344,7 @@ describe("terminalization service", () => {
     assert.equal(scoreUpdate?.sql.includes("live_score"), false);
     assert.equal(scoreUpdate?.sql.includes("shadow_score"), false);
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "text/html; charset=utf-8"));
+    assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "image/png"));
   });
 
   it("reterminalize replaces an existing verdict and rebuilds affected reputations", async () => {

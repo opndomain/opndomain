@@ -9,7 +9,7 @@ import {
   SNAPSHOT_PENDING_PREFIX,
   TERMINALIZATION_FORCE_FLUSH_EMPTY_REMAINING,
   TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS,
-  topicOgSvgArtifactKey,
+  topicOgPngArtifactKey,
   topicVerdictHtmlArtifactKey,
 } from "./constants.js";
 
@@ -56,9 +56,9 @@ export const PHASE5_META_CONTRACT = {
     },
     deterministicKeys: {
       verdictHtml: topicVerdictHtmlArtifactKey(":topicId"),
-      ogSvg: topicOgSvgArtifactKey(":topicId"),
+      ogPng: topicOgPngArtifactKey(":topicId"),
     },
-    ogAssetFormat: "svg",
+    ogAssetFormat: "png",
   },
   invalidation: {
     generationKeys: [

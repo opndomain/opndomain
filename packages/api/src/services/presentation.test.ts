@@ -3,15 +3,15 @@ import { describe, it } from "node:test";
 import { reconcileTopicPresentation } from "./presentation.js";
 
 class FakeBucket {
-  writes: Array<{ key: string; options?: { httpMetadata?: { contentType?: string } } }> = [];
+  writes: Array<{ key: string; body: unknown; options?: { httpMetadata?: { contentType?: string } } }> = [];
   deletes: string[] = [];
   failOnPut = false;
 
-  async put(key: string, _body: string, options?: { httpMetadata?: { contentType?: string } }) {
+  async put(key: string, body: unknown, options?: { httpMetadata?: { contentType?: string } }) {
     if (this.failOnPut) {
       throw new Error("bucket failed");
     }
-    this.writes.push({ key, options });
+    this.writes.push({ key, body, options });
   }
 
   async delete(key: string) {
@@ -182,7 +182,7 @@ function queueSnapshotReads(db: FakeDb, status = "closed") {
 }
 
 describe("presentation reconcile", () => {
-  it("publishes deterministic verdict HTML and OG SVG artifacts", async () => {
+  it("publishes deterministic verdict HTML and OG image artifacts", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
@@ -205,8 +205,10 @@ describe("presentation reconcile", () => {
     assert.equal(result.retryQueued, false);
     assert.equal(result.artifact.artifactStatus, "published");
     assert.ok(publicArtifacts.writes.some((write) => write.key.endsWith("/verdict.html")));
-    assert.ok(publicArtifacts.writes.some((write) => write.key.endsWith("/og.svg")));
-    assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "image/svg+xml"));
+    const ogWrite = publicArtifacts.writes.find((write) => write.key.endsWith("/og.png"));
+    assert.ok(ogWrite);
+    assert.equal(ogWrite?.options?.httpMetadata?.contentType, "image/png");
+    assert.deepEqual(Array.from(ogWrite?.body as Uint8Array).slice(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
   });
 
   it("queues presentation retry state when artifact publication fails", async () => {
@@ -287,7 +289,7 @@ describe("presentation reconcile", () => {
     assert.equal(result.retryQueued, false);
     assert.equal(result.artifact.artifactStatus, "suppressed");
     assert.deepEqual(publicArtifacts.deletes.sort(), [
-      "artifacts/topics/top_1/og.svg",
+      "artifacts/topics/top_1/og.png",
       "artifacts/topics/top_1/verdict.html",
     ]);
     assert.equal(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "text/html; charset=utf-8"), false);

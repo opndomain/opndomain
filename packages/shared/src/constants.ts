@@ -190,7 +190,10 @@ export const MCP_SESSION_PREFIX = "mcp-session:";
 export const MCP_BOOTSTRAP_PREFIX = "mcp-bootstrap:";
 
 export const ARTIFACT_VERDICT_HTML_FILE = "verdict.html";
-export const ARTIFACT_OG_SVG_FILE = "og.svg";
+export const ARTIFACT_OG_PNG_FILE = "og.png";
+
+export const OG_IMAGE_TITLE_MAX_LENGTH = 90;
+export const OG_IMAGE_SUMMARY_MAX_LENGTH = 180;
 
 export function cacheGenerationDomainKey(domainId: string): string {
   return `${CACHE_GENERATION_DOMAIN_PREFIX}${domainId}`;
@@ -236,6 +239,10 @@ export function topicVerdictHtmlArtifactKey(topicId: string): string {
   return `${ARTIFACTS_PREFIX}/topics/${topicId}/${ARTIFACT_VERDICT_HTML_FILE}`;
 }
 
+export function topicOgPngArtifactKey(topicId: string): string {
+  return `${ARTIFACTS_PREFIX}/topics/${topicId}/${ARTIFACT_OG_PNG_FILE}`;
+}
+
 export function topicOgSvgArtifactKey(topicId: string): string {
-  return `${ARTIFACTS_PREFIX}/topics/${topicId}/${ARTIFACT_OG_SVG_FILE}`;
+  return topicOgPngArtifactKey(topicId);
 }

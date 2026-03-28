@@ -1,20 +1,73 @@
 import { FONT_PRECONNECT, GLOBAL_STYLES } from "./tokens.js";
 
+export type PageHeadMetadata = {
+  canonicalUrl?: string;
+  ogType?: string;
+  ogUrl?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImageUrl?: string;
+  ogImageAlt?: string;
+  twitterCard?: "summary" | "summary_large_image";
+  twitterTitle?: string;
+  twitterDescription?: string;
+  twitterImageUrl?: string;
+  twitterImageAlt?: string;
+};
+
+function escapeHeadContent(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function renderMetaTag(attribute: "name" | "property", key: string, value: string | undefined): string {
+  if (!value) {
+    return "";
+  }
+  return `<meta ${attribute}="${escapeHeadContent(key)}" content="${escapeHeadContent(value)}" />`;
+}
+
 export function renderPage(
   title: string,
   body: string,
   description = "Protocol-centric research surfaces for opndomain.",
   pageStyles?: string,
+  head?: PageHeadMetadata,
 ) {
+  const pageTitle = `${title} | opndomain`;
+  const metaDescription = description;
+  const ogTitle = head?.ogTitle ?? pageTitle;
+  const ogDescription = head?.ogDescription ?? metaDescription;
+  const twitterTitle = head?.twitterTitle ?? ogTitle;
+  const twitterDescription = head?.twitterDescription ?? ogDescription;
+  const ogImageUrl = head?.ogImageUrl;
+  const twitterImageUrl = head?.twitterImageUrl ?? ogImageUrl;
+  const twitterCard = head?.twitterCard ?? (twitterImageUrl ? "summary_large_image" : "summary");
+
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${title} | opndomain</title>
-    <meta name="description" content="${description.replace(/"/g, "&quot;")}" />
-    <meta property="og:title" content="${title} | opndomain" />
-    <meta property="og:description" content="${description.replace(/"/g, "&quot;")}" />
+    <title>${escapeHeadContent(pageTitle)}</title>
+    <meta name="description" content="${escapeHeadContent(metaDescription)}" />
+    ${head?.canonicalUrl ? `<link rel="canonical" href="${escapeHeadContent(head.canonicalUrl)}" />` : ""}
+    ${renderMetaTag("property", "og:site_name", "opndomain")}
+    ${renderMetaTag("property", "og:type", head?.ogType ?? "website")}
+    ${renderMetaTag("property", "og:url", head?.ogUrl ?? head?.canonicalUrl)}
+    ${renderMetaTag("property", "og:title", ogTitle)}
+    ${renderMetaTag("property", "og:description", ogDescription)}
+    ${renderMetaTag("property", "og:image", ogImageUrl)}
+    ${renderMetaTag("property", "og:image:type", ogImageUrl ? "image/png" : undefined)}
+    ${renderMetaTag("property", "og:image:alt", head?.ogImageAlt)}
+    ${renderMetaTag("name", "twitter:card", twitterCard)}
+    ${renderMetaTag("name", "twitter:title", twitterTitle)}
+    ${renderMetaTag("name", "twitter:description", twitterDescription)}
+    ${renderMetaTag("name", "twitter:image", twitterImageUrl)}
+    ${renderMetaTag("name", "twitter:image:alt", head?.twitterImageAlt ?? head?.ogImageAlt)}
     ${FONT_PRECONNECT}
     <style>${GLOBAL_STYLES}</style>
     ${pageStyles ? `<style>${pageStyles}</style>` : ""}

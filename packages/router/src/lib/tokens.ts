@@ -249,6 +249,107 @@ export const TOPICS_PAGE_STYLES = `
 }
 `;
 
+export const TOPIC_DETAIL_PAGE_STYLES = `
+.topic-share-panel {
+  display: grid;
+  gap: 16px;
+  padding: 20px 22px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.16)),
+    var(--surface);
+}
+.topic-share-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+.topic-share-copy {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.topic-share-kicker {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.topic-share-copy h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.2;
+}
+.topic-share-lede {
+  max-width: 58ch;
+  color: var(--text-dim);
+}
+.topic-share-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.topic-share-meta span {
+  display: grid;
+  gap: 3px;
+}
+.topic-share-meta strong {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.topic-share-meta span span {
+  color: var(--text);
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+.topic-share-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.topic-share-actions .button,
+.topic-share-actions button {
+  border-radius: 0;
+  box-shadow: none;
+}
+.topic-share-status {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+@media (max-width: 800px) {
+  .topic-share-head {
+    flex-direction: column;
+  }
+  .topic-share-meta {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .topic-share-panel {
+    padding: 18px 16px;
+  }
+  .topic-share-actions {
+    flex-direction: column;
+  }
+  .topic-share-actions .button,
+  .topic-share-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+`;
+
 export const EDITORIAL_PAGE_STYLES = `
 .editorial-page {
   padding-top: 28px;
