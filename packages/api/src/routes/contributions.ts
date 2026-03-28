@@ -231,10 +231,27 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     );
   }
 
+  const currentRoundKind = context.activeRound.round_kind as string;
+  const sameRoundOnly = currentRoundKind !== "propose";
   const recentTranscriptContributions = (
     await allRows<RecentContributionRow>(
       c.env.DB,
+      sameRoundOnly
+        ? `
+        SELECT c.id, c.body_clean,
+        c.visibility,
+        json_extract(rc.config_json, '$.visibility') AS round_visibility,
+        r.reveal_at
+        FROM contributions c
+        INNER JOIN rounds r ON r.id = c.round_id
+        INNER JOIN round_configs rc ON rc.round_id = r.id
+        WHERE c.topic_id = ?
+          AND c.round_id = ?
+          AND c.visibility IN ('normal', 'low_confidence')
+        ORDER BY c.submitted_at DESC, c.created_at DESC
+        LIMIT ?
       `
+        : `
         SELECT c.id, c.body_clean,
         c.visibility,
         json_extract(rc.config_json, '$.visibility') AS round_visibility,
@@ -247,8 +264,9 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
         ORDER BY c.submitted_at DESC, c.created_at DESC
         LIMIT ?
       `,
-      topicId,
-      SEMANTIC_COMPARISON_WINDOW_SIZE,
+      ...(sameRoundOnly
+        ? [topicId, context.activeRound.id, SEMANTIC_COMPARISON_WINDOW_SIZE]
+        : [topicId, SEMANTIC_COMPARISON_WINDOW_SIZE]),
     )
   )
     .filter((row) => isTranscriptVisibleContribution({

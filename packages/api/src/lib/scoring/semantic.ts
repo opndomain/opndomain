@@ -156,16 +156,27 @@ export function createWorkersAiEmbeddingBackend(env: Pick<ApiEnv, "AI">): Embedd
   };
 }
 
+const ROUND_CONTEXT_PREFIXES: Record<string, string> = {
+  propose: "",
+  critique: "Evaluate weaknesses and counter-arguments: ",
+  refine: "Improve and build upon prior proposals: ",
+  synthesize: "Integrate multiple perspectives into a coherent view: ",
+  predict: "Predict outcomes and implications: ",
+  vote: "",
+};
+
 export async function scoreSemanticSimilarity(
   env: ApiEnv,
   input: {
     topicPrompt: string;
     bodyClean: string;
+    roundKind?: string;
     recentTranscriptContributions: SemanticRow[];
   },
   backend: EmbeddingBackend = createWorkersAiEmbeddingBackend(env),
 ): Promise<SemanticScoreDetails> {
-  const topicEmbeddingText = input.topicPrompt;
+  const roundPrefix = input.roundKind ? (ROUND_CONTEXT_PREFIXES[input.roundKind] ?? "") : "";
+  const topicEmbeddingText = roundPrefix ? `${roundPrefix}${input.topicPrompt}` : input.topicPrompt;
 
   if (!env.ENABLE_SEMANTIC_SCORING) {
     return {
