@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decayStaleReputations, getDomainReputationFactor, rebuildDomainReputation, updateDomainReputation } from "./reputation.js";
+import {
+  decayStaleReputations,
+  getDomainReputationFactor,
+  getEpistemicReputationAdjustment,
+  rebuildDomainReputation,
+  rebuildEpistemicReliability,
+  updateDomainReputation,
+} from "./reputation.js";
 
 class FakePreparedStatement {
   constructor(
@@ -154,5 +161,64 @@ describe("reputation service", () => {
 
     assert.equal(updated, 0);
     assert.equal(db.runs.length, 0);
+  });
+
+  it("rebuilds epistemic reliability from persisted claim outcomes", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM claim_resolutions cr", [
+      { status: "supported" },
+      { status: "supported" },
+      { status: "contested" },
+      { status: "refuted" },
+    ]);
+    db.queueFirst("FROM claim_resolution_evidence cre", [{ count: 1 }]);
+    db.queueFirst("FROM epistemic_reliability", [null]);
+
+    const rebuilt = await rebuildEpistemicReliability(
+      { DB: db as never } as never,
+      "dom_1",
+      "bng_1",
+      new Date("2026-03-28T00:00:00.000Z"),
+    );
+
+    assert.equal(rebuilt.supported_claim_count, 2);
+    assert.equal(rebuilt.contested_claim_count, 1);
+    assert.equal(rebuilt.refuted_claim_count, 1);
+    assert.equal(rebuilt.correction_count, 1);
+    assert.ok(rebuilt.reliability_score < 60);
+    assert.ok(rebuilt.confidence_score > 0);
+    assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO epistemic_reliability")));
+  });
+
+  it("returns a bounded epistemic adjustment only after enough signal", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM epistemic_reliability", [{
+      id: "erl_1",
+      reliability_score: 82,
+      confidence_score: 90,
+      supported_claim_count: 4,
+      contested_claim_count: 1,
+      refuted_claim_count: 0,
+      correction_count: 0,
+      last_evaluated_at: "2026-03-28T00:00:00.000Z",
+    }]);
+
+    const adjustment = await getEpistemicReputationAdjustment({ DB: db as never } as never, "dom_1", "bng_1");
+    assert.ok(adjustment > 0);
+    assert.ok(adjustment <= 0.12);
+
+    db.queueFirst("FROM epistemic_reliability", [{
+      id: "erl_2",
+      reliability_score: 95,
+      confidence_score: 100,
+      supported_claim_count: 1,
+      contested_claim_count: 0,
+      refuted_claim_count: 0,
+      correction_count: 0,
+      last_evaluated_at: "2026-03-28T00:00:00.000Z",
+    }]);
+
+    const gated = await getEpistemicReputationAdjustment({ DB: db as never } as never, "dom_1", "bng_2");
+    assert.equal(gated, 0);
   });
 });

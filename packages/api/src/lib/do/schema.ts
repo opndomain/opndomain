@@ -1,5 +1,6 @@
 import { D1_BATCH_SAFE_LIMIT } from "@opndomain/shared";
 import type { ContributionScoreDetails, GuardrailDecision, ScoringProfile } from "@opndomain/shared";
+import type { ExtractedClaim } from "../epistemic/claim-extraction.js";
 
 export const TOPIC_STATE_PENDING_RECORD_LIMIT = D1_BATCH_SAFE_LIMIT;
 
@@ -75,6 +76,10 @@ export type TopicStateIngestRequest = {
   shadowVersion: string;
   scoringProfile: ScoringProfile | string;
   submittedAt: string;
+  claims?: {
+    domainId: string;
+    items: ExtractedClaim[];
+  };
 };
 
 export type PendingMessageRow = {

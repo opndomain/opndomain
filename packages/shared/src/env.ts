@@ -28,6 +28,7 @@ export const BaseEnvSchema = z.object({
   ADMIN_ALLOWED_EMAILS: z.string().default(""),
   ADMIN_ALLOWED_CLIENT_IDS: z.string().default(""),
   ENABLE_SEMANTIC_SCORING: z.union([z.boolean(), z.string()]).default(true).transform((value) => value === true || value === "true"),
+  ENABLE_EPISTEMIC_SCORING: z.union([z.boolean(), z.string()]).default(false).transform((value) => value === true || value === "true"),
   ENABLE_TRANSCRIPT_GUARDRAILS: z.union([z.boolean(), z.string()]).default(true).transform((value) => value === true || value === "true"),
   CURATED_OPEN_KEY: z.string().default("curated/open.json"),
   TOPIC_TRANSCRIPT_PREFIX: z.string().default("topics"),

@@ -4,6 +4,7 @@ import {
   TOPIC_STATE_SNAPSHOT_PENDING_KEY,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../env.js";
+import { updateDomainClaimGraph } from "../epistemic/claim-graph.js";
 import { syncTopicSnapshots } from "../snapshot-sync.js";
 import { recomputeContributionFinalScore } from "../../services/votes.js";
 import {
@@ -67,6 +68,18 @@ function readPendingAuxVotes(state: DurableObjectState) {
     `SELECT id, payload_json, flushed, created_at
      FROM pending_aux
      WHERE flushed = 0 AND table_name = 'votes' AND operation = 'insert'
+     ORDER BY created_at ASC
+     LIMIT ?`,
+    TOPIC_STATE_PENDING_RECORD_LIMIT,
+  ) as Array<{ id: string; payload_json: string; flushed: number; created_at: string }>;
+}
+
+function readPendingAuxEpistemicClaims(state: DurableObjectState) {
+  return sqlExec(
+    state,
+    `SELECT id, payload_json, flushed, created_at
+     FROM pending_aux
+     WHERE flushed = 0 AND table_name = 'epistemic_claims' AND operation = 'upsert'
      ORDER BY created_at ASC
      LIMIT ?`,
     TOPIC_STATE_PENDING_RECORD_LIMIT,
@@ -289,6 +302,36 @@ async function flushVoteRecords(
   };
 }
 
+async function flushEpistemicClaimRecords(state: DurableObjectState, env: ApiEnv): Promise<void> {
+  const rows = readPendingAuxEpistemicClaims(state);
+  for (const row of rows) {
+    const payload = JSON.parse(row.payload_json) as {
+      contributionId: string;
+      topicId: string;
+      domainId: string;
+      beingId: string;
+      claims: Array<{
+        ordinal: number;
+        body: string;
+        normalizedBody: string;
+        verifiability: "empirical" | "comparative" | "normative" | "predictive" | "unclassified";
+      }>;
+    };
+    try {
+      await updateDomainClaimGraph(env, {
+        topicId: payload.topicId,
+        domainId: payload.domainId,
+        beingId: payload.beingId,
+        contributionId: payload.contributionId,
+        claims: payload.claims,
+      });
+      sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, row.id);
+    } catch (error) {
+      console.error(`epistemic claim flush failed for contribution ${payload.contributionId}`, error);
+    }
+  }
+}
+
 export async function flushPendingTopicState(
   state: DurableObjectState,
   env: ApiEnv,
@@ -296,6 +339,7 @@ export async function flushPendingTopicState(
 ): Promise<{ flushedContributionIds: string[]; remainingCount: number }> {
   const contributionResult = await flushContributionRecords(state, env);
   const voteResult = await flushVoteRecords(state, env);
+  await flushEpistemicClaimRecords(state, env);
   const allFlushedContributionIds = new Set([
     ...contributionResult.flushedContributionIds,
     ...voteResult.flushedContributionIds,

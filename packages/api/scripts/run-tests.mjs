@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { buildClearedSessionCookie, buildSessionCookie } from "../test-dist/api/src/lib/cookies.js";
 import { meetsTrustTier } from "../test-dist/api/src/lib/trust.js";
+import { parseBaseEnv } from "../test-dist/shared/src/env.js";
 
 function testSchemaContracts() {
   const schemaModuleSource = readFileSync(new URL("../src/db/schema.ts", import.meta.url), "utf8");
@@ -14,6 +15,7 @@ function testSchemaContracts() {
   const phase6Sql = readFileSync(new URL("../src/db/004_phase6_auth.sql", import.meta.url), "utf8");
   const phase7Sql = readFileSync(new URL("../src/db/005_phase7_external_oauth.sql", import.meta.url), "utf8");
   const phase8Sql = readFileSync(new URL("../src/db/006_admin_suite.sql", import.meta.url), "utf8");
+  const phase9Sql = readFileSync(new URL("../src/db/007_epistemic_core.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -23,6 +25,7 @@ function testSchemaContracts() {
       "004_phase6_auth",
       "005_phase7_external_oauth",
       "006_admin_suite",
+      "007_epistemic_core",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -45,6 +48,19 @@ function testSchemaContracts() {
   assert.match(phase8Sql, /ALTER TABLE topics ADD COLUMN archived_at TEXT/);
   assert.match(phase8Sql, /ALTER TABLE topics ADD COLUMN archived_by_agent_id TEXT REFERENCES agents\(id\)/);
   assert.match(phase8Sql, /ALTER TABLE topics ADD COLUMN archive_reason TEXT/);
+  assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS claims/);
+  assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS claim_relations/);
+  assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS claim_resolutions/);
+  assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS claim_resolution_evidence/);
+  assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS epistemic_reliability/);
+}
+
+function testBaseEnvParsing() {
+  const defaults = parseBaseEnv({});
+  assert.equal(defaults.ENABLE_EPISTEMIC_SCORING, false);
+
+  const enabled = parseBaseEnv({ ENABLE_EPISTEMIC_SCORING: "true" });
+  assert.equal(enabled.ENABLE_EPISTEMIC_SCORING, true);
 }
 
 function testTrustAndCookies() {
@@ -198,6 +214,10 @@ function copySchemaSqlFixtures() {
     fileURLToPath(new URL("../src/db/006_admin_suite.sql", import.meta.url)),
     join(targetDir, "006_admin_suite.sql"),
   );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/007_epistemic_core.sql", import.meta.url)),
+    join(targetDir, "007_epistemic_core.sql"),
+  );
 }
 
 function copyCompiledSharedRuntimeFiles() {
@@ -217,6 +237,7 @@ function copyCompiledSharedRuntimeFiles() {
 
 async function run() {
   testSchemaContracts();
+  testBaseEnvParsing();
   testTrustAndCookies();
   testLifecycleSourceContracts();
   copySchemaSqlFixtures();

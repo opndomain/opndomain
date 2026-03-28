@@ -2,6 +2,8 @@ import {
   DOMAIN_REPUTATION_CONSISTENCY_WEIGHT,
   DOMAIN_REPUTATION_MIN_CONTRIBUTIONS,
   DOMAIN_REPUTATION_SCORE_WEIGHT,
+  EPISTEMIC_REPUTATION_ADJUSTMENT_CAP,
+  EPISTEMIC_REPUTATION_MIN_SIGNAL,
   REPUTATION_DECAY_GRACE_DAYS,
   REPUTATION_DECAY_PER_DAY,
   REPUTATION_FLOOR,
@@ -27,6 +29,34 @@ type ReputationSampleRow = {
 
 type RollupDomainRow = {
   id: string;
+};
+
+type EpistemicResolutionRow = {
+  status: string;
+};
+
+type EpistemicCorrectionRow = {
+  count: number;
+};
+
+type EpistemicReliabilityRow = {
+  id: string;
+  reliability_score: number;
+  confidence_score: number;
+  supported_claim_count: number;
+  contested_claim_count: number;
+  refuted_claim_count: number;
+  correction_count: number;
+  last_evaluated_at: string | null;
+};
+
+type EpistemicSummary = {
+  reliabilityScore: number;
+  confidenceScore: number;
+  supportedClaimCount: number;
+  contestedClaimCount: number;
+  refutedClaimCount: number;
+  correctionCount: number;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -59,6 +89,55 @@ function diffDays(fromIso: string, to: Date): number {
     return 0;
   }
   return Math.max(0, Math.floor((to.getTime() - fromMs) / 86_400_000));
+}
+
+function summarizeEpistemicReliability(statuses: string[], correctionCount: number): EpistemicSummary {
+  let supportedClaimCount = 0;
+  let contestedClaimCount = 0;
+  let refutedClaimCount = 0;
+  let mixedClaimCount = 0;
+  for (const status of statuses) {
+    if (status === "supported") {
+      supportedClaimCount += 1;
+    } else if (status === "contested") {
+      contestedClaimCount += 1;
+    } else if (status === "refuted") {
+      refutedClaimCount += 1;
+    } else if (status === "mixed") {
+      mixedClaimCount += 1;
+    }
+  }
+
+  const totalSignals = statuses.length + correctionCount;
+  if (totalSignals === 0) {
+    return {
+      reliabilityScore: 50,
+      confidenceScore: 0,
+      supportedClaimCount,
+      contestedClaimCount,
+      refutedClaimCount,
+      correctionCount,
+    };
+  }
+
+  const weightedSignal =
+    supportedClaimCount * 1 +
+    mixedClaimCount * 0.35 -
+    contestedClaimCount * 0.45 -
+    refutedClaimCount * 1 -
+    correctionCount * 0.25;
+  const normalizedSignal = clamp(weightedSignal / totalSignals, -1, 1);
+  const reliabilityScore = clamp(50 + normalizedSignal * 50, 0, 100);
+  const confidenceScore = clamp((totalSignals / 6) * 100, 0, 100);
+
+  return {
+    reliabilityScore,
+    confidenceScore,
+    supportedClaimCount,
+    contestedClaimCount,
+    refutedClaimCount,
+    correctionCount,
+  };
 }
 
 export async function updateDomainReputation(
@@ -219,6 +298,155 @@ export async function getDomainReputationFactor(
     return 0;
   }
   return clamp(Number(row.decayed_score ?? 0) / 100, 0, 1);
+}
+
+export async function rebuildEpistemicReliability(
+  env: ApiEnv,
+  domainId: string,
+  beingId: string,
+  now = new Date(),
+): Promise<EpistemicReliabilityRow> {
+  const resolutionRows = await allRows<EpistemicResolutionRow>(
+    env.DB,
+    `
+      SELECT cr.status
+      FROM claim_resolutions cr
+      INNER JOIN claims c ON c.id = cr.claim_id
+      WHERE cr.domain_id = ?
+        AND c.being_id = ?
+    `,
+    domainId,
+    beingId,
+  );
+  const correctionRow = await firstRow<EpistemicCorrectionRow>(
+    env.DB,
+    `
+      SELECT COUNT(*) AS count
+      FROM claim_resolution_evidence cre
+      INNER JOIN claims c ON c.id = cre.claim_id
+      WHERE c.domain_id = ?
+        AND c.being_id = ?
+        AND cre.evidence_kind = 'correction'
+    `,
+    domainId,
+    beingId,
+  );
+  const existing = await firstRow<EpistemicReliabilityRow>(
+    env.DB,
+    `
+      SELECT
+        id,
+        reliability_score,
+        confidence_score,
+        supported_claim_count,
+        contested_claim_count,
+        refuted_claim_count,
+        correction_count,
+        last_evaluated_at
+      FROM epistemic_reliability
+      WHERE domain_id = ? AND being_id = ?
+    `,
+    domainId,
+    beingId,
+  );
+
+  const summary = summarizeEpistemicReliability(
+    resolutionRows.map((row) => row.status),
+    Number(correctionRow?.count ?? 0),
+  );
+  const id = existing?.id ?? createId("erl");
+  const evaluatedAt = now.toISOString();
+  await env.DB
+    .prepare(
+      `
+        INSERT INTO epistemic_reliability (
+          id,
+          domain_id,
+          being_id,
+          reliability_score,
+          confidence_score,
+          supported_claim_count,
+          contested_claim_count,
+          refuted_claim_count,
+          correction_count,
+          last_evaluated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(domain_id, being_id) DO UPDATE SET
+          reliability_score = excluded.reliability_score,
+          confidence_score = excluded.confidence_score,
+          supported_claim_count = excluded.supported_claim_count,
+          contested_claim_count = excluded.contested_claim_count,
+          refuted_claim_count = excluded.refuted_claim_count,
+          correction_count = excluded.correction_count,
+          last_evaluated_at = excluded.last_evaluated_at
+      `,
+    )
+    .bind(
+      id,
+      domainId,
+      beingId,
+      summary.reliabilityScore,
+      summary.confidenceScore,
+      summary.supportedClaimCount,
+      summary.contestedClaimCount,
+      summary.refutedClaimCount,
+      summary.correctionCount,
+      evaluatedAt,
+    )
+    .run();
+
+  return {
+    id,
+    reliability_score: summary.reliabilityScore,
+    confidence_score: summary.confidenceScore,
+    supported_claim_count: summary.supportedClaimCount,
+    contested_claim_count: summary.contestedClaimCount,
+    refuted_claim_count: summary.refutedClaimCount,
+    correction_count: summary.correctionCount,
+    last_evaluated_at: evaluatedAt,
+  };
+}
+
+export async function getEpistemicReputationAdjustment(
+  env: ApiEnv,
+  domainId: string,
+  beingId: string,
+): Promise<number> {
+  const row = await firstRow<EpistemicReliabilityRow>(
+    env.DB,
+    `
+      SELECT
+        id,
+        reliability_score,
+        confidence_score,
+        supported_claim_count,
+        contested_claim_count,
+        refuted_claim_count,
+        correction_count,
+        last_evaluated_at
+      FROM epistemic_reliability
+      WHERE domain_id = ? AND being_id = ?
+    `,
+    domainId,
+    beingId,
+  );
+
+  const signalCount =
+    Number(row?.supported_claim_count ?? 0) +
+    Number(row?.contested_claim_count ?? 0) +
+    Number(row?.refuted_claim_count ?? 0) +
+    Number(row?.correction_count ?? 0);
+  if (!row || signalCount < EPISTEMIC_REPUTATION_MIN_SIGNAL) {
+    return 0;
+  }
+
+  const centeredReliability = clamp((Number(row.reliability_score ?? 50) - 50) / 50, -1, 1);
+  const confidenceWeight = clamp(Number(row.confidence_score ?? 0) / 100, 0, 1);
+  return clamp(
+    centeredReliability * confidenceWeight * EPISTEMIC_REPUTATION_ADJUSTMENT_CAP,
+    -EPISTEMIC_REPUTATION_ADJUSTMENT_CAP,
+    EPISTEMIC_REPUTATION_ADJUSTMENT_CAP,
+  );
 }
 
 export async function decayStaleReputations(env: ApiEnv, now = new Date()): Promise<number> {

@@ -67,6 +67,7 @@ class FakeDb {
 function buildEnv(
   db: FakeDb,
   doHandler: (request: Request) => Promise<Response>,
+  options?: { enableEpistemicScoring?: boolean },
 ) {
   const embed = (text: string) => {
     const normalized = text.toLowerCase();
@@ -95,6 +96,7 @@ function buildEnv(
     SESSION_COOKIE_NAME: "opn_session",
     JWT_AUDIENCE: "https://api.opndomain.com",
     JWT_ISSUER: "https://api.opndomain.com",
+    ENABLE_EPISTEMIC_SCORING: options?.enableEpistemicScoring ?? false,
     ENABLE_TRANSCRIPT_GUARDRAILS: true,
     ENABLE_SEMANTIC_SCORING: true,
     AI: {
@@ -437,5 +439,75 @@ describe("contribution routes", () => {
     assert.equal(response.status, 200);
     assert.deepEqual(receivedRecentWindow, ["cnt_a", "cnt_b"]);
     assert.ok((semanticAverage ?? 0) >= 0);
+  });
+
+  it("includes deterministic epistemic claims only when the flag is enabled", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedContributionPath(db);
+    let claims: unknown = null;
+
+    const app = createApiApp();
+    const response = await app.fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/contributions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "opn_session=ses_1",
+        },
+        body: JSON.stringify({
+          beingId: "bng_1",
+          body: "Measured results show a trade-off in practice. Teams should publish the benchmark.",
+          idempotencyKey: "idem_87654321",
+        }),
+      }),
+      buildEnv(
+        db,
+        async (request) => {
+          const payload = (await request.json()) as Record<string, unknown>;
+          claims = payload.claims;
+          return Response.json({
+            id: "cnt_1",
+            visibility: "normal",
+            guardrailDecision: "allow",
+            scores: {
+              substance: 70,
+              role: "evidence",
+              roleBonus: 12,
+              echoDetected: false,
+              metaDetected: false,
+              relevance: 66,
+              novelty: 62,
+              reframe: 61,
+              semanticFlags: [],
+              initialScore: 68,
+              finalScore: 68,
+              shadowInitialScore: 67,
+              shadowFinalScore: 67,
+            },
+          }, { status: 200 });
+        },
+        { enableEpistemicScoring: true },
+      ) as never,
+      {} as never,
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(claims, {
+      domainId: "dom_1",
+      items: [
+        {
+          ordinal: 1,
+          body: "Measured results show a trade-off in practice.",
+          normalizedBody: "measured results show a trade off in practice",
+          verifiability: "empirical",
+        },
+        {
+          ordinal: 2,
+          body: "Teams should publish the benchmark.",
+          normalizedBody: "teams should publish the benchmark",
+          verifiability: "normative",
+        },
+      ],
+    });
   });
 });

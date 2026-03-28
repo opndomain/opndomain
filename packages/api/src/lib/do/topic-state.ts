@@ -326,6 +326,16 @@ export class TopicStateDurableObject {
       scoring_profile: payload.scoringProfile,
       details_json: payload.scores.details,
     };
+    const epistemicPayload = payload.claims
+      ? {
+          contributionId: payload.contributionId,
+          topicId: payload.topicId,
+          domainId: payload.claims.domainId,
+          beingId: payload.beingId,
+          claims: payload.claims.items,
+          submittedAt: payload.submittedAt,
+        }
+      : null;
 
     await withStorageTransaction(this.state, async () => {
       sqlExec(
@@ -370,6 +380,17 @@ export class TopicStateDurableObject {
         payload.visibility,
         payload.submittedAt,
       );
+      if (epistemicPayload && epistemicPayload.claims.length > 0) {
+        sqlExec(
+          this.state,
+          `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+           VALUES (?, 'epistemic_claims', 'upsert', ?, 0, ?)
+           ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json, created_at = excluded.created_at, flushed = 0`,
+          payload.contributionId,
+          JSON.stringify(epistemicPayload),
+          payload.submittedAt,
+        );
+      }
     });
 
     await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.submittedAt);

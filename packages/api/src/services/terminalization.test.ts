@@ -22,6 +22,9 @@ class FakePreparedStatement {
   }
 
   async run() {
+    if (this.db.throwOnRunMatch?.test(this.sql)) {
+      throw new Error(`simulated run failure for ${this.sql}`);
+    }
     this.db.runs.push({ sql: this.sql, bindings: this.bindings });
     return { success: true };
   }
@@ -29,6 +32,8 @@ class FakePreparedStatement {
 
 class FakeDb {
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
+  queries: string[] = [];
+  throwOnRunMatch: RegExp | null = null;
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -45,6 +50,7 @@ class FakeDb {
   }
 
   consumeFirst<T>(sql: string): T | null {
+    this.queries.push(sql);
     const entry = Array.from(this.firstQueue.entries())
       .filter(([fragment]) => sql.includes(fragment))
       .sort((left, right) => right[0].length - left[0].length)[0];
@@ -58,6 +64,7 @@ class FakeDb {
   }
 
   consumeAll<T>(sql: string): T[] {
+    this.queries.push(sql);
     const entry = Array.from(this.allQueue.entries())
       .filter(([fragment]) => sql.includes(fragment))
       .sort((left, right) => right[0].length - left[0].length)[0];
@@ -439,5 +446,197 @@ describe("terminalization service", () => {
       ),
     );
     assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO domain_reputation")));
+  });
+
+  it("skips epistemic table work entirely when the flag is disabled", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    db.queueFirst("FROM topics WHERE id = ?", [
+      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+    ]);
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+      { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
+      { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
+    ]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id", [
+      {
+        id: "cnt_1",
+        being_id: "bng_1",
+        round_id: "rnd_1",
+        round_kind: "propose",
+        sequence_index: 0,
+        final_score: 73,
+        shadow_final_score: 72,
+        body_clean: "Body",
+        visibility: "normal",
+      },
+    ]);
+    db.queueFirst("FROM contribution_scores cs", [{
+      substance_score: 70,
+      role_bonus: 10,
+      details_json: JSON.stringify({ role: "claim" }),
+      relevance: 0.8,
+      novelty: 0.7,
+      reframe: 0.4,
+      initial_score: 68,
+      shadow_initial_score: 67,
+      scoring_profile: "adversarial",
+      round_kind: "propose",
+      template_id: "debate_v2",
+      topic_id: "top_1",
+    }]);
+    db.queueAll("SELECT direction, weight, voter_being_id\n        FROM votes", [
+      { direction: 1, weight: 2, voter_being_id: "bng_2" },
+    ]);
+    db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [{ distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueFirst("FROM domain_reputation", [null]);
+    queueClosedTopicPresentationReads(db);
+    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
+      {
+        confidence: "moderate",
+        terminalization_mode: "full_template",
+        summary: "summary",
+        reasoning_json: JSON.stringify({
+          topContributionsPerRound: [
+            {
+              roundKind: "propose",
+              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+            },
+          ],
+          completedRounds: 2,
+          totalRounds: 2,
+        }),
+      },
+    ]);
+
+    const result = await runTerminalizationSequence(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_STATE_DO: {
+          idFromName: (name: string) => name,
+          get: () => ({
+            fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+          }),
+        },
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
+      } as never,
+      "top_1",
+    );
+
+    assert.equal(result.terminalized, true);
+    assert.equal(db.queries.some((sql) => sql.includes("FROM claims WHERE topic_id = ?")), false);
+    assert.equal(db.runs.some((run) => run.sql.includes("epistemic_reliability")), false);
+  });
+
+  it("fails open when epistemic terminalization work errors", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    db.throwOnRunMatch = /INSERT INTO epistemic_reliability/;
+    db.queueFirst("FROM topics WHERE id = ?", [
+      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+    ]);
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+      { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
+      { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
+    ]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id", [
+      {
+        id: "cnt_1",
+        being_id: "bng_1",
+        round_id: "rnd_1",
+        round_kind: "propose",
+        sequence_index: 0,
+        final_score: 73,
+        shadow_final_score: 72,
+        body_clean: "Body",
+        visibility: "normal",
+      },
+    ]);
+    db.queueFirst("FROM contribution_scores cs", [{
+      substance_score: 70,
+      role_bonus: 10,
+      details_json: JSON.stringify({ role: "claim" }),
+      relevance: 0.8,
+      novelty: 0.7,
+      reframe: 0.4,
+      initial_score: 68,
+      shadow_initial_score: 67,
+      scoring_profile: "adversarial",
+      round_kind: "propose",
+      template_id: "debate_v2",
+      topic_id: "top_1",
+    }]);
+    db.queueAll("SELECT direction, weight, voter_being_id\n        FROM votes", [
+      { direction: 1, weight: 2, voter_being_id: "bng_2" },
+    ]);
+    db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [{ distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueFirst("FROM domain_reputation", [null]);
+    db.queueFirst("SELECT COUNT(*) AS count FROM claims WHERE topic_id = ?", [{ count: 2 }]);
+    db.queueAll("SELECT cr.status", [{ status: "supported" }]);
+    db.queueFirst("SELECT COUNT(*) AS count\n      FROM claim_resolution_evidence", [{ count: 0 }]);
+    db.queueFirst("FROM epistemic_reliability", [null]);
+    queueClosedTopicPresentationReads(db);
+    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
+      {
+        confidence: "moderate",
+        terminalization_mode: "full_template",
+        summary: "summary",
+        reasoning_json: JSON.stringify({
+          topContributionsPerRound: [
+            {
+              roundKind: "propose",
+              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+            },
+          ],
+          completedRounds: 2,
+          totalRounds: 2,
+          epistemic: { status: "unavailable" },
+        }),
+      },
+    ]);
+
+    const originalConsoleError = console.error;
+    let result: Awaited<ReturnType<typeof runTerminalizationSequence>>;
+    try {
+      console.error = () => undefined;
+      result = await runTerminalizationSequence(
+        {
+          DB: db as never,
+          SNAPSHOTS: snapshots as never,
+          PUBLIC_ARTIFACTS: publicArtifacts as never,
+          PUBLIC_CACHE: cache as never,
+          TOPIC_STATE_DO: {
+            idFromName: (name: string) => name,
+            get: () => ({
+              fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+            }),
+          },
+          TOPIC_TRANSCRIPT_PREFIX: "topics",
+          CURATED_OPEN_KEY: "curated/open.json",
+          ENABLE_EPISTEMIC_SCORING: true,
+        } as never,
+        "top_1",
+      );
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    assert.equal(result.terminalized, true);
+    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
+    assert.ok(verdictInsert);
+    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"epistemic":\{"status":"unavailable"\}/);
   });
 });

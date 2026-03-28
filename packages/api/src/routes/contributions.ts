@@ -14,6 +14,7 @@ import { forbidden, notFound } from "../lib/errors.js";
 import { runGuardrailPipeline } from "../lib/guardrails/index.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import { createId } from "../lib/ids.js";
+import { extractClaims } from "../lib/epistemic/claim-extraction.js";
 import { scoreContribution } from "../lib/scoring/index.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { authenticateRequest } from "../services/auth.js";
@@ -296,6 +297,12 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
       shadowVersion: SCORE_VERSION_SHADOW,
       scoringProfile,
       submittedAt: new Date().toISOString(),
+      claims: c.env.ENABLE_EPISTEMIC_SCORING
+        ? {
+            domainId: context.topic.domain_id,
+            items: extractClaims(guardrail.bodyClean),
+          }
+        : undefined,
     }),
   });
 

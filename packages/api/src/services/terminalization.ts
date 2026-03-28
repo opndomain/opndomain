@@ -10,7 +10,11 @@ import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { createId } from "../lib/ids.js";
 import { queuePresentationRetry, reconcileTopicPresentation } from "./presentation.js";
-import { rebuildDomainReputation, updateDomainReputation } from "./reputation.js";
+import {
+  rebuildDomainReputation,
+  rebuildEpistemicReliability,
+  updateDomainReputation,
+} from "./reputation.js";
 import { recomputeContributionFinalScore } from "./votes.js";
 
 type TopicContextRow = {
@@ -177,6 +181,41 @@ async function writeVerdict(
     .run();
 }
 
+async function buildEpistemicVerdictReasoning(
+  env: ApiEnv,
+  topicId: string,
+  domainId: string,
+  contributions: ContributionRow[],
+) {
+  if (!env.ENABLE_EPISTEMIC_SCORING) {
+    return null;
+  }
+
+  const claimCountRow = await firstRow<{ count: number }>(
+    env.DB,
+    `SELECT COUNT(*) AS count FROM claims WHERE topic_id = ?`,
+    topicId,
+  );
+  const reliability = [];
+  for (const beingId of new Set(contributions.map((contribution) => contribution.being_id))) {
+    const summary = await rebuildEpistemicReliability(env, domainId, beingId);
+    reliability.push({
+      beingId,
+      reliabilityScore: Number(summary.reliability_score ?? 0),
+      confidenceScore: Number(summary.confidence_score ?? 0),
+      supportedClaimCount: Number(summary.supported_claim_count ?? 0),
+      contestedClaimCount: Number(summary.contested_claim_count ?? 0),
+      refutedClaimCount: Number(summary.refuted_claim_count ?? 0),
+      correctionCount: Number(summary.correction_count ?? 0),
+    });
+  }
+
+  return {
+    claimCount: Number(claimCountRow?.count ?? 0),
+    reliability,
+  };
+}
+
 export async function runTerminalizationSequence(
   env: ApiEnv,
   topicId: string,
@@ -238,6 +277,20 @@ export async function runTerminalizationSequence(
   const completedRounds = rounds.filter((round) => round.status === "completed").length;
   const confidence = chooseConfidence(terminalizationMode, completedRounds);
   const verdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
+  let epistemicReasoning: Record<string, unknown> | null = null;
+  if (env.ENABLE_EPISTEMIC_SCORING) {
+    try {
+      epistemicReasoning = await buildEpistemicVerdictReasoning(
+        env,
+        topicId,
+        topic.domain_id,
+        refreshedContributions,
+      );
+    } catch (error) {
+      console.error(`epistemic terminalization failed for topic ${topicId}`, error);
+      epistemicReasoning = { status: "unavailable" };
+    }
+  }
 
   await writeVerdict(
     env,
@@ -249,6 +302,7 @@ export async function runTerminalizationSequence(
       topContributionsPerRound: verdictPresentation.leaders,
       completedRounds,
       totalRounds: rounds.length,
+      ...(epistemicReasoning ? { epistemic: epistemicReasoning } : {}),
     },
     Boolean(options?.reterminalize),
   );

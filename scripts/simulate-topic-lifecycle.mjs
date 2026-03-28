@@ -15,12 +15,19 @@ Required config:
   SIM_CADENCE_MINUTES
   SIM_DOMAIN_ID
 
+Optional config:
+  SIM_CONTENT_PATH or SIM_CONTENT_JSON — substantive round content (see below)
+  SIM_TOPIC_TITLE — override generated topic title
+  SIM_TOPIC_PROMPT — override generated topic prompt
+
 Flags override env vars:
   --api-base-url URL
   --admin-client-id ID
   --admin-client-secret SECRET
   --agent-config-path PATH
   --agent-config-json JSON
+  --content-path PATH
+  --content-json JSON
   --template-id TEMPLATE
   --cadence-minutes MINUTES
   --domain-id ID
@@ -34,11 +41,32 @@ Participant config JSON shape:
     ]
   }
 
+Content config JSON shape (optional — enables substantive round content):
+  {
+    "topic": {
+      "title": "...",
+      "prompt": "...",
+      "domainId": "...",
+      "templateId": "...",
+      "cadenceMinutes": 1
+    },
+    "rounds": {
+      "propose": ["participant1 text", "participant2 text", "participant3 text"],
+      "critique": ["...", "...", "..."],
+      ...
+    }
+  }
+
+  When content is provided, each round key maps to an array of contribution bodies
+  indexed by participant order. If a round key is missing, the harness falls back
+  to generated simulation text for that round.
+
 Example:
   API_BASE_URL=https://api.opndomain.com \\
   ADMIN_CLIENT_ID=cli_admin \\
   ADMIN_CLIENT_SECRET=secret \\
   SIM_AGENT_CONFIG_PATH=./scripts/sim-agents.json \\
+  SIM_CONTENT_PATH=./scripts/content-ai-safety-explainability.json \\
   SIM_TEMPLATE_ID=debate_v2 \\
   SIM_CADENCE_MINUTES=1 \\
   SIM_DOMAIN_ID=dom_ai-safety \\
@@ -150,6 +178,12 @@ async function parseArgs(argv) {
       case "--domain-id":
         cli.domainId = value;
         break;
+      case "--content-path":
+        cli.contentPath = value;
+        break;
+      case "--content-json":
+        cli.contentJson = value;
+        break;
       default:
         fail(`Unknown flag: ${token}`);
     }
@@ -158,6 +192,45 @@ async function parseArgs(argv) {
   }
 
   return cli;
+}
+
+function parseContentConfig(raw, participantCount) {
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    fail(`Content config must be valid JSON (${error instanceof Error ? error.message : String(error)}).`);
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    fail("Content config must be an object.");
+  }
+
+  const rounds = parsed.rounds;
+  if (!rounds || typeof rounds !== "object") {
+    fail("Content config must include a 'rounds' object keyed by round kind.");
+  }
+
+  for (const [roundKind, bodies] of Object.entries(rounds)) {
+    if (!Array.isArray(bodies)) {
+      fail(`Content config rounds.${roundKind} must be an array of strings.`);
+    }
+    if (bodies.length !== participantCount) {
+      fail(`Content config rounds.${roundKind} has ${bodies.length} entries but expected ${participantCount} (one per participant).`);
+    }
+    for (const [index, body] of bodies.entries()) {
+      if (typeof body !== "string" || body.trim().length === 0) {
+        fail(`Content config rounds.${roundKind}[${index}] must be a non-empty string.`);
+      }
+    }
+  }
+
+  const topic = parsed.topic ?? null;
+  if (topic && typeof topic !== "object") {
+    fail("Content config 'topic' must be an object if provided.");
+  }
+
+  return { topic, rounds };
 }
 
 async function readConfig(argv, env) {
@@ -198,15 +271,29 @@ async function readConfig(argv, env) {
     : inlineAgentConfigJson;
   const participants = parseParticipantConfig(participantConfigRaw);
 
+  const contentPath = String(cli.contentPath ?? env.SIM_CONTENT_PATH ?? "").trim();
+  const inlineContentJson = String(cli.contentJson ?? env.SIM_CONTENT_JSON ?? "").trim();
+  if (contentPath && inlineContentJson) {
+    fail("Specify only one content source: SIM_CONTENT_PATH/--content-path or SIM_CONTENT_JSON/--content-json.");
+  }
+
+  let contentConfig = null;
+  if (contentPath || inlineContentJson) {
+    const contentRaw = contentPath ? await readTextFile(contentPath) : inlineContentJson;
+    contentConfig = parseContentConfig(contentRaw, participants.length);
+  }
+
   return {
     apiBaseUrl,
     adminClientId,
     adminClientSecret,
     agentConfigPath: agentConfigPath || null,
+    contentPath: contentPath || null,
     templateId,
     cadenceMinutes,
     participants,
     domainId,
+    contentConfig,
   };
 }
 
@@ -218,7 +305,10 @@ function buildIdempotencyKey(parts) {
   return key.slice(0, 120);
 }
 
-function createSimulationBody({ topicTitle, participantHandle, participantIndex, roundKind, roundIndex, iteration }) {
+function createSimulationBody({ topicTitle, participantHandle, participantIndex, roundKind, roundIndex, iteration, contentConfig }) {
+  if (contentConfig?.rounds?.[roundKind]?.[participantIndex]) {
+    return contentConfig.rounds[roundKind][participantIndex];
+  }
   return [
     `Simulation note for ${topicTitle}.`,
     `${participantHandle} is participant ${participantIndex + 1} responding in ${roundKind} round ${roundIndex + 1}.`,
@@ -346,6 +436,8 @@ async function main() {
       cadenceMinutes: config.cadenceMinutes,
       participantCount: config.participants.length,
       agentConfigPath: config.agentConfigPath,
+      contentPath: config.contentPath,
+      contentRounds: config.contentConfig ? Object.keys(config.contentConfig.rounds) : null,
       domainId: config.domainId,
     },
     topic: null,
@@ -404,16 +496,22 @@ async function main() {
       });
     }
 
+    const topicTitle = config.contentConfig?.topic?.title ?? `Simulation Topic ${runStamp}`;
+    const topicPrompt = config.contentConfig?.topic?.prompt ?? `Simulation topic ${runStamp}: exercise lifecycle, contribution, vote, and terminalization flows end to end.`;
+    const topicDomainId = config.contentConfig?.topic?.domainId ?? config.domainId;
+    const topicTemplateId = config.contentConfig?.topic?.templateId ?? config.templateId;
+    const topicCadence = config.contentConfig?.topic?.cadenceMinutes ?? config.cadenceMinutes;
+
     const createdTopic = await apiRequest(config.apiBaseUrl, "/v1/topics", {
       method: "POST",
       token: adminToken,
       expectedStatus: 201,
       body: {
-        domainId: config.domainId,
-        title: `Simulation Topic ${runStamp}`,
-        prompt: `Simulation topic ${runStamp}: exercise lifecycle, contribution, vote, and terminalization flows end to end.`,
-        templateId: config.templateId,
-        cadenceOverrideMinutes: config.cadenceMinutes,
+        domainId: topicDomainId,
+        title: topicTitle,
+        prompt: topicPrompt,
+        templateId: topicTemplateId,
+        cadenceOverrideMinutes: topicCadence,
         minTrustTier: "supervised",
       },
     });
@@ -521,6 +619,7 @@ async function main() {
                 roundKind: currentRound.roundKind,
                 roundIndex: currentRound.sequenceIndex,
                 iteration: summary.contributions.length,
+                contentConfig: config.contentConfig,
               }),
               idempotencyKey: buildIdempotencyKey([
                 "simulation",
@@ -593,6 +692,26 @@ async function main() {
 
     if (!summary.terminalStatus) {
       fail(`Simulation timed out before reaching a terminal state for topic ${createdTopic.id}.`);
+    }
+
+    if (summary.terminalStatus === "closed") {
+      logEvent("fetching-report", { topicId: createdTopic.id });
+      try {
+        const report = await apiRequest(config.apiBaseUrl, `/v1/internal/admin/topics/${createdTopic.id}/report`, {
+          token: adminToken,
+        });
+        summary.report = report;
+      } catch (reportError) {
+        logEvent("report-fetch-failed", {
+          message: reportError instanceof Error ? reportError.message : String(reportError),
+        });
+        summary.report = null;
+        summary.failures.push({
+          at: new Date().toISOString(),
+          name: "report_fetch_failed",
+          message: reportError instanceof Error ? reportError.message : String(reportError),
+        });
+      }
     }
 
     summary.finishedAt = new Date().toISOString();

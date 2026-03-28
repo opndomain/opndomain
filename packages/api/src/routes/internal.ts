@@ -270,6 +270,137 @@ internalRoutes.get("/admin/topics/:topicId", async (c) => {
   return withAdminReadAccess(c, async () => jsonData(c, await getAdminTopicDetail(c.env, c.req.param("topicId"))));
 });
 
+internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
+  return withAdminReadAccess(c, async () => {
+    const topicId = c.req.param("topicId");
+    const topic = await firstRow<{
+      id: string;
+      domain_id: string;
+      title: string;
+      prompt: string;
+      template_id: string;
+      status: string;
+      closed_at: string | null;
+    }>(c.env.DB, `SELECT id, domain_id, title, prompt, template_id, status, closed_at FROM topics WHERE id = ?`, topicId);
+    if (!topic) {
+      notFound("The requested topic was not found.");
+    }
+    if (topic.status !== "closed") {
+      badRequest("topic_not_closed", "Report is only available for closed topics.");
+    }
+
+    const rounds = await allRows<{
+      id: string;
+      sequence_index: number;
+      round_kind: string;
+      status: string;
+      starts_at: string | null;
+      ends_at: string | null;
+    }>(c.env.DB, `SELECT id, sequence_index, round_kind, status, starts_at, ends_at FROM rounds WHERE topic_id = ? ORDER BY sequence_index ASC`, topicId);
+
+    const transcript = await allRows<{
+      id: string;
+      round_id: string;
+      round_kind: string;
+      sequence_index: number;
+      being_id: string;
+      being_handle: string;
+      body_clean: string | null;
+      visibility: string;
+      submitted_at: string;
+      heuristic_score: number | null;
+      semantic_score: number | null;
+      live_score: number | null;
+      final_score: number | null;
+    }>(
+      c.env.DB,
+      `
+        SELECT
+          c.id, c.round_id, r.round_kind, r.sequence_index,
+          c.being_id, b.handle AS being_handle,
+          c.body_clean, c.visibility, c.submitted_at,
+          cs.heuristic_score, cs.semantic_score, cs.live_score, cs.final_score
+        FROM contributions c
+        INNER JOIN rounds r ON r.id = c.round_id
+        INNER JOIN beings b ON b.id = c.being_id
+        LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
+        WHERE c.topic_id = ?
+        ORDER BY r.sequence_index ASC, c.submitted_at ASC
+      `,
+      topicId,
+    );
+
+    const verdict = await firstRow<{
+      confidence: string;
+      terminalization_mode: string;
+      summary: string;
+      reasoning_json: string | null;
+    }>(c.env.DB, `SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?`, topicId);
+
+    const artifact = await firstRow<{
+      transcript_snapshot_key: string | null;
+      state_snapshot_key: string | null;
+      verdict_html_key: string | null;
+      og_image_key: string | null;
+      artifact_status: string;
+    }>(c.env.DB, `SELECT transcript_snapshot_key, state_snapshot_key, verdict_html_key, og_image_key, artifact_status FROM topic_artifacts WHERE topic_id = ?`, topicId);
+
+    return jsonData(c, {
+      topic: {
+        id: topic.id,
+        domainId: topic.domain_id,
+        title: topic.title,
+        prompt: topic.prompt,
+        templateId: topic.template_id,
+        status: topic.status,
+        closedAt: topic.closed_at,
+      },
+      rounds: rounds.map((r) => ({
+        id: r.id,
+        sequenceIndex: r.sequence_index,
+        roundKind: r.round_kind,
+        status: r.status,
+        startsAt: r.starts_at,
+        endsAt: r.ends_at,
+      })),
+      transcript: transcript.map((row) => ({
+        contributionId: row.id,
+        roundId: row.round_id,
+        roundKind: row.round_kind,
+        sequenceIndex: row.sequence_index,
+        beingId: row.being_id,
+        beingHandle: row.being_handle,
+        bodyClean: row.body_clean,
+        visibility: row.visibility,
+        submittedAt: row.submitted_at,
+        scores: {
+          heuristic: row.heuristic_score,
+          semantic: row.semantic_score,
+          live: row.live_score,
+          final: row.final_score,
+        },
+      })),
+      verdict: verdict
+        ? {
+            confidence: verdict.confidence,
+            terminalizationMode: verdict.terminalization_mode,
+            summary: verdict.summary,
+            reasoning: verdict.reasoning_json ? JSON.parse(verdict.reasoning_json) : null,
+          }
+        : null,
+      artifact: artifact
+        ? {
+            transcriptSnapshotKey: artifact.transcript_snapshot_key,
+            stateSnapshotKey: artifact.state_snapshot_key,
+            verdictHtmlKey: artifact.verdict_html_key,
+            ogImageKey: artifact.og_image_key,
+            artifactStatus: artifact.artifact_status,
+          }
+        : null,
+    });
+  });
+});
+
 internalRoutes.get("/health", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   assertAdminAgent(c.env, agent);

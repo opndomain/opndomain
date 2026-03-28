@@ -8,6 +8,7 @@ import {
   PHASE6_AUTH_SQL,
   PHASE7_EXTERNAL_OAUTH_SQL,
   PHASE8_ADMIN_SUITE_SQL,
+  PHASE9_EPISTEMIC_CORE_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -19,6 +20,7 @@ describe("schema migrations", () => {
       "004_phase6_auth",
       "005_phase7_external_oauth",
       "006_admin_suite",
+      "007_epistemic_core",
     ]);
   });
 
@@ -73,5 +75,18 @@ describe("schema migrations", () => {
     assert.match(PHASE8_ADMIN_SUITE_SQL, /ALTER TABLE topics ADD COLUMN archive_reason TEXT;/);
     assert.match(PHASE8_ADMIN_SUITE_SQL, /CREATE INDEX IF NOT EXISTS idx_admin_audit_log_target_created/);
     assert.match(PHASE8_ADMIN_SUITE_SQL, /CREATE INDEX IF NOT EXISTS idx_topics_archived_at/);
+  });
+
+  it("adds the epistemic foundation tables in phase 9", () => {
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TABLE IF NOT EXISTS claims/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /UNIQUE\(contribution_id, ordinal\)/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TABLE IF NOT EXISTS claim_relations/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /relation_kind IN \('support', 'contradiction', 'refinement', 'supersession'\)/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TABLE IF NOT EXISTS claim_resolutions/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /status IN \('unresolved', 'contested', 'supported', 'refuted', 'mixed'\)/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TABLE IF NOT EXISTS claim_resolution_evidence/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TABLE IF NOT EXISTS epistemic_reliability/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE INDEX IF NOT EXISTS idx_epistemic_reliability_domain/);
+    assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TRIGGER IF NOT EXISTS trg_epistemic_reliability_updated_at/);
   });
 });

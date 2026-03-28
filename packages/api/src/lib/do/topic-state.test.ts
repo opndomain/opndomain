@@ -58,10 +58,12 @@ class FakeSql {
       return [];
     }
     if (sql.startsWith("INSERT INTO pending_aux")) {
+      const tableName = sql.includes("'epistemic_claims'") ? "epistemic_claims" : "votes";
+      const operation = sql.includes("'upsert'") ? "upsert" : "insert";
       this.pendingAux.set(String(values[0]), {
         id: values[0],
-        table_name: "votes",
-        operation: "insert",
+        table_name: tableName,
+        operation,
         payload_json: values[1],
         flushed: 0,
         created_at: values[2],
@@ -148,7 +150,10 @@ class FakeSql {
     if (sql.startsWith("SELECT id, payload_json, flushed, created_at FROM pending_aux")) {
       const limit = Number(values[0] ?? 80);
       return Array.from(this.pendingAux.values())
-        .filter((row) => Number(row.flushed) === 0 && String(row.table_name) === "votes")
+        .filter((row) => Number(row.flushed) === 0 && (
+          (sql.includes("table_name = 'votes'") && String(row.table_name) === "votes") ||
+          (sql.includes("table_name = 'epistemic_claims'") && String(row.table_name) === "epistemic_claims")
+        ))
         .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
         .slice(0, limit);
     }
@@ -271,6 +276,7 @@ class FakeDb {
   batchCalls = 0;
   throwOnBatch = false;
   nextBatchResults: Array<{ success?: boolean; error?: string }> | null = null;
+  throwOnRunMatch: RegExp | null = null;
   persistedContributionIds = new Set<string>();
   persistedScoreIds = new Set<string>();
   persistedVoteIds = new Set<string>();
@@ -357,6 +363,9 @@ class FakeQueryStatement {
   }
 
   async run() {
+    if (this.db.throwOnRunMatch?.test(this.sql)) {
+      throw new Error(`simulated run failure for ${this.sql}`);
+    }
     this.db.runs.push({ sql: this.sql, bindings: this.bindings });
     return { success: true };
   }
@@ -1046,5 +1055,150 @@ describe("topic state durable object", () => {
     assert.equal(payload.remaining, 0);
     assert.equal(db.batchCalls > 0, true);
     assert.equal(Number(storage.sql.pendingAux.get("vot_2")?.flushed ?? 0), 1);
+  });
+
+  it("flushes buffered epistemic claims idempotently", async () => {
+    const storage = new FakeStorage();
+    const db = new FakeDb();
+    const firstAcceptedAt = new Date().toISOString();
+    const secondAcceptedAt = new Date(Date.now() + 1000).toISOString();
+
+    storage.sql.exec(
+      `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+       VALUES (?, 'epistemic_claims', 'upsert', ?, 0, ?)`,
+      "cnt_1",
+      JSON.stringify({
+        contributionId: "cnt_1",
+        topicId: "top_1",
+        domainId: "dom_1",
+        beingId: "bng_1",
+        claims: [
+          {
+            ordinal: 1,
+            body: "Measured results improve outcomes.",
+            normalizedBody: "measured results improve outcomes",
+            verifiability: "empirical",
+          },
+        ],
+      }),
+      firstAcceptedAt,
+    );
+    db.queueFirst("FROM claims\n      WHERE contribution_id = ? AND ordinal = ?", [null]);
+    db.queueAll("FROM claims\n      WHERE domain_id = ? AND contribution_id <> ?", []);
+
+    let result = await flushPendingTopicState(
+      { storage } as never,
+      {
+        DB: db as never,
+        SNAPSHOTS: { put: async () => undefined } as never,
+        PUBLIC_ARTIFACTS: { put: async () => undefined } as never,
+        PUBLIC_CACHE: { delete: async () => undefined } as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+    );
+
+    assert.equal(result.remainingCount, 0);
+    assert.equal(Number(storage.sql.pendingAux.get("cnt_1")?.flushed ?? 0), 1);
+    assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO claims")));
+
+    storage.sql.exec(
+      `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+       VALUES (?, 'epistemic_claims', 'upsert', ?, 0, ?)`,
+      "cnt_1",
+      JSON.stringify({
+        contributionId: "cnt_1",
+        topicId: "top_1",
+        domainId: "dom_1",
+        beingId: "bng_1",
+        claims: [
+          {
+            ordinal: 1,
+            body: "Measured results improve outcomes.",
+            normalizedBody: "measured results improve outcomes",
+            verifiability: "empirical",
+          },
+        ],
+      }),
+      secondAcceptedAt,
+    );
+    db.queueFirst("FROM claims\n      WHERE contribution_id = ? AND ordinal = ?", [
+      {
+        id: "clm_1",
+        body: "Measured results improve outcomes.",
+        normalized_body: "measured results improve outcomes",
+        contribution_id: "cnt_1",
+        being_id: "bng_1",
+        ordinal: 1,
+      },
+    ]);
+    db.queueAll("FROM claims\n      WHERE domain_id = ? AND contribution_id <> ?", []);
+
+    result = await flushPendingTopicState(
+      { storage } as never,
+      {
+        DB: db as never,
+        SNAPSHOTS: { put: async () => undefined } as never,
+        PUBLIC_ARTIFACTS: { put: async () => undefined } as never,
+        PUBLIC_CACHE: { delete: async () => undefined } as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+    );
+
+    assert.equal(result.remainingCount, 0);
+    assert.equal(Number(storage.sql.pendingAux.get("cnt_1")?.flushed ?? 0), 1);
+    assert.equal(db.runs.filter((run) => run.sql.includes("INSERT INTO claims")).length >= 2, true);
+  });
+
+  it("keeps epistemic claim rows pending when the graph update fails", async () => {
+    const storage = new FakeStorage();
+    const db = new FakeDb();
+    const acceptedAt = new Date().toISOString();
+    db.throwOnRunMatch = /INSERT INTO claims/;
+
+    storage.sql.exec(
+      `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+       VALUES (?, 'epistemic_claims', 'upsert', ?, 0, ?)`,
+      "cnt_1",
+      JSON.stringify({
+        contributionId: "cnt_1",
+        topicId: "top_1",
+        domainId: "dom_1",
+        beingId: "bng_1",
+        claims: [
+          {
+            ordinal: 1,
+            body: "Measured results improve outcomes.",
+            normalizedBody: "measured results improve outcomes",
+            verifiability: "empirical",
+          },
+        ],
+      }),
+      acceptedAt,
+    );
+    db.queueFirst("FROM claims\n      WHERE contribution_id = ? AND ordinal = ?", [null]);
+
+    const originalConsoleError = console.error;
+    let result: Awaited<ReturnType<typeof flushPendingTopicState>>;
+    try {
+      console.error = () => undefined;
+      result = await flushPendingTopicState(
+        { storage } as never,
+        {
+          DB: db as never,
+          SNAPSHOTS: { put: async () => undefined } as never,
+          PUBLIC_ARTIFACTS: { put: async () => undefined } as never,
+          PUBLIC_CACHE: { delete: async () => undefined } as never,
+          TOPIC_TRANSCRIPT_PREFIX: "topics",
+          CURATED_OPEN_KEY: "curated/open.json",
+        } as never,
+      );
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    assert.equal(result.remainingCount, 1);
+    assert.equal(Number(storage.sql.pendingAux.get("cnt_1")?.flushed ?? 0), 0);
   });
 });
