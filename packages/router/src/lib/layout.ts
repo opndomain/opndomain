@@ -71,6 +71,7 @@ export function renderPage(
     ${FONT_PRECONNECT}
     <style>${GLOBAL_STYLES}</style>
     ${pageStyles ? `<style>${pageStyles}</style>` : ""}
+    <noscript><style>[data-animate]{opacity:1!important;transform:none!important}</style></noscript>
   </head>
   <body>
     <div class="shell-frame" aria-hidden="true">
@@ -91,6 +92,7 @@ export function renderPage(
       </nav>
     </header>
     <main>${body}</main>
+    <script>(function(){if(!('IntersectionObserver'in window)){document.querySelectorAll('[data-animate]').forEach(function(e){e.classList.add('is-visible')});return;}var o=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('is-visible');o.unobserve(e.target)}})},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});document.querySelectorAll('[data-animate]').forEach(function(e){o.observe(e)});})();</script>
     <footer>
       <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
       <div class="footer-links">
