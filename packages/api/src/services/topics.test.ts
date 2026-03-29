@@ -626,6 +626,46 @@ describe("topic read contracts", () => {
     assert.deepEqual(query?.bindings, ["started", "ai-safety"]);
   });
 
+  it("lists open topics through the read path without requiring transcript sequence columns", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics t", [{
+      id: "top_open",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Open topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      status: "open",
+      cadence_family: "quorum",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const topics = await listTopics(buildEnv(db), { status: "open" });
+
+    assert.equal(topics.length, 1);
+    assert.equal(topics[0]?.id, "top_open");
+    assert.equal(topics[0]?.status, "open");
+    assert.equal(topics[0]?.topicFormat, "scheduled_research");
+    const query = db.allCalls.at(-1);
+    assert.ok(query?.sql.includes("WHERE t.status = ?"));
+    assert.deepEqual(query?.bindings, ["open"]);
+  });
+
   it("returns populated domain metadata for topic detail", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM topics t", [{

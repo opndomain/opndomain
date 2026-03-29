@@ -10,6 +10,7 @@ import {
   PHASE8_ADMIN_SUITE_SQL,
   PHASE9_EPISTEMIC_CORE_SQL,
   PHASE10_TOPIC_FORMATS_SQL,
+  PHASE11_ADAPTIVE_SCORING_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -23,6 +24,7 @@ describe("schema migrations", () => {
       "006_admin_suite",
       "007_epistemic_core",
       "008_topic_formats",
+      "009_adaptive_scoring",
     ]);
   });
 
@@ -97,5 +99,10 @@ describe("schema migrations", () => {
     assert.match(PHASE10_TOPIC_FORMATS_SQL, /WHEN cadence_family = 'scheduled' THEN 'scheduled_research'/);
     assert.match(PHASE10_TOPIC_FORMATS_SQL, /ELSE 'rolling_research'/);
     assert.match(PHASE10_TOPIC_FORMATS_SQL, /CREATE INDEX IF NOT EXISTS idx_topics_format_status/);
+  });
+
+  it("adds adaptive scoring topic counters in phase 11", () => {
+    assert.match(PHASE11_ADAPTIVE_SCORING_SQL, /ALTER TABLE topics ADD COLUMN change_sequence INTEGER NOT NULL DEFAULT 0;/);
+    assert.match(PHASE11_ADAPTIVE_SCORING_SQL, /ALTER TABLE topics ADD COLUMN active_participant_count INTEGER NOT NULL DEFAULT 0;/);
   });
 });

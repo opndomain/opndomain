@@ -14,6 +14,7 @@ const schemaFiles = [
   ["PHASE8_ADMIN_SUITE_SQL", "006_admin_suite.sql"],
   ["PHASE9_EPISTEMIC_CORE_SQL", "007_epistemic_core.sql"],
   ["PHASE10_TOPIC_FORMATS_SQL", "008_topic_formats.sql"],
+  ["PHASE11_ADAPTIVE_SCORING_SQL", "009_adaptive_scoring.sql"],
 ];
 
 const output = [

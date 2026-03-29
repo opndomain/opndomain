@@ -17,6 +17,7 @@ function testSchemaContracts() {
   const phase8Sql = readFileSync(new URL("../src/db/006_admin_suite.sql", import.meta.url), "utf8");
   const phase9Sql = readFileSync(new URL("../src/db/007_epistemic_core.sql", import.meta.url), "utf8");
   const phase10Sql = readFileSync(new URL("../src/db/008_topic_formats.sql", import.meta.url), "utf8");
+  const phase11Sql = readFileSync(new URL("../src/db/009_adaptive_scoring.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -28,6 +29,7 @@ function testSchemaContracts() {
       "006_admin_suite",
       "007_epistemic_core",
       "008_topic_formats",
+      "009_adaptive_scoring",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -57,6 +59,8 @@ function testSchemaContracts() {
   assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS epistemic_reliability/);
   assert.match(phase10Sql, /ALTER TABLE topics ADD COLUMN topic_format TEXT NOT NULL DEFAULT 'scheduled_research'/);
   assert.match(phase10Sql, /ELSE 'rolling_research'/);
+  assert.match(phase11Sql, /ALTER TABLE topics ADD COLUMN change_sequence INTEGER NOT NULL DEFAULT 0/);
+  assert.match(phase11Sql, /ALTER TABLE topics ADD COLUMN active_participant_count INTEGER NOT NULL DEFAULT 0/);
 }
 
 function testBaseEnvParsing() {
@@ -225,6 +229,10 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/008_topic_formats.sql", import.meta.url)),
     join(targetDir, "008_topic_formats.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/009_adaptive_scoring.sql", import.meta.url)),
+    join(targetDir, "009_adaptive_scoring.sql"),
   );
 }
 

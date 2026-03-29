@@ -56,7 +56,7 @@ export async function sendSesEmail(
   const endpoint = `https://${host}/v2/email/outbound-emails`;
   const now = new Date();
   const iso = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-  const amzDate = `${iso.slice(0, 8)}T${iso.slice(8, 14)}Z`;
+  const amzDate = iso;
   const dateStamp = amzDate.slice(0, 8);
 
   const body = JSON.stringify({

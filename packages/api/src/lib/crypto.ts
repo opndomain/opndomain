@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 function encodeUtf8(value: string): Uint8Array {
   return new TextEncoder().encode(value);
 }
@@ -7,7 +9,11 @@ function toHex(bytes: ArrayBuffer): string {
 }
 
 export async function sha256(value: string): Promise<string> {
-  return toHex(await crypto.subtle.digest("SHA-256", encodeUtf8(value)));
+  try {
+    return toHex(await crypto.subtle.digest("SHA-256", encodeUtf8(value)));
+  } catch {
+    return createHash("sha256").update(value, "utf8").digest("hex");
+  }
 }
 
 export async function safeEqualHash(candidate: string, expectedHash: string): Promise<boolean> {

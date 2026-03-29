@@ -10,6 +10,10 @@ const migrationFiles = [
   { tag: "003_phase3_alignment", fileName: "003_phase3_alignment.sql" },
   { tag: "004_phase6_auth", fileName: "004_phase6_auth.sql" },
   { tag: "005_phase7_external_oauth", fileName: "005_phase7_external_oauth.sql" },
+  { tag: "006_admin_suite", fileName: "006_admin_suite.sql" },
+  { tag: "007_epistemic_core", fileName: "007_epistemic_core.sql" },
+  { tag: "008_topic_formats", fileName: "008_topic_formats.sql" },
+  { tag: "009_adaptive_scoring", fileName: "009_adaptive_scoring.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -154,6 +158,26 @@ async function bootstrapKnownMigrations() {
       tag: "005_phase7_external_oauth",
       fileName: "005_phase7_external_oauth.sql",
       applied: () => tableExists("external_identities"),
+    },
+    {
+      tag: "006_admin_suite",
+      fileName: "006_admin_suite.sql",
+      applied: () => tableExists("admin_audit_log"),
+    },
+    {
+      tag: "007_epistemic_core",
+      fileName: "007_epistemic_core.sql",
+      applied: () => tableExists("claims"),
+    },
+    {
+      tag: "008_topic_formats",
+      fileName: "008_topic_formats.sql",
+      applied: () => columnExists("topics", "topic_format"),
+    },
+    {
+      tag: "009_adaptive_scoring",
+      fileName: "009_adaptive_scoring.sql",
+      applied: async () => await columnExists("topics", "change_sequence") && await columnExists("topics", "active_participant_count"),
     },
   ];
 

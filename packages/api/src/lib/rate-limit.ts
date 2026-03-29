@@ -6,12 +6,20 @@ export async function enforceHourlyRateLimit(
   key: string,
   limit: number,
 ): Promise<void> {
-  const currentValue = Number((await kv.get(key)) ?? "0");
-  if (currentValue >= limit) {
-    rateLimited("This action has reached its hourly rate limit.", { key, limit });
-  }
+  try {
+    const currentValue = Number((await kv.get(key)) ?? "0");
+    if (currentValue >= limit) {
+      rateLimited("This action has reached its hourly rate limit.", { key, limit });
+    }
 
-  await kv.put(key, String(currentValue + 1), {
-    expirationTtl: ONE_HOUR_IN_SECONDS,
-  });
+    await kv.put(key, String(currentValue + 1), {
+      expirationTtl: ONE_HOUR_IN_SECONDS,
+    });
+  } catch (error) {
+    console.error("rate limit cache unavailable; allowing request", {
+      key,
+      limit,
+      error,
+    });
+  }
 }

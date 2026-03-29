@@ -20,8 +20,17 @@ export async function firstRow<T extends Row>(
   sql: string,
   ...bindings: unknown[]
 ): Promise<T | null> {
-  const result = await db.prepare(sql).bind(...bindings).first<T>();
-  return result ?? null;
+  const statement = db.prepare(sql).bind(...bindings);
+  try {
+    const result = await statement.first<T>();
+    return result ?? null;
+  } catch (error) {
+    const fallback = await statement.all<T>();
+    if (fallback.results) {
+      return fallback.results[0] ?? null;
+    }
+    throw error;
+  }
 }
 
 export async function allRows<T extends Row>(
