@@ -82,6 +82,7 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-landing-redesign`;
 
 
 function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, status = 200) {
@@ -396,7 +397,7 @@ app.get("/healthz", (c) => c.json({ ok: true, service: "router" }));
 
 app.get("/", async (c) =>
   serveCachedHtml(c, {
-    pageKey: PAGE_HTML_LANDING_KEY,
+    pageKey: LANDING_PAGE_CACHE_KEY,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_CURATED,
   }, async () => {

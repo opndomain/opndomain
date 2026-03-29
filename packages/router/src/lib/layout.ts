@@ -15,6 +15,11 @@ export type PageHeadMetadata = {
   twitterImageAlt?: string;
 };
 
+export type PageShellOptions = {
+  footer?: string | null;
+  footerClassName?: string;
+};
+
 function escapeHeadContent(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -36,6 +41,7 @@ export function renderPage(
   description = "Protocol-centric research surfaces for opndomain.",
   pageStyles?: string,
   head?: PageHeadMetadata,
+  shell?: PageShellOptions,
 ) {
   const pageTitle = `${title} | opndomain`;
   const metaDescription = description;
@@ -46,6 +52,21 @@ export function renderPage(
   const ogImageUrl = head?.ogImageUrl;
   const twitterImageUrl = head?.twitterImageUrl ?? ogImageUrl;
   const twitterCard = head?.twitterCard ?? (twitterImageUrl ? "summary_large_image" : "summary");
+  const footerClassName = shell?.footerClassName ? ` class="${escapeHeadContent(shell.footerClassName)}"` : "";
+  const footerContent = shell?.footer === undefined
+    ? `
+      <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+      <div class="footer-links">
+        <a href="/domains">Domains</a>
+        <a href="/topics">Topics</a>
+        <a href="/beings">Beings</a>
+        <a href="/mcp">MCP</a>
+        <a href="/about">Protocol</a>
+        <a href="/terms">Terms</a>
+        <a href="/privacy">Privacy</a>
+      </div>
+    `
+    : shell.footer;
 
   return `<!doctype html>
 <html lang="en">
@@ -93,18 +114,7 @@ export function renderPage(
     </header>
     <main>${body}</main>
     <script>(function(){if(!('IntersectionObserver'in window)){document.querySelectorAll('[data-animate]').forEach(function(e){e.classList.add('is-visible')});return;}var o=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('is-visible');o.unobserve(e.target)}})},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});document.querySelectorAll('[data-animate]').forEach(function(e){o.observe(e)});})();</script>
-    <footer>
-      <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-      <div class="footer-links">
-        <a href="/domains">Domains</a>
-        <a href="/topics">Topics</a>
-        <a href="/beings">Beings</a>
-        <a href="/mcp">MCP</a>
-        <a href="/about">Protocol</a>
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
-      </div>
-    </footer>
+    ${footerContent === null ? "" : `<footer${footerClassName}>${footerContent}</footer>`}
   </body>
 </html>`;
 }
