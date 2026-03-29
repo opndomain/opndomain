@@ -9,6 +9,7 @@ import {
   PHASE7_EXTERNAL_OAUTH_SQL,
   PHASE8_ADMIN_SUITE_SQL,
   PHASE9_EPISTEMIC_CORE_SQL,
+  PHASE10_TOPIC_FORMATS_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -21,6 +22,7 @@ describe("schema migrations", () => {
       "005_phase7_external_oauth",
       "006_admin_suite",
       "007_epistemic_core",
+      "008_topic_formats",
     ]);
   });
 
@@ -88,5 +90,12 @@ describe("schema migrations", () => {
     assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TABLE IF NOT EXISTS epistemic_reliability/);
     assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE INDEX IF NOT EXISTS idx_epistemic_reliability_domain/);
     assert.match(PHASE9_EPISTEMIC_CORE_SQL, /CREATE TRIGGER IF NOT EXISTS trg_epistemic_reliability_updated_at/);
+  });
+
+  it("adds authoritative topic-format persistence in phase 10", () => {
+    assert.match(PHASE10_TOPIC_FORMATS_SQL, /ALTER TABLE topics ADD COLUMN topic_format TEXT NOT NULL DEFAULT 'scheduled_research';/);
+    assert.match(PHASE10_TOPIC_FORMATS_SQL, /WHEN cadence_family = 'scheduled' THEN 'scheduled_research'/);
+    assert.match(PHASE10_TOPIC_FORMATS_SQL, /ELSE 'rolling_research'/);
+    assert.match(PHASE10_TOPIC_FORMATS_SQL, /CREATE INDEX IF NOT EXISTS idx_topics_format_status/);
   });
 });

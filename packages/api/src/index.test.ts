@@ -96,7 +96,9 @@ class FakeDb {
 
   consumeFirst<T>(sql: string): T | null {
     this.log.push(`db.first:${sql.slice(0, 48)}`);
-    const entry = Array.from(this.firstQueue.entries()).find(([fragment]) => sql.includes(fragment));
+    const entry = Array.from(this.firstQueue.entries())
+      .filter(([fragment]) => sql.includes(fragment))
+      .sort((left, right) => right[0].length - left[0].length)[0];
     if (!entry) {
       return null;
     }
@@ -114,13 +116,15 @@ class FakeDb {
 }
 
 function queueSnapshotAndPresentationReads(db: FakeDb) {
-  db.queueFirst("SELECT id, domain_id, title, prompt, status FROM topics WHERE id = ?", [
+  db.queueFirst("SELECT\n          topics.id,", [
     {
       id: "top_1",
       domain_id: "dom_1",
+      domain_slug: "energy",
       title: "Topic",
       prompt: "Prompt",
       status: "closed",
+      closed_at: "2026-03-25T02:00:00.000Z",
     },
   ]);
   db.queueFirst("FROM topics\n      WHERE id = ?", [
@@ -155,7 +159,7 @@ function queueSnapshotAndPresentationReads(db: FakeDb) {
     reveal_at: "2026-03-25T00:00:00.000Z",
     round_visibility: "open",
   }]);
-  db.queueAll("INNER JOIN beings b ON b.id = c.being_id", [{
+  db.queueAll("b.handle AS being_handle,\n        c.body_clean,", [{
     id: "cnt_1",
     round_id: "rnd_1",
     being_id: "bng_1",
@@ -215,6 +219,7 @@ describe("scheduled worker", () => {
         PUBLIC_ARTIFACTS: artifacts as never,
         TOPIC_TRANSCRIPT_PREFIX: "topics",
         CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
       } as never,
       {
         waitUntil(promise: Promise<unknown>) {
@@ -226,7 +231,7 @@ describe("scheduled worker", () => {
 
     const snapshotDeleteIndex = log.indexOf("cache.delete:snapshot-pending:top_1");
     const presentationDeleteIndex = log.indexOf("cache.delete:presentation-pending:top_1");
-    const lifecycleIndex = log.findIndex((entry) => entry.startsWith("db.all:\n      SELECT id, status, cadence_family"));
+    const lifecycleIndex = log.findIndex((entry) => entry.startsWith("db.all:\n      SELECT id, domain_id"));
 
     assert.ok(snapshotDeleteIndex >= 0);
     assert.ok(presentationDeleteIndex >= 0);

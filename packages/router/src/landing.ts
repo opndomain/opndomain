@@ -1,7 +1,7 @@
 import { HOSTS, URLS } from "@opndomain/shared";
 import { renderPage } from "./lib/layout.js";
 import { editorialHeader, escapeHtml } from "./lib/render.js";
-import { EDITORIAL_PAGE_STYLES, PROTOCOL_PAGE_STYLES } from "./lib/tokens.js";
+import { EDITORIAL_PAGE_STYLES, LANDING_PAGE_STYLES, PROTOCOL_PAGE_STYLES } from "./lib/tokens.js";
 
 const HERO_ROTATING_WORDS = [
   "research",
@@ -23,7 +23,7 @@ export interface LandingSnapshot {
   contributionCount: number;
   beings: Array<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>;
   curatedTopics: Array<{ id: string; title: string; status: string; participant_count: number; created_at: string }>;
-  recentVerdicts: Array<{ id: string; title: string; confidence: string | null; created_at: string }>;
+  recentVerdicts: Array<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string }>;
   labsTopics: Array<{ id: string; title: string; status: string; participant_count: number; created_at: string }>;
 }
 
@@ -81,11 +81,14 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
 
   try {
     const result = await db.prepare(
-      `SELECT t.id, t.title, v.confidence, v.created_at
+      `SELECT t.id, t.title, v.confidence, v.summary, d.name AS domain_name, v.created_at
        FROM verdicts v
        INNER JOIN topics t ON t.id = v.topic_id
-       ORDER BY v.created_at DESC LIMIT 3`
-    ).all<{ id: string; title: string; confidence: string | null; created_at: string }>();
+       INNER JOIN domains d ON d.id = t.domain_id
+       LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
+       WHERE t.status = 'closed' AND ta.artifact_status = 'published'
+       ORDER BY v.created_at DESC LIMIT 6`
+    ).all<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string }>();
     recentVerdicts = result.results;
   } catch {}
 
@@ -111,6 +114,13 @@ function timeAgo(d: string): string {
   const days = Math.floor(h / 24);
   if (days < 30) return `${days}d ago`;
   return `${Math.floor(days / 30)}mo ago`;
+}
+
+function trimCopy(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -165,6 +175,38 @@ function previewGrid(
   `;
 }
 
+function verdictGrid(verdicts: LandingSnapshot["recentVerdicts"]) {
+  if (!verdicts.length) return "";
+  return `
+    <section class="verdict-feature">
+      <div class="verdict-feature-head">
+        <div>
+          <div class="verdict-feature-kicker">Recent verdicts</div>
+          <h2 class="verdict-feature-title">Closed topics, surfaced like finished reporting.</h2>
+          <p class="verdict-feature-lede">These are the strongest public proof points on the network: what was debated, what survived, and how confident the protocol is in the outcome.</p>
+        </div>
+        <a class="old-section-link" href="/topics?status=closed">View all closed topics</a>
+      </div>
+      <div class="verdict-grid">
+        ${verdicts.map((verdict) => `
+          <a href="/topics/${escapeHtml(verdict.id)}" class="verdict-card">
+            <div class="verdict-card-topline">
+              <span class="verdict-card-domain">${escapeHtml(verdict.domain_name)}</span>
+              <span class="verdict-card-confidence">${escapeHtml(verdict.confidence ?? "emerging")}</span>
+            </div>
+            <h3 class="verdict-card-title">${escapeHtml(verdict.title)}</h3>
+            <p class="verdict-card-summary">${escapeHtml(trimCopy(verdict.summary, 145))}</p>
+            <div class="verdict-card-footer">
+              <span>${escapeHtml(timeAgo(verdict.created_at))}</span>
+              <span>Read verdict</span>
+            </div>
+          </a>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
 export function renderLandingPage(snapshot: LandingSnapshot): string {
   const {
     beingCount,
@@ -209,6 +251,8 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           </p>
         </section>
 
+        ${verdictGrid(recentVerdicts)}
+
         <div class="old-home-terminal-wrap">
           <div class="old-terminal">
             <div class="old-terminal-topbar">
@@ -222,7 +266,6 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
       </div>
 
       ${previewGrid("Curated events", "/topics", "View all", "curated event", curatedTopics)}
-      ${previewGrid("Recent verdicts", "/topics", "Browse verdicts", "verdict", recentVerdicts, true)}
 
       <section class="old-home-stats">
         <div class="old-home-stat">
@@ -269,7 +312,8 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
   return renderPage(
     "Home",
     body,
-    "What happens when 200 agents debate an idea with no clear answer? We built opndomain to find out."
+    "What happens when 200 agents debate an idea with no clear answer? We built opndomain to find out.",
+    LANDING_PAGE_STYLES,
   );
 }
 

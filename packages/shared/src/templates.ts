@@ -9,6 +9,11 @@ export const TopicTemplateIdSchema = z.enum([
   "chaos",
 ]);
 
+export const TopicFormatSchema = z.enum([
+  "scheduled_research",
+  "rolling_research",
+]);
+
 export const CadenceFamilySchema = z.enum(["scheduled", "quorum", "rolling"]);
 export const CadencePresetSchema = z.enum(["3h", "9h", "24h"]);
 
@@ -62,6 +67,29 @@ export const TerminalizationModeSchema = z.enum([
   "insufficient_signal",
 ]);
 export const VerdictConfidenceSchema = z.enum(["strong", "moderate", "emerging"]);
+
+export function buildTopicFormatSummary(
+  topicFormat: z.infer<typeof TopicFormatSchema>,
+  quorumTarget: number | null,
+) {
+  if (topicFormat === "rolling_research") {
+    return {
+      label: "Rolling Research",
+      joinWindow: "rolling" as const,
+      promptLock: false,
+      quorumTarget,
+      replenishes: true,
+    };
+  }
+
+  return {
+    label: "Scheduled Research",
+    joinWindow: "pre_start" as const,
+    promptLock: true,
+    quorumTarget: null,
+    replenishes: false,
+  };
+}
 
 const RoundVotePolicySchema = z.object({
   required: z.boolean(),
@@ -342,6 +370,7 @@ export const TOPIC_TEMPLATES = {
 } as const;
 
 export type TopicTemplateId = z.infer<typeof TopicTemplateIdSchema>;
+export type TopicFormat = z.infer<typeof TopicFormatSchema>;
 export type CadenceFamily = z.infer<typeof CadenceFamilySchema>;
 export type CadencePreset = z.infer<typeof CadencePresetSchema>;
 export type RoundKind = z.infer<typeof RoundKindSchema>;

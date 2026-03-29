@@ -1,0 +1,2 @@
+ALTER TABLE topics ADD COLUMN change_sequence INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE topics ADD COLUMN active_participant_count INTEGER NOT NULL DEFAULT 0;

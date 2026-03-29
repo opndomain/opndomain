@@ -4,15 +4,33 @@ import {
   TOPIC_STATE_SNAPSHOT_PENDING_KEY,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../env.js";
+import { runStatement } from "../db.js";
 import { updateDomainClaimGraph } from "../epistemic/claim-graph.js";
 import { syncTopicSnapshots } from "../snapshot-sync.js";
-import { recomputeContributionFinalScore } from "../../services/votes.js";
+import { recomputeContributionFinalScores, type ContributionVoteAggregate, type TopicVoteStatsRow } from "../../services/votes.js";
 import {
   TOPIC_STATE_PENDING_RECORD_LIMIT,
   type PendingMessageRow,
   type PendingScoreRow,
   type PendingVoteRow,
 } from "./schema.js";
+
+const TOPIC_STATE_TOPIC_VOTE_AGGREGATE_PREFIX = "votes:topic-aggregate:";
+const TOPIC_STATE_CONTRIBUTION_VOTE_AGGREGATE_PREFIX = "votes:contribution-aggregate:";
+
+type AuthoritativeContributionVoteAggregateRow = {
+  contribution_id: string;
+  vote_count: number | null;
+  distinct_voter_count: number | null;
+  upvote_count: number | null;
+  downvote_count: number | null;
+  raw_weighted_sum: number | null;
+  max_possible: number | null;
+};
+
+type AuthoritativeTopicVoteStatsRow = TopicVoteStatsRow & {
+  topic_id: string;
+};
 
 function sqlExec(state: DurableObjectState, sql: string, ...bindings: unknown[]) {
   return Array.from(
@@ -22,6 +40,144 @@ function sqlExec(state: DurableObjectState, sql: string, ...bindings: unknown[])
       }
     ).sql.exec(sql, ...bindings),
   );
+}
+
+function buildInClause(ids: string[]): string {
+  return ids.map(() => "?").join(", ");
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function toWeightedVoteScore(rawWeightedSum: number, maxPossible: number): number {
+  if (!Number.isFinite(maxPossible) || maxPossible <= 0) {
+    return 50;
+  }
+  return clamp(((rawWeightedSum / maxPossible + 1) / 2) * 100, 0, 100);
+}
+
+async function readAuthoritativeContributionVoteAggregates(env: ApiEnv, contributionIds: string[]) {
+  const aggregateMap = new Map<string, ContributionVoteAggregate>();
+  if (contributionIds.length === 0) {
+    return aggregateMap;
+  }
+
+  const results = await env.DB
+    .prepare(
+      `
+        SELECT
+          contribution_id,
+          COUNT(CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN 1 END) AS vote_count,
+          COUNT(DISTINCT CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN voter_being_id END) AS distinct_voter_count,
+          COUNT(CASE WHEN direction = 1 AND COALESCE(weight, 0) > 0 THEN 1 END) AS upvote_count,
+          COUNT(CASE WHEN direction = -1 AND COALESCE(weight, 0) > 0 THEN 1 END) AS downvote_count,
+          SUM(CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN direction * weight ELSE 0 END) AS raw_weighted_sum,
+          SUM(CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN weight ELSE 0 END) AS max_possible
+        FROM votes
+        WHERE contribution_id IN (${buildInClause(contributionIds)})
+        GROUP BY contribution_id
+      `,
+    )
+    .bind(...contributionIds)
+    .all<AuthoritativeContributionVoteAggregateRow>();
+
+  for (const row of results.results ?? []) {
+    const rawWeightedSum = Number(row.raw_weighted_sum ?? 0);
+    const maxPossible = Number(row.max_possible ?? 0);
+    aggregateMap.set(row.contribution_id, {
+      weightedVoteScore: toWeightedVoteScore(rawWeightedSum, maxPossible),
+      voteCount: Number(row.vote_count ?? 0),
+      distinctVoterCount: Number(row.distinct_voter_count ?? 0),
+      upvoteCount: Number(row.upvote_count ?? 0),
+      downvoteCount: Number(row.downvote_count ?? 0),
+    });
+  }
+
+  for (const contributionId of contributionIds) {
+    if (!aggregateMap.has(contributionId)) {
+      aggregateMap.set(contributionId, {
+        weightedVoteScore: 50,
+        voteCount: 0,
+        distinctVoterCount: 0,
+        upvoteCount: 0,
+        downvoteCount: 0,
+      });
+    }
+  }
+
+  return aggregateMap;
+}
+
+async function readAuthoritativeTopicVoteStats(env: ApiEnv, topicIds: string[]) {
+  const topicStats = new Map<string, TopicVoteStatsRow>();
+  if (topicIds.length === 0) {
+    return topicStats;
+  }
+
+  const results = await env.DB
+    .prepare(
+      `
+        SELECT
+          topic_id,
+          COUNT(DISTINCT CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN voter_being_id END) AS distinct_voter_count,
+          COUNT(CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN 1 END) AS topic_vote_count
+        FROM votes
+        WHERE topic_id IN (${buildInClause(topicIds)})
+        GROUP BY topic_id
+      `,
+    )
+    .bind(...topicIds)
+    .all<AuthoritativeTopicVoteStatsRow>();
+
+  for (const row of results.results ?? []) {
+    topicStats.set(row.topic_id, row);
+  }
+
+  for (const topicId of topicIds) {
+    if (!topicStats.has(topicId)) {
+      topicStats.set(topicId, { distinct_voter_count: 0, topic_vote_count: 0 });
+    }
+  }
+
+  return topicStats;
+}
+
+async function reconcileVoteAggregates(
+  state: DurableObjectState,
+  env: ApiEnv,
+  contributionIds: string[],
+  topicIds: string[],
+) {
+  const contributionAggregatesByContributionId = await readAuthoritativeContributionVoteAggregates(env, contributionIds);
+  const topicStatsByTopicId = await readAuthoritativeTopicVoteStats(env, topicIds);
+  const reconciledAt = new Date().toISOString();
+
+  await Promise.all([
+    ...Array.from(contributionAggregatesByContributionId.entries()).map(([contributionId, aggregate]) =>
+      state.storage.put(`${TOPIC_STATE_CONTRIBUTION_VOTE_AGGREGATE_PREFIX}${contributionId}`, {
+        contributionId,
+        voteCount: aggregate.voteCount,
+        distinctVoterCount: aggregate.distinctVoterCount,
+        upvoteCount: aggregate.upvoteCount,
+        downvoteCount: aggregate.downvoteCount,
+        weightedVoteScore: aggregate.weightedVoteScore,
+        updatedAt: reconciledAt,
+        reconciledAt,
+      }),
+    ),
+    ...Array.from(topicStatsByTopicId.entries()).map(([topicId, aggregate]) =>
+      state.storage.put(`${TOPIC_STATE_TOPIC_VOTE_AGGREGATE_PREFIX}${topicId}`, {
+        topicId,
+        topicVoteCount: Number(aggregate.topic_vote_count ?? 0),
+        distinctVoterCount: Number(aggregate.distinct_voter_count ?? 0),
+        updatedAt: reconciledAt,
+        reconciledAt,
+      }),
+    ),
+  ]);
+
+  return { contributionAggregatesByContributionId, topicStatsByTopicId };
 }
 
 function readPendingMessages(state: DurableObjectState) {
@@ -89,10 +245,15 @@ function readPendingAuxEpistemicClaims(state: DurableObjectState) {
 async function flushContributionRecords(
   state: DurableObjectState,
   env: ApiEnv,
-): Promise<{ flushedContributionIds: string[]; flushedTopicIds: string[]; remainingCount: number }> {
+): Promise<{
+  flushedContributionIds: string[];
+  flushedTopicIds: string[];
+  topicChangeSequences: Map<string, number>;
+  remainingCount: number;
+}> {
   const messages = readPendingMessages(state);
   if (messages.length === 0) {
-    return { flushedContributionIds: [], flushedTopicIds: [], remainingCount: 0 };
+    return { flushedContributionIds: [], flushedTopicIds: [], topicChangeSequences: new Map(), remainingCount: 0 };
   }
 
   const contributionIds = messages.map((row) => row.id);
@@ -190,11 +351,12 @@ async function flushContributionRecords(
     results = (await env.DB.batch(statements)) as Array<{ success?: boolean; error?: string }>;
   } catch (error) {
     console.error("topic-state contribution flush batch failed", error);
-    return { flushedContributionIds: [], flushedTopicIds: [], remainingCount: messages.length };
+    return { flushedContributionIds: [], flushedTopicIds: [], topicChangeSequences: new Map(), remainingCount: messages.length };
   }
 
   const flushedContributionIds = new Set<string>();
   const flushedTopicIds = new Set<string>();
+  const topicChangeSequences = new Map<string, number>();
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     const owner = statementOwners[index];
@@ -222,12 +384,20 @@ async function flushContributionRecords(
     }
     flushedContributionIds.add(record.contributionId);
     flushedTopicIds.add(record.topicId);
+    const payload = JSON.parse(String(messages.find((message) => message.id === record.messageId)?.payload_json ?? "{}")) as {
+      change_sequence?: number;
+    };
+    const changeSequence = Number(payload.change_sequence ?? 0);
+    if (changeSequence > Number(topicChangeSequences.get(record.topicId) ?? 0)) {
+      topicChangeSequences.set(record.topicId, changeSequence);
+    }
   }
 
   const remainingRow = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_messages WHERE flushed = 0`)[0] as { count?: number } | undefined;
   return {
     flushedContributionIds: Array.from(flushedContributionIds),
     flushedTopicIds: Array.from(flushedTopicIds),
+    topicChangeSequences,
     remainingCount: Number(remainingRow?.count ?? 0),
   };
 }
@@ -235,13 +405,18 @@ async function flushContributionRecords(
 async function flushVoteRecords(
   state: DurableObjectState,
   env: ApiEnv,
-): Promise<{ flushedContributionIds: string[]; flushedTopicIds: string[]; remainingCount: number }> {
+): Promise<{
+  flushedContributionIds: string[];
+  flushedTopicIds: string[];
+  topicChangeSequences: Map<string, number>;
+  remainingCount: number;
+}> {
   const votes = [
     ...readPendingVotes(state).map((vote) => ({ ...vote, source: "legacy" as const })),
     ...readPendingAuxVotes(state).map((vote) => ({ ...vote, source: "aux" as const })),
   ].sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
   if (votes.length === 0) {
-    return { flushedContributionIds: [], flushedTopicIds: [], remainingCount: 0 };
+    return { flushedContributionIds: [], flushedTopicIds: [], topicChangeSequences: new Map(), remainingCount: 0 };
   }
 
   const parsedVotes = votes.map((vote) => ({
@@ -271,11 +446,12 @@ async function flushVoteRecords(
     results = (await env.DB.batch(statements)) as Array<{ success?: boolean; error?: string }>;
   } catch (error) {
     console.error("topic-state vote flush batch failed", error);
-    return { flushedContributionIds: [], flushedTopicIds: [], remainingCount: votes.length };
+    return { flushedContributionIds: [], flushedTopicIds: [], topicChangeSequences: new Map(), remainingCount: votes.length };
   }
 
   const flushedContributionIds = new Set<string>();
   const flushedTopicIds = new Set<string>();
+  const topicChangeSequences = new Map<string, number>();
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     if (!result || result.error || result.success === false) {
@@ -289,15 +465,26 @@ async function flushVoteRecords(
     }
     flushedContributionIds.add(String(payload.contributionId));
     flushedTopicIds.add(String(payload.topicId));
+    const changeSequence = Number(payload.changeSequence ?? 0);
+    if (changeSequence > Number(topicChangeSequences.get(String(payload.topicId)) ?? 0)) {
+      topicChangeSequences.set(String(payload.topicId), changeSequence);
+    }
   }
 
-  await Promise.all(Array.from(flushedContributionIds).map((contributionId) => recomputeContributionFinalScore(env, contributionId)));
+  const reconciledVoteAggregates = await reconcileVoteAggregates(
+    state,
+    env,
+    Array.from(flushedContributionIds),
+    Array.from(flushedTopicIds),
+  );
+  await recomputeContributionFinalScores(env, Array.from(flushedContributionIds), reconciledVoteAggregates);
 
   const remainingLegacy = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_votes WHERE flushed = 0`)[0] as { count?: number } | undefined;
   const remainingAux = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0 AND table_name = 'votes'`)[0] as { count?: number } | undefined;
   return {
     flushedContributionIds: Array.from(flushedContributionIds),
     flushedTopicIds: Array.from(flushedTopicIds),
+    topicChangeSequences,
     remainingCount: Number(remainingLegacy?.count ?? 0) + Number(remainingAux?.count ?? 0),
   };
 }
@@ -344,6 +531,20 @@ export async function flushPendingTopicState(
     ...contributionResult.flushedContributionIds,
     ...voteResult.flushedContributionIds,
   ]);
+  const topicChangeSequences = new Map<string, number>();
+  for (const [topicId, changeSequence] of contributionResult.topicChangeSequences.entries()) {
+    topicChangeSequences.set(topicId, changeSequence);
+  }
+  for (const [topicId, changeSequence] of voteResult.topicChangeSequences.entries()) {
+    if (changeSequence > Number(topicChangeSequences.get(topicId) ?? 0)) {
+      topicChangeSequences.set(topicId, changeSequence);
+    }
+  }
+  for (const [topicId, changeSequence] of topicChangeSequences.entries()) {
+    await runStatement(
+      env.DB.prepare(`UPDATE topics SET change_sequence = MAX(change_sequence, ?) WHERE id = ?`).bind(changeSequence, topicId),
+    );
+  }
 
   const retentionCutoff = new Date(Date.now() - TOPIC_STATE_FLUSHED_RETENTION_MS).toISOString();
   const idempotencyCutoff = new Date(Date.now() - TOPIC_STATE_IDEMPOTENCY_RETENTION_MS).toISOString();

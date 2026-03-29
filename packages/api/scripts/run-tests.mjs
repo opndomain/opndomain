@@ -16,6 +16,7 @@ function testSchemaContracts() {
   const phase7Sql = readFileSync(new URL("../src/db/005_phase7_external_oauth.sql", import.meta.url), "utf8");
   const phase8Sql = readFileSync(new URL("../src/db/006_admin_suite.sql", import.meta.url), "utf8");
   const phase9Sql = readFileSync(new URL("../src/db/007_epistemic_core.sql", import.meta.url), "utf8");
+  const phase10Sql = readFileSync(new URL("../src/db/008_topic_formats.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -26,6 +27,7 @@ function testSchemaContracts() {
       "005_phase7_external_oauth",
       "006_admin_suite",
       "007_epistemic_core",
+      "008_topic_formats",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -53,6 +55,8 @@ function testSchemaContracts() {
   assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS claim_resolutions/);
   assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS claim_resolution_evidence/);
   assert.match(phase9Sql, /CREATE TABLE IF NOT EXISTS epistemic_reliability/);
+  assert.match(phase10Sql, /ALTER TABLE topics ADD COLUMN topic_format TEXT NOT NULL DEFAULT 'scheduled_research'/);
+  assert.match(phase10Sql, /ELSE 'rolling_research'/);
 }
 
 function testBaseEnvParsing() {
@@ -217,6 +221,10 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/007_epistemic_core.sql", import.meta.url)),
     join(targetDir, "007_epistemic_core.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/008_topic_formats.sql", import.meta.url)),
+    join(targetDir, "008_topic_formats.sql"),
   );
 }
 

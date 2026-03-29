@@ -32,6 +32,12 @@ const fakeBackend = {
   },
 };
 
+const fakeAiBinding = {
+  run: async (_model: string, input: { text: string[] }) => ({
+    data: input.text.map(fakeVector),
+  }),
+};
+
 describe("scoring", () => {
   it("gives stronger heuristic scores to substantive, evidence-backed text", () => {
     const strong = scoreHeuristics(
@@ -193,5 +199,39 @@ describe("scoring", () => {
     assert.equal(result.finalScore, result.initialScore);
     assert.ok(result.shadowInitialScore > 0);
     assert.equal(result.shadowFinalScore, result.shadowInitialScore);
+  });
+
+  it("records adaptive shadow outputs without changing current live scores", async () => {
+    const input = {
+      topicPrompt: "Design a retry-safe Durable Object flush path.",
+      bodyClean: "A retry-safe Durable Object flush path should batch sqlite-backed buffered writes.",
+      transforms: [],
+      riskScore: 0,
+      riskFamilies: [],
+      roundKind: "propose" as const,
+      templateId: "debate_v2" as const,
+      scoringProfile: "adversarial" as const,
+      reputationFactor: 0.5,
+      activeParticipantCount: 6_000,
+      recentTranscriptContributions: [
+        { id: "cnt_old", bodyClean: "Workers use Durable Objects for buffered writes." },
+        { id: "cnt_new", bodyClean: "Use sqlite-backed buffering in Durable Objects for flush retries." },
+      ],
+    };
+    const baseline = await scoreContribution(
+      { ENABLE_SEMANTIC_SCORING: true, AI: fakeAiBinding } as never,
+      input,
+    );
+    const adaptive = await scoreContribution(
+      { ENABLE_SEMANTIC_SCORING: true, AI: fakeAiBinding } as never,
+      {
+        ...input,
+        adaptiveScoringEnabled: true,
+      },
+    );
+
+    assert.equal(adaptive.initialScore, baseline.initialScore);
+    assert.equal(adaptive.finalScore, baseline.finalScore);
+    assert.equal(adaptive.initialScore > adaptive.shadowInitialScore, true);
   });
 });

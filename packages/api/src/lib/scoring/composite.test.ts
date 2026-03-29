@@ -214,4 +214,50 @@ describe("composite scoring", () => {
     assert.ok(critique.finalScore < 100);
     assert.ok(predict.finalScore < 100);
   });
+
+  it("keeps a live semantic floor while shadow can fully skip semantics", () => {
+    const result = computeCompositeScore({
+      roundKind: "propose",
+      templateId: "research",
+      scoringProfile: "exploratory",
+      reputationFactor: 0,
+      substanceScore: 40,
+      roleBonus: 10,
+      detectedRole: "claim",
+      relevance: 100,
+      novelty: 100,
+      reframe: 100,
+      liveMultiplier: 1,
+      shadowMultiplier: 1,
+      liveSemanticWeightRatio: 0.15,
+      shadowSemanticWeightRatio: 0,
+    });
+
+    assert.ok(result.initialScore > result.shadowInitialScore);
+    assert.ok(result.shadowInitialScore > 0);
+  });
+
+  it("requires per-contribution distinct voters before vote influence matures", () => {
+    const result = computeCompositeScore({
+      roundKind: "critique",
+      templateId: "debate_v2",
+      scoringProfile: "adversarial",
+      reputationFactor: 0,
+      substanceScore: 50,
+      roleBonus: 10,
+      detectedRole: "critique",
+      relevance: 50,
+      novelty: 50,
+      reframe: 50,
+      liveMultiplier: 1,
+      shadowMultiplier: 1,
+      weightedVoteScore: 100,
+      voteCount: 4,
+      distinctVoterCount: 1,
+      topicVoteCount: 18,
+    });
+
+    assert.equal(result.finalScore, result.initialScore);
+    assert.equal(result.shadowFinalScore, result.shadowInitialScore);
+  });
 });

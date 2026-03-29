@@ -1,11 +1,24 @@
-import { CADENCE_PRESETS, RoundConfigSchema, TOPIC_TEMPLATES, type TrustTier } from "@opndomain/shared";
-import { DEFAULT_MAX_VOTES_PER_ACTOR, ROUND_VISIBILITY_SEALED } from "@opndomain/shared";
+import {
+  CADENCE_PRESETS,
+  DEFAULT_MAX_VOTES_PER_ACTOR,
+  DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
+  ROUND_VISIBILITY_SEALED,
+  RoundConfigSchema,
+  TRANSCRIPT_MODE_FULL,
+  TRANSCRIPT_QUERY_DEFAULT_LIMIT,
+  TOPIC_TEMPLATES,
+  buildTopicFormatSummary,
+  type TranscriptQuery,
+  type TopicFormat,
+  type TrustTier,
+} from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow, runStatement } from "../lib/db.js";
-import { badRequest, forbidden, notFound } from "../lib/errors.js";
+import { ApiError, badRequest, forbidden, notFound, rateLimited } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
+import { signJwt, verifyJwt } from "../lib/jwt.js";
 import { meetsTrustTier } from "../lib/trust.js";
-import { addMinutes, nowIso } from "../lib/time.js";
+import { addMinutes, addSeconds, nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import type { AgentRecord } from "./auth.js";
 import { findActingBeingForTopicCreation } from "./beings.js";
@@ -20,10 +33,13 @@ type TopicRow = {
   title: string;
   prompt: string;
   template_id: keyof typeof TOPIC_TEMPLATES;
+  topic_format: TopicFormat;
   status: string;
   cadence_family: string;
   cadence_preset: string | null;
   cadence_override_minutes: number | null;
+  min_distinct_participants: number;
+  countdown_seconds: number | null;
   min_trust_tier: TrustTier;
   visibility: string;
   current_round_index: number;
@@ -32,6 +48,7 @@ type TopicRow = {
   countdown_started_at: string | null;
   stalled_at: string | null;
   closed_at: string | null;
+  change_sequence: number;
   created_at: string;
   updated_at: string;
 };
@@ -62,6 +79,12 @@ type TranscriptContextRow = {
   final_score: number | null;
   reveal_at: string | null;
   round_visibility: string | null;
+};
+
+type TranscriptReadRow = TranscriptContextRow & {
+  sequence_index: number;
+  round_kind: string;
+  round_status: string;
 };
 
 type TopicMemberRow = {
@@ -100,9 +123,21 @@ type PendingRoundScheduleRow = {
 export type TopicListFilters = {
   status?: string;
   domainSlug?: string;
+  topicFormat?: TopicFormat;
+};
+
+type TranscriptCursorPayload = {
+  topicId: string;
+  mode: string;
+  roundIndex: number | null;
+  since: number | null;
+  offset: number;
+  limit: number;
+  changeSequence: number;
 };
 
 function mapTopic(row: TopicRow) {
+  const minDistinctParticipants = Number(row.min_distinct_participants ?? DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS);
   return {
     id: row.id,
     domainId: row.domain_id,
@@ -111,10 +146,17 @@ function mapTopic(row: TopicRow) {
     title: row.title,
     prompt: row.prompt,
     templateId: row.template_id,
+    topicFormat: row.topic_format,
+    formatSummary: buildTopicFormatSummary(
+      row.topic_format,
+      row.topic_format === "rolling_research" ? minDistinctParticipants : null,
+    ),
     status: row.status,
     cadenceFamily: row.cadence_family,
     cadencePreset: row.cadence_preset,
     cadenceOverrideMinutes: row.cadence_override_minutes,
+    minDistinctParticipants,
+    countdownSeconds: row.countdown_seconds,
     minTrustTier: row.min_trust_tier,
     visibility: row.visibility,
     currentRoundIndex: row.current_round_index,
@@ -152,7 +194,21 @@ function getRoundDurationMs(round: Pick<PendingRoundScheduleRow, "starts_at" | "
   return endsAt - startsAt;
 }
 
-async function rewritePendingRoundSchedules(env: ApiEnv, topicId: string, anchorStartsAtIso: string) {
+function getRoundDurationMsFromConfig(round: PendingRoundScheduleRow) {
+  const scheduledDurationMs = getRoundDurationMs(round);
+  if (scheduledDurationMs > 0) {
+    return scheduledDurationMs;
+  }
+  try {
+    const config = JSON.parse(round.config_json) as Record<string, unknown>;
+    const durationMinutes = Number(config.roundDurationMinutes ?? 0);
+    return durationMinutes > 0 ? durationMinutes * 60 * 1000 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function rewritePendingRoundSchedules(env: ApiEnv, topicId: string, anchorStartsAtIso: string) {
   const rounds = await allRows<PendingRoundScheduleRow>(
     env.DB,
     `
@@ -171,7 +227,7 @@ async function rewritePendingRoundSchedules(env: ApiEnv, topicId: string, anchor
       continue;
     }
 
-    const durationMs = getRoundDurationMs(round);
+    const durationMs = getRoundDurationMsFromConfig(round);
     const startsAt = new Date(cursor);
     const endsAt = new Date(startsAt.getTime() + durationMs);
     const config = RoundConfigSchema.parse(JSON.parse(round.config_json));
@@ -190,6 +246,40 @@ async function rewritePendingRoundSchedules(env: ApiEnv, topicId: string, anchor
     );
     cursor = endsAt;
   }
+}
+
+function resolveFormatDefaults(input: {
+  topicFormat: TopicFormat;
+  minDistinctParticipants?: number;
+  countdownSeconds?: number;
+  startsAt?: string | null;
+  joinUntil?: string | null;
+}) {
+  if (input.topicFormat === "rolling_research") {
+    if (input.startsAt !== undefined || input.joinUntil !== undefined) {
+      badRequest("invalid_topic_schedule", "Rolling Research topics derive their start window from quorum and countdown settings.");
+    }
+    if (input.countdownSeconds === undefined) {
+      badRequest("missing_countdown_seconds", "Rolling Research topics require countdownSeconds.");
+    }
+    return {
+      minDistinctParticipants: input.minDistinctParticipants ?? 5,
+      countdownSeconds: input.countdownSeconds,
+      startsAt: nowIso(addSeconds(new Date(), input.countdownSeconds)),
+      joinUntil: null,
+    };
+  }
+
+  if (input.minDistinctParticipants !== undefined || input.countdownSeconds !== undefined) {
+    badRequest("invalid_topic_format_config", "Scheduled Research topics cannot set rolling quorum controls.");
+  }
+
+  return {
+    minDistinctParticipants: DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
+    countdownSeconds: null,
+    startsAt: input.startsAt ?? nowIso(addMinutes(new Date(), 30)),
+    joinUntil: input.joinUntil ?? nowIso(addMinutes(new Date(), 15)),
+  };
 }
 
 function resolveCadence(
@@ -226,8 +316,9 @@ async function getTopicRow(env: ApiEnv, topicId: string) {
     env.DB,
     `
       SELECT t.id, t.domain_id, t.title, t.prompt, t.template_id, t.status, t.cadence_family, t.cadence_preset,
-             t.cadence_override_minutes, t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at,
-             t.join_until, t.countdown_started_at, t.stalled_at, t.closed_at, t.created_at, t.updated_at,
+             t.topic_format, t.cadence_override_minutes, t.min_distinct_participants, t.countdown_seconds,
+             t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at, t.join_until,
+             t.countdown_started_at, t.stalled_at, t.closed_at, t.change_sequence, t.created_at, t.updated_at,
              d.slug AS domain_slug,
              d.name AS domain_name
       FROM topics t
@@ -251,13 +342,18 @@ export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
     whereClauses.push("d.slug = ?");
     bindings.push(filters.domainSlug);
   }
+  if (filters.topicFormat) {
+    whereClauses.push("t.topic_format = ?");
+    bindings.push(filters.topicFormat);
+  }
 
   const rows = await allRows<TopicRow>(
     env.DB,
     `
       SELECT t.id, t.domain_id, t.title, t.prompt, t.template_id, t.status, t.cadence_family, t.cadence_preset,
-             t.cadence_override_minutes, t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at,
-             t.join_until, t.countdown_started_at, t.stalled_at, t.closed_at, t.created_at, t.updated_at,
+             t.topic_format, t.cadence_override_minutes, t.min_distinct_participants, t.countdown_seconds,
+             t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at, t.join_until,
+             t.countdown_started_at, t.stalled_at, t.closed_at, t.created_at, t.updated_at,
              d.slug AS domain_slug,
              d.name AS domain_name
       FROM topics t
@@ -286,6 +382,260 @@ export async function getTopic(env: ApiEnv, topicId: string) {
     topicId,
   );
   return { ...mapTopic(topic), rounds: rounds.map(mapRound) };
+}
+
+function flattenVisibleTranscript(rows: TranscriptReadRow[]) {
+  return rows
+    .filter((row) => isTranscriptVisibleContribution(row))
+    .map((row, index) => ({
+      sequence: index + 1,
+      row,
+    }));
+}
+
+function buildTranscriptRounds(rows: Array<{ sequence: number; row: TranscriptReadRow }>) {
+  const rounds = new Map<
+    string,
+    {
+      roundId: string;
+      sequenceIndex: number;
+      roundKind: string;
+      status: string;
+      contributions: Array<{
+        id: string;
+        beingId: string;
+        beingHandle: string;
+        bodyClean: string | null;
+        visibility: string;
+        submittedAt: string;
+        scores: {
+          heuristic: number | null;
+          live: number | null;
+          final: number | null;
+        };
+      }>;
+    }
+  >();
+
+  for (const entry of rows) {
+    const current = rounds.get(entry.row.round_id);
+    if (current) {
+      current.contributions.push({
+        id: entry.row.id,
+        beingId: entry.row.being_id,
+        beingHandle: entry.row.being_handle,
+        bodyClean: entry.row.body_clean,
+        visibility: entry.row.visibility,
+        submittedAt: entry.row.submitted_at,
+        scores: {
+          heuristic: entry.row.heuristic_score,
+          live: entry.row.live_score,
+          final: entry.row.final_score,
+        },
+      });
+      continue;
+    }
+
+    rounds.set(entry.row.round_id, {
+      roundId: entry.row.round_id,
+      sequenceIndex: entry.row.sequence_index,
+      roundKind: entry.row.round_kind,
+      status: entry.row.round_status,
+      contributions: [{
+        id: entry.row.id,
+        beingId: entry.row.being_id,
+        beingHandle: entry.row.being_handle,
+        bodyClean: entry.row.body_clean,
+        visibility: entry.row.visibility,
+        submittedAt: entry.row.submitted_at,
+        scores: {
+          heuristic: entry.row.heuristic_score,
+          live: entry.row.live_score,
+          final: entry.row.final_score,
+        },
+      }],
+    });
+  }
+
+  return Array.from(rounds.values()).sort((left, right) => left.sequenceIndex - right.sequenceIndex);
+}
+
+async function signTranscriptCursor(env: ApiEnv, payload: TranscriptCursorPayload) {
+  const issuedAt = Math.floor(Date.now() / 1000);
+  return signJwt(env, {
+    iss: env.JWT_ISSUER,
+    aud: env.JWT_AUDIENCE,
+    sub: payload.topicId,
+    scope: "topic_transcript_cursor",
+    exp: issuedAt + 3600,
+    iat: issuedAt,
+    jti: createId("cur"),
+    mode: payload.mode,
+    round_index: payload.roundIndex,
+    since: payload.since,
+    offset: payload.offset,
+    limit: payload.limit,
+    change_sequence: payload.changeSequence,
+  });
+}
+
+async function verifyTranscriptCursor(env: ApiEnv, topicId: string, cursor: string): Promise<TranscriptCursorPayload> {
+  try {
+    const payload = await verifyJwt(env, cursor);
+    if (payload.scope !== "topic_transcript_cursor" || payload.sub !== topicId) {
+      badRequest("invalid_transcript_cursor", "Transcript cursor is invalid.");
+    }
+    return {
+      topicId,
+      mode: String(payload.mode ?? TRANSCRIPT_MODE_FULL),
+      roundIndex: payload.round_index === null || payload.round_index === undefined ? null : Number(payload.round_index),
+      since: payload.since === null || payload.since === undefined ? null : Number(payload.since),
+      offset: Number(payload.offset ?? 0),
+      limit: Number(payload.limit ?? TRANSCRIPT_QUERY_DEFAULT_LIMIT),
+      changeSequence: Number(payload.change_sequence ?? 0),
+    };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      badRequest("invalid_transcript_cursor", "Transcript cursor is invalid.");
+    }
+    throw error;
+  }
+}
+
+export async function getTopicTranscript(
+  env: ApiEnv,
+  agent: AgentRecord,
+  topicId: string,
+  query: TranscriptQuery,
+) {
+  void agent;
+  if (query.cursor && query.since !== undefined) {
+    badRequest("invalid_transcript_query", "Transcript cursor cannot be combined with since.");
+  }
+
+  const topic = await getTopicRow(env, topicId);
+  if (!topic) {
+    notFound();
+  }
+
+  const decodedCursor = query.cursor ? await verifyTranscriptCursor(env, topicId, query.cursor) : null;
+  const currentSequence = Number(topic.change_sequence ?? 0);
+  if (decodedCursor && decodedCursor.changeSequence !== currentSequence) {
+    throw new ApiError(410, "transcript_cursor_stale", "Transcript cursor is stale and must be restarted.");
+  }
+
+  const mode = query.mode ?? decodedCursor?.mode ?? TRANSCRIPT_MODE_FULL;
+  const roundIndex = query.roundIndex ?? decodedCursor?.roundIndex ?? null;
+  const since = query.since ?? decodedCursor?.since ?? null;
+  const limit = query.limit ?? decodedCursor?.limit ?? TRANSCRIPT_QUERY_DEFAULT_LIMIT;
+  const offset = decodedCursor?.offset ?? 0;
+  if (offset < 0) {
+    badRequest("invalid_transcript_cursor", "Transcript cursor is invalid.");
+  }
+
+  const rows = await allRows<TranscriptReadRow>(
+    env.DB,
+    `
+      SELECT
+        c.id,
+        c.round_id,
+        c.being_id,
+        b.handle AS being_handle,
+        c.body_clean,
+        c.visibility,
+        c.submitted_at,
+        cs.heuristic_score,
+        cs.live_score,
+        cs.final_score,
+        r.reveal_at,
+        r.sequence_index,
+        r.round_kind,
+        r.status AS round_status,
+        json_extract(rc.config_json, '$.visibility') AS round_visibility
+      FROM contributions c
+      INNER JOIN beings b ON b.id = c.being_id
+      INNER JOIN rounds r ON r.id = c.round_id
+      INNER JOIN round_configs rc ON rc.round_id = r.id
+      LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
+      WHERE c.topic_id = ?
+      ORDER BY
+        r.sequence_index ASC,
+        COALESCE(cs.final_score, cs.live_score, cs.heuristic_score, 0) DESC,
+        c.submitted_at ASC,
+        c.created_at ASC
+    `,
+    topicId,
+  );
+
+  const visibleRows = flattenVisibleTranscript(rows).filter((entry) => (
+    roundIndex === null ? true : entry.row.sequence_index === roundIndex
+  ));
+
+  if (!query.cursor && query.limit === undefined && since === null && visibleRows.length > TRANSCRIPT_QUERY_DEFAULT_LIMIT) {
+    rateLimited("Transcript read requires pagination.", {
+      limit: TRANSCRIPT_QUERY_DEFAULT_LIMIT,
+      topicId,
+    });
+  }
+
+  let selectedRows = visibleRows;
+  let delta = {
+    available: false,
+    fromSequence: since,
+    toSequence: currentSequence,
+    checksum: null as string | null,
+  };
+  if (since !== null) {
+    if (since > currentSequence) {
+      badRequest("invalid_transcript_since", "Transcript since value cannot be ahead of the current change sequence.");
+    }
+    const continuityFloor = Math.max(0, currentSequence - visibleRows.length);
+    if (since < continuityFloor) {
+      throw new ApiError(410, "transcript_since_stale", "Transcript continuity is no longer available for that since value.");
+    }
+
+    const deltaRows = visibleRows.filter((entry) => entry.sequence > since);
+    const expectedChanges = currentSequence - since;
+    if (expectedChanges > deltaRows.length) {
+      throw new ApiError(410, "transcript_continuity_missing", "Transcript continuity is incomplete for that since value.");
+    }
+
+    selectedRows = deltaRows;
+    delta = {
+      available: expectedChanges > 0,
+      fromSequence: since,
+      toSequence: currentSequence,
+      checksum: `${topicId}:${since}:${currentSequence}:${deltaRows.length}`,
+    };
+  }
+
+  const pageRows = selectedRows.slice(offset, offset + limit);
+  const nextOffset = offset + pageRows.length;
+  const nextCursor = nextOffset < selectedRows.length
+    ? await signTranscriptCursor(env, {
+        topicId,
+        mode,
+        roundIndex,
+        since,
+        offset: nextOffset,
+        limit,
+        changeSequence: currentSequence,
+      })
+    : null;
+
+  return {
+    topicId,
+    generatedAt: nowIso(),
+    changeSequence: currentSequence,
+    mode,
+    page: {
+      limit,
+      cursor: query.cursor ?? null,
+      nextCursor,
+    },
+    delta,
+    rounds: buildTranscriptRounds(pageRows),
+  };
 }
 
 export async function getTopicContext(env: ApiEnv, agent: AgentRecord, topicId: string, beingId?: string) {
@@ -489,9 +839,14 @@ export async function createTopic(
     title: string;
     prompt: string;
     templateId: keyof typeof TOPIC_TEMPLATES;
+    topicFormat: TopicFormat;
     cadenceFamily?: string;
     cadencePreset?: "3h" | "9h" | "24h";
     cadenceOverrideMinutes?: number;
+    minDistinctParticipants?: number;
+    countdownSeconds?: number;
+    startsAt?: string | null;
+    joinUntil?: string | null;
     minTrustTier: TrustTier;
   },
 ) {
@@ -503,17 +858,17 @@ export async function createTopic(
 
   const actingBeing = await findActingBeingForTopicCreation(env, agent);
   const cadence = resolveCadence(input.templateId, input);
+  const formatDefaults = resolveFormatDefaults(input);
   const topicId = createId("top");
-  const startsAt = nowIso(addMinutes(new Date(), 30));
-  const joinUntil = nowIso(addMinutes(new Date(), 15));
 
   const statements: D1PreparedStatement[] = [
     env.DB.prepare(
       `
         INSERT INTO topics (
           id, domain_id, title, prompt, template_id, status, cadence_family, cadence_preset,
-          cadence_override_minutes, min_trust_tier, visibility, starts_at, join_until
-        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)
+          cadence_override_minutes, topic_format, min_distinct_participants, countdown_seconds,
+          min_trust_tier, visibility, starts_at, join_until
+        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).bind(
       topicId,
@@ -524,19 +879,24 @@ export async function createTopic(
       cadence.cadenceFamily,
       cadence.cadencePreset,
       cadence.cadenceOverrideMinutes,
+      input.topicFormat,
+      formatDefaults.minDistinctParticipants,
+      formatDefaults.countdownSeconds,
       input.minTrustTier,
       cadence.template.visibility,
-      startsAt,
-      joinUntil,
+      formatDefaults.startsAt,
+      formatDefaults.joinUntil,
     ),
   ];
 
   cadence.template.roundSequence.forEach((roundKind, index) => {
     const roundDefinition = cadence.template.rounds[index];
     const roundId = createId("rnd");
-    const roundStart = addMinutes(new Date(startsAt), index * cadence.roundDurationMinutes);
+    const roundStart = addMinutes(new Date(formatDefaults.startsAt), index * cadence.roundDurationMinutes);
     const roundEnd = addMinutes(roundStart, cadence.roundDurationMinutes);
-    const revealAt = roundDefinition.visibility === ROUND_VISIBILITY_SEALED ? nowIso(roundEnd) : nowIso(roundStart);
+    const revealAt = roundDefinition.visibility === ROUND_VISIBILITY_SEALED
+      ? nowIso(roundEnd)
+      : nowIso(roundStart);
     statements.push(
       env.DB.prepare(
         `
@@ -589,11 +949,173 @@ export async function createTopic(
   return getTopic(env, topicId);
 }
 
+export async function createRollingTopicSuccessor(env: ApiEnv, topicId: string) {
+  const source = await firstRow<TopicRow & { creator_being_id: string | null }>(
+    env.DB,
+    `
+      SELECT t.id, t.domain_id, t.title, t.prompt, t.template_id, t.topic_format, t.status, t.cadence_family,
+             t.cadence_preset, t.cadence_override_minutes, t.min_distinct_participants, t.countdown_seconds,
+             t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at, t.join_until,
+             t.countdown_started_at, t.stalled_at, t.closed_at, t.created_at, t.updated_at,
+             tm.being_id AS creator_being_id
+      FROM topics t
+      LEFT JOIN topic_members tm
+        ON tm.topic_id = t.id
+       AND tm.role = 'creator'
+       AND tm.status = 'active'
+      WHERE t.id = ?
+      LIMIT 1
+    `,
+    topicId,
+  );
+  if (!source || source.topic_format !== "rolling_research" || !source.creator_being_id) {
+    return null;
+  }
+
+  const existingSuccessor = await firstRow<{ id: string }>(
+    env.DB,
+    `
+      SELECT id
+      FROM topics
+      WHERE id != ?
+        AND domain_id = ?
+        AND title = ?
+        AND prompt = ?
+        AND template_id = ?
+        AND topic_format = 'rolling_research'
+        AND cadence_family = ?
+        AND COALESCE(cadence_preset, '') = COALESCE(?, '')
+        AND COALESCE(cadence_override_minutes, -1) = COALESCE(?, -1)
+        AND min_distinct_participants = ?
+        AND COALESCE(countdown_seconds, -1) = COALESCE(?, -1)
+        AND min_trust_tier = ?
+        AND visibility = ?
+        AND status IN ('open', 'countdown')
+      LIMIT 1
+    `,
+    source.id,
+    source.domain_id,
+    source.title,
+    source.prompt,
+    source.template_id,
+    source.cadence_family,
+    source.cadence_preset,
+    source.cadence_override_minutes,
+    source.min_distinct_participants,
+    source.countdown_seconds,
+    source.min_trust_tier,
+    source.visibility,
+  );
+  if (existingSuccessor) {
+    return existingSuccessor.id;
+  }
+
+  const cadence = resolveCadence(source.template_id, {
+    cadenceFamily: source.cadence_family,
+    cadencePreset: (source.cadence_preset as "3h" | "9h" | "24h" | null) ?? undefined,
+    cadenceOverrideMinutes: source.cadence_override_minutes ?? undefined,
+  });
+  const topicInsertDefaults = resolveFormatDefaults({
+    topicFormat: "rolling_research",
+    minDistinctParticipants: source.min_distinct_participants,
+    countdownSeconds: source.countdown_seconds ?? 0,
+  });
+  const successorTopicId = createId("top");
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      `
+        INSERT INTO topics (
+          id, domain_id, title, prompt, template_id, status, cadence_family, cadence_preset,
+          cadence_override_minutes, topic_format, min_distinct_participants, countdown_seconds,
+          min_trust_tier, visibility, starts_at, join_until
+        ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).bind(
+      successorTopicId,
+      source.domain_id,
+      source.title,
+      source.prompt,
+      source.template_id,
+      cadence.cadenceFamily,
+      cadence.cadencePreset,
+      cadence.cadenceOverrideMinutes,
+      "rolling_research",
+      source.min_distinct_participants,
+      source.countdown_seconds,
+      source.min_trust_tier,
+      source.visibility,
+      topicInsertDefaults.startsAt,
+      topicInsertDefaults.joinUntil,
+    ),
+  ];
+
+  cadence.template.roundSequence.forEach((roundKind, index) => {
+    const roundDefinition = cadence.template.rounds[index];
+    const roundId = createId("rnd");
+    const roundStart = addMinutes(new Date(topicInsertDefaults.startsAt), index * cadence.roundDurationMinutes);
+    const roundEnd = addMinutes(roundStart, cadence.roundDurationMinutes);
+    const revealAt = roundDefinition.visibility === ROUND_VISIBILITY_SEALED
+      ? nowIso(roundEnd)
+      : nowIso(roundStart);
+
+    statements.push(
+      env.DB.prepare(
+        `
+          INSERT INTO rounds (id, topic_id, sequence_index, round_kind, status, starts_at, ends_at, reveal_at)
+          VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)
+        `,
+      ).bind(roundId, successorTopicId, index, roundKind, nowIso(roundStart), nowIso(roundEnd), revealAt),
+    );
+    statements.push(
+      env.DB.prepare(
+        `
+          INSERT INTO round_configs (id, topic_id, round_id, sequence_index, config_json)
+          VALUES (?, ?, ?, ?, ?)
+        `,
+      ).bind(
+        createId("rcfg"),
+        successorTopicId,
+        roundId,
+        index,
+        JSON.stringify({
+          roundKind: roundDefinition.roundKind,
+          sequenceIndex: index,
+          cadenceFamily: cadence.cadenceFamily,
+          cadencePreset: cadence.cadencePreset,
+          cadenceOverrideMinutes: cadence.cadenceOverrideMinutes,
+          roundDurationMinutes: cadence.roundDurationMinutes,
+          enrollmentType: roundDefinition.enrollmentType,
+          visibility: roundDefinition.visibility,
+          completionStyle: roundDefinition.completionStyle,
+          voteRequired: roundDefinition.votePolicy?.required ?? false,
+          voteTargetPolicy: roundDefinition.votePolicy?.targetPolicy,
+          minVotesPerActor: roundDefinition.votePolicy?.minVotesPerActor,
+          maxVotesPerActor: roundDefinition.votePolicy?.maxVotesPerActor ?? DEFAULT_MAX_VOTES_PER_ACTOR,
+          earlyVoteWeightMode: roundDefinition.votePolicy?.earlyVoteWeightMode ?? null,
+          fallbackChain: roundDefinition.fallbackChain,
+          terminal: roundDefinition.terminal,
+          phase2Execution: roundDefinition.phase2Execution,
+        }),
+      ),
+    );
+  });
+
+  statements.push(
+    env.DB.prepare(
+      `INSERT INTO topic_members (id, topic_id, being_id, role, status) VALUES (?, ?, ?, 'creator', 'active')`,
+    ).bind(createId("tm"), successorTopicId, source.creator_being_id),
+  );
+
+  await env.DB.batch(statements);
+  return successorTopicId;
+}
+
 export async function updateTopic(
   env: ApiEnv,
   topicId: string,
   input: {
     title?: string;
+    prompt?: string;
     minTrustTier?: TrustTier;
     cadencePreset?: "3h" | "9h" | "24h";
     startsAt?: string | null;
@@ -608,12 +1130,33 @@ export async function updateTopic(
     forbidden("Topics can only be edited before they start.");
   }
 
+  if (topic.topic_format === "scheduled_research") {
+    const hasExternalEnrollment = await firstRow<{ count: number }>(
+      env.DB,
+      `
+        SELECT COUNT(*) AS count
+        FROM topic_members
+        WHERE topic_id = ? AND role != 'creator' AND status = 'active'
+      `,
+      topicId,
+    );
+    const promptLocked = Number(hasExternalEnrollment?.count ?? 0) > 0;
+    const wouldChangeLockedFields =
+      (typeof input.prompt === "string" && input.prompt !== topic.prompt) ||
+      (Object.prototype.hasOwnProperty.call(input, "startsAt") && (input.startsAt ?? null) !== topic.starts_at) ||
+      (Object.prototype.hasOwnProperty.call(input, "joinUntil") && (input.joinUntil ?? null) !== topic.join_until);
+    if (promptLocked && wouldChangeLockedFields) {
+      forbidden("Scheduled Research topics lock prompt and schedule edits after external enrollment begins.");
+    }
+  }
+
   await runStatement(
     env.DB.prepare(
       `
         UPDATE topics
         SET
           title = COALESCE(?, title),
+          prompt = COALESCE(?, prompt),
           min_trust_tier = COALESCE(?, min_trust_tier),
           cadence_preset = COALESCE(?, cadence_preset),
           starts_at = CASE WHEN ? = 1 THEN ? ELSE starts_at END,
@@ -622,6 +1165,7 @@ export async function updateTopic(
       `,
     ).bind(
       input.title ?? null,
+      input.prompt ?? null,
       input.minTrustTier ?? null,
       input.cadencePreset ?? null,
       Number(Object.prototype.hasOwnProperty.call(input, "startsAt")),

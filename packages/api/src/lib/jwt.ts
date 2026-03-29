@@ -62,6 +62,13 @@ export async function verifyJwt(env: ApiEnv, token: string): Promise<JwtPayload>
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     unauthorized("Token format is invalid.");
   }
+  if (
+    base64UrlEncode(base64UrlDecode(encodedHeader)) !== encodedHeader
+    || base64UrlEncode(base64UrlDecode(encodedPayload)) !== encodedPayload
+    || base64UrlEncode(base64UrlDecode(encodedSignature)) !== encodedSignature
+  ) {
+    unauthorized("Token encoding is invalid.");
+  }
 
   const signingInput = `${encodedHeader}.${encodedPayload}`;
   const key = await importPublicKey(env.JWT_PUBLIC_KEY_PEM);

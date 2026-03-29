@@ -13,6 +13,37 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function computeAdaptiveBaseScore(input: {
+  weights: {
+    relevance: number;
+    novelty: number;
+    reframe: number;
+    substance: number;
+    role: number;
+  };
+  fallbackWeights: { substance: number; role: number };
+  semanticWeightRatio: number;
+  relevance: number;
+  novelty: number;
+  reframe: number;
+  substanceScore: number;
+  roleBonus: number;
+}): number {
+  const ratio = clamp(input.semanticWeightRatio, 0, 1);
+  const semanticMass = input.weights.relevance + input.weights.novelty + input.weights.reframe;
+  const redistributedMass = semanticMass * (1 - ratio);
+  const substanceWeight = input.weights.substance + redistributedMass * input.fallbackWeights.substance;
+  const roleWeight = input.weights.role + redistributedMass * input.fallbackWeights.role;
+
+  return (
+    input.relevance * input.weights.relevance * ratio +
+    input.novelty * input.weights.novelty * ratio +
+    input.reframe * input.weights.reframe * ratio +
+    input.substanceScore * substanceWeight +
+    input.roleBonus * roleWeight
+  );
+}
+
 export function computeCompositeScore(input: {
   roundKind: RoundKind;
   templateId: TopicTemplateId;
@@ -32,6 +63,8 @@ export function computeCompositeScore(input: {
   topicVoteCount?: number;
   liveVoteInfluenceCap?: number;
   shadowVoteInfluenceCap?: number;
+  liveSemanticWeightRatio?: number;
+  shadowSemanticWeightRatio?: number;
 }): {
   initialScore: number;
   finalScore: number;
@@ -50,18 +83,26 @@ export function computeCompositeScore(input: {
     const relevance = input.relevance as number;
     const novelty = input.novelty as number;
     const reframe = input.reframe as number;
-    liveBase =
-      relevance * liveWeights.relevance +
-      novelty * liveWeights.novelty +
-      reframe * liveWeights.reframe +
-      input.substanceScore * liveWeights.substance +
-      input.roleBonus * liveWeights.role;
-    shadowBase =
-      relevance * shadowWeights.relevance +
-      novelty * shadowWeights.novelty +
-      reframe * shadowWeights.reframe +
-      input.substanceScore * shadowWeights.substance +
-      input.roleBonus * shadowWeights.role;
+    liveBase = computeAdaptiveBaseScore({
+      weights: liveWeights,
+      fallbackWeights: WITHOUT_SEMANTICS_FALLBACK_WEIGHTS.live,
+      semanticWeightRatio: input.liveSemanticWeightRatio ?? 1,
+      relevance,
+      novelty,
+      reframe,
+      substanceScore: input.substanceScore,
+      roleBonus: input.roleBonus,
+    });
+    shadowBase = computeAdaptiveBaseScore({
+      weights: shadowWeights,
+      fallbackWeights: WITHOUT_SEMANTICS_FALLBACK_WEIGHTS.shadow,
+      semanticWeightRatio: input.shadowSemanticWeightRatio ?? 1,
+      relevance,
+      novelty,
+      reframe,
+      substanceScore: input.substanceScore,
+      roleBonus: input.roleBonus,
+    });
   } else {
     liveBase =
       input.substanceScore * WITHOUT_SEMANTICS_FALLBACK_WEIGHTS.live.substance +

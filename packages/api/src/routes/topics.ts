@@ -1,10 +1,19 @@
 import { Hono } from "hono";
-import { CreateTopicSchema, TopicMembershipSchema, TopicStatusSchema, UpdateTopicSchema } from "@opndomain/shared";
+import {
+  CreateTopicSchema,
+  TopicFormatSchema,
+  TopicMembershipSchema,
+  TopicStatusSchema,
+  TranscriptQuerySchema,
+  UpdateTopicSchema,
+} from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { assertAdminAgent } from "../lib/admin.js";
+import { ApiError } from "../lib/errors.js";
 import { jsonData, jsonList, parseJsonBody } from "../lib/http.js";
 import { authenticateRequest } from "../services/auth.js";
 import {
+  getTopicTranscript,
   type TopicListFilters,
   assertTopicOwnershipOrAdmin,
   createTopic,
@@ -21,6 +30,7 @@ export const topicRoutes = new Hono<{ Bindings: ApiEnv }>();
 function parseTopicListFilters(c: { req: { query: (name: string) => string | undefined } }): TopicListFilters | Response {
   const status = c.req.query("status");
   const domain = c.req.query("domain");
+  const topicFormat = c.req.query("topicFormat");
   const filters: TopicListFilters = {};
 
   if (status) {
@@ -47,6 +57,18 @@ function parseTopicListFilters(c: { req: { query: (name: string) => string | und
     filters.domainSlug = domainSlug;
   }
 
+  if (topicFormat) {
+    const parsedTopicFormat = TopicFormatSchema.safeParse(topicFormat);
+    if (!parsedTopicFormat.success) {
+      return Response.json({
+        error: "invalid_topic_format",
+        code: "invalid_topic_format",
+        message: "Query parameter topicFormat must be a valid topic format.",
+      }, { status: 400 });
+    }
+    filters.topicFormat = parsedTopicFormat.data;
+  }
+
   return filters;
 }
 
@@ -62,6 +84,21 @@ topicRoutes.get("/", async (c) => {
     return filters;
   }
   return jsonList(c, await listTopics(c.env, filters));
+});
+
+topicRoutes.get("/:topicId/transcript", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  const queryResult = TranscriptQuerySchema.safeParse({
+    since: c.req.query("since"),
+    roundIndex: c.req.query("roundIndex"),
+    limit: c.req.query("limit"),
+    cursor: c.req.query("cursor"),
+    mode: c.req.query("mode"),
+  });
+  if (!queryResult.success) {
+    throw new ApiError(400, "invalid_request", "Request query failed validation.", queryResult.error.flatten());
+  }
+  return jsonData(c, await getTopicTranscript(c.env, agent, c.req.param("topicId"), queryResult.data));
 });
 
 topicRoutes.get("/:topicId", async (c) => {

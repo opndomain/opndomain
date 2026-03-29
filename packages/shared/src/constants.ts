@@ -81,6 +81,35 @@ export const TOPIC_STATE_REPLAY_TTL_SECONDS = 60 * 60 * 24;
 export const TOPIC_STATE_FLUSHED_RETENTION_MS = 60 * 60 * 1000;
 export const TOPIC_STATE_IDEMPOTENCY_RETENTION_MS = 24 * 60 * 60 * 1000;
 export const TOPIC_STATE_SNAPSHOT_PENDING_KEY = "snapshot_pending";
+export const TRANSCRIPT_MODE_FULL = "full";
+export const TRANSCRIPT_MODE_SUMMARY = "summary";
+export const TRANSCRIPT_QUERY_DEFAULT_LIMIT = 50;
+export const TRANSCRIPT_QUERY_MAX_LIMIT = 200;
+export const ADAPTIVE_SCORING_SCALE_TIER_INTIMATE = "intimate";
+export const ADAPTIVE_SCORING_SCALE_TIER_COMMUNITY = "community";
+export const ADAPTIVE_SCORING_SCALE_TIER_NETWORK = "network";
+export const ADAPTIVE_SCORING_SCALE_TIER_SWARM = "swarm";
+export const ADAPTIVE_SCORING_SCALE_TIERS = [
+  ADAPTIVE_SCORING_SCALE_TIER_INTIMATE,
+  ADAPTIVE_SCORING_SCALE_TIER_COMMUNITY,
+  ADAPTIVE_SCORING_SCALE_TIER_NETWORK,
+  ADAPTIVE_SCORING_SCALE_TIER_SWARM,
+] as const;
+export const ADAPTIVE_SCORING_INTIMATE_MAX_PARTICIPANTS = 9;
+export const ADAPTIVE_SCORING_COMMUNITY_MAX_PARTICIPANTS = 499;
+export const ADAPTIVE_SCORING_NETWORK_MAX_PARTICIPANTS = 4_999;
+export const ADAPTIVE_SCORING_LIVE_SEMANTIC_WEIGHT_BY_TIER = {
+  intimate: 1,
+  community: 0.6,
+  network: 0.3,
+  swarm: 0.15,
+} as const;
+export const ADAPTIVE_SCORING_SHADOW_SEMANTIC_WEIGHT_BY_TIER = {
+  intimate: 1,
+  community: 0.6,
+  network: 0.3,
+  swarm: 0,
+} as const;
 
 export const SEMANTIC_COMPARISON_WINDOW_SIZE = 20;
 export const SEMANTIC_TOPIC_EMBEDDING_SOURCE = "topic_prompt_only";
@@ -191,6 +220,7 @@ export const MCP_BOOTSTRAP_PREFIX = "mcp-bootstrap:";
 
 export const ARTIFACT_VERDICT_HTML_FILE = "verdict.html";
 export const ARTIFACT_OG_PNG_FILE = "og.png";
+export const ARTIFACT_VERDICT_PRESENTATION_FILE = "verdict-presentation.json";
 
 export const OG_IMAGE_TITLE_MAX_LENGTH = 90;
 export const OG_IMAGE_SUMMARY_MAX_LENGTH = 180;
@@ -241,6 +271,10 @@ export function topicVerdictHtmlArtifactKey(topicId: string): string {
 
 export function topicOgPngArtifactKey(topicId: string): string {
   return `${ARTIFACTS_PREFIX}/topics/${topicId}/${ARTIFACT_OG_PNG_FILE}`;
+}
+
+export function topicVerdictPresentationArtifactKey(topicId: string): string {
+  return `${ARTIFACTS_PREFIX}/topics/${topicId}/${ARTIFACT_VERDICT_PRESENTATION_FILE}`;
 }
 
 export function topicOgSvgArtifactKey(topicId: string): string {

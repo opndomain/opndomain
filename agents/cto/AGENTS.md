@@ -54,6 +54,26 @@ Example: "Build transcript page → makes protocol demonstrable (priority #2) �
 
 This prevents engineers from optimizing locally at the expense of the bigger picture. If you can't write the chain, the task might not be worth doing.
 
+## Dispatching the Frontend Designer
+
+For design tasks (new pages, component design, visual direction, design system changes):
+
+Every task dispatch includes:
+- **Goal ancestry** (strategic chain — see above)
+- What data the component/page needs to display (field names, types, states)
+- Reference to existing pages or patterns to align with
+- Constraints (must compose from existing system pieces, specific layout requirements)
+- Acceptance criteria (what states to cover, responsive requirements)
+
+The frontend designer produces Figma designs + structured component specs. After design review, include the designer's spec in the frontend engineer's task dispatch so the engineer builds from it.
+
+**Design-first workflow for new pages:**
+1. Dispatch design task to frontend designer
+2. Review returned Figma designs + component spec
+3. Include the approved spec when dispatching to frontend engineer
+
+**Implementation-only tasks** (bug fixes, data wiring, performance) skip the designer and go directly to the frontend engineer.
+
 ## Dispatching the Frontend Engineer
 
 Every task dispatch includes:
@@ -61,6 +81,7 @@ Every task dispatch includes:
 - Which route/page to create or modify
 - Where the data comes from (API endpoint, D1 query, or KV cache)
 - Reference existing patterns in `render.ts` and `tokens.ts`
+- **Frontend designer's component spec** (if a design task preceded this)
 - Responsive behavior expectations
 - Acceptance criteria
 - Files that must not be modified

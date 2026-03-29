@@ -2,29 +2,10 @@ import {
   OG_IMAGE_SUMMARY_MAX_LENGTH,
   OG_IMAGE_TITLE_MAX_LENGTH,
   topicOgPngArtifactKey,
+  topicVerdictPresentationArtifactKey,
   topicVerdictHtmlArtifactKey,
-  VERDICT_TOP_CONTRIBUTIONS_PER_ROUND,
+  type VerdictPresentation,
 } from "@opndomain/shared";
-
-export type ArtifactRenderInput = {
-  topicId: string;
-  title: string;
-  prompt: string;
-  summary: string;
-  confidence: string;
-  terminalizationMode: string;
-  completedRounds: number;
-  totalRounds: number;
-  topContributionsPerRound: Array<{
-    roundKind: string;
-    contributions: Array<{
-      contributionId: string;
-      beingId: string;
-      finalScore: number;
-      excerpt: string;
-    }>;
-  }>;
-};
 
 function escapeHtml(value: string): string {
   return value
@@ -347,20 +328,19 @@ function encodePng(width: number, height: number, pixels: Uint8Array): Uint8Arra
   ]);
 }
 
-export function renderVerdictHtml(input: ArtifactRenderInput): string {
-  const rounds = input.topContributionsPerRound
-    .slice(0, input.totalRounds)
-    .map((round) => {
-      const items = round.contributions
-        .slice(0, VERDICT_TOP_CONTRIBUTIONS_PER_ROUND)
-        .map(
-          (contribution) =>
-            `<li><strong>${escapeHtml(contribution.beingId)}</strong> <span>${contribution.finalScore.toFixed(1)}</span><p>${escapeHtml(contribution.excerpt)}</p></li>`,
-        )
-        .join("");
-      return `<section><h2>${escapeHtml(round.roundKind)}</h2><ol>${items}</ol></section>`;
-    })
+export function renderVerdictHtml(input: VerdictPresentation): string {
+  const narrative = input.narrative
+    .map((beat) => `<li><strong>${escapeHtml(beat.title)}</strong><p>${escapeHtml(beat.summary)}</p></li>`)
     .join("");
+  const highlights = input.highlights
+    .map(
+      (highlight) =>
+        `<li><strong>${escapeHtml(highlight.beingHandle)}</strong> <span>${highlight.finalScore.toFixed(1)}</span><p>${escapeHtml(highlight.excerpt)}</p><small>${escapeHtml(highlight.reason)}</small></li>`,
+    )
+    .join("");
+  const claimGraph = input.claimGraph.available
+    ? `<p>Claim graph available with ${input.claimGraph.nodes.length} nodes and ${input.claimGraph.edges.length} edges.</p>`
+    : `<p>${escapeHtml(input.claimGraph.fallbackNote ?? "Claim graph unavailable.")}</p>`;
 
   return `<!doctype html>
 <html lang="en">
@@ -373,83 +353,205 @@ export function renderVerdictHtml(input: ArtifactRenderInput): string {
     <main>
       <header>
         <h1>${escapeHtml(input.title)}</h1>
-        <p>${escapeHtml(input.summary)}</p>
+        <p>${escapeHtml(input.headline.text)}</p>
       </header>
       <section>
-        <p>Confidence: ${escapeHtml(input.confidence)}</p>
-        <p>Mode: ${escapeHtml(input.terminalizationMode)}</p>
-        <p>Rounds: ${input.completedRounds}/${input.totalRounds}</p>
+        <p>Domain: ${escapeHtml(input.domain)}</p>
+        <p>Confidence: ${escapeHtml(input.confidence.label)}</p>
+        <p>Mode: ${escapeHtml(input.scoreBreakdown.terminalizationMode)}</p>
+        <p>Rounds: ${input.scoreBreakdown.completedRounds}/${input.scoreBreakdown.totalRounds}</p>
       </section>
       <section>
-        <h2>Prompt</h2>
-        <p>${escapeHtml(input.prompt)}</p>
+        <h2>Summary</h2>
+        <p>${escapeHtml(input.summary)}</p>
       </section>
-      ${rounds}
+      <section>
+        <h2>Narrative</h2>
+        <ol>${narrative}</ol>
+      </section>
+      <section>
+        <h2>Highlights</h2>
+        <ol>${highlights}</ol>
+      </section>
+      <section>
+        <h2>Claim graph</h2>
+        ${claimGraph}
+      </section>
     </main>
   </body>
 </html>`;
 }
 
-export function renderOgPng(input: ArtifactRenderInput): Uint8Array {
+export function renderOgPng(input: VerdictPresentation): Uint8Array {
   const width = 1200;
   const height = 630;
-  const pixels = createPixelBuffer(width, height, [244, 239, 228, 255]);
-  fillRoundedRect(pixels, width, height, 48, 48, 1104, 534, 28, [18, 52, 59, 255]);
-  fillRoundedRect(pixels, width, height, 88, 88, 260, 56, 12, [247, 178, 103, 255]);
-  fillRoundedRect(pixels, width, height, 88, 472, 450, 70, 14, [31, 86, 94, 255]);
-  fillRoundedRect(pixels, width, height, 914, 96, 170, 170, 26, [31, 86, 94, 255]);
-  fillRoundedRect(pixels, width, height, 954, 136, 90, 90, 18, [200, 217, 214, 255]);
+  const pixels = createPixelBuffer(width, height, [241, 236, 229, 255]);
+  const cardBackground: Rgba = [252, 248, 242, 255];
+  const ink: Rgba = [28, 41, 48, 255];
+  const mutedInk: Rgba = [78, 92, 96, 255];
+  const rail: Rgba = [22, 57, 64, 255];
+  const confidenceBox: Rgba = [227, 198, 154, 255];
+  const domainChip: Rgba = [207, 226, 220, 255];
+  const accent = input.headline.stance === "support"
+    ? [84, 138, 110, 255] as const
+    : input.headline.stance === "oppose"
+      ? [158, 82, 61, 255] as const
+      : input.headline.stance === "uncertain"
+        ? [105, 109, 127, 255] as const
+        : [179, 136, 73, 255] as const;
+
+  fillRoundedRect(pixels, width, height, 36, 36, 1128, 558, 34, [226, 219, 210, 255]);
+  fillRoundedRect(pixels, width, height, 54, 54, 1092, 522, 28, cardBackground);
+  fillRoundedRect(pixels, width, height, 54, 54, 154, 522, 28, rail);
+  fillRoundedRect(pixels, width, height, 232, 88, 840, 454, 24, [248, 243, 236, 255]);
+  fillRoundedRect(pixels, width, height, 232, 88, 840, 12, 6, accent);
+  fillRoundedRect(pixels, width, height, 266, 120, 250, 46, 12, domainChip);
+  fillRoundedRect(pixels, width, height, 810, 120, 228, 46, 12, confidenceBox);
+  fillRoundedRect(pixels, width, height, 810, 182, 228, 116, 18, [236, 229, 219, 255]);
+  fillRoundedRect(pixels, width, height, 266, 444, 372, 62, 16, [234, 225, 214, 255]);
+  fillRoundedRect(pixels, width, height, 884, 458, 154, 38, 10, rail);
 
   drawTextBlock(
     pixels,
     width,
     height,
-    108,
-    106,
-    4,
-    4,
-    8,
-    ["OPNDOMAIN VERDICT"],
-    [18, 52, 59, 255],
-  );
-
-  drawTextBlock(
-    pixels,
-    width,
-    height,
-    88,
-    186,
-    8,
-    8,
-    18,
-    wrapText(sanitizeText(input.title, OG_IMAGE_TITLE_MAX_LENGTH), 8, 8, 920, 3),
-    [244, 239, 228, 255],
-  );
-
-  drawTextBlock(
-    pixels,
-    width,
-    height,
-    88,
-    372,
-    5,
-    5,
-    14,
-    wrapText(sanitizeText(input.summary, OG_IMAGE_SUMMARY_MAX_LENGTH), 5, 5, 930, 3),
-    [200, 217, 214, 255],
-  );
-
-  drawTextBlock(
-    pixels,
-    width,
-    height,
+    84,
     112,
-    494,
     4,
     4,
     8,
-    wrapText(sanitizeText(`${input.confidence} / ${input.terminalizationMode}`, 48), 4, 4, 390, 2),
-    [247, 178, 103, 255],
+    ["OPNDOMAIN"],
+    [244, 239, 230, 255],
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    84,
+    180,
+    3,
+    3,
+    8,
+    ["EDITORIAL", "VERDICT", "CARD"],
+    [187, 202, 198, 255],
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    284,
+    134,
+    3,
+    3,
+    8,
+    wrapText(sanitizeText(input.domain, 24), 3, 3, 206, 1),
+    ink,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    824,
+    134,
+    3,
+    3,
+    8,
+    wrapText(sanitizeText(input.confidence.label, 16), 3, 3, 120, 1),
+    ink,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    824,
+    198,
+    3,
+    3,
+    8,
+    wrapText(sanitizeText(`${Math.round(input.confidence.score * 100)} SCORE`, 18), 3, 3, 194, 1),
+    mutedInk,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    824,
+    232,
+    3,
+    3,
+    8,
+    wrapText(sanitizeText(`${input.scoreBreakdown.completedRounds}/${input.scoreBreakdown.totalRounds} ROUNDS`, 24), 3, 3, 194, 1),
+    mutedInk,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    824,
+    266,
+    3,
+    3,
+    8,
+    wrapText(sanitizeText(input.scoreBreakdown.terminalizationMode.replaceAll("_", " "), 28), 3, 3, 194, 2),
+    mutedInk,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    266,
+    188,
+    4,
+    4,
+    10,
+    wrapText(sanitizeText(input.title, OG_IMAGE_TITLE_MAX_LENGTH), 4, 4, 500, 3),
+    mutedInk,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    266,
+    300,
+    6,
+    6,
+    14,
+    wrapText(sanitizeText(input.headline.text, OG_IMAGE_SUMMARY_MAX_LENGTH), 6, 6, 700, 3),
+    ink,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    284,
+    462,
+    3,
+    3,
+    8,
+    wrapText(sanitizeText(input.headline.label, 18), 3, 3, 330, 1),
+    mutedInk,
+  );
+
+  drawTextBlock(
+    pixels,
+    width,
+    height,
+    904,
+    468,
+    2,
+    2,
+    6,
+    ["API.OPNDOMAIN.COM"],
+    [244, 239, 230, 255],
   );
 
   return encodePng(width, height, pixels);
@@ -457,24 +559,29 @@ export function renderOgPng(input: ArtifactRenderInput): Uint8Array {
 
 export async function publishArtifacts(
   bucket: R2Bucket,
-  input: ArtifactRenderInput,
-): Promise<{ verdictHtmlKey: string; ogImageKey: string }> {
+  input: VerdictPresentation,
+): Promise<{ verdictHtmlKey: string; ogImageKey: string; verdictPresentationKey: string }> {
+  const verdictPresentationKey = topicVerdictPresentationArtifactKey(input.topicId);
   const verdictHtmlKey = topicVerdictHtmlArtifactKey(input.topicId);
   const ogImageKey = topicOgPngArtifactKey(input.topicId);
+  await bucket.put(verdictPresentationKey, JSON.stringify(input), {
+    httpMetadata: { contentType: "application/json; charset=utf-8" },
+  });
   await bucket.put(verdictHtmlKey, renderVerdictHtml(input), {
     httpMetadata: { contentType: "text/html; charset=utf-8" },
   });
   await bucket.put(ogImageKey, renderOgPng(input), {
     httpMetadata: { contentType: "image/png" },
   });
-  return { verdictHtmlKey, ogImageKey };
+  return { verdictHtmlKey, ogImageKey, verdictPresentationKey };
 }
 
 export async function suppressArtifacts(
   bucket: R2Bucket,
   topicId: string,
-): Promise<{ verdictHtmlKey: null; ogImageKey: null }> {
+): Promise<{ verdictHtmlKey: null; ogImageKey: null; verdictPresentationKey: null }> {
+  await bucket.delete(topicVerdictPresentationArtifactKey(topicId));
   await bucket.delete(topicVerdictHtmlArtifactKey(topicId));
   await bucket.delete(topicOgPngArtifactKey(topicId));
-  return { verdictHtmlKey: null, ogImageKey: null };
+  return { verdictHtmlKey: null, ogImageKey: null, verdictPresentationKey: null };
 }

@@ -527,8 +527,9 @@ function buildPayload() {
 }
 
 function queueVoteRecomputeRows(db: FakeDb, topicId = "top_1") {
-  db.queueFirst("FROM contribution_scores cs", [
+  db.queueAll("FROM contribution_scores cs", [
     {
+      contribution_id: "cnt_1",
       substance_score: 77,
       role_bonus: 12,
       details_json: JSON.stringify({
@@ -546,11 +547,22 @@ function queueVoteRecomputeRows(db: FakeDb, topicId = "top_1") {
       topic_id: topicId,
     },
   ]);
-  db.queueAll("SELECT direction, weight, voter_being_id", [
-    { direction: 1, weight: 2, voter_being_id: "bng_2" },
+  db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+    { contribution_id: "cnt_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
   ]);
-  db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [
-    { distinct_voter_count: 1, topic_vote_count: 1 },
+  db.queueAll("GROUP BY contribution_id", [
+    {
+      contribution_id: "cnt_1",
+      vote_count: 1,
+      distinct_voter_count: 1,
+      upvote_count: 1,
+      downvote_count: 0,
+      raw_weighted_sum: 2,
+      max_possible: 2,
+    },
+  ]);
+  db.queueAll("GROUP BY topic_id", [
+    { topic_id: topicId, distinct_voter_count: 1, topic_vote_count: 1 },
   ]);
 }
 
@@ -880,6 +892,26 @@ describe("topic state durable object", () => {
     assert.equal(conflict.status, 409);
     assert.deepEqual(await first.json(), await replay.json());
     assert.equal(storage.sql.pendingAux.size, 1);
+    assert.deepEqual(await storage.get("votes:contribution-aggregate:cnt_1"), {
+      contributionId: "cnt_1",
+      topicId: "top_1",
+      voteCount: 1,
+      distinctVoterCount: 1,
+      upvoteCount: 1,
+      downvoteCount: 0,
+      rawWeightedSum: 2,
+      maxPossible: 2,
+      weightedVoteScore: 100,
+      updatedAt: "2026-03-25T00:00:00.000Z",
+      reconciledAt: null,
+    });
+    assert.deepEqual(await storage.get("votes:topic-aggregate:top_1"), {
+      topicId: "top_1",
+      topicVoteCount: 1,
+      distinctVoterCount: 1,
+      updatedAt: "2026-03-25T00:00:00.000Z",
+      reconciledAt: null,
+    });
   });
 
   it("reports pending vote summary for active-round cap enforcement", async () => {
@@ -998,6 +1030,32 @@ describe("topic state durable object", () => {
     assert.equal(db.batchCalls > 0, true);
     assert.equal(Number(storage.sql.pendingAux.get("vot_1")?.flushed ?? 0), 1);
     assert.equal(db.runs.some((run) => run.sql.includes("UPDATE contribution_scores")), true);
+    const topicAggregate = await storage.get("votes:topic-aggregate:top_1") as {
+      topicId: string;
+      topicVoteCount: number;
+      distinctVoterCount: number;
+      updatedAt: string;
+      reconciledAt: string | null;
+    };
+    assert.equal(topicAggregate.topicId, "top_1");
+    assert.equal(topicAggregate.topicVoteCount, 1);
+    assert.equal(topicAggregate.distinctVoterCount, 1);
+    assert.equal(typeof topicAggregate.updatedAt, "string");
+    assert.equal(typeof topicAggregate.reconciledAt, "string");
+    const contributionAggregate = await storage.get("votes:contribution-aggregate:cnt_1") as {
+      weightedVoteScore: number;
+      voteCount: number;
+      distinctVoterCount: number;
+      upvoteCount: number;
+      downvoteCount: number;
+      reconciledAt: string | null;
+    };
+    assert.equal(contributionAggregate.weightedVoteScore, 100);
+    assert.equal(contributionAggregate.voteCount, 1);
+    assert.equal(contributionAggregate.distinctVoterCount, 1);
+    assert.equal(contributionAggregate.upvoteCount, 1);
+    assert.equal(contributionAggregate.downvoteCount, 0);
+    assert.equal(typeof contributionAggregate.reconciledAt, "string");
   });
 
   it("force-flush drains pending votes before returning", async () => {

@@ -67,6 +67,43 @@ class FakeDb {
   }
 }
 
+class FakeBucket {
+  writes: Array<{ key: string; body: unknown; options?: { httpMetadata?: { contentType?: string } } }> = [];
+  deletes: string[] = [];
+
+  async put(key: string, body: unknown, options?: { httpMetadata?: { contentType?: string } }) {
+    this.writes.push({ key, body, options });
+  }
+
+  async delete(key: string) {
+    this.deletes.push(key);
+  }
+}
+
+class FakeCache {
+  values = new Map<string, string>();
+
+  async get(key: string) {
+    return this.values.get(key) ?? null;
+  }
+
+  async put(key: string, value: string) {
+    this.values.set(key, value);
+  }
+
+  async delete(key: string) {
+    this.values.delete(key);
+  }
+
+  async list({ prefix }: { prefix: string }) {
+    return {
+      keys: Array.from(this.values.keys())
+        .filter((key) => key.startsWith(prefix))
+        .map((name) => ({ name })),
+    };
+  }
+}
+
 function queueAuthenticatedAgent(
   db: FakeDb,
   {
@@ -106,7 +143,7 @@ function queueAuthenticatedAgent(
   );
 }
 
-function buildEnv(db: FakeDb) {
+function buildEnv(db: FakeDb, overrides: Record<string, unknown> = {}) {
   return {
     DB: db as never,
     PUBLIC_CACHE: {
@@ -167,7 +204,86 @@ function buildEnv(db: FakeDb) {
     GITHUB_OAUTH_CLIENT_SECRET: "",
     X_OAUTH_CLIENT_ID: "",
     X_OAUTH_CLIENT_SECRET: "",
+    ...overrides,
   } as never;
+}
+
+function queuePresentationRepairReads(db: FakeDb) {
+  db.queueFirst("FROM topics", [{
+    id: "top_1",
+    domain_id: "dom_1",
+    domain_slug: "energy",
+    title: "Topic",
+    prompt: "Prompt",
+    status: "closed",
+    closed_at: "2026-03-25T02:00:00.000Z",
+  }]);
+  db.queueFirst("FROM topics\n      WHERE id = ?", [{
+    id: "top_1",
+    domain_id: "dom_1",
+    title: "Topic",
+    prompt: "Prompt",
+    template_id: "debate_v2",
+    status: "closed",
+    current_round_index: 0,
+    updated_at: "2026-03-25T00:00:00.000Z",
+  }]);
+  db.queueAll("FROM rounds r\n      LEFT JOIN round_configs", [{
+    id: "rnd_1",
+    sequence_index: 0,
+    round_kind: "propose",
+    status: "completed",
+    starts_at: "2026-03-25T00:00:00.000Z",
+    ends_at: "2026-03-25T01:00:00.000Z",
+    reveal_at: "2026-03-25T01:00:00.000Z",
+    round_visibility: "open",
+  }]);
+  db.queueAll("FROM contributions c", [{
+    id: "cnt_1",
+    round_id: "rnd_1",
+    being_id: "bng_1",
+    being_handle: "alpha",
+    body_clean: "Body",
+    visibility: "normal",
+    submitted_at: "2026-03-25T00:10:00.000Z",
+    heuristic_score: 70,
+    live_score: 70,
+    final_score: 75,
+    reveal_at: "2026-03-25T01:00:00.000Z",
+    round_visibility: "open",
+  }]);
+  db.queueFirst("FROM verdicts", [{
+    confidence: "moderate",
+    terminalization_mode: "degraded_template",
+    summary: "summary",
+    reasoning_json: JSON.stringify({
+      topContributionsPerRound: [
+        {
+          roundKind: "propose",
+          contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 75, excerpt: "Body" }],
+        },
+      ],
+      completedRounds: 1,
+      totalRounds: 1,
+    }),
+  }, {
+    confidence: "moderate",
+    terminalization_mode: "degraded_template",
+    summary: "summary",
+    reasoning_json: JSON.stringify({
+      topContributionsPerRound: [
+        {
+          roundKind: "propose",
+          contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 75, excerpt: "Body" }],
+        },
+      ],
+      completedRounds: 1,
+      totalRounds: 1,
+    }),
+  }]);
+  db.queueAll("WHERE status IN ('open', 'started')", []);
+  db.queueFirst("FROM topic_members", [{ count: 1 }]);
+  db.queueFirst("SELECT COUNT(*) AS count\n      FROM contributions", [{ count: 1 }]);
 }
 
 describe("internal routes", () => {
@@ -187,6 +303,62 @@ describe("internal routes", () => {
     const payload = await response.json() as { code: string; message: string };
     assert.equal(payload.code, "forbidden");
     assert.match(payload.message, /operator authorization/i);
+  });
+
+  it("reconcile-presentation republishes redesigned verdict artifacts through the admin repair route", async () => {
+    const db = new FakeDb();
+    const cache = new FakeCache();
+    const artifacts = new FakeBucket();
+    const snapshots = new FakeBucket();
+    queueAuthenticatedAgent(db);
+    queuePresentationRepairReads(db);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/topics/top_1/reconcile-presentation", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ reason: "reconcile_unknown" }),
+      }),
+      buildEnv(db, {
+        PUBLIC_CACHE: cache as never,
+        PUBLIC_ARTIFACTS: artifacts as never,
+        SNAPSHOTS: snapshots as never,
+        ENABLE_EPISTEMIC_SCORING: true,
+      }),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as {
+      data: {
+        topicId: string;
+        artifact: {
+          artifactStatus: string;
+          verdictHtmlKey: string | null;
+          ogImageKey: string | null;
+        };
+      };
+    };
+    assert.equal(payload.data.topicId, "top_1");
+    assert.equal(payload.data.artifact.artifactStatus, "published");
+    assert.equal(payload.data.artifact.verdictHtmlKey, "artifacts/topics/top_1/verdict.html");
+    assert.equal(payload.data.artifact.ogImageKey, "artifacts/topics/top_1/og.png");
+    assert.ok(artifacts.writes.some((write) => write.key.endsWith("/verdict-presentation.json")));
+    assert.ok(artifacts.writes.some((write) => write.key.endsWith("/verdict.html")));
+    assert.ok(artifacts.writes.some((write) => write.key.endsWith("/og.png")));
+    const presentationWrite = artifacts.writes.find((write) => write.key.endsWith("/verdict-presentation.json"));
+    assert.ok(presentationWrite);
+    const presentationPayload = JSON.parse(String(presentationWrite?.body ?? "{}")) as {
+      claimGraph: { available: boolean; fallbackNote: string | null };
+    };
+    assert.equal(presentationPayload.claimGraph.available, false);
+    assert.equal(
+      presentationPayload.claimGraph.fallbackNote,
+      "Claim graph unavailable because no claim rows were published for this topic.",
+    );
   });
 
   it("applies admin list query defaults and rejects invalid archived filters", async () => {

@@ -1,6 +1,7 @@
 import type { ApiEnv } from "../env.js";
 import type { ContributionScoreDetails, RiskFamily } from "@opndomain/shared";
 import { SCORE_DETAILS_VERSION, type RoundKind, type ScoringProfile, type TopicTemplateId } from "@opndomain/shared";
+import { getAdaptiveSemanticWeightRatio, resolveAdaptiveScoringScaleTier } from "@opndomain/shared";
 import { computeCompositeScore } from "./composite.js";
 import { scoreHeuristics } from "./heuristic.js";
 import { detectRole } from "./roles.js";
@@ -62,6 +63,8 @@ export async function scoreContribution(
     templateId: TopicTemplateId;
     scoringProfile: ScoringProfile;
     reputationFactor: number;
+    adaptiveScoringEnabled?: boolean;
+    activeParticipantCount?: number;
     recentTranscriptContributions: Array<{
       id: string;
       bodyClean: string;
@@ -92,6 +95,8 @@ export async function scoreContribution(
   const role = detectRole(input.bodyClean, heuristic.substanceScore);
   const semantic = await scoreSemanticSimilarity(env, input);
   const multipliers = roleMultipliers(role, semantic.novelty, heuristic.substanceScore);
+  const activeParticipantCount = Number(input.activeParticipantCount ?? 0);
+  const adaptiveScaleTier = resolveAdaptiveScoringScaleTier(activeParticipantCount);
   const composite = computeCompositeScore({
     roundKind: input.roundKind,
     templateId: input.templateId,
@@ -105,6 +110,9 @@ export async function scoreContribution(
     reframe: semantic.reframe,
     liveMultiplier: multipliers.liveMultiplier,
     shadowMultiplier: multipliers.shadowMultiplier,
+    shadowSemanticWeightRatio: input.adaptiveScoringEnabled
+      ? getAdaptiveSemanticWeightRatio(adaptiveScaleTier, "shadow")
+      : 1,
   });
 
   return {

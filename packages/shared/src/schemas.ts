@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  ADAPTIVE_SCORING_SCALE_TIERS,
   ACCESS_TOKEN_SCOPE,
   ARTIFACT_STATUS_ERROR,
   ARTIFACT_STATUS_PENDING,
@@ -29,6 +30,9 @@ import {
   SESSION_COOKIE_NAME,
   SESSION_COOKIE_SAME_SITE,
   TOKEN_RATE_LIMIT_PER_HOUR,
+  TRANSCRIPT_MODE_FULL,
+  TRANSCRIPT_MODE_SUMMARY,
+  TRANSCRIPT_QUERY_MAX_LIMIT,
 } from "./constants.js";
 import {
   CadenceFamilySchema,
@@ -38,6 +42,8 @@ import {
   RoundKindSchema,
   RoundEnrollmentTypeSchema,
   RoundVisibilitySchema,
+  TerminalizationModeSchema,
+  TopicFormatSchema,
   TopicTemplateIdSchema,
   VerdictConfidenceSchema,
   VoteTargetPolicySchema,
@@ -323,16 +329,28 @@ export const CreateTopicSchema = z.object({
   title: z.string().min(1).max(200),
   prompt: z.string().min(1).max(4000),
   templateId: TopicTemplateIdSchema,
+  topicFormat: TopicFormatSchema,
   cadenceFamily: CadenceFamilySchema.optional(),
   cadencePreset: CadencePresetSchema.optional(),
   cadenceOverrideMinutes: z.number().int().positive().max(24 * 60).optional(),
   minDistinctParticipants: z.number().int().positive().optional(),
   countdownSeconds: z.number().int().nonnegative().optional(),
+  startsAt: z.string().datetime({ offset: true }).nullable().optional(),
+  joinUntil: z.string().datetime({ offset: true }).nullable().optional(),
   minTrustTier: TrustTierSchema.default("supervised"),
+});
+
+export const TopicFormatSummarySchema = z.object({
+  label: z.string().min(1),
+  joinWindow: z.enum(["pre_start", "rolling"]),
+  promptLock: z.boolean(),
+  quorumTarget: z.number().int().positive().nullable(),
+  replenishes: z.boolean(),
 });
 
 export const UpdateTopicSchema = z.object({
   title: z.string().min(1).max(200).optional(),
+  prompt: z.string().min(1).max(4000).optional(),
   minTrustTier: TrustTierSchema.optional(),
   cadencePreset: CadencePresetSchema.optional(),
   startsAt: z.string().datetime({ offset: true }).nullable().optional(),
@@ -541,12 +559,153 @@ export const TopicContextVoteTargetSchema = z.object({
   beingHandle: z.string().min(1),
 });
 
+export const TranscriptModeSchema = z.enum([
+  TRANSCRIPT_MODE_FULL,
+  TRANSCRIPT_MODE_SUMMARY,
+]);
+
+export const AdaptiveScoringScaleTierSchema = z.enum(ADAPTIVE_SCORING_SCALE_TIERS);
+
+export const TranscriptQuerySchema = z.object({
+  since: z.coerce.number().int().nonnegative().optional(),
+  roundIndex: z.coerce.number().int().nonnegative().optional(),
+  limit: z.coerce.number().int().positive().max(TRANSCRIPT_QUERY_MAX_LIMIT).optional(),
+  cursor: z.string().min(1).optional(),
+  mode: TranscriptModeSchema.optional(),
+});
+
+export const TranscriptPageSchema = z.object({
+  limit: z.number().int().positive(),
+  cursor: z.string().min(1).nullable().optional(),
+  nextCursor: z.string().min(1).nullable().optional(),
+});
+
+export const TranscriptDeltaMetadataSchema = z.object({
+  available: z.boolean(),
+  fromSequence: z.number().int().nonnegative().nullable(),
+  toSequence: z.number().int().nonnegative().nullable(),
+  checksum: z.string().min(1).nullable(),
+});
+
+export const TranscriptRoundContributionSchema = z.object({
+  id: z.string().min(1),
+  beingId: z.string().min(1),
+  beingHandle: z.string().min(1),
+  bodyClean: z.string().nullable(),
+  visibility: ContributionVisibilitySchema,
+  submittedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  scores: z.object({
+    heuristic: z.number().finite().nullable(),
+    live: z.number().finite().nullable(),
+    final: z.number().finite().nullable(),
+  }),
+});
+
+export const TranscriptRoundSchema = z.object({
+  roundId: z.string().min(1),
+  sequenceIndex: z.number().int().nonnegative(),
+  roundKind: RoundKindSchema,
+  status: RoundStatusSchema,
+  contributions: z.array(TranscriptRoundContributionSchema),
+});
+
+export const TranscriptResponseSchema = z.object({
+  topicId: z.string().min(1),
+  generatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  changeSequence: z.number().int().nonnegative(),
+  mode: TranscriptModeSchema,
+  page: TranscriptPageSchema,
+  delta: TranscriptDeltaMetadataSchema,
+  rounds: z.array(TranscriptRoundSchema),
+});
+
+export const AdaptiveScoringConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  transcriptDeltasEnabled: z.boolean().default(false),
+  elasticRoundsEnabled: z.boolean().default(false),
+  scaleTier: AdaptiveScoringScaleTierSchema.default(ADAPTIVE_SCORING_SCALE_TIERS[0]),
+});
+
 export const TopicArtifactMetadataSchema = z.object({
   transcriptSnapshotKey: z.string().min(1).nullable().optional(),
   stateSnapshotKey: z.string().min(1).nullable().optional(),
   verdictHtmlKey: z.string().min(1).nullable().optional(),
   ogImageKey: z.string().min(1).nullable().optional(),
   artifactStatus: ArtifactStatusSchema,
+});
+
+export const VerdictHeadlineSchema = z.object({
+  label: z.string().min(1),
+  text: z.string().min(1),
+  stance: z.enum(["support", "oppose", "mixed", "uncertain"]),
+});
+
+export const VerdictNarrativeBeatSchema = z.object({
+  roundIndex: z.number().int().nonnegative(),
+  roundKind: RoundKindSchema,
+  title: z.string().min(1),
+  summary: z.string().min(1),
+});
+
+export const VerdictHighlightSchema = z.object({
+  contributionId: z.string().min(1),
+  beingId: z.string().min(1),
+  beingHandle: z.string().min(1),
+  roundKind: RoundKindSchema,
+  excerpt: z.string().min(1),
+  finalScore: z.number().finite(),
+  reason: z.string().min(1),
+});
+
+export const VerdictClaimNodeSchema = z.object({
+  claimId: z.string().min(1),
+  contributionId: z.string().min(1),
+  beingId: z.string().min(1),
+  beingHandle: z.string().min(1),
+  label: z.string().min(1),
+  status: z.enum(["unresolved", "contested", "supported", "refuted", "mixed"]),
+  verifiability: z.enum(["unclassified", "empirical", "normative", "predictive"]),
+  confidence: z.number().min(0).max(1),
+});
+
+export const VerdictClaimEdgeSchema = z.object({
+  sourceClaimId: z.string().min(1),
+  targetClaimId: z.string().min(1),
+  relationKind: z.enum(["support", "contradiction", "refinement", "supersession"]),
+  confidence: z.number().min(0).max(1),
+  explanation: z.string().min(1).nullable().optional(),
+});
+
+export const VerdictScoreBreakdownSchema = z.object({
+  completedRounds: z.number().int().nonnegative(),
+  totalRounds: z.number().int().nonnegative(),
+  participantCount: z.number().int().nonnegative(),
+  contributionCount: z.number().int().nonnegative(),
+  terminalizationMode: TerminalizationModeSchema,
+});
+
+export const VerdictPresentationSchema = z.object({
+  topicId: z.string().min(1),
+  title: z.string().min(1),
+  domain: z.string().min(1),
+  publishedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  status: ArtifactStatusSchema,
+  headline: VerdictHeadlineSchema,
+  summary: z.string().min(1),
+  confidence: z.object({
+    label: VerdictConfidenceSchema,
+    score: z.number().min(0).max(1),
+    explanation: z.string().min(1),
+  }),
+  scoreBreakdown: VerdictScoreBreakdownSchema,
+  narrative: z.array(VerdictNarrativeBeatSchema),
+  highlights: z.array(VerdictHighlightSchema),
+  claimGraph: z.object({
+    available: z.boolean(),
+    nodes: z.array(VerdictClaimNodeSchema),
+    edges: z.array(VerdictClaimEdgeSchema),
+    fallbackNote: z.string().min(1).nullable().optional(),
+  }),
 });
 
 export const PresentationRepairResponseSchema = z.object({
@@ -613,5 +772,22 @@ export type AdminDomainSummary = z.infer<typeof AdminDomainSummarySchema>;
 export type AdminDomainDetail = z.infer<typeof AdminDomainDetailSchema>;
 export type AdminTopicSummary = z.infer<typeof AdminTopicSummarySchema>;
 export type AdminTopicDetail = z.infer<typeof AdminTopicDetailSchema>;
+export type TopicFormatSummary = z.infer<typeof TopicFormatSummarySchema>;
 export type TopicContextCurrentRoundConfig = z.infer<typeof TopicContextCurrentRoundConfigSchema>;
 export type TopicContextVoteTarget = z.infer<typeof TopicContextVoteTargetSchema>;
+export type TranscriptMode = z.infer<typeof TranscriptModeSchema>;
+export type AdaptiveScoringScaleTier = z.infer<typeof AdaptiveScoringScaleTierSchema>;
+export type TranscriptQuery = z.infer<typeof TranscriptQuerySchema>;
+export type TranscriptPage = z.infer<typeof TranscriptPageSchema>;
+export type TranscriptDeltaMetadata = z.infer<typeof TranscriptDeltaMetadataSchema>;
+export type TranscriptRoundContribution = z.infer<typeof TranscriptRoundContributionSchema>;
+export type TranscriptRound = z.infer<typeof TranscriptRoundSchema>;
+export type TranscriptResponse = z.infer<typeof TranscriptResponseSchema>;
+export type AdaptiveScoringConfig = z.infer<typeof AdaptiveScoringConfigSchema>;
+export type VerdictHeadline = z.infer<typeof VerdictHeadlineSchema>;
+export type VerdictNarrativeBeat = z.infer<typeof VerdictNarrativeBeatSchema>;
+export type VerdictHighlight = z.infer<typeof VerdictHighlightSchema>;
+export type VerdictClaimNode = z.infer<typeof VerdictClaimNodeSchema>;
+export type VerdictClaimEdge = z.infer<typeof VerdictClaimEdgeSchema>;
+export type VerdictScoreBreakdown = z.infer<typeof VerdictScoreBreakdownSchema>;
+export type VerdictPresentation = z.infer<typeof VerdictPresentationSchema>;

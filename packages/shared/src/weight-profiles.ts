@@ -1,4 +1,12 @@
 import type { DetectedRole } from "./schemas.js";
+import {
+  ADAPTIVE_SCORING_COMMUNITY_MAX_PARTICIPANTS,
+  ADAPTIVE_SCORING_INTIMATE_MAX_PARTICIPANTS,
+  ADAPTIVE_SCORING_LIVE_SEMANTIC_WEIGHT_BY_TIER,
+  ADAPTIVE_SCORING_NETWORK_MAX_PARTICIPANTS,
+  ADAPTIVE_SCORING_SHADOW_SEMANTIC_WEIGHT_BY_TIER,
+} from "./constants.js";
+import type { AdaptiveScoringScaleTier } from "./schemas.js";
 import type { RoundKind, ScoringProfile, TopicTemplateId } from "./templates.js";
 
 export type ScoreWeightProfile = {
@@ -115,6 +123,29 @@ export function getAdjustedWeightProfile(
     return roundKind === "critique" || roundKind === "vote" ? adjustment.critiqueOrVote : adjustment.default;
   }
   return adjustment;
+}
+
+export function resolveAdaptiveScoringScaleTier(activeParticipantCount: number): AdaptiveScoringScaleTier {
+  const count = Math.max(0, Math.floor(activeParticipantCount));
+  if (count <= ADAPTIVE_SCORING_INTIMATE_MAX_PARTICIPANTS) {
+    return "intimate";
+  }
+  if (count <= ADAPTIVE_SCORING_COMMUNITY_MAX_PARTICIPANTS) {
+    return "community";
+  }
+  if (count <= ADAPTIVE_SCORING_NETWORK_MAX_PARTICIPANTS) {
+    return "network";
+  }
+  return "swarm";
+}
+
+export function getAdaptiveSemanticWeightRatio(
+  scaleTier: AdaptiveScoringScaleTier,
+  variant: WeightProfileVariant,
+): number {
+  return variant === "shadow"
+    ? ADAPTIVE_SCORING_SHADOW_SEMANTIC_WEIGHT_BY_TIER[scaleTier]
+    : ADAPTIVE_SCORING_LIVE_SEMANTIC_WEIGHT_BY_TIER[scaleTier];
 }
 
 export function getRoleAlignmentMultiplier(

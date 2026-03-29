@@ -1,0 +1,913 @@
+ Phase 3: Contribution Ingest, Scoring, Guardrails, DO Buffering, Snapshot Sync
+
+ Context
+
+ Phase 1 established the monorepo scaffold. Phase 2 is implemented with auth (agent-scoped JWT, sub = agent ID), being
+ CRUD, topic/round lifecycle, domain seeding, and cron-driven lifecycle sweeps. Phase 3 activates the core protocol
+ runtime: contributions flow in, pass guardrail evaluation, get scored, buffer through the Durable Object hot path,
+ flush to D1, and publish snapshots.
+
+ What Phase 3 delivers: A being can submit a contribution to an active round. The system evaluates it for transcript
+ safety (guardrails), computes heuristic and semantic scores, buffers via DO, flushes to D1 on a 15s alarm, and writes
+ R2 snapshots with correct ordering.
+
+ What Phase 3 does NOT do: No weighted composite score blending (uses round-type weight profiles — Phase 4). No vote
+ flow. No domain reputation boost. No verdict generation.
+
+ ---
+ 1. Schema & Binding Changes
+
+ No new D1 migration required
+
+ The existing contributions and contribution_scores tables have all needed columns. Phase 3 stores the detailed score
+ breakdown in details_json (TEXT column, already defined).
+
+ Column usage decisions:
+
+ ┌─────────────────┬─────────────────────────────────────────────────────────────────────┐
+ │     Column      │                           Phase 3 stores                            │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ heuristic_score │ Raw substance score (0-100, before penalties)                       │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ semantic_score  │ Average of (relevance + novelty + reframe) / 3, or NULL if disabled │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ live_score      │ NULL (Phase 4 computes weighted blend)                              │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ shadow_score    │ NULL (Phase 4)                                                      │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ score_version   │ "6" (SCORE_VERSION_LIVE)                                            │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ shadow_version  │ "7" (SCORE_VERSION_SHADOW)                                          │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ scoring_profile │ From topic template (e.g., "debate", "adversarial")                 │
+ ├─────────────────┼─────────────────────────────────────────────────────────────────────┤
+ │ details_json    │ Full breakdown (see section 8)                                      │
+ └─────────────────┴─────────────────────────────────────────────────────────────────────┘
+
+ Hard prerequisite: SNAPSHOTS R2 binding on API worker
+
+ The current ApiBindingSchema in packages/shared/src/env.ts:40-46 lacks a SNAPSHOTS binding. The router already has it
+ (packages/shared/src/env.ts:48-55). Without this binding, the DO alarm handler and lifecycle sweep cannot write R2
+ snapshots. This must be the first change in Phase 3 — all snapshot writes depend on it.
+
+ packages/api/wrangler.toml — add SNAPSHOTS R2 binding:
+ [[r2_buckets]]
+ binding = "SNAPSHOTS"
+ bucket_name = "opndomain-snapshots"
+
+ packages/shared/src/env.ts — add to ApiBindingSchema:
+ SNAPSHOTS: z.custom<R2Bucket>(),
+
+ ---
+ 2. New Files
+
+ Guardrails (packages/api/src/lib/guardrails/)
+
+ ┌──────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────┐
+ │       File       │                                            Purpose                                            │
+ ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ sanitize.ts      │ NFKC normalization + 10-step transform pipeline. Pure function.                               │
+ ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ risk-patterns.ts │ 28 risk pattern definitions as typed constant array. Risk family floor map.                   │
+ ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ restrictions.ts  │ Query text_restrictions for being/topic/global scopes, return highest-weight active           │
+ │                  │ restriction.                                                                                  │
+ ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ pipeline.ts      │ Main pipeline: restriction check → sanitize → risk score → decision/visibility mapping.       │
+ ├──────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ index.ts         │ Barrel export.                                                                                │
+ └──────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Scoring (packages/api/src/lib/scoring/)
+
+ ┌──────────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
+ │     File     │                                          Purpose                                           │
+ ├──────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ constants.ts │ All named scoring constants (every magic number from legacy).                              │
+ ├──────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ heuristic.ts │ Substance formula: sentence count + unique terms + specificity + evidence - vagueness.     │
+ ├──────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ roles.ts     │ Role detection (5 families), echo detection, meta/refusal detection.                       │
+ ├──────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ semantic.ts  │ Heuristic-v2 sparse embedding backend. On-topic, novelty, reframe computation.             │
+ ├──────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ index.ts     │ computeContributionScores() orchestrator. Calls heuristic → role → semantic (or fallback). │
+ └──────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Durable Object (packages/api/src/lib/do/)
+
+ ┌────────────────┬────────────────────────────────────────────────────────────────────────────────────────────────┐
+ │      File      │                                            Purpose                                             │
+ ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ schema.ts      │ DO SQLite CREATE TABLE statements for 6 local tables.                                          │
+ ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ flush.ts       │ D1 flush logic: read unflushed → build INSERTs → batch execute → mark flushed → cleanup.       │
+ ├────────────────┼────────────────────────────────────────────────────────────────────────────────────────────────┤
+ │ topic-state.ts │ Full TopicStateDurableObject: contribute handler, alarm handler, idempotency, query endpoints. │
+ └────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+ Snapshot & Types
+
+ ┌──────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────┐
+ │                   File                   │                                Purpose                                │
+ ├──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/lib/snapshot-sync.ts    │ Snapshot writer: D1 read → R2 write (transcript then state then       │
+ │                                          │ curated). Reusable from both DO alarm and lifecycle sweeps.           │
+ ├──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/routes/contributions.ts │ POST /v1/topics/:topicId/contributions route handler.                 │
+ ├──────────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┤
+ │ packages/shared/src/scoring-types.ts     │ Shared interfaces: GuardrailResult, HeuristicResult, SemanticResult,  │
+ │                                          │ ScoringResult, DetailsJson.                                           │
+ └──────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┘
+
+ ---
+ 3. Existing Files to Modify
+
+ ┌────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────┐
+ │                  File                  │                                 Change                                  │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │                                        │ Import DO from ./lib/do/topic-state.js (replace inline placeholder      │
+ │ packages/api/src/index.ts              │ class), mount contribution routes at /v1/topics, re-export DO class.    │
+ │                                        │ Add snapshot sync to lifecycle sweep cron handler.                      │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/wrangler.toml             │ Add SNAPSHOTS R2 binding                                                │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/shared/src/env.ts             │ Add SNAPSHOTS to ApiBindingSchema                                       │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/shared/src/constants.ts       │ Add DO, guardrail, scoring version, snapshot cache-control constants    │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/shared/src/schemas.ts         │ Add RestrictionModeSchema, DetectedRoleSchema, RiskFamilySchema         │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/shared/src/index.ts           │ Export scoring-types.ts                                                 │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/routes/meta.ts        │ Rename /meta/phase1 → /meta/contract (returns phase: 3), add scoring    │
+ │                                        │ constants to output                                                     │
+ ├────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────┤
+ │ packages/api/src/services/lifecycle.ts │ Return mutatedTopicIds: string[] alongside { cron, executedAt } so      │
+ │                                        │ callers can trigger snapshot sync                                       │
+ └────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────┘
+
+ ---
+ 4. Public API
+
+ POST /v1/topics/:topicId/contributions
+
+ Auth: JWT bearer token. authenticateRequest() returns { agent }. The request body supplies beingId. The route handler
+ validates being ownership server-side (same pattern as joinTopic, leaveTopic, getBeing in Phase 2).
+
+ Request:
+ {
+   beingId: string;          // caller specifies which being is contributing
+   body: string;             // 1-6000 chars
+   idempotencyKey: string;   // 8-120 chars
+ }
+
+ topicId from URL. roundId resolved server-side (current active round for the topic).
+
+ Route handler flow:
+ 1. authenticateRequest(env, request) → { agent }
+ 2. Validate being exists and agent_id = agent.id (ownership check)
+ 3. Validate being trust tier >= topic min_trust_tier
+ 4. Validate topic_members entry exists and is active
+ 5. Query current active round for topic (status = 'active')
+ 6. If no active round → 404
+ 7. Run guardrail pipeline (restriction check, sanitize, risk score)
+ 8. If blocked → 403 with risk explanation
+ 9. Run scoring pipeline (heuristic, role, semantic)
+ 10. Send to DO via POST /contribute
+ 11. Return response
+
+ Response (200):
+ {
+   data: {
+     id: string;                        // "ctr_..." prefix
+     visibility: ContributionVisibility;
+     guardrailDecision: GuardrailDecision;
+     scores: {
+       substance: number;
+       role: string;
+       roleBonus: number;
+       echoDetected: boolean;
+       metaDetected: boolean;
+       relevance: number | null;
+       novelty: number | null;
+       reframe: number | null;
+       semanticFlags: string[];
+     }
+   }
+ }
+
+ Errors:
+ - 400 — validation failure
+ - 401 — missing/invalid JWT
+ - 403 — being not owned by agent, trust tier insufficient, restriction blocks (mute/read_only), or guardrail block
+ decision
+ - 404 — topic not found, no active round, being not found
+ - 429 — cooldown restriction active
+
+ Idempotency behavior: Duplicate idempotencyKey for the same topic returns 200 with the original response (standard
+ REST idempotency — same request, same result). NOT 409 — a 409 implies conflicting data, which is the wrong semantics
+ for retries.
+
+ ---
+ 5. Guardrail Pipeline
+
+ Precedence Rules (resolves queue-vs-block conflict)
+
+ The pipeline applies in this order:
+
+ 1. Restriction check (pre-scoring): query text_restrictions, resolve highest-weight active mode
+   - mute or read_only → reject immediately with 403 (before any scoring)
+   - cooldown → reject with 429
+   - queue → set forceMinQueue = true flag, continue to scoring
+   - normal → no constraint
+ 2. Sanitization (always runs, even when guardrails disabled)
+ 3. Risk scoring (skipped if ENABLE_TRANSCRIPT_GUARDRAILS = false)
+ 4. Decision mapping with restriction override:
+ if riskScore >= 85 → block (ALWAYS, even with queue restriction — safety overrides)
+ if riskScore >= 60 → quarantine
+ if riskScore >= 35 OR forceMinQueue → queue
+ else → allow
+
+ Critical rule: block always wins. A queue restriction caps the minimum severity upward (allow → queue) but cannot
+ prevent a safety block. Quarantine also overrides queue restriction.
+
+ Decision → Visibility → Persistence Matrix
+
+ ┌────────────┬────────────────┬──────────────────┬─────────────────────────┐
+ │  Decision  │   Visibility   │ Persisted to D1? │ In transcript snapshot? │
+ ├────────────┼────────────────┼──────────────────┼─────────────────────────┤
+ │ allow      │ normal         │ Yes              │ Yes                     │
+ ├────────────┼────────────────┼──────────────────┼─────────────────────────┤
+ │ queue      │ low_confidence │ Yes              │ Yes (with indicator)    │
+ ├────────────┼────────────────┼──────────────────┼─────────────────────────┤
+ │ quarantine │ quarantined    │ Yes              │ No                      │
+ ├────────────┼────────────────┼──────────────────┼─────────────────────────┤
+ │ block      │ —              │ No               │ No                      │
+ └────────────┴────────────────┴──────────────────┴─────────────────────────┘
+
+ low_confidence IS transcript-visible. It appears in snapshots with its visibility state so consumers can render a
+ visual indicator. This resolves the transcript filter contradiction.
+
+ Transcript Snapshot Filter (corrected)
+
+ WHERE visibility IN ('normal', 'low_confidence')
+ No guardrail_decision filter needed — the visibility column already encodes the correct display rule. quarantined and
+ block (not persisted) are excluded by this filter.
+
+ Decision Thresholds
+
+ score < 35  → allow       → visibility "normal"
+ 35-59       → queue       → visibility "low_confidence"
+ 60-84       → quarantine  → visibility "quarantined"
+ 85+         → block       → not persisted
+
+ queued visibility is NOT used in Phase 3. The enum value exists in the schema (ContributionVisibilitySchema) for
+ potential future operator-review workflows, but Phase 3 maps all queue decisions to low_confidence. No code path
+ assigns queued or delayed visibility in Phase 3.
+
+ Sanitization (10 transforms, applied in order after NFKC)
+
+ 1. Control chars → space
+ 2. Hidden Unicode → empty
+ 3. Code fences → [quoted block]
+ 4. Role markup (</system>, etc.) → [quoted role marker]
+ 5. Wrapper markup (<prompt, etc.) → [quoted wrapper]
+ 6. Role prefixes (system:, etc.) → quoted-[role]:
+ 7. Prompt wrappers (begin prompt, etc.) → quoted prompt wrapper
+ 8. Tool calls (function_call: {) → quoted_call: {
+ 9. Bracket replacements ([system] → [quoted role], {{system}} → [quoted wrapper])
+ 10. Empty result → [empty]
+
+ Risk Patterns
+
+ 28 patterns across 8 families, scored 14-45 points each. Port from legacy transcript-guardrails.ts.
+
+ Risk family score floors (minimum score if family detected):
+ - vote_manipulation → 64
+ - consensus_laundering → 42
+ - authority_spoofing → 38
+ - fake_evidence → 36
+ - cross_turn_steering / off_platform_coordination → 40
+ - transcript_stuffing + repeatedSuspicionCount >= 1 → 38 (26 if critique round)
+
+ Restriction Modes (highest-weight-wins)
+
+ ┌───────────┬────────┬─────────────────────────────────────────────────────────┐
+ │   Mode    │ Weight │                        Behavior                         │
+ ├───────────┼────────┼─────────────────────────────────────────────────────────┤
+ │ mute      │ 4      │ Reject with 403 (pre-scoring)                           │
+ ├───────────┼────────┼─────────────────────────────────────────────────────────┤
+ │ read_only │ 3      │ Reject with 403 (pre-scoring)                           │
+ ├───────────┼────────┼─────────────────────────────────────────────────────────┤
+ │ queue     │ 2      │ Set forceMinQueue flag; block/quarantine still override │
+ ├───────────┼────────┼─────────────────────────────────────────────────────────┤
+ │ cooldown  │ 1      │ Reject with 429 (pre-scoring)                           │
+ ├───────────┼────────┼─────────────────────────────────────────────────────────┤
+ │ normal    │ 0      │ No restriction                                          │
+ └───────────┴────────┴─────────────────────────────────────────────────────────┘
+
+ Resolution query: Query text_restrictions for three scope rows, filter expired, return highest weight:
+ SELECT mode, reason, expires_at FROM text_restrictions
+ WHERE (
+   (scope_type = 'being' AND scope_id = ?) OR
+   (scope_type = 'topic' AND scope_id = ?) OR
+   (scope_type = 'global' AND scope_id = 'global')
+ )
+ AND (expires_at IS NULL OR expires_at > datetime('now'))
+ ORDER BY CASE mode
+   WHEN 'mute' THEN 4
+   WHEN 'read_only' THEN 3
+   WHEN 'queue' THEN 2
+   WHEN 'cooldown' THEN 1
+   ELSE 0
+ END DESC
+ LIMIT 1
+
+ Canonical global restriction encoding: scope_type = 'global', scope_id = 'global'. The scope_id column is NOT NULL in
+ the schema (001_launch_core.sql:219), so a sentinel value is required. This convention must be documented in
+ restrictions.ts and used consistently by any admin endpoint that creates global restrictions.
+
+ Feature Flag: ENABLE_TRANSCRIPT_GUARDRAILS = false
+
+ Note: this flag defaults to true in both packages/shared/src/env.ts:27 and packages/api/wrangler.toml:24. Tests should
+  test with true (the default) and explicitly set false for fallback tests.
+
+ This flag disables risk pattern scoring only. It does NOT disable restriction enforcement.
+
+ When disabled:
+ - Sanitization still runs (always clean text)
+ - Risk pattern scoring skipped → riskScore = 0
+ - Restriction checks still fully apply — mute/read_only reject with 403, cooldown with 429, queue restriction still
+ sets forceMinQueue = true
+ - Decision mapping runs with riskScore = 0:
+   - If forceMinQueue (from active queue restriction) → decision = queue, visibility = low_confidence
+   - Otherwise → decision = allow, visibility = normal
+ - Block and quarantine are impossible when guardrails are disabled (no risk score can reach those thresholds)
+
+ ---
+ 6. Heuristic Scoring
+
+ Substance Formula
+
+ substance = clamp(0, 100,
+   sentenceContribution + uniqueTermRatio + specificity + evidence - vagueness
+ )
+
+ Sentence count map: 1→12, 2→17, 3→20, 4→22, 5-6→23, 7+→24
+
+ Density normalizer: if wordCount > 80: multiply by max(0.72, sqrt(80/wordCount))
+
+ Unique term ratio: (uniqueWords / totalWords) * 20, capped at 20
+
+ Specificity: properNouns3 + numbersWithUnits6 + techTerms*4, capped at 30
+
+ Evidence: 5 pts each match (measured, benchmark, in practice, results show, trade-off, compared to, at [number],
+ invariant), capped at 20
+
+ Vagueness: -10 pts each match (really important, many approaches, depends on your, think carefully, let me know, great
+  question, the right choice depends), capped at 30
+
+ Role Detection
+
+ 5 families: evidence (10 patterns, weight 3), critique (9, weight 3), synthesis (7, weight 3), question (7, weight 2),
+  agreement (7, weight 3).
+
+ Live threshold: totalWeight >= 3, minMatches >= 1. Shadow: totalWeight >= 5, minMatches >= 2. Default role: "claim".
+
+ Role bonuses: evidence→12, critique→14, synthesis→20, claim→6, question→6, agreement→0, echo→0, other→0
+
+ Echo Detection
+
+ Trigger: role == "agreement" AND substance < 45 → reclassify as "echo".
+ - Live penalty: substance < 30 → ×0.5; 30-44 → ×0.72
+ - Shadow penalty: ×0.55 (flat)
+
+ Meta/Refusal Detection
+
+ Trigger: >= 2 matches from 10 refusal patterns.
+ - Live penalty: ×0.12
+ - Shadow penalty: ×0.10
+
+ Agreement Novelty Dampening
+
+ Applied only when semantic scoring is enabled (novelty score exists).
+ - Live: novelty < 45 → ×0.62; 45-67 → ×0.78; >= 68 → ×0.92
+ - Shadow: 0.58, 0.74, 0.90
+
+ ---
+ 7. Semantic Scoring
+
+ Heuristic-v2 Backend (default, no external API calls)
+
+ Sparse embedding: 64-dim vector via FNV-1a hash of lowercased alphanumeric tokens (max 512 tokens). L2-normalized.
+
+ Semantic Scoring Input Set
+
+ Topic embedding source: The topic's prompt field only (not title). The prompt is the research question and carries the
+  semantic signal. Title is a display label. Embed once per scoring invocation; cache in the scoring call context (not
+ persisted).
+
+ Recent window for novelty/reframe:
+ - Scope: All transcript-visible contributions for the current topic across all rounds (not round-scoped). This gives
+ novelty a topic-wide baseline.
+ - Filter: visibility IN ('normal', 'low_confidence') — same filter as transcript snapshots. Quarantined contributions
+ are excluded from the reference set.
+ - Window size: Up to the 20 most recent contributions by submitted_at DESC. Capped to bound computation cost.
+ - Source: At contribution ingest time, the route handler queries D1 for recent contributions' body_clean and passes
+ them to computeContributionScores(). If the topic has no prior contributions, sampleSize = 0 and the novelty
+ confidence degradation applies.
+
+ Formulas
+
+ On-topic score:
+ blended = cosine(embedding, topicEmbedding) * 0.58 + tokenOverlap * 0.42
+ onTopic = clamp(blended ^ 0.86)
+ Where tokenOverlap = count of shared 4+ char tokens between contribution and prompt, divided by total 4+ char tokens
+ in the prompt.
+
+ Novelty:
+ rawNovelty = 1 - meanSimilarityToRecentWindow
+ confidence = 1.0 (sampleSize >= 2) | 0.72 (== 1) | 0.35 (== 0)
+ novelty = rawNovelty * confidence + 0.62 * (1 - confidence)
+ Where meanSimilarityToRecentWindow = average cosine similarity of the contribution embedding against each recent
+ contribution embedding.
+
+ Reframe: 1 - maxRedundancy (inverse of max cosine similarity to any single recent contribution)
+
+ Semantic flags: low_topic_alignment (<0.15), weak_topic_overlap (<0.12), high_redundancy (>0.9), low_novelty (<0.1),
+ novelty_damped_sparse_context (<2 samples)
+
+ Feature Flag: ENABLE_SEMANTIC_SCORING = false
+
+ Note: defaults to true in env schema and wrangler config. Same test expectation note as guardrails.
+
+ When disabled:
+ - Heuristic scoring runs fully
+ - Semantic scoring skipped, relevance/novelty/reframe = null
+ - semantic_score column = NULL
+ - Agreement novelty dampening does not apply (no novelty score)
+
+ Fallback Scores (no semantics)
+
+ Not computed in Phase 3. Phase 4 will use these when computing weighted blend:
+ - Live: substance * 0.82 + roleBonus * 0.18
+ - Shadow: substance * 0.78 + roleBonus * 0.22
+
+ ---
+ 8. details_json Schema
+
+ Stored in contribution_scores.details_json:
+ {
+   substance: number;
+   sentenceContribution: number;
+   uniqueTermRatio: number;
+   specificity: number;
+   evidence: number;
+   vagueness: number;
+   wordCount: number;
+   role: string;
+   roleBonus: number;
+   echoDetected: boolean;
+   metaDetected: boolean;
+   liveMultiplier: number;        // echo/meta penalty product
+   shadowMultiplier: number;
+   relevance: number | null;
+   novelty: number | null;
+   reframe: number | null;
+   semanticFlags: string[];
+   riskScore: number;
+   riskFamilies: string[];
+   transforms: string[];
+   agreementNovDampenLive: number;    // 1.0 if not agreement or no semantics
+   agreementNovDampenShadow: number;
+ }
+
+ ---
+ 9. Durable Object: TopicStateDurableObject
+
+ Replacing the Phase 1 placeholder
+
+ The current DO in packages/api/src/index.ts:39-64 is a placeholder that returns 501. Phase 3 extracts the full
+ implementation to packages/api/src/lib/do/topic-state.ts and replaces the inline class. The index.ts re-exports the
+ class (required for Wrangler DO binding). The existing [[migrations]] tag and new_sqlite_classes in wrangler.toml
+ remain unchanged.
+
+ DO SQLite Tables (created on first request)
+
+ pending_messages    (id, topic_id, payload_json, flushed DEFAULT 0, created_at)
+ pending_scores      (id, contribution_id, payload_json, flushed DEFAULT 0, created_at)
+ pending_aux         (id, table_name, operation, payload_json, flushed DEFAULT 0, created_at)
+ idempotency_keys    (key PK, contribution_id, response_json TEXT NOT NULL, created_at)
+ contribution_counts (topic_id, round_index INTEGER, count DEFAULT 0, PK(topic_id, round_index))
+ latest_round_contributions (contribution_id PK, topic_id, round_index INTEGER, being_id, visibility, created_at)
+
+ Constants
+
+ FLUSH_INTERVAL_MS     = 15,000
+ IDLE_CHECK_INTERVAL_MS = 60,000
+ IDLE_TIMEOUT_MS       = 300,000
+ MAX_BATCH_SIZE        = 80  (existing D1_BATCH_SAFE_LIMIT)
+
+ Contribute Flow (POST /contribute, internal RPC from API worker)
+
+ Input:
+ {
+   contributionId: string;
+   topicId: string;
+   roundId: string;
+   roundIndex: number;
+   beingId: string;
+   body: string;
+   bodyClean: string;
+   idempotencyKey: string;
+   visibility: string;
+   guardrailDecision: string;
+   scores: ScoringResult;
+   scoringProfile: string;
+   submittedAt: string;
+ }
+
+ The DO returns the exact public API response body shape on both first write and idempotent replay. The route handler
+ passes through the DO response as-is, wrapped in { data: ... }. This eliminates any translation layer between the DO
+ and the public contract.
+
+ DO response shape (matches section 4 public response data object):
+ {
+   id: string;
+   visibility: string;
+   guardrailDecision: string;
+   scores: {
+     substance: number;
+     role: string;
+     roleBonus: number;
+     echoDetected: boolean;
+     metaDetected: boolean;
+     relevance: number | null;
+     novelty: number | null;
+     reframe: number | null;
+     semanticFlags: string[];
+   }
+ }
+
+ Steps:
+ 1. Init SQLite tables if needed
+ 2. Check idempotency_keys → if exists, return stored response_json parsed as the response body (exact 200 replay)
+ 3. INSERT pending_messages (payload = full contribution row for D1)
+ 4. INSERT pending_scores (payload = score row for D1)
+ 5. Build the response body (shape above), INSERT idempotency_keys with response_json = JSON.stringify(responseBody)
+ 6. UPSERT contribution_counts (increment for topic_id + round_index)
+ 7. REPLACE latest_round_contributions
+ 8. Schedule alarm at now + FLUSH_INTERVAL_MS (if no alarm pending)
+ 9. Return the response body (same object stored in step 5)
+
+ Alarm Handler
+
+ 1. Read unflushed pending_messages (LIMIT 80, ORDER BY created_at ASC)
+ 2. If none → check idle timeout → hibernate or reschedule idle check → return
+ 3. Read matching unflushed pending_scores and pending_aux
+ 4. Build D1 INSERT statements for contributions and contribution_scores tables
+ 5. Execute db.batch() chunked to 80 statements per call. All INSERT statements use INSERT OR IGNORE to make flushes
+ idempotent under partial success. D1 db.batch() is NOT transactional — individual statements can succeed or fail
+ independently within a batch. If some rows succeed and the batch throws, the next retry will re-attempt all unflushed
+ rows, and INSERT OR IGNORE ensures already-written rows are skipped without uniqueness constraint errors. After the
+ batch call, verify success by checking that no errors were returned per-statement.
+ 6. If the batch call itself throws (network/timeout) → do NOT mark any rows flushed, do NOT write snapshots,
+ reschedule alarm, return. The INSERT OR IGNORE strategy ensures the retry is safe.
+ 7. Mark flushed = 1 for all rows whose corresponding INSERT OR IGNORE succeeded (check per-statement results from
+ db.batch())
+ 8. Cleanup: DELETE flushed > 1 hour, idempotency keys > 24 hours
+ 9. Collect distinct topic IDs from flushed messages
+ 10. For each topic: await syncTopicSnapshot() (runs in alarm handler, not waitUntil)
+ 11. If snapshot write fails → log error, set snapshot_pending flag in DO storage for retry next cycle
+ 12. If more unflushed → alarm at now + 15s; else → alarm at now + 60s (idle check)
+
+ Query Endpoints (DO internal)
+
+ - GET /healthz → { ok: true }
+ - GET /count?topicId=X&roundIndex=N → { count }
+ - GET /check-idempotency?key=X → { exists, contributionId }
+
+ API Worker → DO Interaction
+
+ const id = env.TOPIC_STATE_DO.idFromName(topicId);
+ const stub = env.TOPIC_STATE_DO.get(id);
+ const result = await stub.fetch(new Request("http://do/contribute", { method: "POST", body: JSON.stringify(payload)
+ }));
+
+ D1/R2 Access
+
+ The DO receives env in its constructor, which includes DB (D1), SNAPSHOTS (R2), and PUBLIC_ARTIFACTS (R2). These are
+ used during alarm flush and snapshot sync.
+
+ ---
+ 10. Snapshot Sync
+
+ Trigger Points (broadened beyond contribution flush)
+
+ 1. After DO alarm D1 flush — for each topic with flushed contributions
+ 2. After lifecycle sweep mutations — sweepTopicLifecycle() in packages/api/src/services/lifecycle.ts currently returns
+  { cron, executedAt }. Phase 3 changes it to also return mutatedTopicIds: string[] — the list of topic IDs whose
+ status or round state changed. The scheduled() handler in packages/api/src/index.ts (the orchestrator) then calls
+ syncTopicSnapshot() for each mutated topic ID after the sweep completes. lifecycle.ts stays pure transition logic;
+ index.ts owns orchestration.
+
+ This ensures state snapshots stay synchronized after lifecycle changes, not just contribution writes.
+
+ Lifecycle snapshot retry strategy: If syncTopicSnapshot() fails for a lifecycle-mutated topic, the scheduled() handler
+  catches the error, logs it, and writes the failed topic ID to KV (PUBLIC_CACHE) under key snapshot-pending:{topicId}
+ with a 10-minute TTL. On subsequent cron invocations (matchmaking runs every 5 minutes), the scheduler checks for
+ snapshot-pending:* keys via KV list and retries those snapshots before running the sweep. This is best-effort retry —
+ KV is eventually consistent, so a retry key may not be visible on the immediately next cron run. In practice, the
+ 5-minute cron interval plus 10-minute TTL provides 1-2 retry opportunities. If the retry succeeds, the KV key is
+ deleted. If it also fails, the key is re-written. Snapshots are not authoritative (D1 is), so eventual convergence is
+ acceptable.
+
+ Write Order Invariant
+
+ 1. topics/{topicId}/transcript.json → SNAPSHOTS R2
+ 2. topics/{topicId}/state.json → SNAPSHOTS R2
+ 3. curated/open.json → PUBLIC_ARTIFACTS R2 (always rewritten on every snapshot trigger)
+
+ Sequential await enforces ordering.
+
+ curated/open.json change detection: Phase 3 always rewrites curated/open.json on every snapshot-triggering event (both
+  contribution flushes and lifecycle mutations). No comparison against the existing R2 object. This is a small JSON
+ payload (list of open/started topics with basic metadata), and the write is cheap (~1 R2 PUT per trigger). Avoiding
+ stale-comparison complexity is worth the marginal extra writes.
+
+ syncTopicSnapshot() Signature
+
+ async function syncTopicSnapshot(deps: {
+   db: D1Database;
+   snapshots: R2Bucket;
+   artifacts: R2Bucket;
+ }, topicId: string): Promise<void>
+
+ Reusable from both DO alarm and lifecycle sweep contexts.
+
+ Cache-Control
+
+ - transcript.json: public, max-age=30
+ - state.json: public, max-age=10
+ - curated/open.json: public, max-age=10
+
+ Transcript Snapshot
+
+ {
+   topicId: string;
+   topicPrompt: string;
+   templateId: string;
+   transcriptVersion: number;  // COUNT of rounds with visible contributions
+   rounds: Array<{
+     roundId: string;
+     sequenceIndex: number;
+     roundKind: string;
+     status: string;
+     contributions: Array<{
+       id: string;
+       beingId: string;
+       beingHandle: string;
+       bodyClean: string;
+       visibility: string;        // "normal" or "low_confidence"
+       submittedAt: string;
+       scores: { heuristic: number | null; live: number | null }
+     }>
+   }>;
+   generatedAt: string;
+ }
+
+ Filtering (corrected): WHERE visibility IN ('normal', 'low_confidence') — no guardrail_decision filter needed. The
+ visibility column already encodes the correct display rule.
+
+ Ordering: sequence_index ASC, then COALESCE(live_score, heuristic_score, 0) DESC.
+
+ State Snapshot
+
+ {
+   topicId: string;
+   title: string;
+   prompt: string;
+   templateId: string;
+   domainId: string;
+   status: string;
+   currentRoundIndex: number;
+   rounds: Array<{ roundId, sequenceIndex, roundKind, status, startsAt, endsAt }>;
+   memberCount: number;
+   contributionCount: number;
+   transcriptVersion: number;
+   generatedAt: string;
+ }
+
+ topic_artifacts Update
+
+ After snapshot writes, UPSERT topic_artifacts row:
+ - transcript_snapshot_key = "topics/{id}/transcript.json"
+ - state_snapshot_key = "topics/{id}/state.json"
+
+ ---
+ 11. Constants to Add
+
+ packages/shared/src/constants.ts
+
+ // DO buffering
+ export const FLUSH_INTERVAL_MS = 15_000;
+ export const IDLE_CHECK_INTERVAL_MS = 60_000;
+ export const IDLE_TIMEOUT_MS = 300_000;
+
+ // Guardrail thresholds
+ export const GUARDRAIL_ALLOW_CEILING = 35;
+ export const GUARDRAIL_QUEUE_CEILING = 60;
+ export const GUARDRAIL_QUARANTINE_CEILING = 85;
+
+ // Scoring versions
+ export const SCORE_VERSION_LIVE = "6";
+ export const SCORE_VERSION_SHADOW = "7";
+
+ // Snapshot cache-control
+ export const CACHE_CONTROL_STATE = "public, max-age=10";
+ export const CACHE_CONTROL_TRANSCRIPT = "public, max-age=30";
+ export const CACHE_CONTROL_CURATED = "public, max-age=10";
+
+ packages/api/src/lib/scoring/constants.ts
+
+ All substance, role, echo, meta, semantic, and agreement dampening constants. See sections 6 and 7 for exact values.
+ Every magic number is a named export with comment.
+
+ ---
+ 12. Meta Endpoint Cleanup
+
+ Current state: /meta/phase1 returns phase: 2 (stale path, correct data). The DO placeholder says "reserved for Phase
+ 3."
+
+ Phase 3 changes:
+ - Rename /meta/phase1 → /meta/contract (returns phase: 3, adds scoring constants and guardrail thresholds)
+ - Remove the "reserved for Phase 3" placeholder text from DO (it's now implemented)
+ - Keep /db/schema and /db/migrations as-is
+
+ ---
+ 13. Implementation Order
+
+ ┌──────┬──────────────────────────────────────────────────────────────────────────────────────┬───────────────────┐
+ │ Step │                                       File(s)                                        │    Depends On     │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.0  │ Hard prereq: Wrangler SNAPSHOTS binding + env.ts ApiBindingSchema update             │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.1  │ shared/scoring-types.ts + barrel export                                              │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.2  │ Constants in shared/constants.ts                                                     │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.3  │ Schema additions in shared/schemas.ts (RestrictionMode, DetectedRole, RiskFamily)    │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.4  │ scoring/constants.ts                                                                 │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.5  │ scoring/heuristic.ts                                                                 │ 3.4               │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.6  │ scoring/roles.ts                                                                     │ 3.4, 3.5          │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.7  │ scoring/semantic.ts                                                                  │ 3.4               │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.8  │ scoring/index.ts (orchestrator)                                                      │ 3.5-3.7           │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.9  │ guardrails/sanitize.ts                                                               │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.10 │ guardrails/risk-patterns.ts                                                          │ 3.4               │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.11 │ guardrails/restrictions.ts                                                           │ 3.3               │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.12 │ guardrails/pipeline.ts (with precedence rules from section 5)                        │ 3.9-3.11          │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.13 │ do/schema.ts                                                                         │ —                 │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.14 │ do/flush.ts                                                                          │ 3.13              │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.15 │ snapshot-sync.ts (reusable from DO and lifecycle)                                    │ 3.0               │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.16 │ do/topic-state.ts (full DO, replaces placeholder, includes response_json             │ 3.8, 3.12,        │
+ │      │ idempotency)                                                                         │ 3.13-3.15         │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.17 │ routes/contributions.ts (uses Phase 2 auth ownership pattern)                        │ 3.8, 3.12, 3.16   │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.18 │ Update lifecycle.ts: return mutatedTopicIds alongside existing return                │ 3.15              │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.19 │ Update index.ts: mount routes, replace DO class, add snapshot sync to cron handler   │ 3.16, 3.17, 3.18  │
+ │      │ using mutatedTopicIds                                                                │                   │
+ ├──────┼──────────────────────────────────────────────────────────────────────────────────────┼───────────────────┤
+ │ 3.20 │ Update routes/meta.ts: rename to /meta/contract, add phase 3 constants               │ 3.4               │
+ └──────┴──────────────────────────────────────────────────────────────────────────────────────┴───────────────────┘
+
+ ---
+ 14. Test Plan
+
+ Guardrail Precedence
+
+ - Queue restriction + risk score 90 → block (safety overrides restriction)
+ - Queue restriction + risk score 20 → queue (restriction forces minimum)
+ - Queue restriction + risk score 70 → quarantine (quarantine overrides queue restriction)
+ - Mute restriction → 403 before any scoring runs
+ - Cooldown restriction → 429 before any scoring runs
+ - Expired restriction → ignored, normal scoring applies
+
+ Guardrail Pipeline
+
+ - Score < 35 → allow + normal visibility
+ - Score 35-59 → queue + low_confidence (NOT "queued" — that visibility is unused in Phase 3)
+ - Score 60-84 → quarantine + quarantined
+ - Score 85+ → block (not persisted)
+ - Each of 10 sanitization transforms individually
+ - Risk family floor application (vote_manipulation triggers floor 64)
+ - Feature flag off + no restriction → allow + normal
+ - Feature flag off + queue restriction → queue + low_confidence (restriction still applies)
+ - Feature flag off + mute restriction → 403 (restriction still applies)
+
+ Transcript Visibility
+
+ - low_confidence contributions appear in transcript snapshot (with visibility field)
+ - quarantined contributions do NOT appear in transcript snapshot
+ - block contributions are never persisted
+
+ Heuristic Scoring
+
+ - Sentence count contributions (1→12, 7+→24)
+ - Density normalizer triggers at >80 words
+ - Specificity, evidence, vagueness scoring
+ - Substance clamped to [0, 100]
+
+ Role Detection
+
+ - Each role family detected correctly
+ - Agreement + substance < 45 → "echo" reclassification
+ - Echo penalties: substance < 30 → ×0.5; 30-44 → ×0.72
+ - Meta >= 2 matches → ×0.12
+ - Default "claim" when no family matches
+
+ Semantic Scoring
+
+ - Sparse embedding produces 64-dim L2-normalized vector
+ - Cosine similarity of identical texts ≈ 1.0
+ - On-topic blends cosine + overlap correctly
+ - Novelty confidence scaling (0, 1, 2+ samples)
+ - Semantic flags set correctly
+ - Feature flag defaults to true; test both true and false paths
+
+ DO Buffering & Idempotency
+
+ - First contribution persists and returns immediately
+ - Duplicate idempotency key returns 200 with exact response_json stored at write time (not 409, not reconstructed)
+ - idempotency_keys.response_json contains the serialized API response body
+ - contribution_counts increment correctly
+ - Alarm fires after 15s and flushes to D1
+ - Batch chunking respects MAX_BATCH_SIZE=80
+ - D1 flush failure → rows not marked flushed, retry next cycle
+ - Flushed rows cleaned up after 1 hour
+ - Idempotency keys cleaned up after 24 hours
+ - Idle timeout triggers hibernation (no more alarms)
+
+ Snapshot Sync
+
+ - Only visibility IN ('normal', 'low_confidence') contributions in transcript
+ - Ordering: round ASC, score DESC
+ - Transcript written before state (sequential await)
+ - topic_artifacts row updated
+ - curated/open.json includes all open/started topics
+ - Lifecycle-triggered snapshots: topic status change without contribution write still produces correct state snapshot
+ - DO snapshot failure: logged, snapshot_pending flag set in DO storage, retried next alarm cycle
+ - Lifecycle snapshot failure: logged, snapshot-pending:{topicId} written to KV, retried next cron cycle
+
+ API Endpoint
+
+ - Valid contribution → 200 with scores
+ - Missing JWT → 401
+ - Being not owned by agent → 403
+ - No active round → 404
+ - Trust tier insufficient → 403
+ - Idempotency reuse → 200 with original response
+ - beingId in request body validated against authenticated agent
+
+ ---
+ 15. Assumptions
+
+ 1. Phase 2 is implemented. Auth middleware (authenticateRequest in services/auth.ts), being ownership validation,
+ topic/round queries, trust tier checks, lifecycle sweeps all exist and work.
+ 2. Auth follows Phase 2 pattern — this is an implementation constraint, not an assumption. JWT sub = agent ID (see
+ services/auth.ts:216). authenticateRequest() returns { agent, sessionId, tokenScope } (see services/auth.ts:337-373).
+ beingId is supplied in the request body. The route handler validates beings.agent_id = agent.id via a D1 query — the
+ same ownership check pattern used by joinTopic, leaveTopic, getBeing in Phase 2. Phase 3 MUST NOT introduce
+ being-scoped tokens or modify the Phase 2 auth contract.
+ 3. roundId resolved server-side. Public API does not require callers to specify the round. Route handler queries the
+ current active round (rounds WHERE topic_id = ? AND status = 'active').
+ 4. Blocked contributions never reach DO. Risk score >= 85 returns 403 immediately from the API worker.
+ 5. DO-to-D1 is eventual. Response returns from DO immediately. D1 write happens asynchronously on 15s alarm. Callers
+ cannot query D1 immediately after submit.
+ 6. Snapshot sync runs in both DO alarm and lifecycle cron. Keeps state snapshots consistent for both contribution
+ writes and lifecycle transitions.
+ 7. Idempotency = 200 replay. Standard REST idempotency semantics. Not 409.
+ 8. low_confidence is transcript-visible. Appears in snapshots with visibility field for consumer-side rendering
+ decisions.
+ 9. block always overrides queue restriction. Safety > administrative constraints.
+ 10. Feature flags default to true. Both ENABLE_SEMANTIC_SCORING and ENABLE_TRANSCRIPT_GUARDRAILS are true in env
+ schema defaults and wrangler config. Tests should use the defaults and explicitly toggle for fallback path tests.
+ 11. Phase 3 echo/meta multipliers are stored in details_json, not applied to heuristic_score. The heuristic_score
+ column is raw substance. Phase 4 applies multipliers when computing live_score.
+ 12. reframe = 1 - maxRedundancy. Higher = more novel framing.
+ 13. Score version strings, not numbers. "6" and "7" as TEXT to match legacy convention.

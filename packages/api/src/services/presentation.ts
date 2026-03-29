@@ -7,20 +7,26 @@ import {
   PRESENTATION_PENDING_TTL_SECONDS,
   PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
   PresentationRepairResponseSchema,
+  VerdictPresentationSchema,
   type PresentationRetryReason,
+  type VerdictConfidence,
+  type VerdictPresentation,
+  type RoundKind,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { firstRow, runStatement } from "../lib/db.js";
-import { publishArtifacts, suppressArtifacts, type ArtifactRenderInput } from "./artifacts.js";
+import { allRows, firstRow, runStatement } from "../lib/db.js";
+import { publishArtifacts, suppressArtifacts } from "./artifacts.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { syncTopicSnapshots } from "../lib/snapshot-sync.js";
 
 type TopicPresentationRow = {
   id: string;
   domain_id: string;
+  domain_slug: string;
   title: string;
   prompt: string;
   status: string;
+  closed_at: string | null;
 };
 
 type VerdictPresentationRow = {
@@ -36,6 +42,46 @@ type ArtifactRow = {
   verdict_html_key: string | null;
   og_image_key: string | null;
   artifact_status: string;
+};
+
+type ParsedReasoning = {
+  completedRounds?: number;
+  totalRounds?: number;
+  participantCount?: number;
+  contributionCount?: number;
+  topContributionsPerRound?: Array<{
+    roundKind?: string;
+    contributions?: Array<{
+      contributionId?: string;
+      beingId?: string;
+      beingHandle?: string;
+      finalScore?: number;
+      excerpt?: string;
+    }>;
+  }>;
+  narrative?: VerdictPresentation["narrative"];
+  highlights?: VerdictPresentation["highlights"];
+};
+
+const FALLBACK_ROUND_KIND: RoundKind = "propose";
+
+type ClaimNodeRow = {
+  claim_id: string;
+  contribution_id: string;
+  being_id: string;
+  being_handle: string;
+  label: string;
+  status: "unresolved" | "contested" | "supported" | "refuted" | "mixed";
+  verifiability: "unclassified" | "empirical" | "normative" | "predictive";
+  confidence: number;
+};
+
+type ClaimEdgeRow = {
+  source_claim_id: string;
+  target_claim_id: string;
+  relation_kind: "support" | "contradiction" | "refinement" | "supersession";
+  confidence: number;
+  explanation: string | null;
 };
 
 export async function queuePresentationRetry(
@@ -66,24 +112,190 @@ export async function listPendingPresentationRetries(env: ApiEnv): Promise<strin
   return result.keys.map((entry) => entry.name.slice(PRESENTATION_PENDING_PREFIX.length)).filter(Boolean);
 }
 
-function parseArtifactInput(
+const CONFIDENCE_SCORE_MAP: Record<VerdictConfidence, number> = {
+  emerging: 0.42,
+  moderate: 0.68,
+  strong: 0.86,
+};
+
+function parseReasoningJson(reasoningJson: string | null): ParsedReasoning {
+  if (!reasoningJson) {
+    return {};
+  }
+  try {
+    return JSON.parse(reasoningJson) as ParsedReasoning;
+  } catch {
+    return {};
+  }
+}
+
+function buildFallbackNarrative(reasoning: ParsedReasoning): VerdictPresentation["narrative"] {
+  const rounds = Array.isArray(reasoning.topContributionsPerRound) ? reasoning.topContributionsPerRound : [];
+  return rounds.map((round, roundIndex) => {
+    const lead = Array.isArray(round.contributions) ? round.contributions[0] : null;
+    const roundKind = (round.roundKind ?? FALLBACK_ROUND_KIND) as RoundKind;
+    return {
+      roundIndex,
+      roundKind,
+      title: `${roundKind.replaceAll("_", " ")} round`,
+      summary: lead?.excerpt?.trim()
+        ? `Lead signal: ${lead.excerpt.slice(0, 180)}`
+        : "No transcript-visible contributions were available in this round.",
+    };
+  });
+}
+
+function buildFallbackHighlights(reasoning: ParsedReasoning): VerdictPresentation["highlights"] {
+  const rounds = Array.isArray(reasoning.topContributionsPerRound) ? reasoning.topContributionsPerRound : [];
+  return rounds.flatMap((round) =>
+    (Array.isArray(round.contributions) ? round.contributions.slice(0, 1) : []).flatMap((contribution) => {
+      if (!contribution?.contributionId || !contribution.beingId || !round.roundKind) {
+        return [];
+      }
+      return [{
+        contributionId: contribution.contributionId,
+        beingId: contribution.beingId,
+        beingHandle: contribution.beingHandle ?? contribution.beingId,
+        roundKind: round.roundKind as RoundKind,
+        excerpt: contribution.excerpt?.trim() || "No excerpt available.",
+        finalScore: Number(contribution.finalScore ?? 0),
+        reason: `Highest-scoring visible contribution in the ${round.roundKind.replaceAll("_", " ")} round.`,
+      }];
+    }),
+  );
+}
+
+async function buildClaimGraph(env: ApiEnv, topicId: string): Promise<VerdictPresentation["claimGraph"]> {
+  if (!env.ENABLE_EPISTEMIC_SCORING) {
+    return {
+      available: false,
+      nodes: [],
+      edges: [],
+      fallbackNote: "Claim graph unavailable because epistemic scoring is disabled.",
+    };
+  }
+  try {
+    const nodes = await allRows<ClaimNodeRow>(
+      env.DB,
+      `
+        SELECT
+          c.id AS claim_id,
+          c.contribution_id,
+          c.being_id,
+          b.handle AS being_handle,
+          c.body AS label,
+          COALESCE(cr.status, 'unresolved') AS status,
+          c.verifiability,
+          COALESCE(cr.confidence, 0) AS confidence
+        FROM claims c
+        INNER JOIN beings b ON b.id = c.being_id
+        LEFT JOIN claim_resolutions cr ON cr.claim_id = c.id
+        WHERE c.topic_id = ?
+        ORDER BY c.created_at ASC, c.ordinal ASC
+      `,
+      topicId,
+    );
+    if (nodes.length === 0) {
+      return {
+        available: false,
+        nodes: [],
+        edges: [],
+        fallbackNote: "Claim graph unavailable because no claim rows were published for this topic.",
+      };
+    }
+
+    const edges = await allRows<ClaimEdgeRow>(
+      env.DB,
+      `
+        SELECT source_claim_id, target_claim_id, relation_kind, confidence, explanation
+        FROM claim_relations
+        WHERE source_claim_id IN (SELECT id FROM claims WHERE topic_id = ?)
+          AND target_claim_id IN (SELECT id FROM claims WHERE topic_id = ?)
+        ORDER BY created_at ASC
+      `,
+      topicId,
+      topicId,
+    );
+
+    return {
+      available: true,
+      nodes: nodes.map((node) => ({
+        claimId: node.claim_id,
+        contributionId: node.contribution_id,
+        beingId: node.being_id,
+        beingHandle: node.being_handle,
+        label: node.label,
+        status: node.status,
+        verifiability: node.verifiability,
+        confidence: Number(node.confidence ?? 0),
+      })),
+      edges: edges.map((edge) => ({
+        sourceClaimId: edge.source_claim_id,
+        targetClaimId: edge.target_claim_id,
+        relationKind: edge.relation_kind,
+        confidence: Number(edge.confidence ?? 0),
+        explanation: edge.explanation,
+      })),
+      fallbackNote: null,
+    };
+  } catch {
+    return {
+      available: false,
+      nodes: [],
+      edges: [],
+      fallbackNote: "Claim graph unavailable because the epistemic rows could not be loaded.",
+    };
+  }
+}
+
+async function buildVerdictPresentation(
+  env: ApiEnv,
   topic: TopicPresentationRow,
   verdict: VerdictPresentationRow,
-): ArtifactRenderInput {
-  const reasoning = verdict.reasoning_json ? JSON.parse(verdict.reasoning_json) as Record<string, unknown> : {};
-  return {
+): Promise<VerdictPresentation> {
+  const reasoning = parseReasoningJson(verdict.reasoning_json);
+  const completedRounds = Number(reasoning.completedRounds ?? 0);
+  const totalRounds = Number(reasoning.totalRounds ?? completedRounds);
+  const narrative = Array.isArray(reasoning.narrative) && reasoning.narrative.length > 0
+    ? reasoning.narrative
+    : buildFallbackNarrative(reasoning);
+  const highlights = Array.isArray(reasoning.highlights) && reasoning.highlights.length > 0
+    ? reasoning.highlights
+    : buildFallbackHighlights(reasoning);
+  const claimGraph = await buildClaimGraph(env, topic.id);
+  const confidence = verdict.confidence as VerdictConfidence;
+
+  return VerdictPresentationSchema.parse({
     topicId: topic.id,
     title: topic.title,
-    prompt: topic.prompt,
+    domain: topic.domain_slug,
+    publishedAt: topic.closed_at ?? new Date().toISOString(),
+    status: ARTIFACT_STATUS_PUBLISHED,
+    headline: {
+      label: "Verdict",
+      text: verdict.summary,
+      stance: verdict.terminalization_mode === "insufficient_signal" ? "uncertain" : "mixed",
+    },
     summary: verdict.summary,
-    confidence: verdict.confidence,
-    terminalizationMode: verdict.terminalization_mode,
-    completedRounds: Number(reasoning.completedRounds ?? 0),
-    totalRounds: Number(reasoning.totalRounds ?? 0),
-    topContributionsPerRound: Array.isArray(reasoning.topContributionsPerRound)
-      ? reasoning.topContributionsPerRound as ArtifactRenderInput["topContributionsPerRound"]
-      : [],
-  };
+    confidence: {
+      label: confidence,
+      score: CONFIDENCE_SCORE_MAP[confidence],
+      explanation:
+        verdict.terminalization_mode === "insufficient_signal"
+          ? "The topic closed without enough transcript-visible signal for a stronger conclusion."
+          : `${completedRounds}/${Math.max(totalRounds, completedRounds)} rounds completed under ${verdict.terminalization_mode}.`,
+    },
+    scoreBreakdown: {
+      completedRounds,
+      totalRounds,
+      participantCount: Number(reasoning.participantCount ?? 0),
+      contributionCount: Number(reasoning.contributionCount ?? 0),
+      terminalizationMode: verdict.terminalization_mode,
+    },
+    narrative,
+    highlights,
+    claimGraph,
+  });
 }
 
 export async function reconcileTopicPresentation(
@@ -91,11 +303,26 @@ export async function reconcileTopicPresentation(
   topicId: string,
   reason: PresentationRetryReason = PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
 ) {
-  const topic = await firstRow<TopicPresentationRow>(
-    env.DB,
-    `SELECT id, domain_id, title, prompt, status FROM topics WHERE id = ?`,
-    topicId,
-  );
+    const topic = await firstRow<TopicPresentationRow>(
+      env.DB,
+      `
+        SELECT
+          topics.id,
+          topics.domain_id,
+          topics.title,
+          topics.prompt,
+          topics.status,
+          topics.closed_at,
+          (
+            SELECT slug
+            FROM domains
+            WHERE domains.id = topics.domain_id
+          ) AS domain_slug
+        FROM topics
+        WHERE id = ?
+      `,
+      topicId,
+    );
   if (!topic) {
     throw new Error(`Topic ${topicId} not found.`);
   }
@@ -132,7 +359,10 @@ export async function reconcileTopicPresentation(
         await suppressArtifacts(env.PUBLIC_ARTIFACTS, topicId);
         artifactStatus = ARTIFACT_STATUS_SUPPRESSED;
       } else {
-        const published = await publishArtifacts(env.PUBLIC_ARTIFACTS, parseArtifactInput(topic, verdict));
+        const published = await publishArtifacts(
+          env.PUBLIC_ARTIFACTS,
+          await buildVerdictPresentation(env, topic, verdict),
+        );
         verdictHtmlKey = published.verdictHtmlKey;
         ogImageKey = published.ogImageKey;
         artifactStatus = ARTIFACT_STATUS_PUBLISHED;

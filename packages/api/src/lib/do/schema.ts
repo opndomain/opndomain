@@ -1,5 +1,10 @@
 import { D1_BATCH_SAFE_LIMIT } from "@opndomain/shared";
-import type { ContributionScoreDetails, GuardrailDecision, ScoringProfile } from "@opndomain/shared";
+import type {
+  ContributionScoreDetails,
+  GuardrailDecision,
+  ScoringProfile,
+  TranscriptDeltaMetadata,
+} from "@opndomain/shared";
 import type { ExtractedClaim } from "../epistemic/claim-extraction.js";
 
 export const TOPIC_STATE_PENDING_RECORD_LIMIT = D1_BATCH_SAFE_LIMIT;
@@ -76,6 +81,11 @@ export type TopicStateIngestRequest = {
   shadowVersion: string;
   scoringProfile: ScoringProfile | string;
   submittedAt: string;
+  topicHints?: {
+    changeSequence?: number;
+    activeParticipantCount?: number;
+    transcriptDelta?: Pick<TranscriptDeltaMetadata, "fromSequence" | "toSequence" | "checksum">;
+  };
   claims?: {
     domainId: string;
     items: ExtractedClaim[];
@@ -111,6 +121,7 @@ export type TopicStateVoteIngestRequest = {
   acceptedAt: string;
   idempotencyKey: string;
   targetRoundId: string;
+  changeSequence?: number;
 };
 
 export type PendingVoteRow = {

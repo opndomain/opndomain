@@ -8,15 +8,20 @@ import {
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
-import { nowIso } from "../lib/time.js";
+import { addSeconds, nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { runTerminalizationSequence } from "./terminalization.js";
+import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
 
 type TopicSweepRow = {
   id: string;
+  domain_id: string;
   status: string;
+  topic_format: string;
   cadence_family: string;
+  min_distinct_participants: number;
+  countdown_seconds: number | null;
   starts_at: string | null;
   join_until: string | null;
 };
@@ -67,6 +72,55 @@ function roundDurationMs(round: Pick<RoundPlanRow, "starts_at" | "ends_at">): nu
   return endsAt - startsAt;
 }
 
+function resolveRoundDurationMs(round: Pick<RoundPlanRow, "starts_at" | "ends_at" | "config_json">): number {
+  const scheduledDurationMs = roundDurationMs(round);
+  if (scheduledDurationMs > 0) {
+    return scheduledDurationMs;
+  }
+  const config = parseConfig(round.config_json);
+  const roundDurationMinutes = Number(config.roundDurationMinutes ?? 0);
+  return Math.max(0, roundDurationMinutes * 60 * 1000);
+}
+
+async function countActiveParticipants(env: ApiEnv, topicId: string): Promise<number> {
+  const participantCountRow = await firstRow<{ participant_count: number }>(
+    env.DB,
+    `
+      SELECT COUNT(*) AS participant_count
+      FROM topic_members
+      WHERE topic_id = ? AND status = 'active'
+    `,
+    topicId,
+  );
+  return Number(participantCountRow?.participant_count ?? 0);
+}
+
+async function activateRound(
+  env: ApiEnv,
+  round: Pick<RoundPlanRow, "id" | "topic_id" | "config_json" | "starts_at" | "ends_at">,
+  now: Date,
+): Promise<boolean> {
+  if (!env.ENABLE_ELASTIC_ROUNDS) {
+    return runCas(
+      env.DB.prepare(`UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ? AND status = 'pending'`).bind(nowIso(now), round.id),
+    );
+  }
+
+  const durationMs = resolveRoundDurationMs(round);
+  const startsAt = nowIso(now);
+  const endsAt = new Date(now.getTime() + durationMs).toISOString();
+  const config = parseConfig(round.config_json);
+  const revealAt =
+    String(config.visibility ?? ROUND_VISIBILITY_SEALED) === ROUND_VISIBILITY_SEALED
+      ? endsAt
+      : startsAt;
+  return runCas(
+    env.DB
+      .prepare(`UPDATE rounds SET status = 'active', starts_at = ?, ends_at = ?, reveal_at = ? WHERE id = ? AND status = 'pending'`)
+      .bind(startsAt, endsAt, revealAt, round.id),
+  );
+}
+
 async function runCas(statement: D1PreparedStatement): Promise<boolean> {
   const runnable = statement as D1PreparedStatement & {
     db?: { batch?: (statements: D1PreparedStatement[]) => Promise<Array<{ error?: string }>> };
@@ -87,7 +141,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
   const rows = await allRows<TopicSweepRow>(
     env.DB,
     `
-      SELECT id, status, cadence_family, starts_at, join_until
+      SELECT id, domain_id, status, topic_format, cadence_family, min_distinct_participants, countdown_seconds, starts_at, join_until
       FROM topics
       WHERE status IN ('open', 'countdown')
       ORDER BY created_at ASC
@@ -99,23 +153,86 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
   for (const topic of rows) {
     const startsAt = topic.starts_at ? new Date(topic.starts_at) : null;
     const joinUntil = topic.join_until ? new Date(topic.join_until) : null;
-    const participantCountRow = await firstRow<{ participant_count: number }>(
-      env.DB,
-      `
-        SELECT COUNT(*) AS participant_count
-        FROM topic_members
-        WHERE topic_id = ? AND status = 'active'
-      `,
-      topic.id,
-    );
-    const participantCount = Number(participantCountRow?.participant_count ?? 0);
-    const hasMinimumParticipants = participantCount >= DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS;
+    const participantCount = await countActiveParticipants(env, topic.id);
+    const minimumParticipants = Number(topic.min_distinct_participants ?? DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS);
+    const hasMinimumParticipants = participantCount >= minimumParticipants;
+
+    if (topic.topic_format === "rolling_research") {
+      if (topic.status === "open" && hasMinimumParticipants) {
+        const countdownSeconds = Number(topic.countdown_seconds ?? 0);
+        const countdownStartsAt = nowIso(addSeconds(now, countdownSeconds));
+        const changed = await runCas(
+          env.DB.prepare(
+            `UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ? WHERE id = ? AND status = 'open'`,
+          ).bind(nowIso(now), countdownStartsAt, countdownStartsAt, topic.id),
+        );
+        if (changed) {
+          await rewritePendingRoundSchedules(env, topic.id, countdownStartsAt);
+          await invalidateTopicPublicSurfaces(env, {
+            topicId: topic.id,
+            domainId: topic.domain_id,
+            reason: "rolling_countdown_started",
+            occurredAt: nowIso(now),
+          });
+          mutatedTopicIds.add(topic.id);
+        }
+        continue;
+      }
+
+      if (topic.status === "countdown" && startsAt && startsAt.getTime() <= now.getTime()) {
+        const started = await runCas(
+          env.DB.prepare(
+            `UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status = 'countdown'`,
+          ).bind(participantCount, topic.id),
+        );
+        if (started) {
+          const firstRound = await firstRow<RoundPlanRow>(
+            env.DB,
+            `
+              SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+              FROM rounds r
+              INNER JOIN round_configs rc ON rc.round_id = r.id
+              WHERE r.topic_id = ? AND r.sequence_index = 0
+              LIMIT 1
+            `,
+            topic.id,
+          );
+          if (firstRound) {
+            await activateRound(env, firstRound, now);
+          }
+          const successorTopicId = await createRollingTopicSuccessor(env, topic.id);
+          await invalidateTopicPublicSurfaces(env, {
+            topicId: topic.id,
+            domainId: topic.domain_id,
+            reason: "rolling_topic_started",
+            occurredAt: nowIso(now),
+          });
+          if (successorTopicId) {
+            await invalidateTopicPublicSurfaces(env, {
+              topicId: successorTopicId,
+              domainId: topic.domain_id,
+              reason: "rolling_successor_created",
+              occurredAt: nowIso(now),
+            });
+            mutatedTopicIds.add(successorTopicId);
+          }
+          mutatedTopicIds.add(topic.id);
+        }
+      }
+      continue;
+    }
 
     if (topic.cadence_family === "quorum" && topic.status === "open" && hasMinimumParticipants && startsAt && startsAt.getTime() > now.getTime()) {
       const changed = await runCas(
         env.DB.prepare(`UPDATE topics SET status = 'countdown', countdown_started_at = ? WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
       );
       if (changed) {
+        await invalidateTopicPublicSurfaces(env, {
+          topicId: topic.id,
+          domainId: topic.domain_id,
+          reason: "topic_countdown_started",
+          occurredAt: nowIso(now),
+        });
         mutatedTopicIds.add(topic.id);
       }
       continue;
@@ -129,10 +246,29 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
     ) {
       if (hasMinimumParticipants) {
         const started = await runCas(
-          env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0 WHERE id = ? AND status = 'open'`).bind(topic.id),
+          env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status = 'open'`).bind(participantCount, topic.id),
         );
         if (started) {
-          await runCas(env.DB.prepare(`UPDATE rounds SET status = 'active' WHERE topic_id = ? AND sequence_index = 0 AND status = 'pending'`).bind(topic.id));
+          const firstRound = await firstRow<RoundPlanRow>(
+            env.DB,
+            `
+              SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+              FROM rounds r
+              INNER JOIN round_configs rc ON rc.round_id = r.id
+              WHERE r.topic_id = ? AND r.sequence_index = 0
+              LIMIT 1
+            `,
+            topic.id,
+          );
+          if (firstRound) {
+            await activateRound(env, firstRound, now);
+          }
+          await invalidateTopicPublicSurfaces(env, {
+            topicId: topic.id,
+            domainId: topic.domain_id,
+            reason: "topic_started",
+            occurredAt: nowIso(now),
+          });
           mutatedTopicIds.add(topic.id);
         }
       } else {
@@ -140,6 +276,12 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
           env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
         );
         if (stalled) {
+          await invalidateTopicPublicSurfaces(env, {
+            topicId: topic.id,
+            domainId: topic.domain_id,
+            reason: "topic_stalled",
+            occurredAt: nowIso(now),
+          });
           mutatedTopicIds.add(topic.id);
         }
       }
@@ -158,6 +300,12 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
         env.DB.prepare(`UPDATE topics SET status = 'countdown', countdown_started_at = ? WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
       );
       if (changed) {
+        await invalidateTopicPublicSurfaces(env, {
+          topicId: topic.id,
+          domainId: topic.domain_id,
+          reason: "topic_countdown_started",
+          occurredAt: nowIso(now),
+        });
         mutatedTopicIds.add(topic.id);
       }
       continue;
@@ -168,10 +316,29 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
       ((startsAt && startsAt.getTime() <= now.getTime()) || (!startsAt && joinUntil && joinUntil.getTime() <= now.getTime()))
     ) {
       const started = await runCas(
-        env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0 WHERE id = ? AND status IN ('open', 'countdown')`).bind(topic.id),
+        env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status IN ('open', 'countdown')`).bind(participantCount, topic.id),
       );
       if (started) {
-        await runCas(env.DB.prepare(`UPDATE rounds SET status = 'active' WHERE topic_id = ? AND sequence_index = 0 AND status = 'pending'`).bind(topic.id));
+        const firstRound = await firstRow<RoundPlanRow>(
+          env.DB,
+          `
+            SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+            FROM rounds r
+            INNER JOIN round_configs rc ON rc.round_id = r.id
+            WHERE r.topic_id = ? AND r.sequence_index = 0
+            LIMIT 1
+          `,
+          topic.id,
+        );
+        if (firstRound) {
+          await activateRound(env, firstRound, now);
+        }
+        await invalidateTopicPublicSurfaces(env, {
+          topicId: topic.id,
+          domainId: topic.domain_id,
+          reason: "topic_started",
+          occurredAt: nowIso(now),
+        });
         mutatedTopicIds.add(topic.id);
       }
     }
@@ -323,15 +490,16 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   const nextRound = rounds.find((candidate) => candidate.sequence_index === round.sequence_index + 1) ?? null;
 
   if (nextRound) {
-    await rewritePendingRoundTimings(env, rounds, nextRound.sequence_index, now);
-    const activated = await runCas(
-      env.DB.prepare(`UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ? AND status = 'pending'`).bind(nowIso(now), nextRound.id),
-    );
+    if (!env.ENABLE_ELASTIC_ROUNDS) {
+      await rewritePendingRoundTimings(env, rounds, nextRound.sequence_index, now);
+    }
+    const activated = await activateRound(env, nextRound, now);
     if (activated) {
+      const activeParticipantCount = await countActiveParticipants(env, round.topic_id);
       await runCas(
         env.DB
-          .prepare(`UPDATE topics SET current_round_index = ?, status = 'started', stalled_at = NULL WHERE id = ?`)
-          .bind(nextRound.sequence_index, round.topic_id),
+          .prepare(`UPDATE topics SET current_round_index = ?, status = 'started', stalled_at = NULL, active_participant_count = ? WHERE id = ?`)
+          .bind(nextRound.sequence_index, activeParticipantCount, round.topic_id),
       );
     }
   } else {

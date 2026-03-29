@@ -9,6 +9,7 @@ import { allRows, firstRow } from "../lib/db.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 
 type VoteContextRow = {
+  contribution_id: string;
   substance_score: number | null;
   role_bonus: number | null;
   details_json: string | null;
@@ -29,10 +30,16 @@ type PersistedVoteRow = {
   voter_being_id: string;
 };
 
-type TopicVoteStatsRow = {
+type PersistedContributionVoteRow = PersistedVoteRow & {
+  contribution_id: string;
+};
+
+export type TopicVoteStatsRow = {
   distinct_voter_count: number | null;
   topic_vote_count: number | null;
 };
+
+export type ContributionVoteAggregate = ReturnType<typeof aggregateWeightedVotes>;
 
 type VoteTargetRow = {
   id: string;
@@ -226,14 +233,27 @@ function parseDetectedRole(detailsJson: string | null): DetectedRole {
   }
 }
 
-export async function recomputeContributionFinalScore(
-  env: ApiEnv,
-  contributionId: string,
-): Promise<{ finalScore: number; shadowFinalScore: number } | null> {
-  const contributionContext = await env.DB
+function buildInClause(ids: string[]): string {
+  return ids.map(() => "?").join(", ");
+}
+
+function normalizeTopicVoteStats(row: TopicVoteStatsRow | null | undefined) {
+  return {
+    distinctVoterCount: Number(row?.distinct_voter_count ?? 0),
+    topicVoteCount: Number(row?.topic_vote_count ?? 0),
+  };
+}
+
+async function loadContributionContexts(env: ApiEnv, contributionIds: string[]) {
+  if (contributionIds.length === 0) {
+    return [] as VoteContextRow[];
+  }
+
+  const results = await env.DB
     .prepare(
       `
         SELECT
+          cs.contribution_id,
           cs.substance_score,
           cs.role_bonus,
           cs.details_json,
@@ -250,103 +270,175 @@ export async function recomputeContributionFinalScore(
         INNER JOIN contributions c ON c.id = cs.contribution_id
         INNER JOIN rounds r ON r.id = c.round_id
         INNER JOIN topics t ON t.id = c.topic_id
-        WHERE cs.contribution_id = ?
+        WHERE cs.contribution_id IN (${buildInClause(contributionIds)})
       `,
     )
-    .bind(contributionId)
-    .first<VoteContextRow>();
-  if (!contributionContext) {
-    return null;
+    .bind(...contributionIds)
+    .all<VoteContextRow>();
+  return results.results ?? [];
+}
+
+async function loadContributionVotes(env: ApiEnv, contributionIds: string[]) {
+  if (contributionIds.length === 0) {
+    return [] as PersistedContributionVoteRow[];
   }
 
-  const votes = await env.DB
+  const results = await env.DB
     .prepare(
       `
-        SELECT direction, weight, voter_being_id
+        SELECT contribution_id, direction, weight, voter_being_id
         FROM votes
-        WHERE contribution_id = ?
+        WHERE contribution_id IN (${buildInClause(contributionIds)})
       `,
     )
-    .bind(contributionId)
-    .all<PersistedVoteRow>();
-  const topicStats = await env.DB
+    .bind(...contributionIds)
+    .all<PersistedContributionVoteRow>();
+  return results.results ?? [];
+}
+
+async function loadTopicVoteStats(env: ApiEnv, topicIds: string[]) {
+  if (topicIds.length === 0) {
+    return new Map<string, TopicVoteStatsRow>();
+  }
+
+  const results = await env.DB
     .prepare(
       `
         SELECT
+          topic_id,
           COUNT(DISTINCT CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN voter_being_id END) AS distinct_voter_count,
           COUNT(CASE WHEN direction IN (-1, 1) AND COALESCE(weight, 0) > 0 THEN 1 END) AS topic_vote_count
         FROM votes
-        WHERE topic_id = ?
+        WHERE topic_id IN (${buildInClause(topicIds)})
+        GROUP BY topic_id
       `,
     )
-    .bind(contributionContext.topic_id)
-    .first<TopicVoteStatsRow>();
+    .bind(...topicIds)
+    .all<TopicVoteStatsRow & { topic_id: string }>();
 
-  const aggregate = aggregateWeightedVotes(
-    (votes.results ?? []).map((vote) => ({
-      direction: vote.direction,
-      weight: Number(vote.weight ?? 0),
-      voterBeingId: vote.voter_being_id,
-    })),
-  );
-  const voteInfluence = computeVoteInfluence({
-    voteCount: aggregate.voteCount,
-    distinctVoterCount: Number(topicStats?.distinct_voter_count ?? 0),
-    topicVoteCount: Number(topicStats?.topic_vote_count ?? 0),
-    scoringProfile: (contributionContext.scoring_profile ?? "adversarial") as ScoringProfile,
-    roundKind: contributionContext.round_kind as RoundKind,
-    templateId: contributionContext.template_id as TopicTemplateId,
-  });
-  const recomputed = computeCompositeScore({
-    roundKind: contributionContext.round_kind as RoundKind,
-    templateId: contributionContext.template_id as TopicTemplateId,
-    scoringProfile: (contributionContext.scoring_profile ?? "adversarial") as ScoringProfile,
-    reputationFactor: 0,
-    substanceScore: Number(contributionContext.substance_score ?? 0),
-    roleBonus: Number(contributionContext.role_bonus ?? 0),
-    detectedRole: parseDetectedRole(contributionContext.details_json),
-    relevance: contributionContext.relevance,
-    novelty: contributionContext.novelty,
-    reframe: contributionContext.reframe,
-    liveMultiplier: 1,
-    shadowMultiplier: 1,
-    weightedVoteScore: aggregate.weightedVoteScore,
-    voteCount: aggregate.voteCount,
-    distinctVoterCount: Number(topicStats?.distinct_voter_count ?? 0),
-    topicVoteCount: Number(topicStats?.topic_vote_count ?? 0),
-    liveVoteInfluenceCap: voteInfluence,
-  });
-  const initialScore = Number(contributionContext.initial_score ?? 0);
-  const shadowInitialScore = Number(contributionContext.shadow_initial_score ?? 0);
-  const finalScore = Math.max(
-    0,
-    Math.min(initialScore * (1 - voteInfluence) + aggregate.weightedVoteScore * voteInfluence, 100),
-  );
-  const shadowDenominator = aggregate.weightedVoteScore - recomputed.shadowInitialScore;
-  const shadowVoteInfluence =
-    Math.abs(shadowDenominator) < Number.EPSILON
-      ? 0
-      : (recomputed.shadowFinalScore - recomputed.shadowInitialScore) / shadowDenominator;
-  const shadowFinalScore = Math.max(
-    0,
-    Math.min(shadowInitialScore * (1 - shadowVoteInfluence) + aggregate.weightedVoteScore * shadowVoteInfluence, 100),
-  );
+  return new Map((results.results ?? []).map((row) => [row.topic_id, row]));
+}
 
-  await env.DB
-    .prepare(
-      `
-        UPDATE contribution_scores
-        SET
-          -- Compatibility mirrors stay frozen at ingest-time initial values.
-          final_score = ?,
-          shadow_final_score = ?
-        WHERE contribution_id = ?
-      `,
-    )
-    .bind(finalScore, shadowFinalScore, contributionId)
-    .run();
+export async function recomputeContributionFinalScores(
+  env: ApiEnv,
+  contributionIds: string[],
+  overrides?: {
+    contributionAggregatesByContributionId?: Map<string, ContributionVoteAggregate>;
+    topicStatsByTopicId?: Map<string, TopicVoteStatsRow>;
+  },
+): Promise<Map<string, { finalScore: number; shadowFinalScore: number }>> {
+  const uniqueContributionIds = Array.from(new Set(contributionIds.filter(Boolean)));
+  if (uniqueContributionIds.length === 0) {
+    return new Map();
+  }
 
-  return { finalScore, shadowFinalScore };
+  const contexts = await loadContributionContexts(env, uniqueContributionIds);
+  if (contexts.length === 0) {
+    return new Map();
+  }
+
+  const contributionAggregatesByContributionId =
+    overrides?.contributionAggregatesByContributionId ??
+    (() => {
+      const map = new Map<string, ContributionVoteAggregate>();
+      return map;
+    })();
+  if (!overrides?.contributionAggregatesByContributionId) {
+    const voteRows = await loadContributionVotes(env, uniqueContributionIds);
+    const votesByContributionId = new Map<string, Array<{ direction: number; weight: number; voterBeingId: string }>>();
+    for (const vote of voteRows) {
+      const existing = votesByContributionId.get(vote.contribution_id) ?? [];
+      existing.push({
+        direction: vote.direction,
+        weight: Number(vote.weight ?? 0),
+        voterBeingId: vote.voter_being_id,
+      });
+      votesByContributionId.set(vote.contribution_id, existing);
+    }
+    for (const context of contexts) {
+      contributionAggregatesByContributionId.set(
+        context.contribution_id,
+        aggregateWeightedVotes(votesByContributionId.get(context.contribution_id) ?? []),
+      );
+    }
+  }
+
+  const topicIds = Array.from(new Set(contexts.map((context) => context.topic_id)));
+  const topicStatsByTopicId = overrides?.topicStatsByTopicId ?? (await loadTopicVoteStats(env, topicIds));
+  const outputs = new Map<string, { finalScore: number; shadowFinalScore: number }>();
+
+  for (const contributionContext of contexts) {
+    const aggregate = contributionAggregatesByContributionId.get(contributionContext.contribution_id) ?? aggregateWeightedVotes([]);
+    const topicStats = normalizeTopicVoteStats(topicStatsByTopicId.get(contributionContext.topic_id));
+    const voteInfluence = computeVoteInfluence({
+      voteCount: aggregate.voteCount,
+      distinctVoterCount: aggregate.distinctVoterCount,
+      topicVoteCount: topicStats.topicVoteCount,
+      scoringProfile: (contributionContext.scoring_profile ?? "adversarial") as ScoringProfile,
+      roundKind: contributionContext.round_kind as RoundKind,
+      templateId: contributionContext.template_id as TopicTemplateId,
+    });
+    const recomputed = computeCompositeScore({
+      roundKind: contributionContext.round_kind as RoundKind,
+      templateId: contributionContext.template_id as TopicTemplateId,
+      scoringProfile: (contributionContext.scoring_profile ?? "adversarial") as ScoringProfile,
+      reputationFactor: 0,
+      substanceScore: Number(contributionContext.substance_score ?? 0),
+      roleBonus: Number(contributionContext.role_bonus ?? 0),
+      detectedRole: parseDetectedRole(contributionContext.details_json),
+      relevance: contributionContext.relevance,
+      novelty: contributionContext.novelty,
+      reframe: contributionContext.reframe,
+      liveMultiplier: 1,
+      shadowMultiplier: 1,
+      weightedVoteScore: aggregate.weightedVoteScore,
+      voteCount: aggregate.voteCount,
+      distinctVoterCount: aggregate.distinctVoterCount,
+      topicVoteCount: topicStats.topicVoteCount,
+      liveVoteInfluenceCap: voteInfluence,
+    });
+    const initialScore = Number(contributionContext.initial_score ?? 0);
+    const shadowInitialScore = Number(contributionContext.shadow_initial_score ?? 0);
+    const finalScore = Math.max(
+      0,
+      Math.min(initialScore * (1 - voteInfluence) + aggregate.weightedVoteScore * voteInfluence, 100),
+    );
+    const shadowDenominator = aggregate.weightedVoteScore - recomputed.shadowInitialScore;
+    const shadowVoteInfluence =
+      Math.abs(shadowDenominator) < Number.EPSILON
+        ? 0
+        : (recomputed.shadowFinalScore - recomputed.shadowInitialScore) / shadowDenominator;
+    const shadowFinalScore = Math.max(
+      0,
+      Math.min(shadowInitialScore * (1 - shadowVoteInfluence) + aggregate.weightedVoteScore * shadowVoteInfluence, 100),
+    );
+
+    await env.DB
+      .prepare(
+        `
+          UPDATE contribution_scores
+          SET
+            -- Compatibility mirrors stay frozen at ingest-time initial values.
+            final_score = ?,
+            shadow_final_score = ?
+          WHERE contribution_id = ?
+        `,
+      )
+      .bind(finalScore, shadowFinalScore, contributionContext.contribution_id)
+      .run();
+
+    outputs.set(contributionContext.contribution_id, { finalScore, shadowFinalScore });
+  }
+
+  return outputs;
+}
+
+export async function recomputeContributionFinalScore(
+  env: ApiEnv,
+  contributionId: string,
+): Promise<{ finalScore: number; shadowFinalScore: number } | null> {
+  const results = await recomputeContributionFinalScores(env, [contributionId]);
+  return results.get(contributionId) ?? null;
 }
 
 export async function submitVote(

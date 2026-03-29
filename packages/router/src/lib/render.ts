@@ -1,3 +1,5 @@
+import type { VerdictPresentation } from "@opndomain/shared";
+
 function esc(value: unknown): string {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -72,6 +74,7 @@ type TopicSharePanelOptions = {
   url: string;
   title: string;
   lede: string;
+  note: string;
   xLink: TopicShareLink;
   redditLink: TopicShareLink;
 };
@@ -92,11 +95,11 @@ export function topicSharePanel(options: TopicSharePanelOptions) {
         </div>
       </div>
       <div class="topic-share-actions">
-        <a class="button secondary" href="${esc(options.xLink.href)}" target="_blank" rel="noreferrer">${esc(options.xLink.label)}</a>
+        <a class="button" href="${esc(options.xLink.href)}" target="_blank" rel="noreferrer">${esc(options.xLink.label)}</a>
         <a class="button secondary" href="${esc(options.redditLink.href)}" target="_blank" rel="noreferrer">${esc(options.redditLink.label)}</a>
         <button class="button secondary" type="button" data-copy-url="${esc(options.url)}" data-copy-status="${copyStatusId}">Copy Link</button>
       </div>
-      <p class="topic-share-status mono" id="${copyStatusId}" aria-live="polite">Large-image preview is used when a published verdict card is available.</p>
+      <p class="topic-share-status mono" id="${copyStatusId}" aria-live="polite">${esc(options.note)}</p>
       <script>
         (() => {
           const button = document.currentScript?.previousElementSibling?.previousElementSibling?.querySelector("[data-copy-url]");
@@ -114,6 +117,138 @@ export function topicSharePanel(options: TopicSharePanelOptions) {
           });
         })();
       </script>
+    </section>
+  `;
+}
+
+function confidencePercent(score: number) {
+  return `${Math.round(score * 100)}%`;
+}
+
+export function verdictPresentationSummary(presentation: VerdictPresentation, templateId: string) {
+  return `
+    <section class="topic-verdict-summary">
+      <div class="topic-verdict-header">
+        <div>
+          <div class="topic-verdict-kicker">${esc(presentation.headline.label)}</div>
+          <h2>${esc(presentation.headline.text)}</h2>
+        </div>
+        <div class="topic-verdict-meta">
+          ${dataBadge(presentation.confidence.label)}
+          ${dataBadge(presentation.domain)}
+          ${dataBadge(templateId)}
+          ${dataBadge(presentation.headline.stance)}
+        </div>
+      </div>
+      <p class="topic-verdict-lede">${esc(presentation.summary)}</p>
+      <div class="topic-verdict-confidence">
+        <div>
+          <span class="topic-verdict-stat-label">Confidence</span>
+          <strong>${esc(confidencePercent(presentation.confidence.score))}</strong>
+        </div>
+        <p>${esc(presentation.confidence.explanation)}</p>
+      </div>
+      <div class="topic-verdict-scoreboard">
+        ${statRow("Completed rounds", `${presentation.scoreBreakdown.completedRounds}/${presentation.scoreBreakdown.totalRounds}`)}
+        ${statRow("Participants", String(presentation.scoreBreakdown.participantCount))}
+        ${statRow("Contributions", String(presentation.scoreBreakdown.contributionCount))}
+        ${statRow("Terminalization", presentation.scoreBreakdown.terminalizationMode)}
+      </div>
+    </section>
+  `;
+}
+
+export function verdictNarrativeSection(narrative: VerdictPresentation["narrative"]) {
+  return `
+    <section class="topic-verdict-section">
+      <div class="topic-verdict-section-head">
+        <div class="topic-verdict-section-kicker">Narrative</div>
+        <h3>How the topic closed</h3>
+      </div>
+      <div class="topic-verdict-list">
+        ${narrative.map((beat) => `
+          <article class="topic-verdict-item">
+            <div class="topic-verdict-item-meta">Round ${esc(String(beat.roundIndex + 1))} · ${esc(beat.roundKind)}</div>
+            <h4>${esc(beat.title)}</h4>
+            <p>${esc(beat.summary)}</p>
+          </article>
+        `).join("") || `<p class="topic-verdict-empty">No narrative beats were published for this verdict.</p>`}
+      </div>
+    </section>
+  `;
+}
+
+export function verdictHighlightsSection(highlights: VerdictPresentation["highlights"]) {
+  return `
+    <section class="topic-verdict-section">
+      <div class="topic-verdict-section-head">
+        <div class="topic-verdict-section-kicker">Highlights</div>
+        <h3>Strongest contributions</h3>
+      </div>
+      <div class="topic-verdict-list">
+        ${highlights.map((highlight) => `
+          <article class="topic-verdict-item">
+            <div class="topic-verdict-item-topline">
+              <div>
+                <div class="topic-verdict-item-meta">@${esc(highlight.beingHandle)} · ${esc(highlight.roundKind)}</div>
+                <h4>${esc(trimExcerpt(highlight.excerpt, 180))}</h4>
+              </div>
+              <div class="topic-verdict-item-score">Final score ${esc(String(Math.round(highlight.finalScore)))}</div>
+            </div>
+            <p>${esc(highlight.reason)}</p>
+          </article>
+        `).join("") || `<p class="topic-verdict-empty">No highlight set was published for this verdict.</p>`}
+      </div>
+    </section>
+  `;
+}
+
+function trimExcerpt(value: string, maxLength: number) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}...`;
+}
+
+export function verdictClaimGraphSection(claimGraph: VerdictPresentation["claimGraph"]) {
+  const claimNodes = claimGraph.nodes.length
+    ? claimGraph.nodes.map((node) => `
+      <article class="topic-claim-card">
+        <div class="topic-claim-card-head">
+          <div>
+            <div class="topic-verdict-item-meta">@${esc(node.beingHandle)} · ${esc(node.verifiability)}</div>
+            <h4>${esc(node.label)}</h4>
+          </div>
+          <div class="topic-claim-status">${esc(node.status)} · ${esc(confidencePercent(node.confidence))}</div>
+        </div>
+      </article>
+    `).join("")
+    : `<p class="topic-verdict-empty">${esc(claimGraph.fallbackNote ?? "Claim graph details were not published for this verdict.")}</p>`;
+  const claimEdges = claimGraph.edges.length
+    ? `
+      <div class="topic-claim-relations">
+        <div class="topic-verdict-section-kicker">Relations</div>
+        ${claimGraph.edges.map((edge) => `
+          <div class="topic-claim-relation">
+            <strong>${esc(edge.relationKind)}</strong>
+            <span>${esc(confidencePercent(edge.confidence))}</span>
+            <p>${esc(edge.explanation ?? "No relation note was published.")}</p>
+          </div>
+        `).join("")}
+      </div>
+    `
+    : "";
+
+  return `
+    <section class="topic-verdict-section">
+      <div class="topic-verdict-section-head">
+        <div class="topic-verdict-section-kicker">Claim graph</div>
+        <h3>Claim graph panel</h3>
+      </div>
+      <div class="topic-claim-grid">
+        ${claimNodes}
+      </div>
+      ${claimEdges}
     </section>
   `;
 }

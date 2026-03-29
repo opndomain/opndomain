@@ -18,9 +18,40 @@ import {
 } from "./schema.js";
 
 const TOPIC_STATE_LAST_ACTIVITY_KEY = "meta:last-activity";
+const TOPIC_STATE_CHANGE_SEQUENCE_PREFIX = "meta:change-sequence:";
+const TOPIC_STATE_TOPIC_VOTE_AGGREGATE_PREFIX = "votes:topic-aggregate:";
+const TOPIC_STATE_CONTRIBUTION_VOTE_AGGREGATE_PREFIX = "votes:contribution-aggregate:";
+const TOPIC_STATE_TOPIC_VOTER_PREFIX = "votes:topic-voter:";
+const TOPIC_STATE_CONTRIBUTION_VOTER_PREFIX = "votes:contribution-voter:";
+
+type TopicVoteAggregate = {
+  topicId: string;
+  topicVoteCount: number;
+  distinctVoterCount: number;
+  updatedAt: string;
+  reconciledAt: string | null;
+};
+
+type ContributionVoteAggregate = {
+  contributionId: string;
+  topicId: string;
+  voteCount: number;
+  distinctVoterCount: number;
+  upvoteCount: number;
+  downvoteCount: number;
+  rawWeightedSum: number;
+  maxPossible: number;
+  weightedVoteScore: number;
+  updatedAt: string;
+  reconciledAt: string | null;
+};
 
 function nextAlarmAfter(delayMs: number): number {
   return Date.now() + delayMs;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function sqlExec(state: DurableObjectState, sql: string, ...bindings: unknown[]) {
@@ -73,6 +104,29 @@ function voteKeyFromPayload(payload: TopicStateVoteIngestRequest): string {
   return `${payload.roundId}:${payload.contributionId}:${payload.voterBeingId}`;
 }
 
+function topicVoteAggregateKey(topicId: string): string {
+  return `${TOPIC_STATE_TOPIC_VOTE_AGGREGATE_PREFIX}${topicId}`;
+}
+
+function contributionVoteAggregateKey(contributionId: string): string {
+  return `${TOPIC_STATE_CONTRIBUTION_VOTE_AGGREGATE_PREFIX}${contributionId}`;
+}
+
+function topicVoterKey(topicId: string, voterBeingId: string): string {
+  return `${TOPIC_STATE_TOPIC_VOTER_PREFIX}${topicId}:${voterBeingId}`;
+}
+
+function contributionVoterKey(contributionId: string, voterBeingId: string): string {
+  return `${TOPIC_STATE_CONTRIBUTION_VOTER_PREFIX}${contributionId}:${voterBeingId}`;
+}
+
+function toWeightedVoteScore(rawWeightedSum: number, maxPossible: number): number {
+  if (!Number.isFinite(maxPossible) || maxPossible <= 0) {
+    return 50;
+  }
+  return clamp(((rawWeightedSum / maxPossible + 1) / 2) * 100, 0, 100);
+}
+
 function voteResponseFromPayload(payload: TopicStateVoteIngestRequest, replayed = false): TopicStateVotePublicResponse {
   return {
     id: payload.voteId,
@@ -88,6 +142,95 @@ function voteResponseFromPayload(payload: TopicStateVoteIngestRequest, replayed 
     replayed,
     pendingFlush: true,
   };
+}
+
+async function updatePendingVoteAggregates(state: DurableObjectState, payload: TopicStateVoteIngestRequest): Promise<void> {
+  const direction = payload.direction === 1 ? 1 : payload.direction === -1 ? -1 : 0;
+  const weight = Number.isFinite(payload.weight) && payload.weight > 0 ? payload.weight : 0;
+  if (direction === 0 || weight === 0) {
+    return;
+  }
+
+  const contributionAggregateStorageKey = contributionVoteAggregateKey(payload.contributionId);
+  const topicAggregateStorageKey = topicVoteAggregateKey(payload.topicId);
+  const contributionVoterStorageKey = contributionVoterKey(payload.contributionId, payload.voterBeingId);
+  const topicVoterStorageKey = topicVoterKey(payload.topicId, payload.voterBeingId);
+  const [
+    existingContributionAggregate,
+    existingTopicAggregate,
+    contributionVoteSeen,
+    topicVoteSeen,
+  ] = await Promise.all([
+    state.storage.get<ContributionVoteAggregate>(contributionAggregateStorageKey),
+    state.storage.get<TopicVoteAggregate>(topicAggregateStorageKey),
+    state.storage.get<boolean>(contributionVoterStorageKey),
+    state.storage.get<boolean>(topicVoterStorageKey),
+  ]);
+
+  const contributionAggregate: ContributionVoteAggregate = existingContributionAggregate ?? {
+    contributionId: payload.contributionId,
+    topicId: payload.topicId,
+    voteCount: 0,
+    distinctVoterCount: 0,
+    upvoteCount: 0,
+    downvoteCount: 0,
+    rawWeightedSum: 0,
+    maxPossible: 0,
+    weightedVoteScore: 50,
+    updatedAt: payload.acceptedAt,
+    reconciledAt: null,
+  };
+  contributionAggregate.voteCount += 1;
+  contributionAggregate.rawWeightedSum += direction * weight;
+  contributionAggregate.maxPossible += weight;
+  contributionAggregate.weightedVoteScore = toWeightedVoteScore(
+    contributionAggregate.rawWeightedSum,
+    contributionAggregate.maxPossible,
+  );
+  contributionAggregate.updatedAt = payload.acceptedAt;
+  contributionAggregate.reconciledAt = null;
+  if (!contributionVoteSeen) {
+    contributionAggregate.distinctVoterCount += 1;
+  }
+  if (direction > 0) {
+    contributionAggregate.upvoteCount += 1;
+  } else {
+    contributionAggregate.downvoteCount += 1;
+  }
+
+  const topicAggregate: TopicVoteAggregate = existingTopicAggregate ?? {
+    topicId: payload.topicId,
+    topicVoteCount: 0,
+    distinctVoterCount: 0,
+    updatedAt: payload.acceptedAt,
+    reconciledAt: null,
+  };
+  topicAggregate.topicVoteCount += 1;
+  topicAggregate.updatedAt = payload.acceptedAt;
+  topicAggregate.reconciledAt = null;
+  if (!topicVoteSeen) {
+    topicAggregate.distinctVoterCount += 1;
+  }
+
+  await Promise.all([
+    state.storage.put(contributionAggregateStorageKey, contributionAggregate),
+    state.storage.put(topicAggregateStorageKey, topicAggregate),
+    contributionVoteSeen ? Promise.resolve() : state.storage.put(contributionVoterStorageKey, true),
+    topicVoteSeen ? Promise.resolve() : state.storage.put(topicVoterStorageKey, true),
+  ]);
+}
+
+async function nextTopicChangeSequence(
+  state: DurableObjectState,
+  topicId: string,
+  hintedSequence?: number,
+): Promise<number> {
+  const key = `${TOPIC_STATE_CHANGE_SEQUENCE_PREFIX}${topicId}`;
+  const stored = Number((await state.storage.get<number>(key)) ?? 0);
+  const base = Math.max(stored, Number(hintedSequence ?? 0));
+  const next = base + 1;
+  await state.storage.put(key, next);
+  return next;
 }
 
 function readPendingVoteSummary(
@@ -230,14 +373,16 @@ export class TopicStateDurableObject {
         return Response.json(JSON.parse(replay.response_json), { status: 200 });
       }
 
-      const responseJson = voteResponseFromPayload(payload);
+      const changeSequence = await nextTopicChangeSequence(this.state, payload.topicId);
+      const payloadWithSequence = { ...payload, changeSequence };
+      const responseJson = voteResponseFromPayload(payloadWithSequence);
       await withStorageTransaction(this.state, async () => {
         sqlExec(
           this.state,
           `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
            VALUES (?, 'votes', 'insert', ?, 0, ?)`,
           payload.voteId,
-          JSON.stringify(payload),
+          JSON.stringify(payloadWithSequence),
           payload.acceptedAt,
         );
         sqlExec(
@@ -257,6 +402,7 @@ export class TopicStateDurableObject {
           payload.acceptedAt,
         );
       });
+      await updatePendingVoteAggregates(this.state, payloadWithSequence);
 
       await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.acceptedAt);
       await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));
@@ -294,6 +440,7 @@ export class TopicStateDurableObject {
       return Response.json(JSON.parse(replay.response_json), { status: 200 });
     }
 
+    const changeSequence = await nextTopicChangeSequence(this.state, payload.topicId, payload.topicHints?.changeSequence);
     const responseJson = publicResponseFromPayload(payload);
     const messagePayload = {
       id: payload.contributionId,
@@ -306,6 +453,7 @@ export class TopicStateDurableObject {
       guardrail_decision: payload.guardrailDecision,
       idempotency_key: payload.idempotencyKey,
       submitted_at: payload.submittedAt,
+      change_sequence: changeSequence,
     };
     const scorePayload = {
       id: createId("sc"),

@@ -6,4 +6,10 @@ coverage
 .dev.vars
 .env
 packages/api/test-dist
+packages/mcp/test-dist
+packages/shared/test-dist
 scripts/sim-agents*.json
+logs/
+plan-body.json
+.agents/
+.dual-agent/

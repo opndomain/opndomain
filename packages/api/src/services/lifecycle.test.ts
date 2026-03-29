@@ -99,15 +99,23 @@ describe("topic lifecycle sweeps", () => {
     db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
       {
         id: "top_countdown",
+        domain_id: "dom_1",
         status: "open",
+        topic_format: "scheduled_research",
         cadence_family: "scheduled",
+        min_distinct_participants: 3,
+        countdown_seconds: null,
         starts_at: "2026-03-24T12:30:00.000Z",
         join_until: "2026-03-24T12:00:00.000Z",
       },
       {
         id: "top_start",
+        domain_id: "dom_1",
         status: "open",
+        topic_format: "scheduled_research",
         cadence_family: "scheduled",
+        min_distinct_participants: 3,
+        countdown_seconds: null,
         starts_at: "2026-03-24T11:45:00.000Z",
         join_until: "2026-03-24T11:30:00.000Z",
       },
@@ -199,11 +207,78 @@ describe("topic lifecycle sweeps", () => {
     const statements = db.runs.map((statement) => statement.sql);
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'countdown'")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'started', current_round_index = 0")));
-    assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'active' WHERE topic_id = ? AND sequence_index = 0")));
+    assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ?")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'completed'")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ?")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET current_round_index = ?, status = 'started'")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'stalled', stalled_at = ?")));
+  });
+
+  it("starts rolling research topics without stalling and creates one successor", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
+      {
+        id: "top_rolling",
+        domain_id: "dom_1",
+        status: "countdown",
+        topic_format: "rolling_research",
+        cadence_family: "rolling",
+        min_distinct_participants: 5,
+        countdown_seconds: 120,
+        starts_at: "2026-03-24T12:00:00.000Z",
+        join_until: "2026-03-24T12:00:00.000Z",
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 5 }]);
+    db.queueFirst("LEFT JOIN topic_members tm", [{
+      id: "top_rolling",
+      domain_id: "dom_1",
+      title: "Rolling Topic",
+      prompt: "Prompt",
+      template_id: "research",
+      topic_format: "rolling_research",
+      status: "started",
+      cadence_family: "rolling",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 5,
+      countdown_seconds: 120,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: "2026-03-24T12:00:00.000Z",
+      join_until: "2026-03-24T12:00:00.000Z",
+      countdown_started_at: "2026-03-24T11:58:00.000Z",
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-24T11:00:00.000Z",
+      updated_at: "2026-03-24T11:58:00.000Z",
+      creator_being_id: "bng_creator",
+    }]);
+    db.queueFirst("FROM topics\n      WHERE id != ?", [null]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs rc", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", []);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const cacheWrites: Array<{ key: string; value: string }> = [];
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: {
+        get: async () => "0",
+        put: async (key: string, value: string) => {
+          cacheWrites.push({ key, value });
+        },
+      } as unknown as KVNamespace,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:00:00.000Z"),
+    });
+
+    assert.ok(result.mutatedTopicIds.includes("top_rolling"));
+    assert.equal(db.runs.some((run) => run.sql.includes("UPDATE topics SET status = 'stalled'")), false);
+    assert.ok(db.executedBatches.some((batch) => batch.some((entry) => entry.sql.includes("INSERT INTO topics"))));
+    assert.ok(cacheWrites.some((write) => write.key.includes("public-invalidation:top_rolling")));
   });
 
   it("records cron heartbeats in KV", async () => {
@@ -336,6 +411,76 @@ describe("topic lifecycle sweeps", () => {
     );
     assert.ok(db.runs.some((run) => run.sql.includes("UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ?")));
     assert.ok(cacheWrites.some((write) => write.key.includes("public-invalidation:top_1")));
+  });
+
+  it("persists elastic round timing once at activation instead of rewriting pending rounds", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [
+      {
+        id: "rnd_1",
+        topic_id: "top_1",
+        domain_id: "dom_1",
+        sequence_index: 0,
+        status: "active",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T12:00:00.000Z",
+        reveal_at: "2026-03-24T11:00:00.000Z",
+        cadence_preset: "3h",
+        config_json: JSON.stringify({
+          completionStyle: "aggressive",
+          visibility: "open",
+          roundDurationMinutes: 60,
+        }),
+      },
+    ]);
+    db.queueAll("FROM contributions c", [
+      { id: "cnt_1", being_id: "bng_1", visibility: "normal", final_score: 80, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_2", being_id: "bng_2", visibility: "normal", final_score: 70, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_3", being_id: "bng_3", visibility: "normal", final_score: 65, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+    ]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
+      {
+        id: "rnd_1",
+        topic_id: "top_1",
+        sequence_index: 0,
+        status: "completed",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:30:00.000Z",
+        reveal_at: "2026-03-24T11:30:00.000Z",
+        config_json: JSON.stringify({ visibility: "open", roundDurationMinutes: 60 }),
+      },
+      {
+        id: "rnd_2",
+        topic_id: "top_1",
+        sequence_index: 1,
+        status: "pending",
+        starts_at: "2026-03-24T12:00:00.000Z",
+        ends_at: "2026-03-24T13:00:00.000Z",
+        reveal_at: "2026-03-24T12:00:00.000Z",
+        config_json: JSON.stringify({ visibility: "sealed", roundDurationMinutes: 60 }),
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 4 }]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    await sweepTopicLifecycle(
+      {
+        DB: db as never,
+        PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as never,
+        ENABLE_ELASTIC_ROUNDS: true,
+      } as never,
+      { cron: "*/5 * * * *", now: new Date("2026-03-24T11:30:00.000Z") },
+    );
+
+    assert.equal(db.runs.some((run) => run.sql.includes("UPDATE rounds SET starts_at = ?, ends_at = ?, reveal_at = ? WHERE id = ? AND status = 'pending'")), false);
+    const activation = db.runs.find((run) => run.sql.includes("UPDATE rounds SET status = 'active', starts_at = ?, ends_at = ?, reveal_at = ?"));
+    assert.deepEqual(activation?.bindings, [
+      "2026-03-24T11:30:00.000Z",
+      "2026-03-24T12:30:00.000Z",
+      "2026-03-24T12:30:00.000Z",
+      "rnd_2",
+    ]);
   });
 
   it("treats duplicate advancement as a no-op when the completion CAS changes zero rows", async () => {

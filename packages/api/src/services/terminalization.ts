@@ -34,6 +34,7 @@ type RoundSummaryRow = {
 type ContributionRow = {
   id: string;
   being_id: string;
+  being_handle: string;
   round_id: string;
   round_kind: string;
   sequence_index: number;
@@ -50,6 +51,37 @@ type VerdictRow = {
 type ForceFlushResult = {
   flushed: boolean;
   remaining: number;
+};
+
+type VerdictSummary = {
+  leaders: Array<{
+    roundKind: string;
+    contributions: Array<{
+      contributionId: string;
+      beingId: string;
+      beingHandle: string;
+      finalScore: number;
+      excerpt: string;
+    }>;
+  }>;
+  summary: string;
+  narrative: Array<{
+    roundIndex: number;
+    roundKind: string;
+    title: string;
+    summary: string;
+  }>;
+  highlights: Array<{
+    contributionId: string;
+    beingId: string;
+    beingHandle: string;
+    roundKind: string;
+    excerpt: string;
+    finalScore: number;
+    reason: string;
+  }>;
+  participantCount: number;
+  contributionCount: number;
 };
 
 function chooseConfidence(mode: TerminalizationMode, completedRounds: number): VerdictConfidence {
@@ -89,6 +121,7 @@ export async function forceFlushTopicState(env: ApiEnv, topicId: string): Promis
 }
 
 async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: ContributionRow[]) {
+  const visibleContributions = contributions.filter((contribution) => contribution.visibility !== "quarantined");
   const leaders = rounds
     .map((round) => ({
       roundKind: round.round_kind,
@@ -99,6 +132,7 @@ async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: Con
         .map((contribution) => ({
           contributionId: contribution.id,
           beingId: contribution.being_id,
+          beingHandle: contribution.being_handle,
           finalScore: Number(contribution.final_score ?? 0),
           excerpt: contribution.body_clean ?? "",
         })),
@@ -115,7 +149,44 @@ async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: Con
           })
           .join(" | ");
 
-  return { leaders, summary };
+  const narrative = rounds
+    .filter((round) => round.status === "completed")
+    .map((round) => {
+      const ranked = leaders.find((entry) => entry.roundKind === round.round_kind)?.contributions ?? [];
+      const top = ranked[0] ?? null;
+      const excerpt = top?.excerpt.trim() || "No transcript-visible summary was available.";
+      return {
+        roundIndex: round.sequence_index,
+        roundKind: round.round_kind,
+        title: `${round.round_kind.replaceAll("_", " ")} round`,
+        summary: top
+          ? `${ranked.length} top contribution(s) surfaced. Lead signal: ${excerpt.slice(0, 180)}`
+          : "No transcript-visible contributions were available in this round.",
+      };
+    });
+
+  const highlights = leaders
+    .flatMap((round) =>
+      round.contributions.slice(0, 1).map((contribution) => ({
+        contributionId: contribution.contributionId,
+        beingId: contribution.beingId,
+        beingHandle: contribution.beingHandle,
+        roundKind: round.roundKind,
+        excerpt: contribution.excerpt || "No excerpt available.",
+        finalScore: contribution.finalScore,
+        reason: `Highest-scoring visible contribution in the ${round.roundKind.replaceAll("_", " ")} round.`,
+      })),
+    )
+    .slice(0, VERDICT_TOP_CONTRIBUTIONS_PER_ROUND);
+
+  return {
+    leaders,
+    summary,
+    narrative,
+    highlights,
+    participantCount: new Set(visibleContributions.map((contribution) => contribution.being_id)).size,
+    contributionCount: visibleContributions.length,
+  } satisfies VerdictSummary;
 }
 
 async function loadTopicContributions(env: ApiEnv, topicId: string): Promise<ContributionRow[]> {
@@ -125,6 +196,7 @@ async function loadTopicContributions(env: ApiEnv, topicId: string): Promise<Con
       SELECT
         c.id,
         c.being_id,
+        b.handle AS being_handle,
         c.round_id,
         r.round_kind,
         r.sequence_index,
@@ -134,6 +206,7 @@ async function loadTopicContributions(env: ApiEnv, topicId: string): Promise<Con
         c.visibility
       FROM contributions c
       INNER JOIN rounds r ON r.id = c.round_id
+      INNER JOIN beings b ON b.id = c.being_id
       LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
       WHERE c.topic_id = ?
       ORDER BY r.sequence_index ASC, c.submitted_at ASC, c.created_at ASC
@@ -302,6 +375,10 @@ export async function runTerminalizationSequence(
       topContributionsPerRound: verdictPresentation.leaders,
       completedRounds,
       totalRounds: rounds.length,
+      participantCount: verdictPresentation.participantCount,
+      contributionCount: verdictPresentation.contributionCount,
+      narrative: verdictPresentation.narrative,
+      highlights: verdictPresentation.highlights,
       ...(epistemicReasoning ? { epistemic: epistemicReasoning } : {}),
     },
     Boolean(options?.reterminalize),

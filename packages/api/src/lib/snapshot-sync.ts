@@ -6,6 +6,7 @@ import {
   CURATED_OPEN_KEY,
   SNAPSHOT_PENDING_PREFIX,
   SNAPSHOT_PENDING_TTL_SECONDS,
+  buildTopicFormatSummary,
 } from "@opndomain/shared";
 import type { ApiEnv } from "./env.js";
 import { allRows, firstRow, runStatement } from "./db.js";
@@ -17,8 +18,12 @@ type TopicSnapshotRow = {
   title: string;
   prompt: string;
   template_id: string;
+  topic_format: "scheduled_research" | "rolling_research";
   status: string;
+  min_distinct_participants: number;
+  countdown_seconds: number | null;
   current_round_index: number;
+  change_sequence: number;
   updated_at: string;
 };
 
@@ -123,6 +128,7 @@ export async function syncTopicSnapshots(
     env.DB,
     `
       SELECT id, domain_id, title, prompt, template_id, status, current_round_index, updated_at
+             , topic_format, min_distinct_participants, countdown_seconds, change_sequence
       FROM topics
       WHERE id = ?
     `,
@@ -244,6 +250,7 @@ export async function syncTopicSnapshots(
       topicPrompt: topic.prompt,
       templateId: topic.template_id,
       transcriptVersion,
+      changeSequence: topic.change_sequence,
       rounds: roundsWithContributions,
     }),
     {
@@ -259,8 +266,15 @@ export async function syncTopicSnapshots(
       title: topic.title,
       prompt: topic.prompt,
       templateId: topic.template_id,
+      topicFormat: topic.topic_format,
+      formatSummary: buildTopicFormatSummary(
+        topic.topic_format,
+        topic.topic_format === "rolling_research" ? topic.min_distinct_participants : null,
+      ),
       domainId: topic.domain_id,
       status: topic.status,
+      minDistinctParticipants: topic.min_distinct_participants,
+      countdownSeconds: topic.countdown_seconds,
       currentRoundIndex: topic.current_round_index,
       rounds: rounds.map((round) => ({
         roundId: round.id,
@@ -275,6 +289,7 @@ export async function syncTopicSnapshots(
       memberCount: memberCountRow?.count ?? 0,
       contributionCount: contributionCountRow?.count ?? 0,
       transcriptVersion,
+      changeSequence: topic.change_sequence,
       verdict: verdict
         ? {
             confidence: verdict.confidence,

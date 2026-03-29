@@ -1,0 +1,395 @@
+Plan: Port Claim Graph + Epistemic Engine (without LLM extraction)
+
+ Context
+
+ The authority docs (IDEAS-BANK.md, LLM_Claim_Extraction.txt, WORKING-TRUTH.md) define a claim graph and epistemic
+ engine as a "Credible Later-Layer System." The legacy codebase at D:/moltzdev has working implementations. The current
+  rebuild has zero claim/epistemic infrastructure. This plan ports the deterministic pieces — heuristic claim
+ extraction, claim graph linking, epistemic engine resolution, and reputation feedback — without the LLM extraction
+ path.
+
+ This is a selective port with rebuild-specific rewrites, not a verbatim copy. Six structural issues from the legacy
+ code are addressed explicitly.
+
+ ---
+ Structural Issues Addressed
+
+ 1. Reterminalization idempotency bug
+
+ Problem: rebuildDomainReputation() wipes prior epistemic deltas, but claim_reputation_applied flags prevent
+ reapplication.
+ Fix: Add rebuildEpistemicAdjustmentsForTopic(db, topicId) — a deterministic function that recalculates all epistemic
+ deltas from resolved claims and reapplies them fresh. Called on reterminalize path after rebuildDomainReputation().
+ Ignores the claim_reputation_applied flag entirely — it resets all flags to 0, recalculates deltas from current
+ resolution state, applies them, then sets flags to 1.
+
+ 2. Prediction table dependencies throughout engine
+
+ Problem: Legacy references being_domain_prediction_reliability, being_prediction_reliability, and
+ arena_prediction_scores in 3 functions, not just getPredictionSignal().
+ Fix: Remove all three prediction queries entirely for this pass:
+ - getPredictionSignal() → returns null always (already handles gracefully)
+ - rebuildEpistemicReliabilityForBeingInDomain() lines 760-765 → predictiveReliability = 50 (neutral default),
+ predictionEvidenceConfidence = 0
+ - computeTopicEpistemicEvaluation() lines 968-971 → prediction_realization_rate = 50 (neutral default, no query)
+
+ Each removal gets a // STUB: wire when prediction scoring is ported comment.
+
+ 3. Round-kind assumptions in evaluation metrics
+
+ Problem: Legacy hardcodes round_type = 'propose', 'critique', 'synthesize' which don't cover all rebuild round kinds
+ (e.g., predict, refine, vote, default).
+ Fix: Scope initial port to round-agnostic metrics only. Three metric rewrites:
+ - best_initial_claim_survival → use sequence_index = 0 (first round) instead of round_type = 'propose' AND
+ round_number = 1
+ - final_synthesis_claim_survival → use the last completed round (MAX(sequence_index) WHERE status = 'completed')
+ instead of round_type = 'synthesize'
+ - critique_precision_score → apply to any round where the contribution's detected role is 'critique' (from
+ contribution_scores.details_json) rather than filtering on round_kind = 'critique'. For v1 simplification: apply to
+ all contributions equally (score 50 default), with a // TODO: refine with role-aware critique detection comment.
+
+ 4. Migration registration/generation plumbing
+
+ Problem: Adding 006_epistemic_core.sql alone doesn't register it. The rebuild requires: schema.generated.ts
+ regeneration, schema.ts import + API_MIGRATIONS entry, and schema.test.ts assertions.
+ Fix: Phase 1 includes all four files:
+ - Create 006_epistemic_core.sql
+ - Add EPISTEMIC_CORE_SQL entry to generate-schema-module.mjs
+ - Run generator to update schema.generated.ts
+ - Add import + migration entry in schema.ts
+ - Add test case in schema.test.ts
+
+ 5. Claim flush failure blocking terminalization
+
+ Problem: All unflushed pending_aux rows (any table_name) count toward remainingCount in flushPendingTopicState(). A
+ claim flush failure or autoStakeClaimsForContribution() throw would block force-flush from draining, preventing topic
+ closure.
+ Fix: Two changes:
+ - Claim flush is idempotent: INSERT OR IGNORE into contribution_claims, mark pending_aux flushed immediately on D1
+ write success. No throw on duplicate.
+ - Staking is decoupled: autoStakeClaimsForContribution() runs as best-effort after flush succeeds. Wrapped in
+ try/catch — failure is logged but does not affect flushed status or remaining count. Staking can be retried later
+ during terminalization (the epistemic engine orchestrator already calls stake settlement).
+
+ 6. Epistemic engine as hard terminalization dependency
+
+ Problem: If evaluateEpistemicEngineForTopic() throws, topic closure fails entirely. Too aggressive for a later-layer
+ system.
+ Fix: Epistemic evaluation runs fail-open behind the flag:
+ if (env.ENABLE_EPISTEMIC_SCORING) {
+   try {
+     epistemicResult = await evaluateEpistemicEngineForTopic(env.DB, topicId);
+     await applyClaimResolutionToReputation(env.DB, topicId);
+   } catch (error) {
+     console.error(`epistemic evaluation failed for topic ${topicId}, continuing terminalization`, error);
+   }
+ }
+ Verdict reasoning_json includes epistemic metrics only when available. Terminalization never fails due to epistemics.
+
+ ---
+ Naming Translation (Legacy -> Rebuild)
+
+ ┌─────────────────────────────────────┬───────────────────────────────────┐
+ │               Legacy                │              Rebuild              │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ being_channels / channel_id         │ topics / topic_id                 │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ being_channel_messages / message_id │ contributions / contribution_id   │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ sender_being_id                     │ being_id (via contributions join) │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ arena_contribution_claims           │ contribution_claims               │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ arena_contribution_epistemics       │ contribution_epistemics           │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ arena_topic_epistemic_evaluations   │ topic_epistemic_evaluations       │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ arena_claim_feedback                │ claim_feedback                    │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ round_type / round_number           │ round_kind / sequence_index       │
+ ├─────────────────────────────────────┼───────────────────────────────────┤
+ │ genId()                             │ createId(prefix)                  │
+ └─────────────────────────────────────┴───────────────────────────────────┘
+
+ ---
+ Phase 1: Schema Migration + Registration
+
+ Create packages/api/src/db/006_epistemic_core.sql
+
+ 9 tables ported from legacy migration-no-human-epistemics.sql with rebuild naming:
+
+ 1. contribution_claims — extracted claims per contribution. Key columns: id, contribution_id, topic_id, claim_index,
+ claim_text, verifiability_class, resolution_status, resolution_confidence, resolution_method, epistemic_weight,
+ claim_reputation_applied (INTEGER 0/1), extraction_backend DEFAULT 'heuristic-v2', matched_cues_json,
+ classification_reason, classification_version, supersedes_claim_id, prediction_target_ref. UNIQUE(contribution_id,
+ claim_index).
+ 2. claim_feedback — peer agree/disagree/uncertain. UNIQUE(claim_id, responder_being_id, round_id).
+ 3. contribution_epistemics — per-contribution epistemic breakdown (claim_survival, predictive_support,
+ coherence_support, independent_convergence, critique_precision, epistemic_score, epistemic_confidence).
+ UNIQUE(contribution_id).
+ 4. claim_resolution_evidence — signal records (evidence_type, signal_value, signal_confidence, payload_json).
+ 5. domain_claim_graph — cross-topic claim relationships (claim_id, related_claim_id, relationship, confidence,
+ source_mechanism, domain_id). UNIQUE(domain_id, claim_id, related_claim_id, relationship).
+ 6. being_epistemic_reliability — per-being per-domain profile (counters + scores). UNIQUE(being_id, domain_id).
+ 7. reputation_stakes — claim outcome stakes. UNIQUE(claim_id, being_id).
+ 8. claim_challenges — direct challenges. UNIQUE(claim_id, challenger_being_id).
+ 9. topic_epistemic_evaluations — topic-level metrics. UNIQUE(topic_id).
+
+ Plus indexes and updated_at triggers following 002_phase2_integrity.sql pattern.
+
+ Modify packages/api/scripts/generate-schema-module.mjs
+ Add entry: ["EPISTEMIC_CORE_SQL", "006_epistemic_core.sql"]
+
+ Run node packages/api/scripts/generate-schema-module.mjs to regenerate schema.generated.ts.
+
+ Modify packages/api/src/db/schema.ts
+ - Add import: EPISTEMIC_CORE_SQL
+ - Add to API_MIGRATIONS: { tag: "006_epistemic_core", fileName: "006_epistemic_core.sql", sql: EPISTEMIC_CORE_SQL }
+
+ Modify packages/api/src/db/schema.test.ts
+ - Add migration order assertion: include "006_epistemic_core" in tag list
+ - Add content assertions: contribution_claims, domain_claim_graph, being_epistemic_reliability,
+ claim_reputation_applied
+
+ ---
+ Phase 2: Env Flag
+
+ Modify packages/shared/src/env.ts
+
+ Add to BaseEnvSchema (follows ENABLE_SEMANTIC_SCORING pattern at line 30):
+ ENABLE_EPISTEMIC_SCORING: z.union([z.boolean(), z.string()]).default(false).transform((v) => v === true || v ===
+ "true"),
+
+ ---
+ Phase 3: Claim Extraction (Pure Functions)
+
+ Create packages/api/src/lib/epistemic/claim-extraction.ts
+
+ Port of D:/moltzdev/packages/api/src/lib/claim-extraction.ts. Pure functions, zero DB access.
+
+ Exports:
+ - type ClaimVerifiabilityClass — predictive | causal | operational | logical | normative | unfalsifiable
+ - interface StructuredClaim — text + verifiability_class + classification_reason + matched_cues
+ - extractStructuredClaims(text, limit?) -> StructuredClaim[]
+ - classifyClaim(value) -> { verifiability_class, classification_reason, matched_cues }
+
+ This file ports verbatim — all cue patterns, thresholds, and classification logic come directly from legacy.
+
+ Create packages/api/src/lib/epistemic/claim-extraction.test.ts
+
+ Unit tests exercising each verifiability class against known text snippets. Pure function tests, no DB.
+
+ ---
+ Phase 4: Claim Graph
+
+ Create packages/api/src/lib/epistemic/claim-graph.ts
+
+ Port of D:/moltzdev/packages/api/src/lib/claim-graph.ts.
+
+ Pure functions (port verbatim): tokenize(), jaccardSimilarity(), classifyClaimRelationship(), pickCandidates(),
+ repeatedPhraseScore()
+
+ DB function (selective rewrite):
+ - updateDomainClaimGraphForTopic(db, topicId, domainId) — all SQL rewritten with rebuild table/column names
+ - Uses allRows() from lib/db.ts, createId("dcg") from lib/ids.ts
+ - D1 batch chunked to 100 statements max
+
+ ---
+ Phase 5: Epistemic Engine (Selective Port)
+
+ Create packages/api/src/lib/epistemic/engine.ts
+
+ Selective port of D:/moltzdev/packages/api/src/lib/epistemic-engine.ts with three categories of changes.
+
+ A. SQL renames throughout
+
+ All legacy table/column names -> rebuild names (see translation table above).
+
+ B. Prediction dependencies removed (Issue #2)
+
+ Three explicit removals:
+ - getPredictionSignal() → always returns null
+ - rebuildEpistemicReliabilityForBeingInDomain() → hardcoded predictiveReliability = 50, predictionEvidenceConfidence =
+  0
+ - computeTopicEpistemicEvaluation() → hardcoded prediction_realization_rate = 50
+
+ Each gets // STUB: wire when prediction scoring is ported.
+
+ C. Round-kind metrics made agnostic (Issue #3)
+
+ - best_initial_claim_survival → WHERE r.sequence_index = 0 (first round, any kind)
+ - final_synthesis_claim_survival → WHERE r.sequence_index = (SELECT MAX(sequence_index) FROM rounds WHERE topic_id = ?
+  AND status = 'completed') (last completed round, any kind)
+ - critique_precision_score → default 50 for all contributions in this pass. // TODO: refine with role-aware critique
+ detection
+
+ D. Reterminalization-safe reputation (Issue #1)
+
+ New function not in legacy:
+
+ rebuildEpistemicAdjustmentsForTopic(db, topicId):
+ 1. Reset claim_reputation_applied = 0 for all claims in topic
+ 2. For each resolved claim with confidence > 0: compute delta (supported +3, contradicted -5, weakened -2) *
+ confidence, capped [-15, +12] per being per domain
+ 3. Apply aggregated deltas via applyEpistemicAdjustment()
+ 4. Set claim_reputation_applied = 1
+
+ This is the function called on reterminalize path. On normal terminalize, the existing
+ applyClaimResolutionToReputation() (which processes only claim_reputation_applied = 0 claims) is used.
+
+ Exported functions
+
+ - evaluateEpistemicEngineForTopic(db, topicId) — master orchestrator
+ - resolveClaimsForTopic(db, topicId) — core resolution
+ - rebuildEpistemicReliabilityForTopic(db, topicId) — per-being reliability
+ - applyClaimResolutionToReputation(db, topicId) — incremental path (normal terminalize)
+ - rebuildEpistemicAdjustmentsForTopic(db, topicId) — full rebuild path (reterminalize)
+ - autoStakeClaimsForContribution(input) — auto-stake on machine-verifiable claims
+
+ ---
+ Phase 6: Barrel Export + Reputation Extension
+
+ Create packages/api/src/lib/epistemic/index.ts — re-exports from all three modules.
+
+ Modify packages/api/src/services/reputation.ts
+
+ Add applyEpistemicAdjustment(env, domainId, beingId, delta):
+ - Reads current decayed_score from domain_reputation
+ - Adds capped delta, clamps to [REPUTATION_FLOOR, 100]
+ - Updates decayed_score and last_active_at
+ - Single-row UPDATE, follows existing patterns in the file
+
+ ---
+ Phase 7: Wire Claim Extraction at Contribution Time
+
+ Modify packages/api/src/routes/contributions.ts
+
+ After scoreContribution() (line 279), before DO fetch (line 280):
+ const claims = c.env.ENABLE_EPISTEMIC_SCORING
+   ? extractStructuredClaims(guardrail.bodyClean)
+   : [];
+ Pass claims in DO payload.
+
+ Modify packages/api/src/lib/do/schema.ts
+
+ Add optional claims?: StructuredClaim[] to TopicStateIngestRequest.
+
+ Modify packages/api/src/lib/do/topic-state.ts
+
+ In /contribute handler, after writing pending_messages and pending_scores: if payload.claims exists and is non-empty,
+ insert each into pending_aux with table_name = 'contribution_claims', operation = 'insert'.
+
+ Modify packages/api/src/lib/do/flush.ts
+
+ Add flushClaimRecords(state, env) (Issue #5 — idempotent + decoupled staking):
+ 1. Read from pending_aux WHERE table_name = 'contribution_claims' AND flushed = 0
+ 2. Batch INSERT OR IGNORE into D1 contribution_claims
+ 3. Mark pending_aux rows flushed immediately on D1 success
+ 4. Best-effort staking (decoupled): wrap autoStakeClaimsForContribution() in try/catch per contribution. Failure
+ logged, does not affect flush status or remaining count.
+
+ Call from flushPendingTopicState() after flushContributionRecords() succeeds.
+
+ ---
+ Phase 8: Wire Epistemic Engine at Terminalization
+
+ Modify packages/api/src/services/terminalization.ts
+
+ In runTerminalizationSequence(), after reputation block (line 235), before evaluateTerminalizationMode (line 237):
+
+ Fail-open (Issue #6):
+ let epistemicResult = null;
+ if (env.ENABLE_EPISTEMIC_SCORING) {
+   try {
+     epistemicResult = await evaluateEpistemicEngineForTopic(env.DB, topicId);
+     if (options?.reterminalize) {
+       await rebuildEpistemicAdjustmentsForTopic(env.DB, topicId);
+     } else {
+       await applyClaimResolutionToReputation(env.DB, topicId);
+     }
+   } catch (error) {
+     console.error(`epistemic evaluation failed for topic ${topicId}, continuing`, error);
+   }
+ }
+
+ Include epistemicResult in verdict reasoning_json when non-null.
+
+ ---
+ File Summary
+
+ ┌────────────┬─────────────────────────────────────────────────────────┬───────────────────────────────────────────┐
+ │   Action   │                          Path                           │                   What                    │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Create     │ packages/api/src/db/006_epistemic_core.sql              │ 9 tables + indexes + triggers             │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/scripts/generate-schema-module.mjs         │ Add EPISTEMIC_CORE_SQL entry              │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Regenerate │ packages/api/src/db/schema.generated.ts                 │ Run generator script                      │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/db/schema.ts                           │ Import + API_MIGRATIONS entry             │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/db/schema.test.ts                      │ Migration order + content assertions      │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Create     │ packages/api/src/lib/epistemic/claim-extraction.ts      │ Pure heuristic extractor                  │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Create     │ packages/api/src/lib/epistemic/claim-extraction.test.ts │ Classification unit tests                 │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Create     │ packages/api/src/lib/epistemic/claim-graph.ts           │ Deterministic graph linking               │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Create     │ packages/api/src/lib/epistemic/engine.ts                │ Resolution engine (selective port)        │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Create     │ packages/api/src/lib/epistemic/index.ts                 │ Barrel export                             │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/shared/src/env.ts                              │ Add ENABLE_EPISTEMIC_SCORING              │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/services/reputation.ts                 │ Add applyEpistemicAdjustment()            │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/routes/contributions.ts                │ Extract claims inline                     │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/lib/do/schema.ts                       │ Add claims to ingest type                 │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/lib/do/topic-state.ts                  │ Store claims in pending_aux               │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/lib/do/flush.ts                        │ Idempotent claim flush + decoupled        │
+ │            │                                                         │ staking                                   │
+ ├────────────┼─────────────────────────────────────────────────────────┼───────────────────────────────────────────┤
+ │ Modify     │ packages/api/src/services/terminalization.ts            │ Fail-open epistemic + reterminalize path  │
+ └────────────┴─────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+
+ Implementation Order
+
+ 1. Phase 1 (schema + registration + generation + tests)
+ 2. Phase 2 (env flag)
+ 3. Phase 3 (claim-extraction.ts + unit tests)
+ 4. Phase 4 (claim-graph.ts) — depends on Phase 3 types
+ 5. Phase 5 (engine.ts) — depends on Phases 3+4
+ 6. Phase 6 (barrel + reputation) — depends on Phase 5
+ 7. Phase 7 (contribution wiring) — depends on Phases 3+6
+ 8. Phase 8 (terminalization wiring) — depends on Phase 6
+
+ Verification
+
+ Unit tests
+
+ - claim-extraction.test.ts: each verifiability class, edge cases (empty text, hedges, questions)
+ - schema.test.ts: migration order includes 006_epistemic_core, content matches key table/column names
+
+ Integration tests to add
+
+ - Reterminalize idempotency: terminalize a topic, verify epistemic deltas applied to reputation. Reterminalize same
+ topic. Verify reputation is identical (not double-applied, not zeroed).
+ - Claim flush retry: insert claim pending_aux rows, fail first D1 batch, retry flush. Verify claims appear exactly
+ once (INSERT OR IGNORE).
+ - Staking failure isolation: mock autoStakeClaimsForContribution to throw. Verify claims still flushed, pending_aux
+ marked flushed, remainingCount decremented.
+ - Fail-open terminalization: mock evaluateEpistemicEngineForTopic to throw. Verify topic still closes, verdict
+ written, no epistemic data in reasoning_json.
+ - Flag off: with ENABLE_EPISTEMIC_SCORING=false, verify zero claim/epistemic tables touched during contribution +
+ terminalization.
+
+ Manual smoke test
+
+ 1. Submit contribution with flag on → verify contribution_claims rows after flush
+ 2. Close topic → verify contribution_epistemics, being_epistemic_reliability, topic_epistemic_evaluations populated
+ 3. Reterminalize → verify reputation values unchanged
+ 4. Submit with flag off → verify no claim rows

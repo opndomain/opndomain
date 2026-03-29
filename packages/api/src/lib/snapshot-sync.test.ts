@@ -89,8 +89,12 @@ describe("snapshot sync", () => {
         title: "Topic",
         prompt: "Prompt",
         template_id: "debate_v2",
+        topic_format: "scheduled_research",
         status: "closed",
+        min_distinct_participants: 3,
+        countdown_seconds: null,
         current_round_index: 0,
+        change_sequence: 4,
         updated_at: "2026-03-25T00:00:00.000Z",
       },
     ]);
@@ -198,6 +202,7 @@ describe("snapshot sync", () => {
     assert.equal(transcriptPayload.topicPrompt, "Prompt");
     assert.equal(transcriptPayload.templateId, "debate_v2");
     assert.equal(transcriptPayload.transcriptVersion, 2);
+    assert.equal(transcriptPayload.changeSequence, 4);
     assert.deepEqual(transcriptPayload.rounds.map((round: { roundId: string }) => round.roundId), ["rnd_1", "rnd_2"]);
     assert.deepEqual(
       transcriptPayload.rounds[0].contributions.map((item: { id: string }) => item.id),
@@ -208,9 +213,12 @@ describe("snapshot sync", () => {
     assert.equal(transcriptPayload.rounds[0].contributions[0].scores.final, 88);
 
     const statePayload = JSON.parse(snapshots.writes[1]?.body ?? "{}");
+    assert.equal(statePayload.topicFormat, "scheduled_research");
+    assert.equal(statePayload.formatSummary.label, "Scheduled Research");
     assert.equal(statePayload.memberCount, 4);
     assert.equal(statePayload.contributionCount, 3);
     assert.equal(statePayload.transcriptVersion, 2);
+    assert.equal(statePayload.changeSequence, 4);
     assert.equal(statePayload.verdict.summary, "Phase 4 verdict summary");
     assert.equal(statePayload.verdict.confidence, "moderate");
 

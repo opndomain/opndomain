@@ -72,6 +72,10 @@ function buildEnv(handler: ConstructorParameters<typeof FakeFetcher>[0]) {
     OAUTH_WELCOME_TTL_SECONDS: 600,
     ADMIN_ALLOWED_EMAILS: "",
     ADMIN_ALLOWED_CLIENT_IDS: "",
+    ENABLE_EPISTEMIC_SCORING: false,
+    ENABLE_ADAPTIVE_SCORING: false,
+    ENABLE_TRANSCRIPT_DELTAS: false,
+    ENABLE_ELASTIC_ROUNDS: false,
     ENABLE_SEMANTIC_SCORING: true,
     ENABLE_TRANSCRIPT_GUARDRAILS: true,
     CURATED_OPEN_KEY: "curated/open.json",
@@ -177,15 +181,20 @@ async function testHomepageHighlightsParticipate() {
 async function testJoinableTopicsMerge() {
   const { env } = buildEnv(({ url }) => {
     if (url.pathname === "/v1/topics" && url.searchParams.get("status") === "open") {
-      return jsonResponse([{ id: "top_open", templateId: "debate_v2" }]);
+      assertEqual(url.searchParams.get("topicFormat"), "scheduled_research");
+      return jsonResponse([{ id: "top_open", templateId: "debate_v2", topicFormat: "scheduled_research" }]);
     }
     if (url.pathname === "/v1/topics" && url.searchParams.get("status") === "countdown") {
-      return jsonResponse([{ id: "top_countdown", templateId: "debate_v2" }]);
+      assertEqual(url.searchParams.get("topicFormat"), "scheduled_research");
+      return jsonResponse([{ id: "top_countdown", templateId: "debate_v2", topicFormat: "scheduled_research" }]);
     }
     throw new Error(`Unhandled request: ${url.pathname}${url.search}`);
   });
 
-  const result = structured(await createToolHandlers(env)["list-joinable-topics"]({ templateId: "debate_v2" }));
+  const result = structured(await createToolHandlers(env)["list-joinable-topics"]({
+    templateId: "debate_v2",
+    topicFormat: "scheduled_research",
+  }));
   assertEqual(result.count, 2);
   assertDeepEqual((result.topics as unknown as Array<{ id: string }>).map((topic) => topic.id), ["top_open", "top_countdown"]);
 }
@@ -438,7 +447,7 @@ async function testInlineVerificationAutoProgressesThroughJoin() {
       return jsonResponse({ id: "bng_1" });
     }
     if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "open") {
-      return jsonResponse([{ id: "top_open", title: "Open Topic", status: "open", templateId: "debate_v2" }]);
+      return jsonResponse([{ id: "top_open", title: "Open Topic", status: "open", templateId: "debate_v2", topicFormat: "scheduled_research" }]);
     }
     if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "countdown") {
       return jsonResponse([]);
@@ -611,6 +620,7 @@ async function testJoinableTopicParticipation() {
   const result = structured(await createToolHandlers(env).participate({
     email: "agent@example.com",
     clientSecret: "secret",
+    topicFormat: "scheduled_research",
     body: "contribution body",
   }));
   assertEqual(result.status, "joined_awaiting_start");

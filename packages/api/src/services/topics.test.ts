@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
 import { TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
 import { ApiError } from "../lib/errors.js";
-import { createTopic, getTopic, getTopicContext, joinTopic, listTopics, updateTopic } from "./topics.js";
+import { createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, updateTopic } from "./topics.js";
+
+const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: "spki", format: "pem" },
+  privateKeyEncoding: { type: "pkcs8", format: "pem" },
+});
 
 class FakePreparedStatement {
   constructor(
@@ -91,6 +98,10 @@ const agent = {
 function buildEnv(db: FakeDb) {
   return {
     DB: db as unknown as D1Database,
+    JWT_AUDIENCE: "https://api.opndomain.com",
+    JWT_ISSUER: "https://api.opndomain.com",
+    JWT_PUBLIC_KEY_PEM: publicKey,
+    JWT_PRIVATE_KEY_PEM: privateKey,
   } as never;
 }
 
@@ -101,10 +112,13 @@ function queueJoinPrereqs(db: FakeDb, status: string) {
     title: "Topic",
     prompt: "Prompt",
     template_id: "debate",
+    topic_format: "scheduled_research",
     status,
     cadence_family: "quorum",
     cadence_preset: "3h",
     cadence_override_minutes: null,
+    min_distinct_participants: 3,
+    countdown_seconds: null,
     min_trust_tier: "supervised",
     visibility: "public",
     current_round_index: 0,
@@ -193,10 +207,13 @@ describe("updateTopic schedule rewrites", () => {
         title: "Topic",
         prompt: "Prompt",
         template_id: "debate_v2",
+        topic_format: "scheduled_research",
         status: "open",
         cadence_family: "scheduled",
         cadence_preset: null,
         cadence_override_minutes: 1,
+        min_distinct_participants: 3,
+        countdown_seconds: null,
         min_trust_tier: "supervised",
         visibility: "public",
         current_round_index: 0,
@@ -214,10 +231,13 @@ describe("updateTopic schedule rewrites", () => {
         title: "Topic",
         prompt: "Prompt",
         template_id: "debate_v2",
+        topic_format: "scheduled_research",
         status: "open",
         cadence_family: "scheduled",
         cadence_preset: null,
         cadence_override_minutes: 1,
+        min_distinct_participants: 3,
+        countdown_seconds: null,
         min_trust_tier: "supervised",
         visibility: "public",
         current_round_index: 0,
@@ -301,6 +321,44 @@ describe("updateTopic schedule rewrites", () => {
       "rnd_2",
     ]);
   });
+
+  it("locks scheduled research prompt edits after a non-creator joins", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "open",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: 1,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: "2026-03-25T00:30:00.000Z",
+      join_until: "2026-03-25T00:15:00.000Z",
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueFirst("WHERE topic_id = ? AND role != 'creator'", [{ count: 1 }]);
+
+    await assert.rejects(
+      updateTopic(buildEnv(db), "top_1", { prompt: "Changed prompt" }),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 403 &&
+        error.code === "forbidden" &&
+        error.message === "Scheduled Research topics lock prompt and schedule edits after external enrollment begins.",
+    );
+  });
 });
 
 describe("createTopic round config persistence", () => {
@@ -338,10 +396,13 @@ describe("createTopic round config persistence", () => {
         title: "Topic",
         prompt: "Prompt",
         template_id: "debate_v2",
+        topic_format: "scheduled_research",
         status: "open",
         cadence_family: "scheduled",
         cadence_preset: null,
         cadence_override_minutes: null,
+        min_distinct_participants: 3,
+        countdown_seconds: null,
         min_trust_tier: "supervised",
         visibility: "public",
         current_round_index: 0,
@@ -374,6 +435,7 @@ describe("createTopic round config persistence", () => {
       title: "Topic",
       prompt: "Prompt",
       templateId: "debate_v2",
+      topicFormat: "scheduled_research",
       minTrustTier: "supervised",
     });
 
@@ -447,14 +509,17 @@ describe("createTopic round config persistence", () => {
       {
         id: "top_created_1",
         domain_id: "dom_1",
-        title: "Topic",
-        prompt: "Prompt",
-        template_id: "debate_v2",
-        status: "open",
-        cadence_family: "scheduled",
-        cadence_preset: null,
-        cadence_override_minutes: null,
-        min_trust_tier: "supervised",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "open",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
         visibility: "public",
         current_round_index: 0,
         starts_at: "2026-03-25T00:30:00.000Z",
@@ -471,10 +536,13 @@ describe("createTopic round config persistence", () => {
         title: "Topic",
         prompt: "Prompt",
         template_id: "chaos",
+        topic_format: "rolling_research",
         status: "open",
         cadence_family: "rolling",
         cadence_preset: null,
         cadence_override_minutes: null,
+        min_distinct_participants: 5,
+        countdown_seconds: 120,
         min_trust_tier: "supervised",
         visibility: "unlisted",
         current_round_index: 0,
@@ -494,6 +562,7 @@ describe("createTopic round config persistence", () => {
       title: "Sealed Topic",
       prompt: "Prompt",
       templateId: "debate_v2",
+      topicFormat: "scheduled_research",
       minTrustTier: "supervised",
     });
 
@@ -502,6 +571,8 @@ describe("createTopic round config persistence", () => {
       title: "Open Topic",
       prompt: "Prompt",
       templateId: "chaos",
+      topicFormat: "rolling_research",
+      countdownSeconds: 120,
       minTrustTier: "supervised",
     });
 
@@ -525,10 +596,13 @@ describe("topic read contracts", () => {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate",
+      topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quorum",
       cadence_preset: "3h",
       cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
       min_trust_tier: "supervised",
       visibility: "public",
       current_round_index: 0,
@@ -545,6 +619,8 @@ describe("topic read contracts", () => {
 
     assert.equal(topics.length, 1);
     assert.equal(topics[0]?.domainSlug, "ai-safety");
+    assert.equal(topics[0]?.topicFormat, "scheduled_research");
+    assert.equal(topics[0]?.formatSummary.label, "Scheduled Research");
     const query = db.allCalls.at(-1);
     assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ?"));
     assert.deepEqual(query?.bindings, ["started", "ai-safety"]);
@@ -560,10 +636,13 @@ describe("topic read contracts", () => {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate",
+      topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quorum",
       cadence_preset: "3h",
       cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
       min_trust_tier: "supervised",
       visibility: "public",
       current_round_index: 0,
@@ -581,6 +660,7 @@ describe("topic read contracts", () => {
 
     assert.equal(topic.domainSlug, "ai-safety");
     assert.equal(topic.domainName, "AI Safety");
+    assert.equal(topic.topicFormat, "scheduled_research");
   });
 
   it("returns populated domain metadata for topic context", async () => {
@@ -593,10 +673,13 @@ describe("topic read contracts", () => {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate",
+      topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quorum",
       cadence_preset: "3h",
       cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
       min_trust_tier: "supervised",
       visibility: "public",
       current_round_index: 0,
@@ -617,6 +700,7 @@ describe("topic read contracts", () => {
 
     assert.equal(topic.domainSlug, "ai-safety");
     assert.equal(topic.domainName, "AI Safety");
+    assert.equal(topic.topicFormat, "scheduled_research");
   });
 
   it("adds vote metadata and eligible targets when an owned being is supplied", async () => {
@@ -629,10 +713,13 @@ describe("topic read contracts", () => {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate_v2",
+      topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quality_gated",
       cadence_preset: "3h",
       cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
       min_trust_tier: "supervised",
       visibility: "public",
       current_round_index: 1,
@@ -732,5 +819,282 @@ describe("topic read contracts", () => {
     assert.equal(voteTarget.beingHandle, "bravo");
     assert.equal(topic.domainSlug, "ai-safety");
     assert.equal(topic.members[0]?.ownedByCurrentAgent, true);
+  });
+});
+
+describe("topic transcript reads", () => {
+  it("returns a paginated full transcript with a signed cursor", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      change_sequence: 2,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id", [
+      {
+        id: "cnt_1",
+        round_id: "rnd_1",
+        being_id: "bng_1",
+        being_handle: "alpha",
+        body_clean: "Body 1",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:01:00.000Z",
+        heuristic_score: 80,
+        live_score: 82,
+        final_score: 88,
+        reveal_at: "2026-03-25T00:00:00.000Z",
+        sequence_index: 0,
+        round_kind: "propose",
+        round_status: "completed",
+        round_visibility: "open",
+      },
+      {
+        id: "cnt_2",
+        round_id: "rnd_1",
+        being_id: "bng_2",
+        being_handle: "bravo",
+        body_clean: "Body 2",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:02:00.000Z",
+        heuristic_score: 70,
+        live_score: 72,
+        final_score: 75,
+        reveal_at: "2026-03-25T00:00:00.000Z",
+        sequence_index: 0,
+        round_kind: "propose",
+        round_status: "completed",
+        round_visibility: "open",
+      },
+    ]);
+
+    const transcript = await getTopicTranscript(buildEnv(db), agent as never, "top_1", { limit: 1 });
+
+    assert.equal(transcript.changeSequence, 2);
+    assert.equal(transcript.rounds.length, 1);
+    assert.equal(transcript.rounds[0]?.contributions.length, 1);
+    assert.equal(transcript.rounds[0]?.contributions[0]?.id, "cnt_1");
+    assert.equal(typeof transcript.page.nextCursor, "string");
+  });
+
+  it("returns delta transcript rows from a since sequence", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      change_sequence: 2,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id", [
+      {
+        id: "cnt_1",
+        round_id: "rnd_1",
+        being_id: "bng_1",
+        being_handle: "alpha",
+        body_clean: "Body 1",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:01:00.000Z",
+        heuristic_score: 80,
+        live_score: 82,
+        final_score: 88,
+        reveal_at: "2026-03-25T00:00:00.000Z",
+        sequence_index: 0,
+        round_kind: "propose",
+        round_status: "completed",
+        round_visibility: "open",
+      },
+      {
+        id: "cnt_2",
+        round_id: "rnd_2",
+        being_id: "bng_2",
+        being_handle: "bravo",
+        body_clean: "Body 2",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:02:00.000Z",
+        heuristic_score: 70,
+        live_score: 72,
+        final_score: 75,
+        reveal_at: "2026-03-25T00:00:00.000Z",
+        sequence_index: 1,
+        round_kind: "critique",
+        round_status: "active",
+        round_visibility: "open",
+      },
+    ]);
+
+    const transcript = await getTopicTranscript(buildEnv(db), agent as never, "top_1", { since: 1, limit: 10 });
+
+    assert.equal(transcript.delta.available, true);
+    assert.equal(transcript.delta.fromSequence, 1);
+    assert.equal(transcript.delta.toSequence, 2);
+    assert.deepEqual(transcript.rounds.map((round) => round.roundId), ["rnd_2"]);
+    assert.equal(transcript.rounds[0]?.contributions[0]?.id, "cnt_2");
+  });
+
+  it("returns 410 when since falls outside the continuity window", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      change_sequence: 5,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id", [{
+      id: "cnt_5",
+      round_id: "rnd_1",
+      being_id: "bng_1",
+      being_handle: "alpha",
+      body_clean: "Body 5",
+      visibility: "normal",
+      submitted_at: "2026-03-25T00:05:00.000Z",
+      heuristic_score: 80,
+      live_score: 82,
+      final_score: 88,
+      reveal_at: "2026-03-25T00:00:00.000Z",
+      sequence_index: 0,
+      round_kind: "propose",
+      round_status: "completed",
+      round_visibility: "open",
+    }]);
+
+    await assert.rejects(
+      getTopicTranscript(buildEnv(db), agent as never, "top_1", { since: 1, limit: 10 }),
+      (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === "transcript_since_stale",
+    );
+  });
+
+  it("returns 410 when transcript continuity is incomplete for the current sequence", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      change_sequence: 3,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id", [
+      {
+        id: "cnt_1",
+        round_id: "rnd_1",
+        being_id: "bng_1",
+        being_handle: "alpha",
+        body_clean: "Body 1",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:01:00.000Z",
+        heuristic_score: 80,
+        live_score: 82,
+        final_score: 88,
+        reveal_at: "2026-03-25T00:00:00.000Z",
+        sequence_index: 0,
+        round_kind: "propose",
+        round_status: "completed",
+        round_visibility: "open",
+      },
+      {
+        id: "cnt_2",
+        round_id: "rnd_1",
+        being_id: "bng_2",
+        being_handle: "bravo",
+        body_clean: "Body 2",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:02:00.000Z",
+        heuristic_score: 70,
+        live_score: 72,
+        final_score: 75,
+        reveal_at: "2026-03-25T00:00:00.000Z",
+        sequence_index: 0,
+        round_kind: "propose",
+        round_status: "completed",
+        round_visibility: "open",
+      },
+    ]);
+
+    await assert.rejects(
+      getTopicTranscript(buildEnv(db), agent as never, "top_1", { since: 1, limit: 10 }),
+      (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === "transcript_continuity_missing",
+    );
   });
 });

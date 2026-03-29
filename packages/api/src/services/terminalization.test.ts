@@ -110,13 +110,15 @@ class FakeCache {
 }
 
 function queueClosedTopicPresentationReads(db: FakeDb) {
-  db.queueFirst("SELECT id, domain_id, title, prompt, status FROM topics WHERE id = ?", [
+  db.queueFirst("FROM topics", [
     {
       id: "top_1",
       domain_id: "dom_1",
+      domain_slug: "energy",
       title: "Topic",
       prompt: "Prompt",
       status: "closed",
+      closed_at: "2026-03-25T02:00:00.000Z",
     },
   ]);
   db.queueFirst("FROM topics\n      WHERE id = ?", [
@@ -272,6 +274,7 @@ describe("terminalization service", () => {
       {
         id: "cnt_1",
         being_id: "bng_1",
+        being_handle: "alpha",
         round_id: "rnd_1",
         round_kind: "propose",
         sequence_index: 0,
@@ -281,7 +284,8 @@ describe("terminalization service", () => {
         visibility: "normal",
       },
     ]);
-    db.queueFirst("FROM contribution_scores cs", [{
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_1",
       substance_score: 70,
       role_bonus: 10,
       details_json: JSON.stringify({ role: "claim" }),
@@ -295,11 +299,11 @@ describe("terminalization service", () => {
       template_id: "debate_v2",
       topic_id: "top_1",
     }]);
-    db.queueAll("SELECT direction, weight, voter_being_id\n        FROM votes", [
-      { direction: 1, weight: 2, voter_being_id: "bng_2" },
-      { direction: 1, weight: 1, voter_being_id: "bng_3" },
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
+      { contribution_id: "cnt_1", direction: 1, weight: 1, voter_being_id: "bng_3" },
     ]);
-    db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [{ distinct_voter_count: 2, topic_vote_count: 2 }]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 2, topic_vote_count: 2 }]);
     db.queueFirst("FROM domain_reputation", [null]);
     queueClosedTopicPresentationReads(db);
     db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
@@ -343,7 +347,16 @@ describe("terminalization service", () => {
     assert.ok(scoreUpdate);
     assert.equal(scoreUpdate?.sql.includes("live_score"), false);
     assert.equal(scoreUpdate?.sql.includes("shadow_score"), false);
+    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
+    assert.ok(verdictInsert);
+    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"narrative":\[/);
+    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"highlights":\[/);
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "text/html; charset=utf-8"));
+    const jsonWrite = publicArtifacts.writes.find((write) => write.key.endsWith("/verdict-presentation.json"));
+    assert.ok(jsonWrite);
+    const jsonPayload = JSON.parse(String(jsonWrite?.body ?? "{}"));
+    assert.equal(jsonPayload.narrative[0]?.summary, "Lead signal: Body");
+    assert.equal(jsonPayload.claimGraph.available, false);
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "image/png"));
   });
 
@@ -362,6 +375,7 @@ describe("terminalization service", () => {
       {
         id: "cnt_1",
         being_id: "bng_1",
+        being_handle: "alpha",
         round_id: "rnd_1",
         round_kind: "propose",
         sequence_index: 0,
@@ -371,7 +385,8 @@ describe("terminalization service", () => {
         visibility: "normal",
       },
     ]);
-    db.queueFirst("FROM contribution_scores cs", [{
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_1",
       substance_score: 70,
       role_bonus: 10,
       details_json: JSON.stringify({ role: "claim" }),
@@ -385,10 +400,10 @@ describe("terminalization service", () => {
       template_id: "debate_v2",
       topic_id: "top_1",
     }]);
-    db.queueAll("SELECT direction, weight, voter_being_id\n        FROM votes", [
-      { direction: 1, weight: 2, voter_being_id: "bng_2" },
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
     ]);
-    db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [{ distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
     db.queueAll("SELECT cs.final_score, t.closed_at", [
       { final_score: 73, closed_at: "2026-03-25T02:00:00.000Z" },
     ]);
@@ -467,6 +482,7 @@ describe("terminalization service", () => {
       {
         id: "cnt_1",
         being_id: "bng_1",
+        being_handle: "alpha",
         round_id: "rnd_1",
         round_kind: "propose",
         sequence_index: 0,
@@ -476,7 +492,8 @@ describe("terminalization service", () => {
         visibility: "normal",
       },
     ]);
-    db.queueFirst("FROM contribution_scores cs", [{
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_1",
       substance_score: 70,
       role_bonus: 10,
       details_json: JSON.stringify({ role: "claim" }),
@@ -490,10 +507,10 @@ describe("terminalization service", () => {
       template_id: "debate_v2",
       topic_id: "top_1",
     }]);
-    db.queueAll("SELECT direction, weight, voter_being_id\n        FROM votes", [
-      { direction: 1, weight: 2, voter_being_id: "bng_2" },
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
     ]);
-    db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [{ distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
     db.queueFirst("FROM domain_reputation", [null]);
     queueClosedTopicPresentationReads(db);
     db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
@@ -557,6 +574,7 @@ describe("terminalization service", () => {
       {
         id: "cnt_1",
         being_id: "bng_1",
+        being_handle: "alpha",
         round_id: "rnd_1",
         round_kind: "propose",
         sequence_index: 0,
@@ -566,7 +584,8 @@ describe("terminalization service", () => {
         visibility: "normal",
       },
     ]);
-    db.queueFirst("FROM contribution_scores cs", [{
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_1",
       substance_score: 70,
       role_bonus: 10,
       details_json: JSON.stringify({ role: "claim" }),
@@ -580,10 +599,10 @@ describe("terminalization service", () => {
       template_id: "debate_v2",
       topic_id: "top_1",
     }]);
-    db.queueAll("SELECT direction, weight, voter_being_id\n        FROM votes", [
-      { direction: 1, weight: 2, voter_being_id: "bng_2" },
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
     ]);
-    db.queueFirst("COUNT(DISTINCT CASE WHEN direction IN (-1, 1)", [{ distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
     db.queueFirst("FROM domain_reputation", [null]);
     db.queueFirst("SELECT COUNT(*) AS count FROM claims WHERE topic_id = ?", [{ count: 2 }]);
     db.queueAll("SELECT cr.status", [{ status: "supported" }]);

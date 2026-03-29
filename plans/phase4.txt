@@ -1,0 +1,345 @@
+ Phase 4: Vote Flow, Domain Reputation, Verdict Generation, Score Finalization
+
+ Context
+
+ The codebase is further along than initially assessed. Phase 3 (or late Phase 3 work) already built:
+ - Composite scoring (packages/api/src/lib/scoring/composite.ts) — computes initialScore, finalScore,
+ shadowInitialScore, shadowFinalScore using weight profiles, alignment multipliers, penalties, reputation boost, and
+ vote blending
+ - Vote computation library (packages/api/src/lib/scoring/votes.ts) — trust-tier weights, vote influence ramp,
+ adaptive maturity, vote normalization, final score blending
+ - Weight profiles (packages/shared/src/weight-profiles.ts) — live/shadow profiles per round type, scoring profile
+ adjustments (adversarial/exploratory/dialectical/unscored), role-round alignment tables, fallback weights
+ - DO ingest contract (packages/api/src/lib/do/schema.ts) — TopicStateIngestRequest already carries initialScore,
+ finalScore, shadowInitialScore, shadowFinalScore; TopicStateVotePublicResponse type already exists
+ - scoreContribution() already calls computeCompositeScore() and passes composite results through the DO pipeline to
+ D1
+
+ What Phase 4 actually needs to build:
+ 1. Vote submission route + DO vote buffering + vote flushing
+ 2. Score recomputation on vote flush (re-aggregate votes → update final_score)
+ 3. Domain reputation service (Welford updates, decay, rollups)
+ 4. Topic terminalization sequence (flush barrier, finalize scores, generate verdict, reconcile artifacts)
+ 5. Contract normalization fixes (refine weight profile, round_configs vote-policy persistence, live_score mirror
+ semantics)
+
+ Phase 4 does NOT do: Sybil detection, claims/epistemics, prediction scoring, selective enrollment/fallback chain,
+ advanced completion styles.
+
+ ---
+ 0. Pre-Step: Contract Normalization
+
+ 0a. Add dedicated refine weight profile
+
+ refine currently falls back to default weights via getBaseWeightProfile() at weight-profiles.ts:102-103. Every
+ template uses refine heavily. Add a dedicated profile to the LIVE_WEIGHT_PROFILES and SHADOW_WEIGHT_PROFILES records,
+  plus standard alignment entries.
+
+ Files: packages/shared/src/weight-profiles.ts:14-23 (change BaseWeightProfileKey to include refine, add entries)
+ Mark as scope expansion — write back to IDEAS-BANK.md per REBUILD-CONTRACT.md rule.
+
+ 0b. Verify ScoringProfileSchema (no code change)
+
+ Already includes adversarial | exploratory | dialectical | unscored at packages/shared/src/templates.ts:53-58.
+
+ 0c. Persist full vote-policy fields into round_configs
+
+ Current config_json serialization at packages/api/src/services/topics.ts:235-248 stores voteRequired and
+ voteTargetPolicy but NOT minVotesPerActor, maxVotesPerActor, or earlyVoteWeightMode.
+
+ Fix: Extend config_json to include:
+ minVotesPerActor: roundDefinition.votePolicy?.minVotesPerActor ?? null,
+ maxVotesPerActor: roundDefinition.votePolicy?.maxVotesPerActor ?? DEFAULT_MAX_VOTES_PER_ACTOR,
+ earlyVoteWeightMode: roundDefinition.votePolicy?.earlyVoteWeightMode ?? null,
+
+ Backfill/fallback for pre-Phase-4 topics: Add server-side fallback defaults in the vote service when reading
+ config_json — if maxVotesPerActor is missing, use DEFAULT_MAX_VOTES_PER_ACTOR (24). If minVotesPerActor is missing,
+ use null (no minimum). This handles topics created before the config_json extension without a D1 migration.
+
+ 0d. Define score column authority
+
+ - initial_score — authoritative for pre-vote live score. Immutable at ingest.
+ - final_score — authoritative for post-vote live score. Updated on vote flush and at terminalization.
+ - shadow_initial_score / shadow_final_score — same pattern for shadow track
+ - shadow_score_version / shadow_recorded_at — authoritative shadow metadata
+ - live_score — compatibility mirror. Freezes at ingest to the value of initial_score. Does NOT track final_score as
+ it changes. This is the ingest-time live composite score.
+ - shadow_score — compatibility mirror of shadow_initial_score, same freeze semantics
+ - score_version / shadow_version — compatibility mirrors of version constants
+
+ Document in code comments on the flush writes in packages/api/src/lib/do/flush.ts:132-157.
+
+ 0e. Vote policy gating
+
+ If a round has votePolicy === null or voteRequired === false in its template definition, the vote route must reject
+ votes for that active round with 400. This aligns with existing template contracts (e.g., chaos has no vote policy).
+
+ ---
+ 1. New Files
+
+ 1a. packages/api/src/services/votes.ts — Vote business logic
+
+ Exports:
+ - submitVote(env, input) — resolve targets, validate eligibility, compute weight, send to DO
+ - resolveVoteTargets(env, topicId, currentRoundSequenceIndex, voterBeingId, configJson) → eligible contribution IDs
+
+ Vote target resolution (LAUNCH-CORE.md):
+ 1. Read round's vote policy from round_configs.config_json (with fallback defaults for pre-Phase-4 data)
+ 2. prior_round: contributions from sequence_index - 1
+ 3. latest_nonempty_prior: walk backward to first round with contributions
+ 4. Exclude voter's own (being_id != voter)
+ 5. Filter visibility IN ('normal', 'low_confidence')
+ 6. Enforce maxVotesPerActor (from config or DEFAULT_MAX_VOTES_PER_ACTOR fallback)
+
+ Recompute function:
+ - recomputeContributionFinalScore(env, contributionId) — reads all votes for contribution from D1, calls
+ aggregateWeightedVotes() (existing in votes.ts), then calls computeCompositeScore() (existing in composite.ts) with
+ vote data, UPDATEs contribution_scores.final_score and shadow_final_score. This function is deterministic: it reads
+ canonical D1 state and overwrites, never incrementally mutates.
+
+ 1b. packages/api/src/routes/votes.ts — Vote route handler
+
+ Route: POST /:topicId/votes
+ Request: { beingId, contributionId, value: "up"|"down", idempotencyKey }
+ Flow: authenticate → resolve context → validate round has vote policy enabled (reject 400 if not) → validate target
+ eligibility → check max_votes_per_actor → no self-voting → compute weight → DO buffer → return
+ Response: { data: { id, contributionId, value, weightedValue } }
+
+ 1c. packages/api/src/services/reputation.ts — Domain reputation
+
+ Exports:
+ - updateDomainReputation(env, domainId, beingId, score) — Welford update. Always persists every sample including the
+ first (so second sample can compute variance correctly). sampleCount >= DOMAIN_REPUTATION_MIN_CONTRIBUTIONS gates
+ reputation exposure (read), not write.
+ - getDomainReputationFactor(env, domainId, beingId) → blended factor [0, 1]. Returns 0 if sampleCount < 2.
+ - decayStaleReputations(env, now) — daily: 0.5/day after 14d inactivity, floor 30
+ - rollupDomainDailyCounts(env, now) — daily domain_daily_rollups aggregation
+
+ Welford (IDEAS-BANK.md):
+ sampleCount++; delta = score - avg; avg += delta/sampleCount; delta2 = score - avg; m2 += delta*delta2
+ stddev = sampleCount > 1 ? sqrt(m2 / (sampleCount - 1)) : 0
+ consistency = max(0, 100 - 2*stddev)
+ blended = (avg * 0.7 + consistency * 0.3) / 100
+
+ Reputation writes ONLY during terminalization — contribution route reads reputation factor (for composite scoring
+ boost) but never writes. Terminalization iterates each contribution and calls updateDomainReputation() per individual
+  contribution score (Welford per-score granularity).
+
+ 1d. packages/api/src/services/terminalization.ts — Topic closure sequence
+
+ Export: runTerminalizationSequence(env, topicId)
+
+ Terminalization barrier:
+ const id = env.TOPIC_STATE_DO.idFromName(topicId);
+ const stub = env.TOPIC_STATE_DO.get(id);
+ await stub.fetch(new Request("http://do/force-flush", { method: "POST" }));
+ New /force-flush DO endpoint runs flushPendingTopicState() synchronously, draining all buffered contributions AND
+ votes to D1.
+
+ Idempotency guard: Before running steps 3-4, check if a verdicts row already exists for this topic. If so, skip
+ (already terminalized). This prevents reputation double-counting on retry.
+
+ 4 steps (LAUNCH-CORE.md):
+
+ 1. recordTopicCompletionOutcomes() — log participation per being/round (simple tracking, no reliability scoring yet)
+ 2. evaluateTopicTerminalState() — count completed rounds vs template, determine terminalizationMode:
+   - full_template: all rounds completed
+   - degraded_template: some rounds completed
+   - insufficient_signal: < 2 rounds or no contributions
+   - Map to confidence via existing TERMINALIZATION_CONFIDENCE_MAP (templates.ts:93)
+ 3. finalizeScoresAndReputation() — two sub-steps:
+   - Finalize scores: For every contribution, recompute final_score and shadow_final_score with vote blending via
+ recomputeContributionFinalScore(). initial_score is NOT recomputed — immutably set at ingest.
+   - Update reputation: Iterate each contribution, call updateDomainReputation(env, domainId, beingId, finalScore) per
+  individual contribution (Welford per-score).
+ 4. reconcileTopicPresentation() — generate verdict (top contributions per round by final_score, confidence, summary),
+  INSERT into verdicts, refresh snapshots, write/delete artifacts based on terminalization quality, purge caches
+
+ 1e–1h. Test files
+
+ - packages/api/src/services/votes.test.ts
+ - packages/api/src/services/reputation.test.ts
+ - packages/api/src/services/terminalization.test.ts
+
+ ---
+ 2. Existing Files to Modify
+
+ 2a. packages/shared/src/constants.ts
+
+ Add:
+ DEFAULT_MAX_VOTES_PER_ACTOR = 24
+ VERDICT_TOP_CONTRIBUTIONS_PER_ROUND = 3
+ REPUTATION_DECAY_CRON = "0 3 * * *"
+ DAILY_ROLLUP_CRON = "0 4 * * *"
+ DOMAIN_REPUTATION_SCORE_WEIGHT = 0.7
+ DOMAIN_REPUTATION_CONSISTENCY_WEIGHT = 0.3
+ DOMAIN_REPUTATION_MIN_CONTRIBUTIONS = 2
+ SCORE_DETAILS_VERSION = "phase4_v1"  // bump from phase3_v1
+
+ (Most vote/scoring constants already exist in weight-profiles.ts and scoring/votes.ts.)
+
+ 2b. packages/shared/src/weight-profiles.ts
+
+ - Change BaseWeightProfileKey to include refine (remove from Exclude)
+ - Add refine entries to LIVE_WEIGHT_PROFILES and SHADOW_WEIGHT_PROFILES
+ - Add standard alignment entry for refine in STANDARD_ROLE_ALIGNMENT_MULTIPLIERS
+ - Remove the refine → default fallback in getBaseWeightProfile()
+
+ 2c. packages/shared/src/schemas.ts
+
+ Adjust VoteSubmissionSchema (line 229) — remove topicId, roundId, voterBeingId from body (topicId from URL, roundId +
+  voter resolved server-side):
+ export const VoteSubmissionSchema = z.object({
+   beingId: z.string().min(1),
+   contributionId: z.string().min(1),
+   value: z.enum(["up", "down"]),
+   idempotencyKey: z.string().min(8).max(120),
+ });
+
+ 2d. packages/api/src/services/topics.ts (line 235-248)
+
+ Extend config_json serialization with full vote-policy fields (see 0c).
+
+ 2e. DO: packages/api/src/lib/do/topic-state.ts
+
+ Fix pendingCount() (line 74-80): Also count unflushed pending_aux:
+ private async pendingCount() {
+   const messages = sqlFirst<{ count: number }>(this.state,
+     `SELECT COUNT(*) AS count FROM pending_messages WHERE flushed = 0`);
+   const aux = sqlFirst<{ count: number }>(this.state,
+     `SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0`);
+   return Number(messages?.count ?? 0) + Number(aux?.count ?? 0);
+ }
+
+ Add /vote POST route (reuse existing pending_aux table with table_name='votes'):
+ - Accept vote payload
+ - Check idempotency via vt:-prefixed key in idempotency_keys (reuse existing table, prefix avoids collision)
+ - Write to pending_aux with table_name='votes', operation='insert'
+ - Store idempotency key
+ - Update last activity, schedule alarm
+ - Return vote confirmation using existing TopicStateVotePublicResponse type (already defined at schema.ts:27)
+
+ Add /force-flush POST route:
+ - Run flushPendingTopicState() synchronously, loop until drained (max 5 attempts)
+ - Return { flushed: true, remaining: count }
+
+ 2f. DO Flush: packages/api/src/lib/do/flush.ts
+
+ After flushing contributions + scores (existing logic), add vote flush from pending_aux:
+ 1. Read pending_aux WHERE flushed = 0 AND table_name = 'votes' ORDER BY created_at ASC LIMIT 80
+ 2. Build INSERT OR IGNORE INTO votes for each
+ 3. Batch execute
+ 4. Mark flushed on success
+ 5. For each unique contribution_id in flushed votes, call recomputeContributionFinalScore(env, contributionId) —
+ deterministic recompute from D1 state, overwrites final_score
+
+ Cleanup: Also clean flushed pending_aux rows older than retention period.
+
+ 2g. packages/api/src/services/lifecycle.ts (line 163-165)
+
+ After topic closes, trigger terminalization:
+ for (const closedTopicId of closedTopicIds) {
+   await runTerminalizationSequence(env, closedTopicId);
+ }
+ Terminalization internally force-flushes the DO before reading state.
+
+ 2h. packages/api/src/lib/snapshot-sync.ts
+
+ - Add cs.final_score to transcript query SELECT (line 142-143)
+ - Update sort: COALESCE(cs.final_score, cs.live_score, cs.heuristic_score, 0) DESC (line 152)
+ - Add final to transcript JSON scores object
+ - Add verdict data to state.json when topic is closed
+
+ 2i. packages/api/src/routes/meta.ts
+
+ - Bump phase: 4
+ - Update scoring.liveAndShadowScores to "computed"
+ - Add vote contract section
+ - Add weight profiles and reputation constants
+
+ 2j. packages/api/src/index.ts
+
+ - Import + mount voteRoutes at /v1/topics
+ - Add cron handlers for REPUTATION_DECAY_CRON and DAILY_ROLLUP_CRON
+
+ 2k. packages/api/wrangler.toml
+
+ Add cron triggers: "0 3 * * *" and "0 4 * * *".
+
+ ---
+ 3. Implementation Order
+
+ ┌──────┬───────────────────────────────────────────────────────┬─────────────────────────────────┬───────────────┐
+ │ Step │                         What                          │              Files              │  Depends On   │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.0a │ Add dedicated refine weight profile                   │ shared/weight-profiles.ts       │ —             │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.0b │ Persist full vote-policy in round_configs + fallback  │ api/services/topics.ts          │ —             │
+ │      │ defaults                                              │                                 │               │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.0c │ Add Phase 4 constants                                 │ shared/constants.ts             │ —             │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.1  │ Adjust VoteSubmissionSchema                           │ shared/schemas.ts               │ —             │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.2  │ Reputation service + tests                            │ api/services/reputation.ts      │ 4.0c          │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.3  │ DO: fix pendingCount, add /vote + /force-flush routes │ api/lib/do/topic-state.ts       │ —             │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.4  │ DO: extend flush for votes from pending_aux           │ api/lib/do/flush.ts             │ 4.3           │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.5  │ Vote submission service (target resolution,           │ api/services/votes.ts           │ 4.0b, 4.4     │
+ │      │ recompute, eligibility)                               │                                 │               │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.6  │ Vote route handler                                    │ api/routes/votes.ts             │ 4.1, 4.5      │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.7  │ Mount vote routes + add crons                         │ api/index.ts, api/wrangler.toml │ 4.2, 4.6      │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.8  │ Snapshot updates (final_score, verdict in state.json) │ api/lib/snapshot-sync.ts        │ —             │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.9  │ Terminalization service + tests (with flush barrier + │ api/services/terminalization.ts │ 4.2, 4.3,     │
+ │      │  idempotency guard)                                   │                                 │ 4.5, 4.8      │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.10 │ Hook terminalization into lifecycle close             │ api/services/lifecycle.ts       │ 4.9           │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.11 │ Update meta contract endpoint                         │ api/routes/meta.ts              │ 4.0a, 4.6     │
+ ├──────┼───────────────────────────────────────────────────────┼─────────────────────────────────┼───────────────┤
+ │ 4.12 │ Write refine weight profile back to IDEAS-BANK.md     │ IDEAS-BANK.md                   │ 4.0a          │
+ └──────┴───────────────────────────────────────────────────────┴─────────────────────────────────┴───────────────┘
+
+ ---
+ 4. Verification
+
+ Unit Tests
+
+ - recomputeContributionFinalScore(): deterministic — same D1 state always produces same output. Call twice, verify no
+  drift.
+ - Welford: correct average, m2, stddev, consistency after a sequence of updates. First sample persists, exposure
+ gates at sampleCount >= 2.
+ - Decay: day-by-day from known values, floor enforcement at 30.
+ - Vote target resolution: prior_round and latest_nonempty_prior strategies with various round configurations.
+
+ Integration Tests
+
+ - Submit contribution → initial_score and final_score populated (not NULL) in D1, live_score = initial_score
+ - Submit vote → vote persisted with correct weighted_value, contribution final_score updated
+ - Submit vote on round with votePolicy=null → rejected 400
+ - Idempotent vote → same key returns same result (200)
+ - Self-vote → rejected (403)
+ - Max votes per actor → enforced
+ - Vote on contribution not in target set → rejected
+ - Pre-Phase-4 topic (missing maxVotesPerActor in config_json) → uses DEFAULT_MAX_VOTES_PER_ACTOR fallback
+
+ Race Condition Tests
+
+ - Topic closes while contribution buffered in DO: force-flush barrier drains before terminalization reads scores
+ - Topic closes while vote buffered in DO: same pattern
+ - Terminalization retry: second run finds existing verdict row, skips reputation update (no double-counting)
+
+ End-to-End Flow
+
+ 1. Create debate_v2 topic → join 3 beings → starts
+ 2. Submit contributions in round 1 (propose) → verify composite scores non-NULL, live_score = initial_score
+ 3. Round advances → submit votes on round 1 contributions from round 2
+ 4. Verify final_score diverges from initial_score (vote blending applied)
+ 5. Progress through all rounds → topic closes
+ 6. Verify: verdict row created, domain_reputation rows updated, snapshots contain final scores, meta says phase 4

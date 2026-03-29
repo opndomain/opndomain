@@ -6,6 +6,7 @@ import {
   PHASE6_AUTH_SQL,
   PHASE7_EXTERNAL_OAUTH_SQL,
   PHASE9_EPISTEMIC_CORE_SQL,
+  PHASE10_TOPIC_FORMATS_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -16,6 +17,7 @@ export {
   PHASE6_AUTH_SQL,
   PHASE7_EXTERNAL_OAUTH_SQL,
   PHASE9_EPISTEMIC_CORE_SQL,
+  PHASE10_TOPIC_FORMATS_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -26,4 +28,5 @@ export const API_MIGRATIONS = [
   { tag: "005_phase7_external_oauth", fileName: "005_phase7_external_oauth.sql", sql: PHASE7_EXTERNAL_OAUTH_SQL },
   { tag: "006_admin_suite", fileName: "006_admin_suite.sql", sql: PHASE8_ADMIN_SUITE_SQL },
   { tag: "007_epistemic_core", fileName: "007_epistemic_core.sql", sql: PHASE9_EPISTEMIC_CORE_SQL },
+  { tag: "008_topic_formats", fileName: "008_topic_formats.sql", sql: PHASE10_TOPIC_FORMATS_SQL },
 ] as const;

@@ -21,6 +21,7 @@ export type WeightedVote = {
 export type WeightedVoteAggregate = {
   weightedVoteScore: number;
   voteCount: number;
+  distinctVoterCount: number;
   upvoteCount: number;
   downvoteCount: number;
 };
@@ -44,6 +45,7 @@ export function aggregateWeightedVotes(votes: WeightedVote[]): WeightedVoteAggre
     return {
       weightedVoteScore: 50,
       voteCount: 0,
+      distinctVoterCount: 0,
       upvoteCount: 0,
       downvoteCount: 0,
     };
@@ -53,6 +55,7 @@ export function aggregateWeightedVotes(votes: WeightedVote[]): WeightedVoteAggre
   let maxPossible = 0;
   let upvoteCount = 0;
   let downvoteCount = 0;
+  const distinctVoterIds = new Set<string>();
   for (const vote of votes) {
     const direction = vote.direction === 1 ? 1 : vote.direction === -1 ? -1 : 0;
     const weight = Number.isFinite(vote.weight) && vote.weight > 0 ? vote.weight : 0;
@@ -61,6 +64,7 @@ export function aggregateWeightedVotes(votes: WeightedVote[]): WeightedVoteAggre
     }
     rawWeightedSum += direction * weight;
     maxPossible += weight;
+    distinctVoterIds.add(vote.voterBeingId);
     if (direction > 0) {
       upvoteCount += 1;
     } else {
@@ -74,6 +78,7 @@ export function aggregateWeightedVotes(votes: WeightedVote[]): WeightedVoteAggre
         ? clamp(((rawWeightedSum / maxPossible + 1) / 2) * 100, 0, 100)
         : 50,
     voteCount: upvoteCount + downvoteCount,
+    distinctVoterCount: distinctVoterIds.size,
     upvoteCount,
     downvoteCount,
   };
@@ -91,7 +96,7 @@ export function getAdaptiveVoteMaturityThreshold(input: {
   if (distinctVoterCount >= 3 && topicVoteCount >= 8) {
     return 2;
   }
-  return 1;
+  return 2;
 }
 
 export function getRoundVoteInfluenceMultiplier(templateId: TopicTemplateId, roundKind: RoundKind): number {
@@ -130,7 +135,7 @@ export function computeVoteInfluence(input: {
     distinctVoterCount: input.distinctVoterCount,
     topicVoteCount: input.topicVoteCount,
   });
-  if (input.voteCount < maturityThreshold) {
+  if (input.voteCount < maturityThreshold || input.distinctVoterCount < maturityThreshold) {
     return 0;
   }
 

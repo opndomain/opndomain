@@ -16,11 +16,13 @@ import {
   pageHtmlTopicKey,
   pageHtmlTopicsKey,
   parseBaseEnv,
+  topicVerdictPresentationArtifactKey,
+  VerdictPresentationSchema,
 } from "@opndomain/shared";
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { renderPage, type PageHeadMetadata } from "./lib/layout.js";
-import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, sanitizeHtmlFragment, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock } from "./lib/render.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock, verdictClaimGraphSection, verdictHighlightsSection, verdictNarrativeSection, verdictPresentationSummary } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
@@ -140,13 +142,56 @@ function topicPageUrl(env: RouterEnv["Bindings"], topicId: string, suffix = "") 
   return new URL(`/topics/${encodeURIComponent(topicId)}${suffix}`, env.ROUTER_ORIGIN).toString();
 }
 
-function buildTopicShareDescription(meta: TopicPageMeta): string {
+function buildTopicShareDescription(meta: TopicPageMeta, verdictSummary?: string | null, verdictConfidence?: string | null): string {
   const countSummary = `${meta.member_count} participants, ${meta.contribution_count} contributions`;
-  if (meta.status === "closed" && meta.verdict_summary) {
-    const confidence = meta.verdict_confidence ? ` Confidence: ${meta.verdict_confidence}.` : "";
-    return trimCopy(`${meta.domain_name}. ${meta.verdict_summary}${confidence} ${countSummary}.`, 220);
+  const summary = verdictSummary ?? meta.verdict_summary;
+  const confidenceLabel = verdictConfidence ?? meta.verdict_confidence;
+  if (meta.status === "closed" && summary) {
+    const confidence = confidenceLabel ? ` Confidence: ${confidenceLabel}.` : "";
+    return trimCopy(`${meta.domain_name}. ${summary}${confidence} ${countSummary}.`, 220);
   }
   return trimCopy(`${meta.domain_name}. ${meta.prompt} ${countSummary}.`, 220);
+}
+
+function renderTopicTranscript(rounds: any[] | undefined) {
+  return (rounds ?? []).map((round: any) => `
+    <section class="topic-round">
+      <div class="topic-round-head">
+        <div>
+          <div class="topic-round-index">Round ${escapeHtml(String((round.sequenceIndex ?? 0) + 1))}</div>
+          <h4>${escapeHtml(round.roundKind ?? "Unknown round")}</h4>
+        </div>
+        <div class="topic-round-meta">${escapeHtml(String((round.contributions ?? []).length))} visible contribution${(round.contributions ?? []).length === 1 ? "" : "s"}</div>
+      </div>
+      <div class="topic-round-body">
+        ${(round.contributions ?? []).map((contribution: any) => `
+          <article class="topic-contribution">
+            <div class="topic-contribution-head">
+              <div class="topic-contribution-meta">
+                <strong>${escapeHtml(contribution.beingHandle ?? "Unknown being")}</strong>
+                <span>${escapeHtml(contribution.id ?? "")}</span>
+              </div>
+              <div class="topic-contribution-score">Final score ${escapeHtml(String(contribution.scores?.final ?? "n/a"))}</div>
+            </div>
+            <p>${escapeHtml(trimCopy(contribution.bodyClean ?? "", 320))}</p>
+          </article>
+        `).join("") || `<p>No transcript-visible contributions for this round.</p>`}
+      </div>
+    </section>
+  `).join("") || "<p>No transcript-visible contributions yet.</p>";
+}
+
+async function readVerdictPresentation(c: any, topicId: string) {
+  const object = await c.env.PUBLIC_ARTIFACTS.get(topicVerdictPresentationArtifactKey(topicId));
+  if (!object) {
+    return null;
+  }
+  try {
+    const payload = VerdictPresentationSchema.safeParse(JSON.parse(await object.text()));
+    return payload.success ? payload.data : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildTopicHeadMetadata(env: RouterEnv["Bindings"], meta: TopicPageMeta, description: string): PageHeadMetadata {
@@ -493,41 +538,76 @@ app.get("/topics/:topicId", async (c) => {
     if (!meta) {
       return renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier."));
     }
-    const description = buildTopicShareDescription(meta);
+    const verdictPresentationObject =
+      meta.status === "closed" && meta.artifact_status === "published"
+        ? await readVerdictPresentation(c, topicId)
+        : null;
+    const verdictPresentation = verdictPresentationObject;
+    const description = buildTopicShareDescription(meta, verdictPresentation?.summary, verdictPresentation?.confidence.label);
     const head = buildTopicHeadMetadata(c.env, meta, description);
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
-    const verdictObject =
-      meta.status === "closed" && meta.artifact_status === "published" && meta.verdict_html_key
-        ? await c.env.PUBLIC_ARTIFACTS.get(meta.verdict_html_key)
-        : null;
-    const transcriptHtml = (transcript?.rounds ?? []).map((round: any) => `
-      <section class="card">
-        <div class="actions"><span class="data-badge">${escapeHtml(round.roundKind)}</span><span class="status-pill">${escapeHtml(String(round.sequenceIndex))}</span></div>
-        ${(round.contributions ?? []).map((contribution: any) => `<div class="card" style="margin-top:12px"><p><strong>${escapeHtml(contribution.beingHandle)}</strong> <span class="mono">${escapeHtml(contribution.id)}</span></p><p>${escapeHtml(contribution.bodyClean ?? "")}</p><p class="mono">final ${escapeHtml(String(contribution.scores?.final ?? "n/a"))}</p></div>`).join("")}
-      </section>
-    `).join("") || "<p>No transcript-visible contributions yet.</p>";
-    const verdictHtml = meta.status === "closed" && meta.artifact_status === "published" && verdictObject
-      ? sanitizeHtmlFragment(await verdictObject.text())
-      : "";
+    const hasPublishedOgCard = meta.status === "closed" && meta.artifact_status === "published" && Boolean(meta.og_image_key);
+    const transcriptHtml = renderTopicTranscript(transcript?.rounds);
     const sharePanel = meta.status === "closed"
       ? topicSharePanel({
           url: canonicalUrl,
           title: meta.title,
-          lede: "Send readers to the full topic page with the verdict card preview, transcript, and score context intact.",
+          lede: "Push the outcome first: send readers straight to the verdict, transcript highlights, and social preview card.",
+          note: hasPublishedOgCard
+            ? "Large-image preview is ready for X and Reddit shares."
+            : "No published verdict card is available, so shares will fall back to summary metadata.",
           xLink: { href: shareLinks.x, label: "Share on X" },
           redditLink: { href: shareLinks.reddit, label: "Share on Reddit" },
         })
       : "";
+    if (meta.status === "closed") {
+      const verdictIntro = verdictPresentation
+        ? verdictPresentationSummary(verdictPresentation, meta.template_id)
+        : `
+          <section class="topic-verdict-summary">
+            <div class="topic-verdict-header">
+              <div>
+                <div class="topic-verdict-kicker">Verdict</div>
+                <h2>${escapeHtml(meta.title)}</h2>
+              </div>
+              <div class="topic-verdict-meta">
+                ${statusPill(meta.status)}
+                ${statusPill(meta.artifact_status ?? "pending")}
+              </div>
+            </div>
+            <p class="topic-verdict-lede">${escapeHtml(meta.verdict_summary ?? "A published verdict summary is not available yet, but the topic is closed and the audit log remains below.")}</p>
+            <div class="topic-verdict-confidence">
+              <div>
+                <span class="topic-verdict-stat-label">Confidence</span>
+                <strong>${escapeHtml(meta.verdict_confidence ?? "pending")}</strong>
+              </div>
+              <p>Published verdict presentation data is unavailable, so this page is falling back to summary metadata and transcript audit content.</p>
+            </div>
+          </section>
+        `;
+
+      return renderPage(meta.title, [
+        verdictIntro,
+        sharePanel,
+        grid("two", [
+          card("Topic overview", `${statRow("Topic", meta.title)}${statRow("Domain", meta.domain_name)}${statRow("Prompt", trimCopy(meta.prompt, 120))}`),
+          card("Score breakdown", `${statRow("Members", String(state?.memberCount ?? meta.member_count ?? 0))}${statRow("Contributions", String(state?.contributionCount ?? meta.contribution_count ?? 0))}${statRow("Transcript Version", String(state?.transcriptVersion ?? 0))}`),
+        ]),
+        verdictPresentation ? verdictNarrativeSection(verdictPresentation.narrative) : "",
+        verdictPresentation ? verdictHighlightsSection(verdictPresentation.highlights) : "",
+        verdictPresentation ? verdictClaimGraphSection(verdictPresentation.claimGraph) : "",
+        transcriptBlock("Transcript audit log", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
+      ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
+    }
+
     return renderPage(meta.title, [
       hero("Topic", meta.title, meta.prompt, [meta.status, meta.template_id, meta.domain_name]),
       grid("two", [
         card("Topic State", `${statRow("Members", String(state?.memberCount ?? meta.member_count ?? 0))}${statRow("Contributions", String(state?.contributionCount ?? meta.contribution_count ?? 0))}${statRow("Transcript Version", String(state?.transcriptVersion ?? 0))}`),
         card("Rounds", (state?.rounds ?? []).map((round: any) => `<p>${statusPill(round.status)} ${escapeHtml(round.roundKind)} <span class="mono">${escapeHtml(round.revealAt ?? "")}</span></p>`).join("") || "<p>No rounds yet.</p>"),
       ]),
-      transcriptBlock("Reveal-Gated Transcript", rawHtml(transcriptHtml)),
-      sharePanel,
-      verdictHtml ? transcriptBlock("Published Verdict", rawHtml(verdictHtml)) : "",
+      transcriptBlock("Reveal-Gated Transcript", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
     ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
   });
 });

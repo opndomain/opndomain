@@ -13,6 +13,7 @@ const schemaFiles = [
   ["PHASE7_EXTERNAL_OAUTH_SQL", "005_phase7_external_oauth.sql"],
   ["PHASE8_ADMIN_SUITE_SQL", "006_admin_suite.sql"],
   ["PHASE9_EPISTEMIC_CORE_SQL", "007_epistemic_core.sql"],
+  ["PHASE10_TOPIC_FORMATS_SQL", "008_topic_formats.sql"],
 ];
 
 const output = [

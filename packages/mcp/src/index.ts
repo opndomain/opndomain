@@ -495,10 +495,11 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       const topics = await apiJson<any>(env, `/v1/topics${query}`);
       return toToolResult(topics);
     },
-    "list-joinable-topics": async ({ domainSlug, templateId }) => {
+    "list-joinable-topics": async ({ domainSlug, templateId, topicFormat }) => {
+      const topicFormatParam = topicFormat ? `&topicFormat=${encodeURIComponent(topicFormat)}` : "";
       const [openTopics, countdownTopics] = await Promise.all([
-        apiJson<any[]>(env, `/v1/topics?status=open${domainSlug ? `&domain=${encodeURIComponent(domainSlug)}` : ""}`),
-        apiJson<any[]>(env, `/v1/topics?status=countdown${domainSlug ? `&domain=${encodeURIComponent(domainSlug)}` : ""}`),
+        apiJson<any[]>(env, `/v1/topics?status=open${domainSlug ? `&domain=${encodeURIComponent(domainSlug)}` : ""}${topicFormatParam}`),
+        apiJson<any[]>(env, `/v1/topics?status=countdown${domainSlug ? `&domain=${encodeURIComponent(domainSlug)}` : ""}${topicFormatParam}`),
       ]);
       let joinable = [...openTopics, ...countdownTopics];
       if (templateId) {
@@ -730,7 +731,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             createNextAction(
               "list-joinable-topics",
               "Find a topic that is still open or in countdown.",
-              { domainSlug: input.domainSlug, templateId: input.templateId },
+              { domainSlug: input.domainSlug, templateId: input.templateId, topicFormat: input.topicFormat },
             ),
           );
         }
@@ -799,7 +800,29 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             createNextAction(
               "list-joinable-topics",
               "Discover topics that are currently joinable.",
-              { domainSlug: input.domainSlug, templateId: input.templateId },
+              { domainSlug: input.domainSlug, templateId: input.templateId, topicFormat: input.topicFormat },
+            ),
+          );
+        }
+
+        if (input.topicFormat && target.topicFormat !== input.topicFormat) {
+          return participateResult(
+            "topic_not_joinable",
+            `Topic format is ${target.topicFormat}; expected ${input.topicFormat}.`,
+            {
+              clientId: state.clientId,
+              agentId: state.agentId,
+              beingId: state.beingId,
+              launch,
+              topicId: target.id,
+              topicTitle: target.title ?? null,
+              topicStatus: target.status,
+              topicFormat: target.topicFormat ?? null,
+            },
+            createNextAction(
+              "list-joinable-topics",
+              "Find a topic that matches the requested format.",
+              { domainSlug: input.domainSlug, templateId: input.templateId, topicFormat: input.topicFormat },
             ),
           );
         }
@@ -826,15 +849,16 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           createNextAction(
             "list-joinable-topics",
             "Find a topic that is currently open or in countdown.",
-            { domainSlug: input.domainSlug, templateId: input.templateId },
+            { domainSlug: input.domainSlug, templateId: input.templateId, topicFormat: input.topicFormat },
           ),
         );
       }
 
       const domainParam = input.domainSlug ? `&domain=${encodeURIComponent(input.domainSlug)}` : "";
+      const topicFormatParam = input.topicFormat ? `&topicFormat=${encodeURIComponent(input.topicFormat)}` : "";
       const [openTopics, countdownTopics] = await Promise.all([
-        apiJson<any[]>(env, `/v1/topics?status=open${domainParam}`),
-        apiJson<any[]>(env, `/v1/topics?status=countdown${domainParam}`),
+        apiJson<any[]>(env, `/v1/topics?status=open${domainParam}${topicFormatParam}`),
+        apiJson<any[]>(env, `/v1/topics?status=countdown${domainParam}${topicFormatParam}`),
       ]);
       let joinable = [...openTopics, ...countdownTopics];
       if (input.templateId) {
@@ -845,8 +869,11 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         return joinTopicAndWait(joinable[0]);
       }
 
-      const startedTopics = await apiJson<any[]>(env, `/v1/topics?status=started${domainParam}`);
+      const startedTopics = await apiJson<any[]>(env, `/v1/topics?status=started${domainParam}${topicFormatParam}`);
       for (const topic of startedTopics) {
+        if (input.topicFormat && topic.topicFormat !== input.topicFormat) {
+          continue;
+        }
         if (input.templateId && topic.templateId !== input.templateId) {
           continue;
         }
@@ -868,7 +895,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         createNextAction(
           "list-joinable-topics",
           "Inspect upcoming topics and choose one to join explicitly.",
-          { domainSlug: input.domainSlug, templateId: input.templateId },
+          { domainSlug: input.domainSlug, templateId: input.templateId, topicFormat: input.topicFormat },
         ),
       );
     },
@@ -934,7 +961,7 @@ export async function buildServer(env: McpBindings) {
 
   server.registerTool("list-joinable-topics", {
     description: "List topics that can be joined right now (status open or countdown). Merges both statuses client-side.",
-    inputSchema: { domainSlug: z.string().optional(), templateId: z.string().optional() },
+    inputSchema: { domainSlug: z.string().optional(), templateId: z.string().optional(), topicFormat: z.string().optional() },
   }, handlers["list-joinable-topics"]);
 
   server.registerTool("list-beings", {
@@ -988,6 +1015,7 @@ export async function buildServer(env: McpBindings) {
       topicId: z.string().optional(),
       domainSlug: z.string().optional(),
       templateId: z.string().optional(),
+      topicFormat: z.string().optional(),
       body: z.string().min(1),
       verificationCode: z.string().optional(),
       clientId: z.string().optional(),

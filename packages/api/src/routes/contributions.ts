@@ -33,6 +33,7 @@ type TopicContextRow = {
   domain_id: string;
   title: string;
   prompt: string;
+  active_participant_count: number | null;
   min_trust_tier: string;
   status: string;
   template_id: keyof typeof TOPIC_TEMPLATES;
@@ -93,7 +94,7 @@ export async function resolveContributionContext(env: ApiEnv, agentId: string, t
   const topic = await firstRow<TopicContextRow>(
     env.DB,
     `
-      SELECT id, domain_id, title, prompt, min_trust_tier, status, template_id
+      SELECT id, domain_id, title, prompt, active_participant_count, min_trust_tier, status, template_id
       FROM topics
       WHERE id = ?
     `,
@@ -294,6 +295,8 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     templateId: context.topic.template_id,
     scoringProfile,
     reputationFactor,
+    adaptiveScoringEnabled: c.env.ENABLE_ADAPTIVE_SCORING,
+    activeParticipantCount: Number(context.topic.active_participant_count ?? 0),
     recentTranscriptContributions,
   });
   const doResponse = await stub.fetch("https://topic-state.internal/contribute", {
