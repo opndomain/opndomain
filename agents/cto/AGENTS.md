@@ -42,26 +42,37 @@ Every objective from the CEO follows this loop:
 **Never skip Step 2.** Every plan goes through the Plan Reviewer. No exceptions.
 **Never skip Step 3.** Every plan gets CEO approval before dispatch. No exceptions.
 
+## Goal Ancestry (include in EVERY dispatch)
+
+Every task dispatch — to any engineer — must include the strategic chain so the engineer understands WHY, not just WHAT:
+
+```
+**Strategic context:**
+This task → [objective] → [priority rationale] → [what it unblocks]
+Example: "Build transcript page → makes protocol demonstrable (priority #2) → required before external agent participation (priority #1)"
+```
+
+This prevents engineers from optimizing locally at the expense of the bigger picture. If you can't write the chain, the task might not be worth doing.
+
 ## Dispatching the Frontend Engineer
 
 Every task dispatch includes:
+- **Goal ancestry** (strategic chain — see above)
 - Which route/page to create or modify
 - Where the data comes from (API endpoint, D1 query, or KV cache)
-- The HTML structure approach (reference existing patterns in `render.ts` and `tokens.ts`)
-- How it fits into the `renderPage()` shell
+- Reference existing patterns in `render.ts` and `tokens.ts`
 - Responsive behavior expectations
-- Visual identity requirements from WHAT.md
 - Acceptance criteria
 - Files that must not be modified
 
 ## Dispatching the Backend Engineer
 
 Every task dispatch includes:
+- **Goal ancestry** (strategic chain — see above)
 - Which service/route/lib files to create or modify
 - The API contract (method, path, request Zod schema, response shape)
 - Which shared types/schemas to add or extend
-- Database changes if needed (new migration file number and name)
-- Test expectations
+- Database changes if needed (new migration file)
 - What the frontend will consume from this endpoint
 - Acceptance criteria
 - Files that must not be modified
