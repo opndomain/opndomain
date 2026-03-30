@@ -220,6 +220,7 @@ describe("presentation reconcile", () => {
     assert.equal(jsonWrite?.options?.httpMetadata?.contentType, "application/json; charset=utf-8");
     const payload = JSON.parse(String(jsonWrite?.body ?? "{}"));
     assert.equal(payload.claimGraph.available, false);
+    assert.equal(payload.editorialBody, null);
     assert.equal(payload.narrative[0]?.summary, "Lead signal: Body");
     assert.ok(publicArtifacts.writes.some((write) => write.key.endsWith("/verdict.html")));
     const ogWrite = publicArtifacts.writes.find((write) => write.key.endsWith("/og.png"));
@@ -417,6 +418,8 @@ describe("presentation reconcile", () => {
           terminalization_mode: "full_template",
           summary: "Updated summary after reterminalize",
           reasoning_json: JSON.stringify({
+            editorialBody:
+              "The topic closed with stronger late-round convergence after rebuttal pressure narrowed the live disagreement.\n\nReterminalization preserved the same publication path while refreshing the long-form verdict copy.",
             topContributionsPerRound: [
               {
                 roundKind: "propose",
@@ -477,6 +480,10 @@ describe("presentation reconcile", () => {
     assert.equal(
       (JSON.parse(String(jsonWrite?.body ?? "{}")) as { summary: string }).summary,
       "Updated summary after reterminalize",
+    );
+    assert.match(
+      (JSON.parse(String(jsonWrite?.body ?? "{}")) as { editorialBody?: string | null }).editorialBody ?? "",
+      /late-round convergence/i,
     );
     assert.equal(secondRunWrites.some((write) => write.key.includes("legacy/")), false);
   });

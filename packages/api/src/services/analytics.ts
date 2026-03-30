@@ -10,9 +10,13 @@ import type {
   AnalyticsOverviewQuery,
   AnalyticsOverviewResponse,
   AnalyticsOverviewSeriesEntry,
+  AnalyticsTopicBucketDetail,
+  AnalyticsTopicContributionDimensions,
   AnalyticsTopicFunnelEntry,
   AnalyticsTopicResponse,
   AnalyticsTopicScoreBucket,
+  AnalyticsVoteReliabilityQuery,
+  AnalyticsVoteReliabilityResponse,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
@@ -75,7 +79,31 @@ type ClaimCountRow = {
 
 type ScoreBucketRow = {
   bucket_index: number;
+  round_kind: string;
   count: number;
+};
+
+type BucketDetailRow = {
+  contribution_id: string;
+  being_id: string;
+  being_handle: string;
+  round_id: string;
+  round_kind: string;
+  final_score: number | null;
+  excerpt: string | null;
+  substance_score: number | null;
+  relevance: number | null;
+  novelty: number | null;
+  reframe: number | null;
+  role_bonus: number | null;
+};
+
+type DimensionAverageRow = {
+  substance_score: number | null;
+  relevance: number | null;
+  novelty: number | null;
+  reframe: number | null;
+  role_bonus: number | null;
 };
 
 type ParticipationFunnelRow = {
@@ -89,6 +117,15 @@ type ParticipationFunnelRow = {
 type RollupDateBoundsRow = {
   min_date: string | null;
   max_date: string | null;
+};
+
+type VoteReliabilityRow = {
+  being_id: string;
+  handle: string;
+  display_name: string;
+  trust_tier: "unverified" | "supervised" | "verified" | "established" | "trusted";
+  reliability: number | null;
+  votes_count: number | null;
 };
 
 function isoDate(value: Date) {
@@ -111,15 +148,135 @@ function buildOverviewWindow(
   };
 }
 
+function clampScore(value: unknown) {
+  return Math.max(0, Math.min(100, Number(value ?? 0)));
+}
+
+function bucketBounds(bucketIndex: number) {
+  return {
+    minScore: bucketIndex * 10,
+    maxScore: bucketIndex === 9 ? 100 : (bucketIndex + 1) * 10,
+  };
+}
+
+function bucketIndexForScore(value: unknown) {
+  const score = clampScore(value);
+  return score >= 100 ? 9 : Math.floor(score / 10);
+}
+
+function emptyRoundCounts() {
+  return {
+    propose: 0,
+    critique: 0,
+    refine: 0,
+    synthesize: 0,
+  };
+}
+
 function buildScoreDistribution(rows: ScoreBucketRow[]): AnalyticsTopicScoreBucket[] {
-  const counts = new Map(rows.map((row) => [Number(row.bucket_index ?? 0), toCount(row.count)]));
-  return [
-    { minScore: 0, maxScore: 20, count: counts.get(0) ?? 0 },
-    { minScore: 20, maxScore: 40, count: counts.get(1) ?? 0 },
-    { minScore: 40, maxScore: 60, count: counts.get(2) ?? 0 },
-    { minScore: 60, maxScore: 80, count: counts.get(3) ?? 0 },
-    { minScore: 80, maxScore: 100, count: counts.get(4) ?? 0 },
-  ];
+  const counts = new Map<number, ReturnType<typeof emptyRoundCounts>>();
+  for (const row of rows) {
+    const bucketIndex = toCount(row.bucket_index);
+    const roundKind = row.round_kind as keyof ReturnType<typeof emptyRoundCounts>;
+    const entry = counts.get(bucketIndex) ?? emptyRoundCounts();
+    if (roundKind in entry) {
+      entry[roundKind] = toCount(row.count);
+      counts.set(bucketIndex, entry);
+    }
+  }
+
+  return Array.from({ length: 10 }, (_, bucketIndex) => {
+    const roundCounts = counts.get(bucketIndex) ?? emptyRoundCounts();
+    const { minScore, maxScore } = bucketBounds(bucketIndex);
+    return {
+      minScore,
+      maxScore,
+      totalCount: Object.values(roundCounts).reduce((sum, count) => sum + count, 0),
+      roundCounts,
+    };
+  });
+}
+
+function toDimensionBreakdown(row?: DimensionAverageRow | BucketDetailRow | null): AnalyticsTopicContributionDimensions {
+  return {
+    substance: Number(row?.substance_score ?? 0),
+    relevance: Number(row?.relevance ?? 0),
+    novelty: Number(row?.novelty ?? 0),
+    reframe: Number(row?.reframe ?? 0),
+    roleBonus: Number(row?.role_bonus ?? 0),
+  };
+}
+
+function buildExcerpt(value: string | null) {
+  const trimmed = (value ?? "").trim();
+  if (trimmed.length <= 160) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, 157).trimEnd()}...`;
+}
+
+function buildBucketDetails(rows: BucketDetailRow[]): AnalyticsTopicBucketDetail[] {
+  const grouped = new Map<string, AnalyticsTopicBucketDetail>();
+  for (const row of rows) {
+    const bucketIndex = bucketIndexForScore(row.final_score);
+    const { minScore, maxScore } = bucketBounds(bucketIndex);
+    const roundKind = row.round_kind as AnalyticsTopicBucketDetail["roundKind"];
+    const key = `${minScore}:${maxScore}:${roundKind}`;
+    const entry = grouped.get(key) ?? {
+      minScore,
+      maxScore,
+      roundKind,
+      contributions: [],
+    };
+    entry.contributions.push({
+      contributionId: row.contribution_id,
+      beingId: row.being_id,
+      beingHandle: row.being_handle,
+      roundId: row.round_id,
+      roundKind,
+      finalScore: clampScore(row.final_score),
+      excerpt: buildExcerpt(row.excerpt),
+      dimensions: toDimensionBreakdown(row),
+    });
+    grouped.set(key, entry);
+  }
+
+  return Array.from(grouped.values()).sort((left, right) => {
+    if (left.minScore !== right.minScore) {
+      return left.minScore - right.minScore;
+    }
+    return left.roundKind.localeCompare(right.roundKind);
+  });
+}
+
+function normalizeReliabilityScore(value: unknown) {
+  return clampScore(Number(value ?? 0) * 10);
+}
+
+function buildVoteReliabilityHistogram(rows: VoteReliabilityRow[]) {
+  const histogram = Array.from({ length: 10 }, (_, bucketIndex) => ({
+    ...bucketBounds(bucketIndex),
+    totalCount: 0,
+    trustTierCounts: {
+      unverified: 0,
+      supervised: 0,
+      verified: 0,
+      established: 0,
+      trusted: 0,
+    },
+  }));
+
+  for (const row of rows) {
+    const bucketIndex = bucketIndexForScore(normalizeReliabilityScore(row.reliability));
+    const bucket = histogram[bucketIndex];
+    if (!bucket) {
+      continue;
+    }
+    bucket.totalCount += 1;
+    bucket.trustTierCounts[row.trust_tier] += 1;
+  }
+
+  return histogram;
 }
 
 function nextIsoDate(value: string) {
@@ -497,7 +654,7 @@ export async function getAnalyticsTopic(
     notFound("The requested topic was not found.");
   }
 
-  const [summary, claimCountRow, scoreBucketRows, participationFunnelRows] = await Promise.all([
+  const [summary, claimCountRow, scoreBucketRows, bucketDetailRows, dimensionAverageRow, participationFunnelRows] = await Promise.all([
     firstRow<TopicSummaryRow>(
       env.DB,
       `
@@ -519,16 +676,68 @@ export async function getAnalyticsTopic(
       `
         SELECT
           CASE
-            WHEN cs.final_score IS NULL THEN 0
-            WHEN cs.final_score >= 80 THEN 4
-            ELSE CAST(cs.final_score / 20 AS INTEGER)
+            WHEN COALESCE(cs.final_score, 0) >= 100 THEN 9
+            WHEN COALESCE(cs.final_score, 0) < 0 THEN 0
+            ELSE CAST(COALESCE(cs.final_score, 0) / 10 AS INTEGER)
           END AS bucket_index,
+          r.round_kind,
           COUNT(*) AS count
         FROM contributions c
         LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
+        INNER JOIN rounds r ON r.id = c.round_id
         WHERE c.topic_id = ?
+          AND r.round_kind IN ('propose', 'critique', 'refine', 'synthesize')
         GROUP BY bucket_index
+          , r.round_kind
         ORDER BY bucket_index ASC
+          , r.round_kind ASC
+      `,
+      topicId,
+    ),
+    allRows<BucketDetailRow>(
+      env.DB,
+      `
+        SELECT
+          c.id AS contribution_id,
+          c.being_id,
+          b.handle AS being_handle,
+          c.round_id,
+          r.round_kind,
+          cs.final_score,
+          COALESCE(c.body_clean, c.body) AS excerpt,
+          cs.substance_score,
+          cs.relevance,
+          cs.novelty,
+          cs.reframe,
+          cs.role_bonus
+        FROM contributions c
+        INNER JOIN beings b ON b.id = c.being_id
+        INNER JOIN rounds r ON r.id = c.round_id
+        LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
+        WHERE c.topic_id = ?
+          AND r.round_kind IN ('propose', 'critique', 'refine', 'synthesize')
+        ORDER BY
+          CASE WHEN cs.final_score IS NULL THEN 1 ELSE 0 END ASC,
+          cs.final_score DESC,
+          c.submitted_at ASC,
+          c.id ASC
+      `,
+      topicId,
+    ),
+    firstRow<DimensionAverageRow>(
+      env.DB,
+      `
+        SELECT
+          COALESCE(AVG(cs.substance_score), 0) AS substance_score,
+          COALESCE(AVG(cs.relevance), 0) AS relevance,
+          COALESCE(AVG(cs.novelty), 0) AS novelty,
+          COALESCE(AVG(cs.reframe), 0) AS reframe,
+          COALESCE(AVG(cs.role_bonus), 0) AS role_bonus
+        FROM contributions c
+        INNER JOIN rounds r ON r.id = c.round_id
+        LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
+        WHERE c.topic_id = ?
+          AND r.round_kind IN ('propose', 'critique', 'refine', 'synthesize')
       `,
       topicId,
     ),
@@ -576,7 +785,50 @@ export async function getAnalyticsTopic(
       claimDensity: contributionCount > 0 ? Number((claimCount / contributionCount).toFixed(4)) : 0,
     },
     scoreDistribution: buildScoreDistribution(scoreBucketRows),
+    bucketDetails: buildBucketDetails(bucketDetailRows),
+    averageDimensionBreakdown: toDimensionBreakdown(dimensionAverageRow),
     participationFunnel,
+  };
+}
+
+export async function getAnalyticsVoteReliability(
+  env: ApiEnv,
+  query: AnalyticsVoteReliabilityQuery,
+): Promise<AnalyticsVoteReliabilityResponse> {
+  const rows = await allRows<VoteReliabilityRow>(
+    env.DB,
+    `
+      SELECT
+        vr.being_id,
+        b.handle,
+        b.display_name,
+        b.trust_tier,
+        vr.reliability,
+        vr.votes_count
+      FROM vote_reliability vr
+      INNER JOIN beings b ON b.id = vr.being_id
+      WHERE vr.votes_count >= ?
+        AND b.status = 'active'
+      ORDER BY vr.votes_count DESC, b.handle ASC, vr.being_id ASC
+    `,
+    query.minVotes,
+  );
+
+  return {
+    minVotes: query.minVotes,
+    histogram: buildVoteReliabilityHistogram(rows),
+    scatter: rows.map((row) => ({
+      beingId: row.being_id,
+      handle: row.handle,
+      displayName: row.display_name,
+      reliability: normalizeReliabilityScore(row.reliability),
+      votesCount: toCount(row.votes_count),
+      trustTier: row.trust_tier,
+    })),
+    summary: {
+      qualifyingBeings: rows.length,
+      maxVotesCount: rows.reduce((max, row) => Math.max(max, toCount(row.votes_count)), 0),
+    },
   };
 }
 

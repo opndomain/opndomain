@@ -7,10 +7,12 @@ import {
   AnalyticsLeaderboardResponseSchema,
   AnalyticsOverviewResponseSchema,
   AnalyticsTopicResponseSchema,
+  AnalyticsVoteReliabilityQuerySchema,
+  AnalyticsVoteReliabilityResponseSchema,
 } from "./index.js";
 
 describe("analytics contracts", () => {
-  it("validates overview, domains, leaderboard, topic, and backfill payloads", () => {
+  it("validates overview, domains, leaderboard, topic, vote reliability, and backfill payloads", () => {
     const overview = AnalyticsOverviewResponseSchema.parse({
       generatedAt: "2026-03-29T18:00:00Z",
       window: {
@@ -92,10 +94,48 @@ describe("analytics contracts", () => {
       scoreDistribution: [
         {
           minScore: 0,
-          maxScore: 20,
-          count: 4,
+          maxScore: 10,
+          totalCount: 4,
+          roundCounts: {
+            propose: 2,
+            critique: 1,
+            refine: 1,
+            synthesize: 0,
+          },
         },
       ],
+      bucketDetails: [
+        {
+          minScore: 0,
+          maxScore: 10,
+          roundKind: "propose",
+          contributions: [
+            {
+              contributionId: "ctr_1",
+              beingId: "bng_1",
+              beingHandle: "grid-analyst",
+              roundId: "rnd_1",
+              roundKind: "propose",
+              finalScore: 8.5,
+              excerpt: "Storage targets stabilize the grid during peak demand.",
+              dimensions: {
+                substance: 72,
+                relevance: 81,
+                novelty: 44,
+                reframe: 38,
+                roleBonus: 10,
+              },
+            },
+          ],
+        },
+      ],
+      averageDimensionBreakdown: {
+        substance: 71.4,
+        relevance: 76.8,
+        novelty: 48.2,
+        reframe: 39.6,
+        roleBonus: 9.5,
+      },
       participationFunnel: [
         {
           roundId: "rnd_1",
@@ -105,6 +145,42 @@ describe("analytics contracts", () => {
           contributionCount: 14,
         },
       ],
+    });
+
+    const voteReliabilityQuery = AnalyticsVoteReliabilityQuerySchema.parse({
+      minVotes: "5",
+    });
+
+    const voteReliability = AnalyticsVoteReliabilityResponseSchema.parse({
+      minVotes: 5,
+      histogram: [
+        {
+          minScore: 70,
+          maxScore: 80,
+          totalCount: 2,
+          trustTierCounts: {
+            unverified: 0,
+            supervised: 1,
+            verified: 1,
+            established: 0,
+            trusted: 0,
+          },
+        },
+      ],
+      scatter: [
+        {
+          beingId: "bng_1",
+          handle: "grid-analyst",
+          displayName: "Grid Analyst",
+          reliability: 76,
+          votesCount: 9,
+          trustTier: "verified",
+        },
+      ],
+      summary: {
+        qualifyingBeings: 2,
+        maxVotesCount: 9,
+      },
     });
 
     const backfillRequest = AnalyticsBackfillRequestSchema.parse({
@@ -124,6 +200,10 @@ describe("analytics contracts", () => {
     assert.equal(domains.domains[0]?.domainSlug, "energy");
     assert.equal(leaderboard.leaderboard[0]?.sampleCount, 16);
     assert.equal(topic.summary.claimDensity, 0.58);
+    assert.equal(topic.scoreDistribution[0]?.roundCounts.propose, 2);
+    assert.equal(topic.bucketDetails[0]?.contributions[0]?.dimensions.roleBonus, 10);
+    assert.equal(voteReliabilityQuery.minVotes, 5);
+    assert.equal(voteReliability.scatter[0]?.trustTier, "verified");
     assert.equal(backfillRequest.overwrite, true);
     assert.equal(backfillResponse.daysProcessed, 29);
   });

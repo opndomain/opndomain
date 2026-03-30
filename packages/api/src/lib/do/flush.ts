@@ -33,6 +33,12 @@ type AuthoritativeTopicVoteStatsRow = TopicVoteStatsRow & {
   topic_id: string;
 };
 
+type RoundTimingRow = {
+  id: string;
+  starts_at: string | null;
+  ends_at: string | null;
+};
+
 function sqlExec(state: DurableObjectState, sql: string, ...bindings: unknown[]) {
   return Array.from(
     (
@@ -49,6 +55,44 @@ function buildInClause(ids: string[]): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function computeVoteTimingPercentages(
+  acceptedAt: unknown,
+  round: RoundTimingRow | undefined,
+): { votePositionPct: number | null; roundElapsedPct: number | null } {
+  const acceptedAtMs = typeof acceptedAt === "string" ? new Date(acceptedAt).getTime() : Number.NaN;
+  const startsAtMs = round?.starts_at ? new Date(round.starts_at).getTime() : Number.NaN;
+  const endsAtMs = round?.ends_at ? new Date(round.ends_at).getTime() : Number.NaN;
+  if (!Number.isFinite(acceptedAtMs) || !Number.isFinite(startsAtMs) || !Number.isFinite(endsAtMs) || endsAtMs <= startsAtMs) {
+    return { votePositionPct: null, roundElapsedPct: null };
+  }
+  const elapsedPct = clamp((acceptedAtMs - startsAtMs) / (endsAtMs - startsAtMs), 0, 1);
+  return {
+    // The approved backend scope derives timing analytics from authoritative round bounds at flush time.
+    votePositionPct: elapsedPct,
+    roundElapsedPct: elapsedPct,
+  };
+}
+
+async function loadRoundTimingRows(env: ApiEnv, roundIds: string[]) {
+  const uniqueRoundIds = Array.from(new Set(roundIds.filter(Boolean)));
+  if (uniqueRoundIds.length === 0) {
+    return new Map<string, RoundTimingRow>();
+  }
+
+  const results = await env.DB
+    .prepare(
+      `
+        SELECT id, starts_at, ends_at
+        FROM rounds
+        WHERE id IN (${buildInClause(uniqueRoundIds)})
+      `,
+    )
+    .bind(...uniqueRoundIds)
+    .all<RoundTimingRow>();
+
+  return new Map((results.results ?? []).map((row) => [row.id, row]));
 }
 
 function toWeightedVoteScore(rawWeightedSum: number, maxPossible: number): number {
@@ -433,12 +477,20 @@ async function flushVoteRecords(
     vote,
     payload: JSON.parse(vote.payload_json) as Record<string, unknown>,
   }));
+  const roundTimingByRoundId = await loadRoundTimingRows(
+    env,
+    parsedVotes.map(({ payload }) => String(payload.roundId ?? "")),
+  );
 
-  const statements = parsedVotes.map(({ payload }) =>
-    env.DB.prepare(
+  const statements = parsedVotes.map(({ payload }) => {
+    const timing = computeVoteTimingPercentages(
+      payload.acceptedAt,
+      roundTimingByRoundId.get(String(payload.roundId ?? "")),
+    );
+    return env.DB.prepare(
       `INSERT OR IGNORE INTO votes (
-        id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_position_pct, round_elapsed_pct, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       payload.voteId,
       payload.topicId,
@@ -447,9 +499,11 @@ async function flushVoteRecords(
       payload.voterBeingId,
       payload.direction,
       payload.weight,
+      timing.votePositionPct,
+      timing.roundElapsedPct,
       payload.acceptedAt,
-    ),
-  );
+    );
+  });
 
   let results: Array<{ success?: boolean; error?: string }> = [];
   try {

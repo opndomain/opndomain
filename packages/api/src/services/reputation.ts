@@ -174,23 +174,42 @@ export async function updateDomainReputation(
   const activeAt = now.toISOString();
 
   const id = existing?.id ?? createId("drp");
-  await env.DB
-    .prepare(
-      `
-        INSERT INTO domain_reputation (
-          id, domain_id, being_id, average_score, sample_count, m2, consistency_score, decayed_score, last_active_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(domain_id, being_id) DO UPDATE SET
-          average_score = excluded.average_score,
-          sample_count = excluded.sample_count,
-          m2 = excluded.m2,
-          consistency_score = excluded.consistency_score,
-          decayed_score = excluded.decayed_score,
-          last_active_at = excluded.last_active_at
-      `,
-    )
-    .bind(id, domainId, beingId, averageScore, sampleCount, m2, consistencyScore, decayedScore, activeAt)
-    .run();
+  await env.DB.batch([
+    env.DB
+      .prepare(
+        `
+          INSERT INTO domain_reputation (
+            id, domain_id, being_id, average_score, sample_count, m2, consistency_score, decayed_score, last_active_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(domain_id, being_id) DO UPDATE SET
+            average_score = excluded.average_score,
+            sample_count = excluded.sample_count,
+            m2 = excluded.m2,
+            consistency_score = excluded.consistency_score,
+            decayed_score = excluded.decayed_score,
+            last_active_at = excluded.last_active_at
+        `,
+      )
+      .bind(id, domainId, beingId, averageScore, sampleCount, m2, consistencyScore, decayedScore, activeAt),
+    env.DB
+      .prepare(
+        `
+          INSERT INTO domain_reputation_history (
+            id, domain_id, being_id, average_score, consistency_score, decayed_score, sample_count, recorded_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .bind(
+        createId("drh"),
+        domainId,
+        beingId,
+        averageScore,
+        consistencyScore,
+        decayedScore,
+        sampleCount,
+        activeAt,
+      ),
+  ]);
 
   return {
     id,

@@ -65,6 +65,7 @@ type VerdictSummary = {
     }>;
   }>;
   summary: string;
+  editorialBody: string | null;
   narrative: Array<{
     roundIndex: number;
     roundKind: string;
@@ -83,6 +84,40 @@ type VerdictSummary = {
   participantCount: number;
   contributionCount: number;
 };
+
+function buildEditorialBody(
+  rounds: RoundSummaryRow[],
+  summary: string,
+  narrative: VerdictSummary["narrative"],
+  highlights: VerdictSummary["highlights"],
+): string | null {
+  const completedRounds = rounds.filter((round) => round.status === "completed");
+  if (completedRounds.length === 0) {
+    return null;
+  }
+
+  const leadBeat = narrative[0] ?? null;
+  const closingBeat = narrative[narrative.length - 1] ?? null;
+  const strongestHighlight = highlights[0] ?? null;
+  const openingParagraph = [
+    `This topic closed after ${completedRounds.length} completed round${completedRounds.length === 1 ? "" : "s"} with a verdict shaped by transcript-visible scoring rather than a single unchallenged claim.`,
+    summary,
+    leadBeat?.summary ?? null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+
+  const closingParagraph = [
+    strongestHighlight
+      ? `The clearest closing signal came from @${strongestHighlight.beingHandle} in the ${strongestHighlight.roundKind.replaceAll("_", " ")} round, where the highest-scoring excerpt emphasized: "${strongestHighlight.excerpt.slice(0, 220)}${strongestHighlight.excerpt.length > 220 ? "..." : ""}"`
+      : null,
+    closingBeat?.summary ?? null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+
+  return [openingParagraph, closingParagraph].filter(Boolean).join("\n\n") || null;
+}
 
 function chooseConfidence(mode: TerminalizationMode, completedRounds: number): VerdictConfidence {
   const allowed = TERMINALIZATION_CONFIDENCE_MAP[mode];
@@ -179,9 +214,12 @@ async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: Con
     )
     .slice(0, VERDICT_TOP_CONTRIBUTIONS_PER_ROUND);
 
+  const editorialBody = buildEditorialBody(rounds, summary, narrative, highlights);
+
   return {
     leaders,
     summary,
+    editorialBody,
     narrative,
     highlights,
     participantCount: new Set(visibleContributions.map((contribution) => contribution.being_id)).size,
@@ -377,6 +415,7 @@ export async function runTerminalizationSequence(
       totalRounds: rounds.length,
       participantCount: verdictPresentation.participantCount,
       contributionCount: verdictPresentation.contributionCount,
+      editorialBody: verdictPresentation.editorialBody,
       narrative: verdictPresentation.narrative,
       highlights: verdictPresentation.highlights,
       ...(epistemicReasoning ? { epistemic: epistemicReasoning } : {}),

@@ -49,6 +49,7 @@ type ParsedReasoning = {
   totalRounds?: number;
   participantCount?: number;
   contributionCount?: number;
+  editorialBody?: string | null;
   topContributionsPerRound?: Array<{
     roundKind?: string;
     contributions?: Array<{
@@ -277,6 +278,10 @@ async function buildVerdictPresentation(
       stance: verdict.terminalization_mode === "insufficient_signal" ? "uncertain" : "mixed",
     },
     summary: verdict.summary,
+    editorialBody:
+      typeof reasoning.editorialBody === "string" && reasoning.editorialBody.trim().length > 0
+        ? reasoning.editorialBody
+        : null,
     confidence: {
       label: confidence,
       score: CONFIDENCE_SCORE_MAP[confidence],

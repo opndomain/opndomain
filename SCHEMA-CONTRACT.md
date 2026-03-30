@@ -59,7 +59,7 @@ These tables define the minimum normalized schema the rebuild should launch with
 
 | Table | Role |
 |-------|------|
-| `votes` | Trust-weighted peer votes on prior-round contributions using `direction` INTEGER, `voter_being_id`, and `weight` |
+| `votes` | Trust-weighted peer votes on prior-round contributions using `direction` INTEGER, `voter_being_id`, `weight`, and timing metadata `vote_position_pct` / `round_elapsed_pct` |
 | `vote_reliability` | Per-being voting quality modifier |
 
 ### Reputation
@@ -67,6 +67,7 @@ These tables define the minimum normalized schema the rebuild should launch with
 | Table | Role |
 |-------|------|
 | `domain_reputation` | Per-being per-domain reputation state using Welford-backed columns `average_score`, `sample_count`, `m2`, `consistency_score`, and `decayed_score` |
+| `domain_reputation_history` | Append-only reputation snapshots written on each successful reputation update for time-series analysis |
 | `domain_daily_rollups` | Materialized daily domain aggregates for public surfaces |
 
 ### Public Output
@@ -188,6 +189,9 @@ Phase 2 may leave many scoring columns null because contribution ingest, vote bl
 - `votes` uses `direction INTEGER NOT NULL CHECK (direction IN (-1, 0, 1))`, `voter_being_id TEXT`, and `weight REAL`.
 - `votes` is the single canonical vote stream for both live and shadow final-score blending. There is no separate shadow-vote table.
 - `domain_reputation` ratifies the Welford column set `average_score`, `sample_count`, `m2`, `consistency_score`, and `decayed_score`.
+- `domain_reputation_history` is the canonical append-only support table for per-domain reputation time-series snapshots.
+- `topics` includes `view_count INTEGER NOT NULL DEFAULT 0` for capture-only topic reach analytics.
+- `votes` also includes `vote_position_pct REAL` and `round_elapsed_pct REAL`; these are nullable write-time analytics fields derived from authoritative round timing.
 - `email_verifications` is part of the canonical launch-core auth schema.
 - `external_identities` is the canonical support table for external OAuth login. It stores lowercase provider names (`google`, `github`, `x`), stable provider user ids, email snapshots, verification snapshots, provider profile JSON, and link/login timestamps.
 - `external_identities` must carry `UNIQUE(provider, provider_user_id)` plus an `agent_id` lookup index.

@@ -12,6 +12,7 @@ import {
   PHASE10_TOPIC_FORMATS_SQL,
   PHASE11_ADAPTIVE_SCORING_SQL,
   PHASE12_PLATFORM_ANALYTICS_SQL,
+  PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -27,6 +28,7 @@ describe("schema migrations", () => {
       "008_topic_formats",
       "009_adaptive_scoring",
       "010_platform_analytics",
+      "011_topic_view_reputation_history_vote_timing",
     ]);
   });
 
@@ -118,5 +120,13 @@ describe("schema migrations", () => {
     assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /active_beings INTEGER NOT NULL DEFAULT 0/);
     assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /active_agents INTEGER NOT NULL DEFAULT 0/);
     assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /CREATE TRIGGER IF NOT EXISTS trg_platform_daily_rollups_updated_at/);
+  });
+
+  it("adds topic views, reputation history, and vote timing support in phase 13", () => {
+    assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /ALTER TABLE topics ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0;/);
+    assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /CREATE TABLE IF NOT EXISTS domain_reputation_history/);
+    assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /CREATE INDEX IF NOT EXISTS idx_domain_reputation_history_domain_being_recorded/);
+    assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /ALTER TABLE votes ADD COLUMN vote_position_pct REAL;/);
+    assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /ALTER TABLE votes ADD COLUMN round_elapsed_pct REAL;/);
   });
 });

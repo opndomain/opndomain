@@ -171,8 +171,18 @@ export async function readTopicStateTelemetry(state: DurableObjectState): Promis
     state,
     `SELECT payload_json FROM pending_scores WHERE flushed = 0`,
   ).reduce((count, row) => {
-    const payload = JSON.parse(String(row.payload_json ?? "{}")) as { semantic_score?: number | null };
-    return payload.semantic_score === null || payload.semantic_score === undefined ? count + 1 : count;
+    const payload = JSON.parse(String(row.payload_json ?? "{}")) as {
+      semantic_score?: number | null;
+      details_json?: {
+        semantic?: {
+          enabled?: boolean;
+        };
+      };
+    };
+    return payload.details_json?.semantic?.enabled === true &&
+      (payload.semantic_score === null || payload.semantic_score === undefined)
+      ? count + 1
+      : count;
   }, 0);
 
   const [

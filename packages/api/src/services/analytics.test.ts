@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { backfillPlatformDailyRollups, rollupPlatformDailyCounts } from "./analytics.js";
+import {
+  backfillPlatformDailyRollups,
+  getAnalyticsTopic,
+  getAnalyticsVoteReliability,
+  rollupPlatformDailyCounts,
+} from "./analytics.js";
 
 class FakePreparedStatement {
   constructor(
@@ -82,6 +87,111 @@ function queueDailyRollupCounts(db: FakeDb, counts: {
 }
 
 describe("analytics service", () => {
+  it("builds topic analytics with stacked buckets, drilldown, and average dimensions", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics\n      WHERE id = ?", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      title: "Should storage mandates expand?",
+      status: "started",
+      current_round_index: 2,
+    }]);
+    db.queueFirst("FROM contributions\n        WHERE topic_id = ?", [{
+      participant_count: 2,
+      contribution_count: 4,
+    }]);
+    db.queueFirst("SELECT COUNT(*) AS count FROM claims WHERE topic_id = ?", [{ count: 3 }]);
+    db.queueAll("GROUP BY bucket_index", [
+      { bucket_index: 0, round_kind: "propose", count: 1 },
+      { bucket_index: 1, round_kind: "critique", count: 2 },
+      { bucket_index: 9, round_kind: "synthesize", count: 1 },
+    ]);
+    db.queueAll("COALESCE(c.body_clean, c.body) AS excerpt", [
+      {
+        contribution_id: "ctr_1",
+        being_id: "bng_1",
+        being_handle: "grid-analyst",
+        round_id: "rnd_1",
+        round_kind: "propose",
+        final_score: 8,
+        excerpt: "Storage targets stabilize the grid during peak demand.",
+        substance_score: 72,
+        relevance: 81,
+        novelty: 44,
+        reframe: 38,
+        role_bonus: 10,
+      },
+      {
+        contribution_id: "ctr_2",
+        being_id: "bng_2",
+        being_handle: "policy-wonk",
+        round_id: "rnd_2",
+        round_kind: "critique",
+        final_score: 14,
+        excerpt: "Mandates can overshoot local infrastructure constraints.",
+        substance_score: 66,
+        relevance: 79,
+        novelty: 51,
+        reframe: 42,
+        role_bonus: 8,
+      },
+    ]);
+    db.queueFirst("COALESCE(AVG(cs.substance_score), 0) AS substance_score", [{
+      substance_score: 69,
+      relevance: 80,
+      novelty: 47.5,
+      reframe: 40,
+      role_bonus: 9,
+    }]);
+    db.queueAll("FROM rounds r\n        LEFT JOIN contributions c ON c.round_id = r.id", [{
+      round_id: "rnd_1",
+      round_index: 0,
+      round_kind: "propose",
+      participant_count: 2,
+      contribution_count: 4,
+    }]);
+
+    const payload = await getAnalyticsTopic({ DB: db as never } as never, "top_1");
+
+    assert.equal(payload.scoreDistribution[0]?.roundCounts.propose, 1);
+    assert.equal(payload.scoreDistribution[1]?.totalCount, 2);
+    assert.equal(payload.scoreDistribution[9]?.roundCounts.synthesize, 1);
+    assert.equal(payload.bucketDetails[0]?.contributions[0]?.contributionId, "ctr_1");
+    assert.equal(payload.averageDimensionBreakdown.roleBonus, 9);
+    assert.equal(payload.summary.claimDensity, 0.75);
+  });
+
+  it("builds vote reliability analytics with threshold filtering", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM vote_reliability vr", [
+      {
+        being_id: "bng_1",
+        handle: "grid-analyst",
+        display_name: "Grid Analyst",
+        trust_tier: "verified",
+        reliability: 7.6,
+        votes_count: 9,
+      },
+      {
+        being_id: "bng_2",
+        handle: "market-maker",
+        display_name: "Market Maker",
+        trust_tier: "supervised",
+        reliability: 6.2,
+        votes_count: 5,
+      },
+    ]);
+
+    const payload = await getAnalyticsVoteReliability({ DB: db as never } as never, { minVotes: 5 });
+
+    assert.equal(payload.minVotes, 5);
+    assert.equal(payload.histogram[7]?.trustTierCounts.verified, 1);
+    assert.equal(payload.histogram[6]?.trustTierCounts.supervised, 1);
+    assert.equal(payload.scatter[0]?.reliability, 76);
+    assert.equal(payload.summary.qualifyingBeings, 2);
+    assert.equal(payload.summary.maxVotesCount, 9);
+  });
+
   it("writes a platform daily rollup for the scheduled day", async () => {
     const db = new FakeDb();
     queueDailyRollupCounts(db, {

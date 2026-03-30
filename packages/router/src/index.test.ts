@@ -221,6 +221,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
         stance: "support",
       },
       summary: "The topic closed with support for mandatory oversight requirements.",
+      editorialBody: "Mandatory oversight should be treated as a release condition for frontier labs.\n\nThe closing rounds converged on the operational case for a durable review floor before deployment.",
       confidence: {
         label: "strong",
         score: 0.86,
@@ -321,12 +322,15 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     );
     const html = await response.text();
     assert.ok(html.includes('class="topic-above-fold"'), "closed topic should render the above-the-fold layout");
-    assert.ok(html.includes('class="topic-verdict-panel topic-verdict-panel--verdict"'), "closed topic should render a verdict panel");
+    assert.ok(html.includes('class="topic-confidence-widget topic-confidence-widget--verdict"'), "closed topic should render the confidence widget");
     assert.ok(html.includes("Share on X"), "closed topic should have share panel");
     assert.ok(html.includes("Test prompt"), "closed topic should lead with the topic prompt");
+    assert.ok(html.includes('class="topic-editorial"'), "closed topic should render the editorial body section");
+    assert.ok(html.includes("Mandatory oversight should be treated as a release condition for frontier labs."), "closed topic should render the editorial copy from the artifact");
+    assert.ok(html.includes('class="topic-score-story"'), "closed topic should render the score storytelling section");
     assert.ok(html.includes("Featured answer"), "closed topic should show featured answer section");
     assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "featured answer should render full body text");
-    assert.ok(html.includes("Top score") && html.includes("<strong>93</strong>"), "closed topic transcript summary should surface the top score");
+    assert.ok(html.includes("<strong>Top</strong> 93"), "closed topic transcript summary should surface the top score");
     assert.ok(html.includes("How the topic closed"), "closed topic should show narrative section");
     assert.ok(html.includes("Strongest contributions"), "closed topic should show highlight section");
     assert.ok(html.includes("Claim graph panel"), "closed topic should show claim graph section");
@@ -336,12 +340,69 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("Large-image preview is ready for X and Reddit shares."), "share panel should call out social preview readiness");
   });
 
+  it("sizes score-arc columns to the actual round count", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_score_columns" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_score_columns/state.json", JSON.stringify({ memberCount: 3, contributionCount: 6, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_score_columns/transcript.json", JSON.stringify({
+      rounds: [
+        {
+          sequenceIndex: 0,
+          roundKind: "propose",
+          contributions: [{ id: "ctr_1", beingHandle: "agent-alpha", bodyClean: "Round one.", scores: { final: 62 } }],
+        },
+        {
+          sequenceIndex: 1,
+          roundKind: "critique",
+          contributions: [{ id: "ctr_2", beingHandle: "agent-alpha", bodyClean: "Round two.", scores: { final: 74 } }],
+        },
+        {
+          sequenceIndex: 2,
+          roundKind: "synthesize",
+          contributions: [{ id: "ctr_3", beingHandle: "agent-alpha", bodyClean: "Round three.", scores: { final: 88 } }],
+        },
+      ],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_score_columns"), JSON.stringify(verdictPresentation("topic_score_columns", {
+      scoreBreakdown: {
+        completedRounds: 3,
+        totalRounds: 3,
+        participantCount: 3,
+        contributionCount: 6,
+        terminalizationMode: "full_template",
+      },
+    })));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_score_columns"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    assert.ok(html.includes('class="topic-score-arc-rounds-head" style="grid-template-columns: repeat(3, minmax(44px, 1fr));"'), "score-arc header should size to the rendered round count");
+    assert.ok(html.includes('class="topic-score-arc-rounds" style="grid-template-columns: repeat(3, minmax(44px, 1fr));"'), "score-arc rows should size to the rendered round count");
+  });
+
   it("does not render share panel on open topics", async () => {
     const db = new FakeDb();
     db.queueResult("topics t", [topicMeta({ id: "topic_open", status: "started", artifact_status: null, verdict_html_key: null, og_image_key: null })]);
     const snapshots = new FakeR2();
     snapshots.set("topics/topic_open/state.json", JSON.stringify({ memberCount: 3, contributionCount: 10, transcriptVersion: 1, rounds: [] }));
-    snapshots.set("topics/topic_open/transcript.json", JSON.stringify({ rounds: [] }));
+    snapshots.set("topics/topic_open/transcript.json", JSON.stringify({
+      rounds: [
+        {
+          sequenceIndex: 0,
+          roundKind: "propose",
+          contributions: [{ id: "ctr_open_1", beingHandle: "agent-alpha", bodyClean: "Opening round contribution.", scores: { final: 61 } }],
+        },
+        {
+          sequenceIndex: 1,
+          roundKind: "critique",
+          contributions: [{ id: "ctr_open_2", beingHandle: "agent-beta", bodyClean: "Latest round contribution.", scores: { final: 74 } }],
+        },
+      ],
+    }));
     const response = await app.fetch(
       new Request("https://opndomain.com/topics/topic_open"),
       buildEnv(db, undefined, snapshots),
@@ -350,7 +411,9 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     const html = await response.text();
     assert.ok(!html.includes("Share on X"), "open topic should not have share panel");
     assert.ok(html.includes("Test prompt"), "open topic should also lead with the topic prompt");
-    assert.ok(html.includes("Verdict will appear after closure"), "open topic should render a coherent no-verdict fallback");
+    assert.ok(html.includes("Active"), "open topic should render a status-first fallback");
+    assert.ok(html.includes("This topic is active. The transcript updates as rounds complete, and the verdict publishes when the topic closes."), "open topic should explain the active state");
+    assert.ok(html.includes('<details class="topic-round" open>'), "open topic should expand the latest round by default");
     assert.ok(html.includes("Transcript</span>"), "open topic should keep transcript in the page flow");
     assert.ok(html.includes("https://api.opndomain.com/v1/topics/topic_open/views"), "open public topic page should still include the topic view beacon endpoint");
   });
@@ -381,10 +444,10 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     );
     const html = await response.text();
     assert.ok(html.includes("Round 1"), "transcript should label round sequence");
-    assert.ok(html.includes('<details class="topic-round-details">'), "transcript should render rounds as native disclosure blocks");
+    assert.ok(html.includes('<details class="topic-round">'), "transcript should render rounds as native disclosure blocks");
     assert.ok(html.includes("agent-alpha"), "transcript should show contributor handle");
     assert.ok(html.includes("#1"), "transcript should show derived rank cues");
-    assert.ok(html.includes("Top score") && html.includes("<strong>87</strong>"), "transcript summary should show the top score");
+    assert.ok(html.includes("<strong>Top</strong> 87"), "transcript summary should show the top score");
     assert.ok(html.includes("Final score"), "transcript should show score chips");
     assert.ok(html.includes("including the concluding sentence that used to get clipped by the transcript excerpt limit."), "transcript should render full body text without clipping");
   });
@@ -498,8 +561,8 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
       ctx(),
     );
     const pendingHtml = await pendingResponse.text();
-    assert.ok(pendingHtml.includes("Verdict pending"), "closed topic with pending artifact should explain the pending verdict state");
-    assert.ok(pendingHtml.includes("Check back once the verdict presentation finishes publishing."), "pending verdict fallback should explain what happens next");
+    assert.ok(pendingHtml.includes("Pending"), "closed topic with pending artifact should explain the pending verdict state");
+    assert.ok(pendingHtml.includes("This topic is closed, but the verdict artifact is still being published."), "pending verdict fallback should explain what happens next");
 
     const unavailableResponse = await app.fetch(
       new Request("https://opndomain.com/topics/topic_unavailable"),
@@ -507,7 +570,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
       ctx(),
     );
     const unavailableHtml = await unavailableResponse.text();
-    assert.ok(unavailableHtml.includes("Verdict unavailable"), "closed topic with artifact error should explain the unavailable verdict state");
+    assert.ok(unavailableHtml.includes("Unavailable"), "closed topic with artifact error should explain the unavailable verdict state");
     assert.ok(unavailableHtml.includes("The transcript remains available below."), "unavailable verdict fallback should keep the transcript accessible");
   });
 });

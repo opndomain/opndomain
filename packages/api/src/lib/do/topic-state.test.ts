@@ -287,6 +287,7 @@ class FakeStorage {
 
 class FakeDb {
   batchCalls = 0;
+  executedBatches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
   throwOnBatch = false;
   nextBatchResults: Array<{ success?: boolean; error?: string }> | null = null;
   throwOnRunMatch: RegExp | null = null;
@@ -330,6 +331,7 @@ class FakeDb {
 
   async batch(statements: Array<{ sql: string; bindings: unknown[] }>) {
     this.batchCalls += 1;
+    this.executedBatches.push(statements.map((statement) => ({ sql: statement.sql, bindings: statement.bindings })));
     if (this.throwOnBatch) {
       throw new Error("simulated partial failure");
     }
@@ -1084,16 +1086,44 @@ describe("topic state durable object", () => {
     storage.sql.pendingScores.set("sc_semantic_pending", {
       id: "sc_semantic_pending",
       contribution_id: "cnt_pending",
-      payload_json: JSON.stringify({ semantic_score: null }),
+      payload_json: JSON.stringify({
+        semantic_score: null,
+        details_json: {
+          semantic: {
+            enabled: true,
+          },
+        },
+      }),
       flushed: 0,
       created_at: "2026-03-25T00:00:00.000Z",
     });
     storage.sql.pendingScores.set("sc_semantic_complete", {
       id: "sc_semantic_complete",
       contribution_id: "cnt_complete",
-      payload_json: JSON.stringify({ semantic_score: 72 }),
+      payload_json: JSON.stringify({
+        semantic_score: 72,
+        details_json: {
+          semantic: {
+            enabled: true,
+          },
+        },
+      }),
       flushed: 0,
       created_at: "2026-03-25T00:01:00.000Z",
+    });
+    storage.sql.pendingScores.set("sc_semantic_disabled", {
+      id: "sc_semantic_disabled",
+      contribution_id: "cnt_disabled",
+      payload_json: JSON.stringify({
+        semantic_score: null,
+        details_json: {
+          semantic: {
+            enabled: false,
+          },
+        },
+      }),
+      flushed: 0,
+      created_at: "2026-03-25T00:02:00.000Z",
     });
 
     const telemetry = await readTopicStateTelemetry({ storage } as never);
@@ -1106,7 +1136,7 @@ describe("topic state durable object", () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const artifacts = new FakeBucket();
-    const acceptedAt = new Date().toISOString();
+    const acceptedAt = "2026-03-25T00:05:00.000Z";
 
     storage.sql.exec(
       `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
@@ -1129,6 +1159,11 @@ describe("topic state durable object", () => {
       acceptedAt,
     );
     queueVoteRecomputeRows(db);
+    db.queueAll("SELECT id, starts_at, ends_at\n        FROM rounds\n        WHERE id IN", [{
+      id: "rnd_active",
+      starts_at: "2026-03-25T00:00:00.000Z",
+      ends_at: "2026-03-25T00:10:00.000Z",
+    }]);
     queueSnapshotRows(db, "top_1");
 
     const result = await flushPendingTopicState(
@@ -1148,7 +1183,6 @@ describe("topic state durable object", () => {
     assert.deepEqual(result.flushedContributionIds, ["cnt_1"]);
     assert.equal(result.remainingCount, 0);
     assert.equal(db.batchCalls > 0, true);
-    assert.equal(Number(storage.sql.pendingAux.get("vot_1")?.flushed ?? 0), 1);
     assert.equal(db.runs.some((run) => run.sql.includes("UPDATE contribution_scores")), true);
     const topicAggregate = await storage.get("votes:topic-aggregate:top_1") as {
       topicId: string;
@@ -1176,6 +1210,62 @@ describe("topic state durable object", () => {
     assert.equal(contributionAggregate.upvoteCount, 1);
     assert.equal(contributionAggregate.downvoteCount, 0);
     assert.equal(typeof contributionAggregate.reconciledAt, "string");
+    const voteInsert = db.executedBatches[0]?.find((statement) => statement.sql.includes("INSERT OR IGNORE INTO votes"));
+    assert.ok(voteInsert);
+    assert.equal(voteInsert?.bindings[7], 0.5);
+    assert.equal(voteInsert?.bindings[8], 0.5);
+  });
+
+  it("persists null vote timing percentages when authoritative round timing is invalid", async () => {
+    const storage = new FakeStorage();
+    const db = new FakeDb();
+    const acceptedAt = "2026-03-25T00:05:00.000Z";
+
+    storage.sql.exec(
+      `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+       VALUES (?, 'votes', 'insert', ?, 0, ?)`,
+      "vot_invalid",
+      JSON.stringify({
+        voteId: "vot_invalid",
+        topicId: "top_1",
+        roundId: "rnd_active",
+        contributionId: "cnt_1",
+        voterBeingId: "bng_2",
+        direction: 1,
+        weight: 2,
+        value: "up",
+        weightedValue: 2,
+        acceptedAt,
+        idempotencyKey: "idem_vote_invalid",
+        targetRoundId: "rnd_prior",
+      }),
+      acceptedAt,
+    );
+    queueVoteRecomputeRows(db);
+    db.queueAll("SELECT id, starts_at, ends_at\n        FROM rounds\n        WHERE id IN", [{
+      id: "rnd_active",
+      starts_at: null,
+      ends_at: null,
+    }]);
+    queueSnapshotRows(db, "top_1");
+
+    const result = await flushPendingTopicState(
+      { storage } as never,
+      {
+        DB: db as never,
+        SNAPSHOTS: { put: async () => undefined } as never,
+        PUBLIC_ARTIFACTS: { put: async () => undefined } as never,
+        PUBLIC_CACHE: { delete: async () => undefined } as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+    );
+
+    assert.deepEqual(result.flushedContributionIds, ["cnt_1"]);
+    const voteInsert = db.executedBatches[0]?.find((statement) => statement.sql.includes("INSERT OR IGNORE INTO votes"));
+    assert.ok(voteInsert);
+    assert.equal(voteInsert?.bindings[7], null);
+    assert.equal(voteInsert?.bindings[8], null);
   });
 
   it("force-flush drains pending votes before returning", async () => {

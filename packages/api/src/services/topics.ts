@@ -8,6 +8,8 @@ import {
   TRANSCRIPT_QUERY_DEFAULT_LIMIT,
   TOPIC_TEMPLATES,
   buildTopicFormatSummary,
+  type TopicDirectoryListItem,
+  type TopicDirectoryQuery,
   type TranscriptQuery,
   type TopicFormat,
   type TrustTier,
@@ -121,9 +123,24 @@ type PendingRoundScheduleRow = {
 };
 
 export type TopicListFilters = {
-  status?: string;
+  status?: TopicDirectoryQuery["status"];
   domainSlug?: string;
-  topicFormat?: TopicFormat;
+  templateId?: TopicDirectoryQuery["templateId"];
+};
+
+type TopicDirectoryRow = {
+  id: string;
+  title: string;
+  status: TopicDirectoryListItem["status"];
+  prompt: string;
+  template_id: TopicDirectoryListItem["templateId"];
+  domain_slug: string;
+  domain_name: string;
+  member_count: number;
+  round_count: number;
+  current_round_index: number | null;
+  created_at: string;
+  updated_at: string;
 };
 
 type TranscriptCursorPayload = {
@@ -342,28 +359,54 @@ export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
     whereClauses.push("d.slug = ?");
     bindings.push(filters.domainSlug);
   }
-  if (filters.topicFormat) {
-    whereClauses.push("t.topic_format = ?");
-    bindings.push(filters.topicFormat);
+  if (filters.templateId) {
+    whereClauses.push("t.template_id = ?");
+    bindings.push(filters.templateId);
   }
 
-  const rows = await allRows<TopicRow>(
+  const rows = await allRows<TopicDirectoryRow>(
     env.DB,
     `
-      SELECT t.id, t.domain_id, t.title, t.prompt, t.template_id, t.status, t.cadence_family, t.cadence_preset,
-             t.topic_format, t.cadence_override_minutes, t.min_distinct_participants, t.countdown_seconds,
-             t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at, t.join_until,
-             t.countdown_started_at, t.stalled_at, t.closed_at, t.created_at, t.updated_at,
+      SELECT t.id, t.title, t.status, t.prompt, t.template_id,
              d.slug AS domain_slug,
-             d.name AS domain_name
+             d.name AS domain_name,
+             COALESCE(tm.member_count, 0) AS member_count,
+             COALESCE(r.round_count, 0) AS round_count,
+             t.current_round_index,
+             t.created_at,
+             t.updated_at
       FROM topics t
       INNER JOIN domains d ON d.id = t.domain_id
+      LEFT JOIN (
+        SELECT topic_id, COUNT(DISTINCT being_id) AS member_count
+        FROM topic_members
+        WHERE status = 'active'
+        GROUP BY topic_id
+      ) tm ON tm.topic_id = t.id
+      LEFT JOIN (
+        SELECT topic_id, COUNT(*) AS round_count
+        FROM rounds
+        GROUP BY topic_id
+      ) r ON r.topic_id = t.id
       ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
       ORDER BY t.created_at DESC
     `,
     ...bindings,
   );
-  return rows.map(mapTopic);
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    status: row.status,
+    prompt: row.prompt,
+    templateId: row.template_id,
+    domainSlug: row.domain_slug,
+    domainName: row.domain_name,
+    memberCount: Number(row.member_count ?? 0),
+    roundCount: Number(row.round_count ?? 0),
+    currentRoundIndex: row.current_round_index === null ? null : Number(row.current_round_index),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
 }
 
 export async function getTopic(env: ApiEnv, topicId: string) {

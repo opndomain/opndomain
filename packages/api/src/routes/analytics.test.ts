@@ -6,6 +6,7 @@ import {
   AnalyticsLeaderboardResponseSchema,
   AnalyticsOverviewResponseSchema,
   AnalyticsTopicResponseSchema,
+  AnalyticsVoteReliabilityResponseSchema,
 } from "@opndomain/shared";
 import { createApiApp } from "../index.js";
 
@@ -325,7 +326,28 @@ describe("analytics routes", () => {
       contribution_count: 4,
     }]);
     db.queueFirst("SELECT COUNT(*) AS count FROM claims WHERE topic_id = ?", [{ count: 0 }]);
-    db.queueAll("GROUP BY bucket_index", [{ bucket_index: 1, count: 4 }]);
+    db.queueAll("GROUP BY bucket_index", [{ bucket_index: 1, round_kind: "propose", count: 4 }]);
+    db.queueAll("COALESCE(c.body_clean, c.body) AS excerpt", [{
+      contribution_id: "ctr_1",
+      being_id: "bng_1",
+      being_handle: "grid-analyst",
+      round_id: "rnd_1",
+      round_kind: "propose",
+      final_score: 12,
+      excerpt: "Storage targets stabilize the grid during peak demand.",
+      substance_score: 72,
+      relevance: 81,
+      novelty: 44,
+      reframe: 38,
+      role_bonus: 10,
+    }]);
+    db.queueFirst("COALESCE(AVG(cs.substance_score), 0) AS substance_score", [{
+      substance_score: 72,
+      relevance: 81,
+      novelty: 44,
+      reframe: 38,
+      role_bonus: 10,
+    }]);
     db.queueAll("FROM rounds r\n        LEFT JOIN contributions c ON c.round_id = r.id", [{
       round_id: "rnd_1",
       round_index: 0,
@@ -345,7 +367,10 @@ describe("analytics routes", () => {
     const parsed = AnalyticsTopicResponseSchema.parse(payload.data);
     assert.equal(parsed.summary.claimCount, 0);
     assert.equal(parsed.summary.claimDensity, 0);
-    assert.equal(parsed.scoreDistribution[1]?.count, 4);
+    assert.equal(parsed.scoreDistribution[1]?.totalCount, 4);
+    assert.equal(parsed.scoreDistribution[1]?.roundCounts.propose, 4);
+    assert.equal(parsed.bucketDetails[0]?.contributions[0]?.contributionId, "ctr_1");
+    assert.equal(parsed.averageDimensionBreakdown.substance, 72);
   });
 
   it("returns not_found for an unknown topic id", async () => {
@@ -361,6 +386,45 @@ describe("analytics routes", () => {
     assert.equal(response.status, 404);
     const payload = await response.json() as { code: string };
     assert.equal(payload.code, "not_found");
+  });
+
+  it("returns vote reliability analytics that match the shared schema", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM vote_reliability vr", [{
+      being_id: "bng_1",
+      handle: "grid-analyst",
+      display_name: "Grid Analyst",
+      trust_tier: "verified",
+      reliability: 7.6,
+      votes_count: 9,
+    }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=5"),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as { data: unknown };
+    const parsed = AnalyticsVoteReliabilityResponseSchema.parse(payload.data);
+    assert.equal(parsed.minVotes, 5);
+    assert.equal(parsed.histogram[7]?.trustTierCounts.verified, 1);
+    assert.equal(parsed.scatter[0]?.reliability, 76);
+  });
+
+  it("rejects invalid vote reliability query parameters", async () => {
+    const db = new FakeDb();
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=0"),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 400);
+    const payload = await response.json() as { code: string };
+    assert.equal(payload.code, "invalid_request");
   });
 
   it("accepts admin-authenticated platform rollup backfill requests", async () => {

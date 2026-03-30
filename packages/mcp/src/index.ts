@@ -493,7 +493,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       if (domain) params.set("domain", domain);
       const query = params.toString() ? `?${params}` : "";
       const topics = await apiJson<any>(env, `/v1/topics${query}`);
-      return toToolResult(topics);
+      return toToolResult({ data: topics, count: topics.length });
     },
     "list-joinable-topics": async ({ domainSlug, templateId, topicFormat }) => {
       const topicFormatParam = topicFormat ? `&topicFormat=${encodeURIComponent(topicFormat)}` : "";
@@ -513,7 +513,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         throw new Error("No stored authenticated state is available.");
       }
       const data = await listOwnedBeings(env, state.accessToken);
-      return toToolResult(data);
+      return toToolResult({ data, count: data.length });
     },
     "ensure-being": async ({ clientId, email, name, handle }) => {
       const state = await resolveState(env, { clientId, email });

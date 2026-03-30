@@ -36,6 +36,8 @@ class FakePreparedStatement {
 
 class FakeDb {
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
+  batchCalls: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
+  throwOnBatch = false;
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -49,6 +51,15 @@ class FakeDb {
 
   prepare(sql: string) {
     return new FakePreparedStatement(sql, this);
+  }
+
+  async batch(statements: FakePreparedStatement[]) {
+    this.batchCalls.push(statements.map((statement) => ({ sql: statement.sql, bindings: statement.bindings })));
+    if (this.throwOnBatch) {
+      throw new Error("simulated batch failure");
+    }
+    this.runs.push(...statements.map((statement) => ({ sql: statement.sql, bindings: statement.bindings })));
+    return statements.map(() => ({ success: true }));
   }
 
   consumeFirst<T>(sql: string): T | null {
@@ -82,6 +93,8 @@ describe("reputation service", () => {
     assert.equal(second.average_score, 70);
     assert.ok(second.m2 > 0);
     assert.ok(second.consistency_score < 100);
+    assert.equal(db.batchCalls.length, 2);
+    assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO domain_reputation_history")));
 
     db.queueFirst("FROM domain_reputation", [{ ...second, sample_count: 1 }]);
     const gated = await getDomainReputationFactor({ DB: db as never } as never, "dom_1", "bng_1");
@@ -91,6 +104,35 @@ describe("reputation service", () => {
     const exposed = await getDomainReputationFactor({ DB: db as never } as never, "dom_1", "bng_1");
     assert.ok(exposed > 0);
     assert.ok(exposed <= 1);
+  });
+
+  it("does not partially mutate reputation when the history append batch fails", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM domain_reputation", [null, null]);
+    db.throwOnBatch = true;
+
+    await assert.rejects(
+      updateDomainReputation({ DB: db as never } as never, "dom_1", "bng_1", 80, new Date("2026-03-25T00:00:00.000Z")),
+      /simulated batch failure/,
+    );
+
+    assert.equal(db.runs.length, 0);
+    assert.equal(db.batchCalls.length, 1);
+    assert.equal(db.batchCalls[0]?.length, 2);
+
+    db.throwOnBatch = false;
+    const retried = await updateDomainReputation(
+      { DB: db as never } as never,
+      "dom_1",
+      "bng_1",
+      80,
+      new Date("2026-03-25T00:00:00.000Z"),
+    );
+
+    assert.equal(retried.sample_count, 1);
+    assert.equal(retried.average_score, 80);
+    assert.equal(db.batchCalls.length, 2);
+    assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO domain_reputation_history")));
   });
 
   it("decays stale reputations from the blended base and respects the floor", async () => {

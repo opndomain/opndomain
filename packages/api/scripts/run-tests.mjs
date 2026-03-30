@@ -19,6 +19,7 @@ function testSchemaContracts() {
   const phase10Sql = readFileSync(new URL("../src/db/008_topic_formats.sql", import.meta.url), "utf8");
   const phase11Sql = readFileSync(new URL("../src/db/009_adaptive_scoring.sql", import.meta.url), "utf8");
   const phase12Sql = readFileSync(new URL("../src/db/010_platform_analytics.sql", import.meta.url), "utf8");
+  const phase13Sql = readFileSync(new URL("../src/db/011_topic_view_reputation_history_vote_timing.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -32,6 +33,7 @@ function testSchemaContracts() {
       "008_topic_formats",
       "009_adaptive_scoring",
       "010_platform_analytics",
+      "011_topic_view_reputation_history_vote_timing",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -67,6 +69,10 @@ function testSchemaContracts() {
   assert.match(phase12Sql, /rollup_date TEXT NOT NULL UNIQUE/);
   assert.match(phase12Sql, /active_agents INTEGER NOT NULL DEFAULT 0/);
   assert.match(phase12Sql, /CREATE TRIGGER IF NOT EXISTS trg_platform_daily_rollups_updated_at/);
+  assert.match(phase13Sql, /ALTER TABLE topics ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0/);
+  assert.match(phase13Sql, /CREATE TABLE IF NOT EXISTS domain_reputation_history/);
+  assert.match(phase13Sql, /ALTER TABLE votes ADD COLUMN vote_position_pct REAL/);
+  assert.match(phase13Sql, /ALTER TABLE votes ADD COLUMN round_elapsed_pct REAL/);
 }
 
 function testBaseEnvParsing() {
@@ -243,6 +249,10 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/010_platform_analytics.sql", import.meta.url)),
     join(targetDir, "010_platform_analytics.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/011_topic_view_reputation_history_vote_timing.sql", import.meta.url)),
+    join(targetDir, "011_topic_view_reputation_history_vote_timing.sql"),
   );
 }
 

@@ -8,6 +8,8 @@ import {
   AnalyticsOverviewResponseSchema,
   AnalyticsTopicParamsSchema,
   AnalyticsTopicResponseSchema,
+  AnalyticsVoteReliabilityQuerySchema,
+  AnalyticsVoteReliabilityResponseSchema,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { ApiError } from "../lib/errors.js";
@@ -17,6 +19,7 @@ import {
   getAnalyticsLeaderboard,
   getAnalyticsOverview,
   getAnalyticsTopic,
+  getAnalyticsVoteReliability,
 } from "../services/analytics.js";
 
 export const analyticsRoutes = new Hono<{ Bindings: ApiEnv }>();
@@ -73,5 +76,11 @@ analyticsRoutes.get("/topic/:topicId", async (c) => {
     "Route parameters failed validation.",
   );
   const payload = AnalyticsTopicResponseSchema.parse(await getAnalyticsTopic(c.env, params.topicId));
+  return jsonData(c, payload);
+});
+
+analyticsRoutes.get("/vote-reliability", async (c) => {
+  const query = parseQuery(AnalyticsVoteReliabilityQuerySchema, c.req.raw);
+  const payload = AnalyticsVoteReliabilityResponseSchema.parse(await getAnalyticsVoteReliability(c.env, query));
   return jsonData(c, payload);
 });

@@ -16,6 +16,7 @@ const schemaFiles = [
   ["PHASE10_TOPIC_FORMATS_SQL", "008_topic_formats.sql"],
   ["PHASE11_ADAPTIVE_SCORING_SQL", "009_adaptive_scoring.sql"],
   ["PHASE12_PLATFORM_ANALYTICS_SQL", "010_platform_analytics.sql"],
+  ["PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL", "011_topic_view_reputation_history_vote_timing.sql"],
 ];
 
 const output = [

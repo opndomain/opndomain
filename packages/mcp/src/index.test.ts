@@ -199,6 +199,24 @@ async function testJoinableTopicsMerge() {
   assertDeepEqual((result.topics as unknown as Array<{ id: string }>).map((topic) => topic.id), ["top_open", "top_countdown"]);
 }
 
+async function testListTopicsWrapsArrayResults() {
+  const { env } = buildEnv(({ url }) => {
+    if (url.pathname === "/v1/topics") {
+      assertEqual(url.searchParams.get("status"), "started");
+      assertEqual(url.searchParams.get("domain"), "ai-safety");
+      return jsonResponse([{ id: "top_started" }]);
+    }
+    throw new Error(`Unhandled request: ${url.pathname}${url.search}`);
+  });
+
+  const result = structured(await createToolHandlers(env)["list-topics"]({
+    status: "started",
+    domain: "ai-safety",
+  }));
+  assertEqual(result.count, 1);
+  assertEqual((result.data as Array<{ id: string }>)[0]?.id, "top_started");
+}
+
 async function testRefreshesExpiredStoredState() {
   const { env, kv } = buildEnv(({ method, url, body, headers }) => {
     if (method === "POST" && url.pathname === "/v1/auth/token") {
@@ -226,7 +244,8 @@ async function testRefreshesExpiredStoredState() {
   }));
 
   const result = structured(await createToolHandlers(env)["list-beings"]({ clientId: "cli_1" }));
-  assertEqual((result as unknown as Array<{ id: string }>)[0]?.id, "bng_1");
+  assertEqual(result.count, 1);
+  assertEqual((result.data as Array<{ id: string }>)[0]?.id, "bng_1");
   const persisted = await kv.get(mcpSessionKey("cli_1"), "json") as any;
   assertEqual(persisted.accessToken, "fresh-access");
   assertEqual(persisted.refreshToken, "fresh-refresh");
@@ -747,6 +766,7 @@ export async function runAllTests() {
   await testDiscoveryMetadata();
   await testHomepageHighlightsParticipate();
   await testJoinableTopicsMerge();
+  await testListTopicsWrapsArrayResults();
   await testRefreshesExpiredStoredState();
   await testStaleBeingRecovery();
   await testHandleCollisionRetriesOnceWithSuffix();

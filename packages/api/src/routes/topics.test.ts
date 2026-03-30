@@ -98,70 +98,48 @@ describe("topic routes", () => {
     const db = new FakeDb();
     db.queueAll("FROM topics t", [{
       id: "top_1",
-      domain_id: "dom_1",
+      title: "Topic",
+      status: "started",
+      prompt: "Prompt",
+      template_id: "debate_v2",
       domain_slug: "ai-safety",
       domain_name: "AI Safety",
-      title: "Topic",
-      prompt: "Prompt",
-      template_id: "debate",
-      topic_format: "scheduled_research",
-      status: "started",
-      cadence_family: "quorum",
-      cadence_preset: "3h",
-      cadence_override_minutes: null,
-      min_distinct_participants: 3,
-      countdown_seconds: null,
-      min_trust_tier: "supervised",
-      visibility: "public",
+      member_count: 7,
+      round_count: 4,
       current_round_index: 0,
-      starts_at: null,
-      join_until: null,
-      countdown_started_at: null,
-      stalled_at: null,
-      closed_at: null,
       created_at: "2026-03-25T00:00:00.000Z",
       updated_at: "2026-03-25T00:00:00.000Z",
     }]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/topics?status=started&domain=ai-safety&topicFormat=scheduled_research"),
+      new Request("https://api.opndomain.com/v1/topics?status=started&domain=ai-safety&templateId=debate_v2"),
       buildEnv(db),
       {} as never,
     );
-    const payload = await response.json() as { data: Array<{ id: string }> };
+    const payload = await response.json() as { data: Array<{ id: string; templateId: string; memberCount: number }> };
 
     assert.equal(response.status, 200);
     assert.equal(payload.data.length, 1);
+    assert.equal(payload.data[0]?.templateId, "debate_v2");
+    assert.equal(payload.data[0]?.memberCount, 7);
     const query = db.allCalls.at(-1);
-    assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ? AND t.topic_format = ?"));
-    assert.deepEqual(query?.bindings, ["started", "ai-safety", "scheduled_research"]);
+    assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ? AND t.template_id = ?"));
+    assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate_v2"]);
   });
 
   it("lists open topics without transcript fields and applies the open status filter", async () => {
     const db = new FakeDb();
     db.queueAll("FROM topics t", [{
       id: "top_open",
-      domain_id: "dom_1",
+      title: "Open topic",
+      status: "open",
+      prompt: "Prompt",
+      template_id: "research",
       domain_slug: "ai-safety",
       domain_name: "AI Safety",
-      title: "Open topic",
-      prompt: "Prompt",
-      template_id: "debate",
-      topic_format: "scheduled_research",
-      status: "open",
-      cadence_family: "quorum",
-      cadence_preset: "3h",
-      cadence_override_minutes: null,
-      min_distinct_participants: 3,
-      countdown_seconds: null,
-      min_trust_tier: "supervised",
-      visibility: "public",
+      member_count: 3,
+      round_count: 2,
       current_round_index: 0,
-      starts_at: null,
-      join_until: null,
-      countdown_started_at: null,
-      stalled_at: null,
-      closed_at: null,
       created_at: "2026-03-25T00:00:00.000Z",
       updated_at: "2026-03-25T00:00:00.000Z",
     }]);
@@ -177,6 +155,7 @@ describe("topic routes", () => {
     assert.equal(payload.data.length, 1);
     assert.equal(payload.data[0]?.id, "top_open");
     assert.equal(payload.data[0]?.status, "open");
+    assert.equal((payload.data[0] as { roundCount?: number }).roundCount, 2);
     const query = db.allCalls.at(-1);
     assert.ok(query?.sql.includes("WHERE t.status = ?"));
     assert.deepEqual(query?.bindings, ["open"]);
@@ -197,18 +176,33 @@ describe("topic routes", () => {
     assert.equal(db.allCalls.length, 0);
   });
 
-  it("rejects invalid topic format filters", async () => {
+  it("rejects invalid template id filters", async () => {
     const db = new FakeDb();
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/topics?topicFormat=invalid"),
+      new Request("https://api.opndomain.com/v1/topics?templateId=invalid"),
       buildEnv(db),
       {} as never,
     );
     const payload = await response.json() as { code: string };
 
     assert.equal(response.status, 400);
-    assert.equal(payload.code, "invalid_topic_format");
+    assert.equal(payload.code, "invalid_template_id");
+    assert.equal(db.allCalls.length, 0);
+  });
+
+  it("rejects empty domain filters", async () => {
+    const db = new FakeDb();
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics?domain=%20%20%20"),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { code: string };
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "invalid_domain");
     assert.equal(db.allCalls.length, 0);
   });
 

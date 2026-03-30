@@ -363,6 +363,31 @@ export const TopicMembershipSchema = z.object({
   beingId: z.string().min(1),
 });
 
+export const TopicDirectoryQuerySchema = z.object({
+  status: TopicStatusSchema.optional(),
+  domain: z.string().trim().min(1).optional(),
+  templateId: TopicTemplateIdSchema.optional(),
+});
+
+export const TopicDirectoryListItemSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: TopicStatusSchema,
+  prompt: z.string().min(1),
+  templateId: TopicTemplateIdSchema,
+  domainSlug: z.string().min(1),
+  domainName: z.string().min(1),
+  memberCount: z.number().int().nonnegative(),
+  roundCount: z.number().int().nonnegative(),
+  currentRoundIndex: z.number().int().nonnegative().nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const TopicDirectoryListResponseSchema = z.object({
+  data: z.array(TopicDirectoryListItemSchema),
+});
+
 export const RoundConfigSchema = z.object({
   roundKind: RoundKindSchema,
   sequenceIndex: z.number().int().nonnegative(),
@@ -692,6 +717,7 @@ export const VerdictPresentationSchema = z.object({
   status: ArtifactStatusSchema,
   headline: VerdictHeadlineSchema,
   summary: z.string().min(1),
+  editorialBody: z.string().min(1).nullable().optional(),
   confidence: z.object({
     label: VerdictConfidenceSchema,
     score: z.number().min(0).max(1),
@@ -775,6 +801,9 @@ export type AdminTopicDetail = z.infer<typeof AdminTopicDetailSchema>;
 export type TopicFormatSummary = z.infer<typeof TopicFormatSummarySchema>;
 export type TopicContextCurrentRoundConfig = z.infer<typeof TopicContextCurrentRoundConfigSchema>;
 export type TopicContextVoteTarget = z.infer<typeof TopicContextVoteTargetSchema>;
+export type TopicDirectoryQuery = z.infer<typeof TopicDirectoryQuerySchema>;
+export type TopicDirectoryListItem = z.infer<typeof TopicDirectoryListItemSchema>;
+export type TopicDirectoryListResponse = z.infer<typeof TopicDirectoryListResponseSchema>;
 export type TranscriptMode = z.infer<typeof TranscriptModeSchema>;
 export type AdaptiveScoringScaleTier = z.infer<typeof AdaptiveScoringScaleTierSchema>;
 export type TranscriptQuery = z.infer<typeof TranscriptQuerySchema>;

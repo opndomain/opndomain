@@ -1,9 +1,16 @@
 import { z } from "zod";
 import { RoundKindSchema } from "./templates.js";
-import { TopicStatusSchema } from "./schemas.js";
+import { TopicStatusSchema, TrustTierSchema } from "./schemas.js";
 
 const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD.");
 const TimestampSchema = z.string().datetime({ offset: true }).or(z.string().min(1));
+const AnalyticsScoringRoundKindSchema = z.enum(["propose", "critique", "refine", "synthesize"]);
+const AnalyticsScoreRoundCountsSchema = z.object({
+  propose: z.number().int().nonnegative(),
+  critique: z.number().int().nonnegative(),
+  refine: z.number().int().nonnegative(),
+  synthesize: z.number().int().nonnegative(),
+});
 
 export const AnalyticsOverviewQuerySchema = z.object({
   from: IsoDateSchema.optional(),
@@ -98,7 +105,34 @@ export const AnalyticsTopicSummarySchema = z.object({
 export const AnalyticsTopicScoreBucketSchema = z.object({
   minScore: z.number().finite(),
   maxScore: z.number().finite(),
-  count: z.number().int().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+  roundCounts: AnalyticsScoreRoundCountsSchema,
+});
+
+export const AnalyticsTopicContributionDimensionsSchema = z.object({
+  substance: z.number().finite(),
+  relevance: z.number().finite(),
+  novelty: z.number().finite(),
+  reframe: z.number().finite(),
+  roleBonus: z.number().finite(),
+});
+
+export const AnalyticsTopicBucketContributionSchema = z.object({
+  contributionId: z.string().min(1),
+  beingId: z.string().min(1),
+  beingHandle: z.string().min(1),
+  roundId: z.string().min(1),
+  roundKind: AnalyticsScoringRoundKindSchema,
+  finalScore: z.number().finite(),
+  excerpt: z.string(),
+  dimensions: AnalyticsTopicContributionDimensionsSchema,
+});
+
+export const AnalyticsTopicBucketDetailSchema = z.object({
+  minScore: z.number().finite(),
+  maxScore: z.number().finite(),
+  roundKind: AnalyticsScoringRoundKindSchema,
+  contributions: z.array(AnalyticsTopicBucketContributionSchema),
 });
 
 export const AnalyticsTopicFunnelEntrySchema = z.object({
@@ -119,7 +153,45 @@ export const AnalyticsTopicResponseSchema = z.object({
   }),
   summary: AnalyticsTopicSummarySchema,
   scoreDistribution: z.array(AnalyticsTopicScoreBucketSchema),
+  bucketDetails: z.array(AnalyticsTopicBucketDetailSchema),
+  averageDimensionBreakdown: AnalyticsTopicContributionDimensionsSchema,
   participationFunnel: z.array(AnalyticsTopicFunnelEntrySchema),
+});
+
+export const AnalyticsVoteReliabilityQuerySchema = z.object({
+  minVotes: z.coerce.number().int().min(1).default(5),
+});
+
+export const AnalyticsVoteReliabilityHistogramBucketSchema = z.object({
+  minScore: z.number().finite(),
+  maxScore: z.number().finite(),
+  totalCount: z.number().int().nonnegative(),
+  trustTierCounts: z.object({
+    unverified: z.number().int().nonnegative(),
+    supervised: z.number().int().nonnegative(),
+    verified: z.number().int().nonnegative(),
+    established: z.number().int().nonnegative(),
+    trusted: z.number().int().nonnegative(),
+  }),
+});
+
+export const AnalyticsVoteReliabilityScatterPointSchema = z.object({
+  beingId: z.string().min(1),
+  handle: z.string().min(1),
+  displayName: z.string().min(1),
+  reliability: z.number().finite(),
+  votesCount: z.number().int().nonnegative(),
+  trustTier: TrustTierSchema,
+});
+
+export const AnalyticsVoteReliabilityResponseSchema = z.object({
+  minVotes: z.number().int().min(1),
+  histogram: z.array(AnalyticsVoteReliabilityHistogramBucketSchema),
+  scatter: z.array(AnalyticsVoteReliabilityScatterPointSchema),
+  summary: z.object({
+    qualifyingBeings: z.number().int().nonnegative(),
+    maxVotesCount: z.number().int().nonnegative(),
+  }),
 });
 
 export const AnalyticsBackfillRequestSchema = z.object({
@@ -148,7 +220,14 @@ export type AnalyticsLeaderboardResponse = z.infer<typeof AnalyticsLeaderboardRe
 export type AnalyticsTopicParams = z.infer<typeof AnalyticsTopicParamsSchema>;
 export type AnalyticsTopicSummary = z.infer<typeof AnalyticsTopicSummarySchema>;
 export type AnalyticsTopicScoreBucket = z.infer<typeof AnalyticsTopicScoreBucketSchema>;
+export type AnalyticsTopicContributionDimensions = z.infer<typeof AnalyticsTopicContributionDimensionsSchema>;
+export type AnalyticsTopicBucketContribution = z.infer<typeof AnalyticsTopicBucketContributionSchema>;
+export type AnalyticsTopicBucketDetail = z.infer<typeof AnalyticsTopicBucketDetailSchema>;
 export type AnalyticsTopicFunnelEntry = z.infer<typeof AnalyticsTopicFunnelEntrySchema>;
 export type AnalyticsTopicResponse = z.infer<typeof AnalyticsTopicResponseSchema>;
+export type AnalyticsVoteReliabilityQuery = z.infer<typeof AnalyticsVoteReliabilityQuerySchema>;
+export type AnalyticsVoteReliabilityHistogramBucket = z.infer<typeof AnalyticsVoteReliabilityHistogramBucketSchema>;
+export type AnalyticsVoteReliabilityScatterPoint = z.infer<typeof AnalyticsVoteReliabilityScatterPointSchema>;
+export type AnalyticsVoteReliabilityResponse = z.infer<typeof AnalyticsVoteReliabilityResponseSchema>;
 export type AnalyticsBackfillRequest = z.infer<typeof AnalyticsBackfillRequestSchema>;
 export type AnalyticsBackfillResponse = z.infer<typeof AnalyticsBackfillResponseSchema>;

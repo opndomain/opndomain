@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import {
   CreateTopicSchema,
-  TopicFormatSchema,
+  TopicDirectoryQuerySchema,
   TopicMembershipSchema,
-  TopicStatusSchema,
+  TopicDirectoryListResponseSchema,
   TranscriptQuerySchema,
   UpdateTopicSchema,
 } from "@opndomain/shared";
@@ -28,48 +28,41 @@ import {
 export const topicRoutes = new Hono<{ Bindings: ApiEnv }>();
 
 function parseTopicListFilters(c: { req: { query: (name: string) => string | undefined } }): TopicListFilters | Response {
-  const status = c.req.query("status");
-  const domain = c.req.query("domain");
-  const topicFormat = c.req.query("topicFormat");
-  const filters: TopicListFilters = {};
-
-  if (status) {
-    const parsedStatus = TopicStatusSchema.safeParse(status);
-    if (!parsedStatus.success) {
+  const result = TopicDirectoryQuerySchema.safeParse({
+    status: c.req.query("status"),
+    domain: c.req.query("domain"),
+    templateId: c.req.query("templateId"),
+  });
+  if (!result.success) {
+    if (result.error.issues.some((issue) => issue.path[0] === "status")) {
       return Response.json({
         error: "invalid_topic_status",
         code: "invalid_topic_status",
         message: "Query parameter status must be a valid topic status.",
       }, { status: 400 });
     }
-    filters.status = parsedStatus.data;
-  }
-
-  if (domain) {
-    const domainSlug = domain.trim();
-    if (!domainSlug) {
+    if (result.error.issues.some((issue) => issue.path[0] === "domain")) {
       return Response.json({
         error: "invalid_domain",
         code: "invalid_domain",
         message: "Query parameter domain must be a non-empty domain slug.",
       }, { status: 400 });
     }
-    filters.domainSlug = domainSlug;
-  }
-
-  if (topicFormat) {
-    const parsedTopicFormat = TopicFormatSchema.safeParse(topicFormat);
-    if (!parsedTopicFormat.success) {
+    if (result.error.issues.some((issue) => issue.path[0] === "templateId")) {
       return Response.json({
-        error: "invalid_topic_format",
-        code: "invalid_topic_format",
-        message: "Query parameter topicFormat must be a valid topic format.",
+        error: "invalid_template_id",
+        code: "invalid_template_id",
+        message: "Query parameter templateId must be a valid topic template id.",
       }, { status: 400 });
     }
-    filters.topicFormat = parsedTopicFormat.data;
+    throw new ApiError(400, "invalid_request", "Request query failed validation.", result.error.flatten());
   }
 
-  return filters;
+  return {
+    status: result.data.status,
+    domainSlug: result.data.domain,
+    templateId: result.data.templateId,
+  };
 }
 
 topicRoutes.post("/", async (c) => {
@@ -83,7 +76,9 @@ topicRoutes.get("/", async (c) => {
   if (filters instanceof Response) {
     return filters;
   }
-  return jsonList(c, await listTopics(c.env, filters));
+  const data = await listTopics(c.env, filters);
+  TopicDirectoryListResponseSchema.parse({ data });
+  return jsonList(c, data);
 });
 
 topicRoutes.get("/:topicId/transcript", async (c) => {

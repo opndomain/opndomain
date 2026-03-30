@@ -49,6 +49,15 @@ class FakeDb {
     return new FakePreparedStatement(sql, this);
   }
 
+  async batch(statements: FakePreparedStatement[]) {
+    const failingStatement = statements.find((statement) => this.throwOnRunMatch?.test(statement.sql));
+    if (failingStatement) {
+      throw new Error(`simulated run failure for ${failingStatement.sql}`);
+    }
+    this.runs.push(...statements.map((statement) => ({ sql: statement.sql, bindings: statement.bindings })));
+    return statements.map(() => ({ success: true }));
+  }
+
   consumeFirst<T>(sql: string): T | null {
     this.queries.push(sql);
     const entry = Array.from(this.firstQueue.entries())
@@ -312,6 +321,8 @@ describe("terminalization service", () => {
         terminalization_mode: "full_template",
         summary: "summary",
         reasoning_json: JSON.stringify({
+          editorialBody:
+            "This topic closed after 2 completed rounds with a verdict shaped by transcript-visible scoring rather than a single unchallenged claim.\n\nThe clearest closing signal came from @alpha in the propose round, where the highest-scoring excerpt emphasized: \"Body\"",
           topContributionsPerRound: [
             {
               roundKind: "propose",
@@ -349,12 +360,14 @@ describe("terminalization service", () => {
     assert.equal(scoreUpdate?.sql.includes("shadow_score"), false);
     const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
     assert.ok(verdictInsert);
+    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"editorialBody":"This topic closed after 2 completed rounds/);
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"narrative":\[/);
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"highlights":\[/);
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "text/html; charset=utf-8"));
     const jsonWrite = publicArtifacts.writes.find((write) => write.key.endsWith("/verdict-presentation.json"));
     assert.ok(jsonWrite);
     const jsonPayload = JSON.parse(String(jsonWrite?.body ?? "{}"));
+    assert.match(String(jsonPayload.editorialBody ?? ""), /topic closed after 2 completed rounds/i);
     assert.equal(jsonPayload.narrative[0]?.summary, "Lead signal: Body");
     assert.equal(jsonPayload.claimGraph.available, false);
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "image/png"));

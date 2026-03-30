@@ -9,6 +9,7 @@ import {
   PHASE10_TOPIC_FORMATS_SQL,
   PHASE11_ADAPTIVE_SCORING_SQL,
   PHASE12_PLATFORM_ANALYTICS_SQL,
+  PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -22,6 +23,7 @@ export {
   PHASE10_TOPIC_FORMATS_SQL,
   PHASE11_ADAPTIVE_SCORING_SQL,
   PHASE12_PLATFORM_ANALYTICS_SQL,
+  PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -35,4 +37,9 @@ export const API_MIGRATIONS = [
   { tag: "008_topic_formats", fileName: "008_topic_formats.sql", sql: PHASE10_TOPIC_FORMATS_SQL },
   { tag: "009_adaptive_scoring", fileName: "009_adaptive_scoring.sql", sql: PHASE11_ADAPTIVE_SCORING_SQL },
   { tag: "010_platform_analytics", fileName: "010_platform_analytics.sql", sql: PHASE12_PLATFORM_ANALYTICS_SQL },
+  {
+    tag: "011_topic_view_reputation_history_vote_timing",
+    fileName: "011_topic_view_reputation_history_vote_timing.sql",
+    sql: PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
+  },
 ] as const;

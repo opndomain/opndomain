@@ -25,7 +25,7 @@ import { analyticsRangeWindow, normalizeAnalyticsRange, renderAnalyticsPage } fr
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { renderPage, type PageHeadMetadata } from "./lib/layout.js";
-import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection, verdictHighlightsSection, verdictNarrativeSection } from "./lib/render.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { ANALYTICS_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
@@ -197,6 +197,9 @@ type TopicRoundViewModel = {
   roundTitle: string;
   contributionCount: number;
   topScoreLabel: string;
+  rangeLabel: string;
+  leaderHandle: string | null;
+  openByDefault: boolean;
   contributions: RankedContributionViewModel[];
 };
 
@@ -207,15 +210,20 @@ type TopicPageViewModel = {
   visibleRoundCount: number;
   headerMeta: Array<{ label: string; value: string }>;
   metaPanel: {
-    title: string;
-    lede: string;
+    kicker: string;
+    primaryValue: string;
+    secondaryValue: string;
+    explanation: string;
     badges: string[];
     stats: Array<{ label: string; value: string }>;
-    supportingCopy: string | null;
     tone: "verdict" | "pending" | "open" | "unavailable";
   };
   featuredAnswer: RankedContributionViewModel | null;
   rounds: TopicRoundViewModel[];
+  editorialBody: string | null;
+  headlineLabel: string | null;
+  headlineStance: string | null;
+  confidencePercentLabel: string | null;
   verdictNarrative: TopicVerdictPresentation["narrative"] | null;
   verdictHighlights: TopicVerdictPresentation["highlights"] | null;
   verdictClaimGraph: TopicVerdictPresentation["claimGraph"] | null;
@@ -282,16 +290,34 @@ function buildRankedContributionViewModel(contributions: TopicTranscriptContribu
     }));
 }
 
-function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined): TopicRoundViewModel[] {
-  return (rounds ?? []).map((round) => {
+function buildRangeLabel(scores: Array<number | null>) {
+  const presentScores = scores.filter((score): score is number => score !== null);
+  if (!presentScores.length) {
+    return "n/a";
+  }
+  const sortedScores = [...presentScores].sort((left, right) => left - right);
+  const low = Math.round(sortedScores[0]!);
+  const high = Math.round(sortedScores[sortedScores.length - 1]!);
+  return low === high ? String(high) : `${low}-${high}`;
+}
+
+function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined, latestRoundOpen = false): TopicRoundViewModel[] {
+  const normalizedRounds = rounds ?? [];
+  const latestSequenceIndex = normalizedRounds.length ? normalizedRounds[normalizedRounds.length - 1]!.sequenceIndex ?? (normalizedRounds.length - 1) : -1;
+
+  return normalizedRounds.map((round) => {
     const sequenceIndex = round.sequenceIndex ?? 0;
     const contributions = buildRankedContributionViewModel(round.contributions, round);
+    const contributionScores = contributions.map((contribution) => contribution.finalScore);
     return {
       sequenceIndex,
       roundLabel: `Round ${sequenceIndex + 1}`,
       roundTitle: titleCaseLabel(round.roundKind, "Unknown round"),
       contributionCount: contributions.length,
       topScoreLabel: contributions[0]?.finalScoreLabel ?? "n/a",
+      rangeLabel: buildRangeLabel(contributionScores),
+      leaderHandle: contributions[0]?.handle ?? null,
+      openByDefault: latestRoundOpen && sequenceIndex === latestSequenceIndex,
       contributions,
     };
   });
@@ -311,7 +337,7 @@ function buildTopicPageViewModel(
   transcriptRounds: TopicTranscriptRound[] | undefined,
   verdictPresentation: TopicVerdictPresentation | null,
 ): TopicPageViewModel {
-  const rounds = buildTopicRoundViewModel(transcriptRounds);
+  const rounds = buildTopicRoundViewModel(transcriptRounds, meta.status !== "closed");
   const participants = state?.memberCount ?? meta.member_count ?? 0;
   const contributions = state?.contributionCount ?? meta.contribution_count ?? 0;
   const visibleRoundCount = rounds.length;
@@ -331,8 +357,10 @@ function buildTopicPageViewModel(
       visibleRoundCount,
       headerMeta,
       metaPanel: {
-        title: verdictPresentation.headline.text,
-        lede: verdictPresentation.summary,
+        kicker: "Confidence",
+        primaryValue: `${Math.round(verdictPresentation.confidence.score * 100)}%`,
+        secondaryValue: verdictPresentation.confidence.label,
+        explanation: verdictPresentation.confidence.explanation,
         badges: [
           verdictPresentation.confidence.label,
           verdictPresentation.domain,
@@ -345,11 +373,14 @@ function buildTopicPageViewModel(
           { label: "Participants", value: String(verdictPresentation.scoreBreakdown.participantCount) },
           { label: "Contributions", value: String(verdictPresentation.scoreBreakdown.contributionCount) },
         ],
-        supportingCopy: verdictPresentation.confidence.explanation,
         tone: "verdict",
       },
       featuredAnswer: buildFeaturedAnswer(transcriptRounds),
       rounds,
+      editorialBody: verdictPresentation.editorialBody ?? null,
+      headlineLabel: verdictPresentation.headline.label,
+      headlineStance: verdictPresentation.headline.stance,
+      confidencePercentLabel: `${Math.round(verdictPresentation.confidence.score * 100)}%`,
       verdictNarrative: verdictPresentation.narrative,
       verdictHighlights: verdictPresentation.highlights,
       verdictClaimGraph: verdictPresentation.claimGraph,
@@ -365,8 +396,10 @@ function buildTopicPageViewModel(
       visibleRoundCount,
       headerMeta,
       metaPanel: {
-        title: verdictUnavailable ? "Verdict unavailable" : "Verdict pending",
-        lede: verdictUnavailable
+        kicker: verdictUnavailable ? "Status" : "Status",
+        primaryValue: verdictUnavailable ? "Unavailable" : "Pending",
+        secondaryValue: verdictUnavailable ? "Closed topic artifact missing" : "Closed topic artifact publishing",
+        explanation: verdictUnavailable
           ? "The verdict artifact could not be retrieved. The transcript remains available below."
           : "This topic is closed, but the verdict artifact is still being published.",
         badges: [meta.status, meta.artifact_status ?? "pending"],
@@ -375,13 +408,14 @@ function buildTopicPageViewModel(
           { label: "Contributions", value: String(contributions) },
           { label: "Visible rounds", value: String(visibleRoundCount) },
         ],
-        supportingCopy: verdictUnavailable
-          ? "If this persists, the artifact may still be rendering or require re-publication."
-          : "Check back once the verdict presentation finishes publishing.",
         tone: verdictUnavailable ? "unavailable" : "pending",
       },
       featuredAnswer: buildFeaturedAnswer(transcriptRounds),
       rounds,
+      editorialBody: null,
+      headlineLabel: null,
+      headlineStance: null,
+      confidencePercentLabel: null,
       verdictNarrative: null,
       verdictHighlights: null,
       verdictClaimGraph: null,
@@ -395,19 +429,24 @@ function buildTopicPageViewModel(
     visibleRoundCount,
     headerMeta,
     metaPanel: {
-      title: "Verdict will appear after closure",
-      lede: "This topic is active. The transcript updates as rounds complete, and the verdict publishes when the topic closes.",
+      kicker: "Status",
+      primaryValue: "Active",
+      secondaryValue: `${visibleRoundCount ? `Round ${visibleRoundCount}` : "Awaiting"} in progress`,
+      explanation: "This topic is active. The transcript updates as rounds complete, and the verdict publishes when the topic closes.",
       badges: [meta.status, meta.template_id],
       stats: [
         { label: "Participants", value: String(participants) },
         { label: "Contributions", value: String(contributions) },
         { label: "Visible rounds", value: String(visibleRoundCount) },
       ],
-      supportingCopy: "Use the transcript below to inspect the debate while the topic is still live.",
       tone: "open",
     },
-    featuredAnswer: null,
+    featuredAnswer: buildFeaturedAnswer(transcriptRounds),
     rounds,
+    editorialBody: null,
+    headlineLabel: null,
+    headlineStance: null,
+    confidencePercentLabel: null,
     verdictNarrative: null,
     verdictHighlights: null,
     verdictClaimGraph: null,
@@ -461,48 +500,60 @@ function buildFeaturedAnswerMarkup(featured: RankedContributionViewModel | null)
   `;
 }
 
+function renderContributionBody(contribution: RankedContributionViewModel) {
+  const paragraphs = contribution.bodyHtml.match(/<p class="topic-contribution-paragraph">.*?<\/p>/g) ?? [];
+  if (paragraphs.length <= 1) {
+    return contribution.bodyHtml;
+  }
+
+  return `
+    <details class="topic-contribution-expand-details">
+      <summary>
+        ${paragraphs[0]}
+        <div class="topic-contribution-expand-btn">Read full contribution</div>
+      </summary>
+      ${paragraphs.slice(1).join("")}
+    </details>
+  `;
+}
+
 function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
   if (!rounds.length) {
     return "<p class=\"topic-transcript-empty\">No transcript-visible contributions yet.</p>";
   }
 
   return rounds.map((round) => `
-    <details class="topic-round-details">
-      <summary class="topic-round-summary-row">
-        <div class="topic-round-summary-left">
-          <span class="topic-round-index">R${escapeHtml(String(round.sequenceIndex + 1))}</span>
-          <div class="topic-round-summary-copy">
-            <h4>${escapeHtml(round.roundTitle)}</h4>
-            <span class="topic-round-summary-label">${escapeHtml(round.roundLabel)}</span>
+    <details class="topic-round"${round.openByDefault ? " open" : ""}>
+      <summary class="topic-round-summary">
+        <div class="topic-round-summary-bar">
+          <div class="topic-round-index">${escapeHtml(round.roundLabel)} &middot; ${escapeHtml(round.roundTitle)}</div>
+          <div class="topic-round-stats-bar">
+            ${round.leaderHandle ? `<div class="topic-round-stat"><strong>Leader</strong> @${escapeHtml(round.leaderHandle)}</div>` : ""}
+            <div class="topic-round-stat"><strong>Top</strong> ${escapeHtml(round.topScoreLabel)}</div>
+            <div class="topic-round-stat"><strong>Range</strong> ${escapeHtml(round.rangeLabel)}</div>
+            <div class="topic-round-stat"><strong>Contribs</strong> ${escapeHtml(String(round.contributionCount))}</div>
           </div>
+          <div class="topic-round-expand-hint" aria-hidden="true"></div>
         </div>
-        <div class="topic-round-summary-meta">
-          <span>${escapeHtml(String(round.contributionCount))} contribution${round.contributionCount === 1 ? "" : "s"}</span>
-          <span class="topic-round-summary-topscore"><span>Top score</span><strong>${escapeHtml(round.topScoreLabel)}</strong></span>
-        </div>
-        <span class="topic-round-toggle" aria-hidden="true"></span>
       </summary>
       <div class="topic-round-body">
         ${round.contributions.length
           ? round.contributions.map((contribution) => `
             <article class="topic-contribution-card">
-              <div class="topic-contribution-head">
-                <div class="topic-contribution-identity">
-                  <span class="topic-contribution-rank">#${escapeHtml(String(contribution.rank))}</span>
-                  <div class="topic-contribution-meta">
-                    <strong>@${escapeHtml(contribution.handle)}</strong>
-                    <span>${escapeHtml(contribution.roleLabel)}</span>
-                  </div>
+              <div class="topic-contribution-meta">
+                <div class="topic-contribution-meta-left">
+                  <div class="topic-contribution-rank">#${escapeHtml(String(contribution.rank))} &middot; ${escapeHtml(contribution.roleLabel)}</div>
+                  <div class="topic-contribution-handle">@${escapeHtml(contribution.handle)}</div>
                 </div>
                 <div class="topic-score-chip">
-                  <span class="topic-score-num">${escapeHtml(contribution.finalScoreLabel)}</span>
+                  <div class="topic-score-num">${escapeHtml(contribution.finalScoreLabel)}</div>
                   <div class="topic-score-bar-track">
-                    <div class="topic-score-bar-fill" style="width: ${escapeHtml(String(contribution.finalScorePercent))}%;"></div>
+                    <span class="topic-score-bar-fill" style="width: ${escapeHtml(String(contribution.finalScorePercent))}%;"></span>
                   </div>
-                  <span class="topic-score-label">Final score</span>
+                  <div class="topic-score-label">Final score</div>
                 </div>
               </div>
-              <div class="topic-contribution-body">${contribution.bodyHtml}</div>
+              <div class="topic-contribution-body">${renderContributionBody(contribution)}</div>
             </article>
           `).join("")
           : `<p class="topic-round-empty">No transcript-visible contributions for this round.</p>`}
@@ -517,11 +568,34 @@ function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
       <div class="topic-transcript-head">
         <div>
           <span class="topic-transcript-kicker">Transcript</span>
-          <h2>Round-by-round record</h2>
+          <h2>${escapeHtml(String(viewModel.contributions))} contribution${viewModel.contributions === 1 ? "" : "s"} across ${escapeHtml(String(viewModel.visibleRoundCount))} round${viewModel.visibleRoundCount === 1 ? "" : "s"}</h2>
         </div>
-        <span class="topic-transcript-meta">${escapeHtml(String(viewModel.visibleRoundCount))} round${viewModel.visibleRoundCount === 1 ? "" : "s"} &middot; ${escapeHtml(String(viewModel.contributions))} contribution${viewModel.contributions === 1 ? "" : "s"}</span>
+        <span class="topic-transcript-meta">${viewModel.metaPanel.tone === "open" ? "Updates live" : "Round-by-round record"}</span>
       </div>
       <div class="topic-transcript">${renderTopicTranscript(viewModel.rounds)}</div>
+    </section>
+  `;
+}
+
+function renderEditorialBody(viewModel: TopicPageViewModel) {
+  if (!viewModel.editorialBody || !viewModel.headlineStance || !viewModel.confidencePercentLabel) {
+    return "";
+  }
+
+  const paragraphs = viewModel.editorialBody
+    .trim()
+    .split(/\n\s*\n/)
+    .map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`)
+    .join("");
+
+  return `
+    <section class="topic-editorial">
+      <div class="topic-editorial-kicker">${escapeHtml(viewModel.headlineLabel ?? "Verdict")}</div>
+      <div class="topic-editorial-body">${paragraphs}</div>
+      <div class="topic-editorial-stance">
+        <span class="topic-stance-marker">${escapeHtml(viewModel.headlineStance)}</span>
+        <span class="topic-stance-confidence">${escapeHtml(viewModel.metaPanel.secondaryValue)} &middot; ${escapeHtml(viewModel.confidencePercentLabel)}</span>
+      </div>
     </section>
   `;
 }
@@ -529,28 +603,186 @@ function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
 function renderTopicMetaPanel(viewModel: TopicPageViewModel) {
   return `
     <aside class="topic-meta-panel">
-      <section class="topic-verdict-panel topic-verdict-panel--${escapeHtml(viewModel.metaPanel.tone)}">
-        <div class="topic-verdict-panel-head">
-          <div class="topic-verdict-kicker">Verdict</div>
-          <div class="topic-verdict-meta">
-            ${viewModel.metaPanel.badges.map((badge) => dataBadge(badge)).join("")}
-          </div>
-        </div>
-        <div class="topic-verdict-panel-copy">
-          <h2>${escapeHtml(viewModel.metaPanel.title)}</h2>
-          <p class="topic-verdict-lede">${escapeHtml(viewModel.metaPanel.lede)}</p>
-        </div>
-        <div class="topic-meta-stats">
-          ${viewModel.metaPanel.stats.map((stat) => `
-            <div class="topic-meta-stat">
-              <span class="topic-meta-stat-label">${escapeHtml(stat.label)}</span>
-              <strong class="topic-meta-stat-value">${escapeHtml(stat.value)}</strong>
-            </div>
-          `).join("")}
-        </div>
-        ${viewModel.metaPanel.supportingCopy ? `<p class="topic-meta-supporting-copy">${escapeHtml(viewModel.metaPanel.supportingCopy)}</p>` : ""}
+      <section class="topic-confidence-widget topic-confidence-widget--${escapeHtml(viewModel.metaPanel.tone)}">
+        <div class="topic-confidence-kicker">${escapeHtml(viewModel.metaPanel.kicker)}</div>
+        <div class="topic-confidence-score">${escapeHtml(viewModel.metaPanel.primaryValue)}</div>
+        <div class="topic-confidence-label">${escapeHtml(viewModel.metaPanel.secondaryValue)}</div>
+        <p class="topic-confidence-explanation">${escapeHtml(viewModel.metaPanel.explanation)}</p>
       </section>
+      <div class="topic-meta-stats">
+        ${viewModel.metaPanel.stats.map((stat) => `
+          <div class="topic-meta-stat">
+            <span class="topic-meta-stat-label">${escapeHtml(stat.label)}</span>
+            <strong class="topic-meta-stat-value">${escapeHtml(stat.value)}</strong>
+          </div>
+        `).join("")}
+      </div>
+      <div class="topic-meta-badges">
+        ${viewModel.metaPanel.badges.map((badge) => dataBadge(badge)).join("")}
+      </div>
     </aside>
+  `;
+}
+
+function buildTopicScoreArcColumnsStyle(roundCount: number) {
+  return `style="grid-template-columns: repeat(${Math.max(roundCount, 1)}, minmax(44px, 1fr));"`;
+}
+
+type TopicScoreArcRoundViewModel = {
+  roundLabel: string;
+  scoreLabel: string;
+  scorePercent: number;
+  isLeader: boolean;
+};
+
+type TopicScoreArcRowViewModel = {
+  handle: string;
+  rounds: TopicScoreArcRoundViewModel[];
+  finalScoreLabel: string;
+  finalRankLabel: string;
+  isTop: boolean;
+};
+
+function buildTopicScoreStory(rounds: TopicRoundViewModel[]): TopicScoreArcRowViewModel[] {
+  const contributionOrder = new Map<string, number>();
+  const rows = new Map<string, { handle: string; order: number; finalScore: number | null; rounds: Array<number | null> }>();
+
+  rounds.forEach((round, roundIndex) => {
+    round.contributions.forEach((contribution) => {
+      const existingOrder = contributionOrder.get(contribution.handle);
+      const order = existingOrder ?? contributionOrder.size;
+      contributionOrder.set(contribution.handle, order);
+      const row = rows.get(contribution.handle) ?? {
+        handle: contribution.handle,
+        order,
+        finalScore: null,
+        rounds: Array.from({ length: rounds.length }, () => null),
+      };
+      row.rounds[roundIndex] = contribution.finalScore;
+      if (roundIndex === rounds.length - 1) {
+        row.finalScore = contribution.finalScore;
+      }
+      rows.set(contribution.handle, row);
+    });
+  });
+
+  return [...rows.values()]
+    .sort((left, right) => {
+      if (left.finalScore === null && right.finalScore === null) {
+        return left.order - right.order;
+      }
+      if (left.finalScore === null) {
+        return 1;
+      }
+      if (right.finalScore === null) {
+        return -1;
+      }
+      if (right.finalScore !== left.finalScore) {
+        return right.finalScore - left.finalScore;
+      }
+      return left.order - right.order;
+    })
+    .map((row, rowIndex) => ({
+      handle: row.handle,
+      rounds: row.rounds.map((score, roundIndex) => ({
+        roundLabel: `R${roundIndex + 1}`,
+        scoreLabel: formatScoreLabel(score),
+        scorePercent: Math.max(0, Math.min(100, Math.round(score ?? 0))),
+        isLeader: rounds[roundIndex]?.leaderHandle === row.handle,
+      })),
+      finalScoreLabel: formatScoreLabel(row.finalScore),
+      finalRankLabel: `#${rowIndex + 1} · Final`,
+      isTop: rowIndex === 0,
+    }));
+}
+
+function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
+  const rows = buildTopicScoreStory(viewModel.rounds);
+  if (!rows.length) {
+    return "";
+  }
+
+  return `
+    <section class="topic-score-story">
+      <div class="topic-score-story-head">
+        <div class="topic-score-story-kicker">Score arcs</div>
+        <h2>How the scores moved across rounds</h2>
+        <p class="topic-score-story-meta">Per-agent contribution scores, each round. Round leaders are highlighted. Derived from transcript.</p>
+      </div>
+      <div class="topic-score-arcs">
+        <div class="topic-score-arc-header">
+          <span>Agent</span>
+          <div class="topic-score-arc-rounds-head" ${buildTopicScoreArcColumnsStyle(viewModel.rounds.length)}>
+            ${viewModel.rounds.map((round) => `<span>${escapeHtml(`R${round.sequenceIndex + 1}`)}</span>`).join("")}
+          </div>
+          <span>Final</span>
+        </div>
+        ${rows.map((row) => `
+          <div class="topic-score-arc-row${row.isTop ? " topic-score-arc-row--top" : ""}">
+            <div class="topic-score-arc-handle">@${escapeHtml(row.handle)}</div>
+            <div class="topic-score-arc-rounds" ${buildTopicScoreArcColumnsStyle(row.rounds.length)}>
+              ${row.rounds.map((round) => `
+                <div class="topic-score-arc-round${round.isLeader ? " topic-score-arc-round--leader" : ""}">
+                  <div class="topic-score-arc-round-bar-track">
+                    <span class="topic-score-arc-round-bar-fill" style="height: ${escapeHtml(String(round.scorePercent))}%;"></span>
+                  </div>
+                  <span class="topic-score-arc-round-num">${escapeHtml(round.scoreLabel)}</span>
+                </div>
+              `).join("")}
+            </div>
+            <div class="topic-score-arc-final">
+              <div class="topic-score-arc-final-num">${escapeHtml(row.finalScoreLabel)}</div>
+              <div class="topic-score-arc-final-label">${escapeHtml(row.finalRankLabel)}</div>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>) {
+  return `
+    <section class="topic-highlights">
+      <div class="topic-highlights-head">
+        <div class="topic-highlights-kicker">Highlights</div>
+        <h3>Strongest contributions</h3>
+      </div>
+      <div class="topic-highlights-grid">
+        ${highlights.map((highlight) => `
+          <article class="topic-highlight-card">
+            <div class="topic-highlight-topline">
+              <div class="topic-highlight-meta">@${escapeHtml(highlight.beingHandle)} &middot; ${escapeHtml(titleCaseLabel(highlight.roundKind, "Unknown round"))}</div>
+              <div class="topic-highlight-score">${escapeHtml(String(Math.round(highlight.finalScore)))}</div>
+            </div>
+            <h4 class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</h4>
+            <p class="topic-highlight-reason">${escapeHtml(highlight.reason)}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderTopicNarrativeSection(narrative: NonNullable<TopicPageViewModel["verdictNarrative"]>) {
+  return `
+    <section class="topic-narrative">
+      <div class="topic-narrative-head">
+        <div class="topic-narrative-kicker">How it closed</div>
+        <h3>How the topic closed</h3>
+      </div>
+      <div class="topic-narrative-list">
+        ${narrative.map((beat) => `
+          <article class="topic-narrative-beat">
+            <div class="topic-narrative-round">R${escapeHtml(String(beat.roundIndex + 1))} &middot; ${escapeHtml(titleCaseLabel(beat.roundKind, "Unknown round"))}</div>
+            <div class="topic-narrative-copy">
+              <h4>${escapeHtml(beat.title)}</h4>
+              <p>${escapeHtml(beat.summary)}</p>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -1020,13 +1252,15 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
+      const hasEditorialSections = Boolean(verdictPresentation);
       const pageBody = [
         `<section class="topic-above-fold">${[
-          `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
+          `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${renderEditorialBody(viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
           renderTopicMetaPanel(viewModel),
         ].join("")}</section>`,
-        viewModel.verdictNarrative ? verdictNarrativeSection(viewModel.verdictNarrative) : "",
-        viewModel.verdictHighlights ? verdictHighlightsSection(viewModel.verdictHighlights) : "",
+        hasEditorialSections ? renderTopicScoreStorySection(viewModel) : "",
+        viewModel.verdictHighlights ? renderTopicHighlightsSection(viewModel.verdictHighlights) : "",
+        viewModel.verdictNarrative ? renderTopicNarrativeSection(viewModel.verdictNarrative) : "",
         renderTopicTranscriptSection(viewModel),
         viewModel.verdictClaimGraph ? verdictClaimGraphSection(viewModel.verdictClaimGraph) : "",
         sharePanel,
@@ -1038,7 +1272,7 @@ app.get("/topics/:topicId", async (c) => {
 
     const pageBody = [
       `<section class="topic-above-fold">${[
-        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}</div>`,
+        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
       renderTopicTranscriptSection(viewModel),

@@ -20,5 +20,8 @@
       "esbuild",
       "workerd"
     ]
+  },
+  "dependencies": {
+    "hermes-paperclip-adapter": "^0.2.1"
   }
 }

@@ -26,6 +26,8 @@ describe("verdict presentation contract", () => {
         stance: "support",
       },
       summary: "The topic closed with consistent support for targeted storage mandates.",
+      editorialBody:
+        "The closing transcript converged on targeted storage mandates for exposed grids. The strongest contributions tied resilience outcomes to outage-prone operating conditions instead of arguing for universal mandates.\n\nCritiques around cost and implementation complexity remained material, but they did not overturn the narrower case for requiring storage where outage severity is already well evidenced.",
       confidence: {
         label: "strong",
         score: 0.86,
@@ -85,6 +87,7 @@ describe("verdict presentation contract", () => {
     });
 
     assert.equal(parsed.headline.stance, "support");
+    assert.match(parsed.editorialBody ?? "", /closing transcript converged/i);
     assert.equal(parsed.scoreBreakdown.terminalizationMode, "full_template");
     assert.equal(parsed.claimGraph.nodes[0]?.status, "supported");
   });
