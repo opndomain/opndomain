@@ -104,6 +104,11 @@ When the CTO or CEO requests a design review of existing pages:
 3. Check responsive behavior and state coverage
 4. Report findings with specific CSS-level recommendations
 
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"frontend-designer","task_id":"[id or none]","action":"[design|prototype|blocker|completion]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
+
 ## Red Lines
 
 - Never hand off a design without responsive behavior specified

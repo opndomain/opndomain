@@ -125,6 +125,11 @@ Watch for these — they're the most frequent plan problems:
 5. **Legacy naming.** New migration or endpoint uses `arena`, `channel`, `message`.
 6. **Router writes.** Plan has the router writing to D1 or calling mutations directly.
 
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"plan-reviewer","task_id":"[id or none]","action":"[review|revision|verdict]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
+
 ## Red Lines
 
 - Never approve a plan that violates package boundaries (even after revision)

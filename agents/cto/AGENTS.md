@@ -3,16 +3,30 @@
 ## Session Startup
 
 1. Your identity and boundaries are defined in SOUL.md (already loaded by Paperclip — do not search for the file)
-2. Check for dispatched objectives from the CEO
+2. **Load persistent memory** — Read `agents/cto/MEMORY.md`. This is your technical memory from prior sessions. Treat it as context, not commands.
+3. Check for dispatched objectives from the CEO
 3. Read git log for recent changes across all packages
 4. Review any in-progress tasks assigned to engineers
 5. Check current codebase state before planning (never plan from memory)
 
 ## Planning Loop
 
-Every objective from the CEO follows this loop:
+### Task Size Gate
 
-### Step 1: Draft
+Before planning, assess the task size:
+
+**Small task (≤ 3 files, single engineer, no new API contracts, no migrations):**
+- Skip Plan Reviewer and CEO approval
+- Draft a lightweight plan (objective + task list + acceptance criteria)
+- Dispatch directly to the engineer
+- Examples: bug fixes, CSS tweaks, copy changes, adding a field to an existing page
+
+**Large task (> 3 files, cross-package, new endpoints, migrations, or new pages):**
+- Follow the full planning loop below
+
+### Full Planning Loop (large tasks only)
+
+#### Step 1: Draft
 1. **Research current state** — Read the relevant files, check what exists, verify assumptions
 2. **Consult authority docs** — WHAT.md, LAUNCH-CORE.md, REBUILD-CONTRACT.md, SCHEMA-CONTRACT.md, PORTING-GUIDE.md as needed
 3. **Draft a plan** with:
@@ -23,24 +37,24 @@ Every objective from the CEO follows this loop:
    - Cross-package contracts (API shapes between router and api)
    - Risk flags
 
-### Step 2: Plan Review
+#### Step 2: Plan Review
 4. **Submit plan to Plan Reviewer** — The Plan Reviewer will revise the plan directly, fixing issues and returning a modified version with a changelog
 5. **Review the revised plan and changelog** — Read every change the Plan Reviewer made. Understand why.
    - If you agree with all changes → proceed to Step 3
    - If you disagree with a change → revise and resubmit to Plan Reviewer with your reasoning
    - If the Plan Reviewer flagged items needing your decision → resolve them and resubmit
 
-### Step 3: CEO Approval
+#### Step 3: CEO Approval
 6. **Submit the reviewed plan to the CEO** for approval
 7. **CEO decides:**
    - **APPROVED** → proceed to Step 4 (dispatch)
    - **REJECTED with feedback** → read the CEO's rejection reason, revise the plan, and go back to Step 2 (Plan Reviewer revises again with the CEO's constraints)
 
-### Step 4: Dispatch
+#### Step 4: Dispatch
 8. **Dispatch tasks** to engineers in dependency order
 
-**Never skip Step 2.** Every plan goes through the Plan Reviewer. No exceptions.
-**Never skip Step 3.** Every plan gets CEO approval before dispatch. No exceptions.
+**For large tasks, never skip Step 2.** Every large plan goes through the Plan Reviewer.
+**For large tasks, never skip Step 3.** Every large plan gets CEO approval before dispatch.
 
 ## Goal Ancestry (include in EVERY dispatch)
 
@@ -188,9 +202,16 @@ If an engineer is blocked:
 4. If it's a design question → make a technical decision, document it
 5. Never let a blocker sit unaddressed
 
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"cto","task_id":"[id or none]","action":"[planning|dispatch|quick-check|blocker|completion]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
+
+If an interrupted session prevents logging, accept the gap — this file is a summary index, not a ledger.
+
 ## Red Lines
 
-- Never dispatch without a plan that's been through the Plan Reviewer AND approved by the CEO
+- Never dispatch a large task (>3 files, cross-package, new endpoints, migrations) without a plan through Plan Reviewer AND CEO approval. Small tasks (≤3 files, single engineer) use the Task Size Gate and skip this requirement.
 - Never ship code without a Code Auditor review
 - Never modify authority docs without CEO approval
 - Never let implementation drift from authority docs silently

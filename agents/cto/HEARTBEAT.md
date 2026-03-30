@@ -27,10 +27,11 @@ For every open task, determine its state and take the next action:
 
 | Task state | Your action |
 |-----------|------------|
-| Plan not yet drafted | Draft it now |
-| Plan drafted, not submitted for review | Submit to Plan Reviewer now |
-| Plan reviewed, not submitted to CEO | Submit to CEO now |
-| Plan approved, tasks not dispatched | Dispatch engineers now |
+| Plan not yet drafted | Assess task size first (see AGENTS.md Task Size Gate) |
+| Small task, plan drafted | Dispatch directly — skip Plan Reviewer and CEO |
+| Large task, plan drafted, not submitted for review | Submit to Plan Reviewer now |
+| Large task, plan reviewed, not submitted to CEO | Submit to CEO now |
+| Plan approved (or small task ready), tasks not dispatched | Dispatch engineers now |
 | Engineer working | Leave it, check next heartbeat |
 | Engineer done, not quick-checked | Quick-check now |
 | Quick-check passed, not sent to auditor | Dispatch Code Auditor now |
@@ -61,16 +62,25 @@ Do all of this in a single heartbeat — do not split across multiple cycles:
 
 1. Research current codebase state (read files, git log, check what exists)
 2. Consult relevant authority docs
-3. Draft plan with task breakdown
-4. Submit plan to Plan Reviewer
-5. If the Plan Reviewer responds in the same cycle, incorporate and submit to CEO
+3. **CMO check:** If the objective involves a new user-facing page or copy/messaging changes, verify a CMO positioning brief was included with the dispatch. If not, request one from CEO before finalizing the plan. Include the CMO's recommendations in the designer dispatch.
+4. Draft plan with task breakdown
+5. Submit plan to Plan Reviewer — the reviewer will transform tasks into the engineer checklist format (see root AGENTS.md)
+6. If the Plan Reviewer responds in the same cycle, incorporate and submit to CEO
+
+## Dispatching Engineers
+
+Every task dispatch must use the structured checklist format from root AGENTS.md. After the Plan Reviewer returns the revised plan, the tasks should already be in checklist format. When dispatching:
+
+1. Paste the checklist directly into the engineer's task — do not paraphrase or summarize it
+2. If the task includes a designer prototype, include the **literal file path** to the prototype and paste the component spec from the prototype's HTML comment block into the dispatch
+3. Include the goal ancestry chain so the engineer understands why, not just what
 
 ## On Engineer Task Completion
 
 Do all of this in a single heartbeat:
 
 1. Read the changed files
-2. Verify acceptance criteria are met
+2. Verify acceptance criteria are met (the engineer's completion report should include the acceptance checklist with checks marked)
 3. Check for scope creep (reject if found)
 4. Run tests: `pnpm --filter @opndomain/api test` (for backend changes)
 5. Verify cross-package contracts are respected

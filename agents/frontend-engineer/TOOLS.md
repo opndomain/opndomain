@@ -26,30 +26,22 @@ Both must run simultaneously for local development.
 ## Skills
 
 ### frontend-design
-Create distinctive, production-grade frontend interfaces. Use when building new pages, components, or layouts. Generates creative, polished UI that avoids generic AI aesthetics. **Primary skill for all visual work.**
-
-### shadcn
-Component library reference. Use when working with shadcn/ui components, registries, or presets. Note: opndomain uses server-rendered HTML, not React — adapt shadcn patterns to template literals.
-
-### web-design-guidelines
-Review UI code for Web Interface Guidelines compliance. Use when auditing accessibility, checking design patterns, or reviewing UX quality.
-
-### web-perf
-Analyze web performance using Chrome DevTools. Measures Core Web Vitals (FCP, LCP, TBT, CLS), identifies render-blocking resources, and caching issues. Use when optimizing page load performance.
+Create distinctive, production-grade frontend interfaces. **Only use when the CTO's task dispatch explicitly requests a new page or major layout change.** Do not invoke on bug fixes, data wiring, or minor tweaks.
 
 ### webapp-testing
-Test local web applications using Playwright. Use for verifying frontend functionality, debugging UI behavior, and capturing screenshots.
-
-### web-artifacts-builder
-Tools for creating elaborate multi-component HTML artifacts. Use for building complex interactive prototypes or standalone HTML pages.
+Test local web applications using Playwright. **Only use when the CTO's task dispatch explicitly requests testing or screenshot verification.** Do not invoke during every heartbeat.
 
 ## MCP Servers
 
 ### Playwright
-Browser automation for testing. Navigate pages, click elements, fill forms, capture screenshots, read console logs. Use for end-to-end testing of rendered pages.
+Browser automation for testing. **Only use when the task explicitly requires E2E testing or screenshot capture.** Do not invoke for routine development work. If the task doesn't mention testing, don't use Playwright.
 
 ### Figma
-Access Figma designs. Use when the CTO provides a Figma reference for a page or component design.
+Access Figma designs. **Only use when the CTO provides a specific Figma URL in the task dispatch.** Never invoke speculatively.
+
+## Tool Budget
+
+**You have a maximum of 15 tool calls per heartbeat.** This includes file reads, file writes, shell commands, skill invocations, and MCP calls. If you are approaching the limit, stop, save your work, and report progress. Do not burn calls on exploratory reads or speculative MCP invocations.
 
 ## Package Manager
 

@@ -4,7 +4,7 @@
 
 1. Your identity and boundaries are defined in SOUL.md (already loaded by Paperclip — do not search for the file)
 2. Check for assigned tasks from the CTO
-3. Pull latest code and review recent changes to `packages/api/`
+3. If you have a task, run `git pull` before starting work
 4. Read any referenced files before starting work
 
 ## Your Package: `packages/api`
@@ -70,6 +70,11 @@ Sequential in `src/db/`. New: `006_name.sql` → update `schema.ts` → regenera
 4. Write tests for non-trivial logic
 5. Run `pnpm --filter @opndomain/api test`
 6. Report completion with files changed
+
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"backend-engineer","task_id":"[id or none]","action":"[implementation|testing|blocker|completion]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
 
 ## Red Lines
 

@@ -113,6 +113,11 @@ Structure:
 3. **Adoption assessment** — where the funnel is weak
 4. **Content needs** — what copy/messaging work is pending
 
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"cmo","task_id":"[id or none]","action":"[positioning|competitive-analysis|content|brief]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
+
 ## Red Lines
 
 - Never claim capabilities the product doesn't have

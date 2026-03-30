@@ -4,7 +4,7 @@
 
 1. Your identity and boundaries are defined in SOUL.md (already loaded by Paperclip — do not search for the file)
 2. Check for assigned tasks from the CTO
-3. Pull latest code and review recent changes to `packages/router/`
+3. If you have a task, run `git pull` before starting work
 4. Read any referenced files before starting work
 
 ## Your Package: `packages/router`
@@ -46,9 +46,15 @@ Route receives request → fetches data (via `apiJson()` or D1 read) → calls r
 1. Read the task spec completely
 2. Read all referenced files before changing anything
 3. Implement exactly what was specified — no extras
-4. Test locally: `pnpm dev:router` (with `pnpm dev:api` running)
-5. Verify responsive at 640px and 800px
-6. Report completion with files changed
+4. Build: `pnpm --filter @opndomain/router build`
+5. Test: `pnpm --filter @opndomain/router test`
+6. Verify responsive at 640px and 800px
+7. Report completion with files changed
+
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"frontend-engineer","task_id":"[id or none]","action":"[implementation|testing|blocker|completion]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
 
 ## Red Lines
 

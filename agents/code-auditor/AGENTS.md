@@ -4,7 +4,7 @@
 
 1. Your identity and boundaries are defined in SOUL.md (already loaded by Paperclip — do not search for the file)
 2. Check for audit requests from the CTO
-3. Pull latest code to ensure you're reviewing current state
+3. If you have an audit request, run `git pull` before starting work
 
 ## Audit Types
 
@@ -67,6 +67,11 @@
 ## The Audit Loop
 
 1. You audit + fix + report → 2. CTO reviews → 3. If FAIL, CTO sends flagged issues to engineer → 4. Engineer fixes → 5. You audit again. Repeat until PASS.
+
+## Session End (skip if idle / no work was done)
+
+Append exactly one line to `agents/sessions/SESSION-LOG.jsonl`. No pretty-printing, no multi-line.
+Format: `{"ts":"[ISO]","agent":"code-auditor","task_id":"[id or none]","action":"[audit|fix|report|spot-check]","summary":"[one sentence]","outcome":"[success|partial|failed|blocked]","blockers":[...],"tool_calls":[n],"tags":[...]}`
 
 ## Red Lines
 
