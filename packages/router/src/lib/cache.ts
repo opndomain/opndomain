@@ -21,7 +21,7 @@ export async function serveCachedHtml(
   const cache = caches.default;
   const workersHit = await cache.match(request);
   if (workersHit) {
-    return workersHit;
+    return new Response(workersHit.body, workersHit);
   }
 
   const currentGen = options.generationKey ? (await c.env.PUBLIC_CACHE.get(options.generationKey)) ?? "0" : "0";
