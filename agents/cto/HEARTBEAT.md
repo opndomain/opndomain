@@ -2,9 +2,11 @@
 
 ## Pre-Check (before doing ANYTHING)
 
-Check your Paperclip inbox for assigned tasks. If you have **zero assigned tasks, zero pending plan reviews, and zero engineer completions to verify**, reply `HEARTBEAT_OK` and exit immediately. Do not read files, do not run git commands, do not run tests. Save the tokens.
+Check your Paperclip inbox for assigned tasks. Then check all engineering tasks (GET /api/companies/{companyId}/issues?status=in_progress,blocked,in_review).
 
-Only proceed with the full heartbeat below if there is actual work to advance.
+- **You have assigned tasks** → proceed to full heartbeat.
+- **You have no assigned tasks BUT engineers have stuck/blocked work** → proceed to step 1 (Unblock). You own the engineering pipeline — stuck engineers are your problem even when nothing is in your inbox.
+- **You have no assigned tasks AND all engineering work is moving** → `HEARTBEAT_OK` and exit.
 
 ## Every Heartbeat (in this exact order)
 
@@ -65,7 +67,8 @@ Do all of this in a single heartbeat — do not split across multiple cycles:
 3. **CMO check:** If the objective involves a new user-facing page or copy/messaging changes, verify a CMO positioning brief was included with the dispatch. If not, request one from CEO before finalizing the plan. Include the CMO's recommendations in the designer dispatch.
 4. Draft plan with task breakdown
 5. Submit plan to Plan Reviewer — the reviewer will transform tasks into the engineer checklist format (see root AGENTS.md)
-6. If the Plan Reviewer responds in the same cycle, incorporate and submit to CEO
+6. **Verify the Plan Reviewer's output exists.** If the reviewer claims to have saved a plan document, check that it actually exists (GET /api/issues/{issueId}/documents/plan). If the document is missing, tell the reviewer to resubmit — do not forward a phantom plan to the CEO.
+7. If the Plan Reviewer responds in the same cycle, incorporate and submit to CEO
 
 ## Dispatching Engineers
 
@@ -79,13 +82,16 @@ Every task dispatch must use the structured checklist format from root AGENTS.md
 
 Do all of this in a single heartbeat:
 
-1. Read the changed files
-2. Verify acceptance criteria are met (the engineer's completion report should include the acceptance checklist with checks marked)
-3. Check for scope creep (reject if found)
-4. Run tests: `pnpm --filter @opndomain/api test` (for backend changes)
-5. Verify cross-package contracts are respected
-6. Dispatch Code Auditor immediately
-7. If audit comes back in the same cycle, review and act on it
+1. **Verify the task status is actually `done` or `in_review` in Paperclip** — not just a comment saying "I finished." If the engineer posted a completion comment but didn't update the task status, update it yourself and note this in your CTO memory as an engineer performance issue.
+2. Read the changed files
+3. Verify acceptance criteria are met (the engineer's completion report should include the acceptance checklist with checks marked)
+4. Check for scope creep (reject if found)
+5. Run tests: `pnpm --filter @opndomain/api test` (for backend changes)
+6. Verify cross-package contracts are respected
+7. Dispatch Code Auditor immediately
+8. If audit comes back in the same cycle, review and act on it
+
+**Before reporting anything to the CEO, verify the artifact exists.** If you're reporting a plan is ready, confirm the plan document is saved. If you're reporting work is complete, confirm tests pass and the audit verdict is posted. Never forward a status update to the CEO without checking the underlying artifact is real.
 
 ## On Engineer Blocker
 

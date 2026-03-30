@@ -2,9 +2,13 @@
 
 ## Pre-Check (before doing ANYTHING)
 
-Check your Paperclip inbox for assigned tasks. If you have **zero assigned tasks and zero open issues**, reply `HEARTBEAT_OK` and exit immediately. Do not read files, do not run git commands, do not check health endpoints. Save the tokens.
+Check your Paperclip inbox for assigned tasks. Then check all open company tasks (GET /api/companies/{companyId}/issues?status=in_progress,blocked,in_review).
 
-Only proceed with the full heartbeat below if there is actual work to do: open tasks, pending reviews, blocked agents, or founder messages.
+- **You have assigned tasks** → proceed to full heartbeat below.
+- **You have no assigned tasks BUT other agents have stuck/blocked/stale work** → proceed to step 1 (Unblock). Your #1 job is "nothing sits idle" — that applies to the whole pipeline, not just your inbox.
+- **You have no assigned tasks AND the entire pipeline is moving normally** (no blocked tasks, no tasks in the same state for >1 cycle) → `HEARTBEAT_OK` and exit.
+
+The single API call to check company issues costs one tool call. That is always worth it — the cost of missing a stuck task for multiple heartbeats is far higher than one read.
 
 ## Every Heartbeat (in this exact order)
 
@@ -61,10 +65,37 @@ Get-Content agents/sessions/SESSION-LOG.jsonl | Select-String '"outcome":"failed
 (Get-Content agents/sessions/SESSION-LOG.jsonl | Select-String '"agent":"backend-engineer"').Count
 ```
 
-### 6. Report (only if needed)
+### 6. Status Channel (OPN-188 — every heartbeat)
 
-- Only report to the founder if: you need a decision, you need them to kill a zombie run, or something shipped.
-- Skip the report if everything is moving normally.
+**Check for founder directives first:**
+- GET /api/issues/OPN-188/comments?after={lastCommentId}&order=asc (use the last comment ID stored in MEMORY.md)
+- If the founder posted new comments → read them and act on the directives before posting your status
+- If no new comments → skip reading
+
+**Then post your status summary** as a comment on OPN-188. Format:
+
+```
+## Status Report
+
+1. [TASK-ID] — [title] → [STATUS] [emoji]
+   [One line: what happened, what's next, or what's blocking]
+
+2. [TASK-ID] — [title] → [STATUS] [emoji]
+   [One line]
+
+...
+
+**Root cause of any stalls:** [or "Pipeline moving normally"]
+**Decisions needed from founder:** [or "None"]
+```
+
+**After posting, save your last comment ID to MEMORY.md:** `- Status channel last comment: {commentId}`
+
+**Rules:**
+- This is write-mostly. Never replay the full comment thread — only check for new comments after your last known ID.
+- Post every heartbeat, even on quiet ones (a "Pipeline moving, no action needed" one-liner is fine).
+- If the founder's comment is a directive, act on it in the current heartbeat and report the result in your status post.
+- Keep status posts concise — the example the founder liked was 5 tasks in ~20 lines.
 
 ## Daily
 

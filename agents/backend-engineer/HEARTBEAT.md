@@ -60,6 +60,10 @@ Follow the universal anti-stuck protocol (see root AGENTS.md), plus these backen
 
 After 5 tool calls with no progress → STOP and report to CTO with: what step you're on, what you tried, the exact error, and what you think the blocker is.
 
+## On Completion
+
+**Update the Paperclip task status FIRST.** PATCH the issue to `done` (or `in_review` if the CTO requested review) with a summary comment. A comment saying "I finished" is NOT completion — the task status must change. Then post the completion report.
+
 ## Completion Report Format
 
 Report to CTO:

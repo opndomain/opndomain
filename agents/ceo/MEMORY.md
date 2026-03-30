@@ -11,7 +11,8 @@
 <!-- date: decision + rationale -->
 
 ## Technical Context
-<!-- facts that matter across sessions -->
+- Status channel task: OPN-188 (never close, post status every heartbeat, check for founder comments)
+- Status channel last comment: none (first heartbeat will set this)
 
 ## Active Priorities
 <!-- overwrite entirely when reprioritizing -->
