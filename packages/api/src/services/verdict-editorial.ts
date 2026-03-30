@@ -3,7 +3,7 @@ import type { RoundKind } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 
 const DEFAULT_ZHIPU_BASE_URL = "https://api.z.ai/api/paas/v4";
-const MAX_TRANSCRIPT_CHARS = 12000;
+const MAX_TRANSCRIPT_CHARS = 4000;
 const MAX_SUMMARY_CHARS = 320;
 const MAX_EDITORIAL_BODY_CHARS = 2400;
 const MAX_NARRATIVE_SUMMARY_CHARS = 280;
@@ -76,7 +76,7 @@ function buildTranscriptContext(input: VerdictEditorialInput): string {
   const parts: string[] = [
     `Participant count: ${input.participantCount}`,
     `Contribution count: ${input.contributionCount}`,
-    `Deterministic fallback summary: ${normalizeText(input.summary, 600)}`,
+    `Summary: ${normalizeText(input.summary, 300)}`,
   ];
 
   for (const round of input.rounds) {
@@ -85,7 +85,7 @@ function buildTranscriptContext(input: VerdictEditorialInput): string {
     const transcriptBlock = [
       `Round ${round.roundIndex + 1}: ${round.roundKind} (${round.status})`,
       ...topContributions.map((contribution, index) =>
-        `${index + 1}. @${contribution.beingHandle} score=${contribution.finalScore.toFixed(1)} contributionId=${contribution.contributionId} beingId=${contribution.beingId} excerpt="${normalizeText(contribution.excerpt, 280)}"`),
+        `${index + 1}. @${contribution.beingHandle} score=${contribution.finalScore.toFixed(1)} id=${contribution.contributionId} being=${contribution.beingId} "${normalizeText(contribution.excerpt, 140)}"`),
     ].join("\n");
     parts.push(transcriptBlock);
   }
