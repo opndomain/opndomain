@@ -326,12 +326,12 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("Test prompt"), "closed topic should lead with the topic prompt");
     assert.ok(html.includes("Featured answer"), "closed topic should show featured answer section");
     assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "featured answer should render full body text");
-    assert.ok(html.includes("Top score 93"), "closed topic transcript summary should surface the top score");
+    assert.ok(html.includes("Top score") && html.includes("<strong>93</strong>"), "closed topic transcript summary should surface the top score");
     assert.ok(html.includes("How the topic closed"), "closed topic should show narrative section");
     assert.ok(html.includes("Strongest contributions"), "closed topic should show highlight section");
     assert.ok(html.includes("Claim graph panel"), "closed topic should show claim graph section");
-    assert.ok(html.includes("Transcript</h3>"), "closed topic should keep transcript in the document flow");
-    assert.ok(html.indexOf("Transcript</h3>") < html.indexOf("Claim graph panel"), "claim graph should render after transcript");
+    assert.ok(html.includes("Transcript</span>"), "closed topic should keep transcript in the document flow");
+    assert.ok(html.indexOf("Transcript</span>") < html.indexOf("Claim graph panel"), "claim graph should render after transcript");
     assert.ok(html.indexOf("Claim graph panel") < html.indexOf("Share this closed topic"), "share panel should remain after claim graph");
     assert.ok(html.includes("Large-image preview is ready for X and Reddit shares."), "share panel should call out social preview readiness");
   });
@@ -351,7 +351,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(!html.includes("Share on X"), "open topic should not have share panel");
     assert.ok(html.includes("Test prompt"), "open topic should also lead with the topic prompt");
     assert.ok(html.includes("Verdict will appear after closure"), "open topic should render a coherent no-verdict fallback");
-    assert.ok(html.includes("Transcript</h3>"), "open topic should keep transcript in the page flow");
+    assert.ok(html.includes("Transcript</span>"), "open topic should keep transcript in the page flow");
     assert.ok(html.includes("https://api.opndomain.com/v1/topics/topic_open/views"), "open public topic page should still include the topic view beacon endpoint");
   });
 
@@ -384,7 +384,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('<details class="topic-round-details">'), "transcript should render rounds as native disclosure blocks");
     assert.ok(html.includes("agent-alpha"), "transcript should show contributor handle");
     assert.ok(html.includes("#1"), "transcript should show derived rank cues");
-    assert.ok(html.includes("Top score 87"), "transcript summary should show the top score");
+    assert.ok(html.includes("Top score") && html.includes("<strong>87</strong>"), "transcript summary should show the top score");
     assert.ok(html.includes("Final score"), "transcript should show score chips");
     assert.ok(html.includes("including the concluding sentence that used to get clipped by the transcript excerpt limit."), "transcript should render full body text without clipping");
   });
@@ -477,7 +477,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     );
     const html = await response.text();
     assert.ok(html.includes("Claim graph publication was skipped because the evidence set was too thin."), "closed topic should show readable claim graph fallback copy");
-    assert.ok(html.includes("Transcript</h3>"), "closed topic should still render transcript before fallback claim graph");
+    assert.ok(html.includes("Transcript</span>"), "closed topic should still render transcript before fallback claim graph");
   });
 
   it("renders verdict pending and unavailable fallback panels for closed topics without published presentations", async () => {
@@ -859,10 +859,10 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Each closed topic resolves into a public summary with confidence, strongest claims, and the path back to the underlying debate."), "landing page should elevate verdicts editorially");
-    assert.ok(html.includes("View all closed topics"), "landing page should link to closed topics");
+    assert.ok(html.includes("Each closed topic resolves into a public verdict with confidence, strongest contributions, and a path back to the underlying debate."), "landing page should elevate verdicts editorially");
+    assert.ok(html.includes("Read all verdicts"), "landing page should link to closed topics");
     assert.ok(html.includes("Summary 1 explains what the topic concluded in one line."), "landing verdict card should show summary excerpt");
     assert.ok(html.includes("AI Safety"), "landing verdict card should show domain");
-    assert.ok(html.indexOf("register_agent") < html.indexOf("Each closed topic resolves into a public summary with confidence, strongest claims, and the path back to the underlying debate."), "landing page should still render the verdict rail after the terminal demo");
+    assert.ok(html.indexOf("Each closed topic resolves into a public verdict with confidence, strongest contributions, and a path back to the underlying debate.") < html.indexOf("register_agent"), "landing page should render the verdict rail before the terminal quickstart");
   });
 });
