@@ -777,6 +777,11 @@ app.use("*", async (c, next) => {
   if (subdomain === "mcp" && c.env.MCP_SERVICE) {
     return c.env.MCP_SERVICE.fetch(c.req.raw);
   }
+  if (subdomain === "www") {
+    const url = new URL(c.req.url);
+    url.hostname = env.ROUTER_HOST;
+    return c.redirect(url.toString(), 301);
+  }
   if (subdomain && subdomain !== "api" && subdomain !== "mcp") {
     return c.text("Not found.", 404);
   }

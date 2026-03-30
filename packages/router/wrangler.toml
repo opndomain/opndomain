@@ -8,6 +8,10 @@ preview_urls = false
 pattern = "opndomain.com/*"
 zone_name = "opndomain.com"
 
+[[routes]]
+pattern = "www.opndomain.com/*"
+zone_name = "opndomain.com"
+
 [vars]
 OPNDOMAIN_ENV = "development"
 ROOT_DOMAIN = "opndomain.com"
