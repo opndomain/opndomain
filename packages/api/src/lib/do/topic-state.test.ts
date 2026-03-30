@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { TOPIC_STATE_SNAPSHOT_PENDING_KEY } from "@opndomain/shared";
 import { TopicStateDurableObject } from "./topic-state.js";
 import { flushPendingTopicState } from "./flush.js";
+import { readTopicStateTelemetry } from "./telemetry.js";
 
 class FakeSql {
   readonly pendingMessages = new Map<string, Record<string, unknown>>();
@@ -126,6 +127,13 @@ class FakeSql {
     if (sql.includes("SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0 AND table_name = 'votes'")) {
       return [{ count: Array.from(this.pendingAux.values()).filter((row) => Number(row.flushed) === 0).length }];
     }
+    if (sql.includes("SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0 AND table_name != 'votes'")) {
+      return [{
+        count: Array.from(this.pendingAux.values()).filter(
+          (row) => Number(row.flushed) === 0 && String(row.table_name) !== "votes",
+        ).length,
+      }];
+    }
     if (sql.includes("SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0")) {
       return [{ count: Array.from(this.pendingAux.values()).filter((row) => Number(row.flushed) === 0).length }];
     }
@@ -139,6 +147,11 @@ class FakeSql {
     if (sql.startsWith("SELECT id, contribution_id, payload_json")) {
       const contributionIds = new Set(values.map(String));
       return Array.from(this.pendingScores.values()).filter((row) => contributionIds.has(String(row.contribution_id)));
+    }
+    if (sql.startsWith("SELECT payload_json FROM pending_scores WHERE flushed = 0")) {
+      return Array.from(this.pendingScores.values())
+        .filter((row) => Number(row.flushed) === 0)
+        .map((row) => ({ payload_json: row.payload_json }));
     }
     if (sql.startsWith("SELECT id, vote_key, topic_id, contribution_id, payload_json")) {
       const limit = Number(values[0] ?? 80);
@@ -979,6 +992,113 @@ describe("topic state durable object", () => {
     assert.equal(payload.pendingVoteCount, 1);
     assert.equal(payload.hasMatchingVoteKey, true);
     assert.equal(payload.matchingDirection, 1);
+  });
+
+  it("emits read-only telemetry for backlog, latency, throughput, and freshness", async () => {
+    const storage = new FakeStorage();
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const artifacts = new FakeBucket();
+    const object = new TopicStateDurableObject(
+      {
+        storage,
+      } as never,
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: artifacts as never,
+        PUBLIC_CACHE: { delete: async () => undefined } as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+    );
+
+    const contributionResponse = await object.fetch(
+      new Request("https://topic-state.internal/contribute", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildPayload()),
+      }),
+    );
+    assert.equal(contributionResponse.status, 200);
+
+    const pendingTelemetryResponse = await object.fetch(new Request("https://topic-state.internal/telemetry"));
+    const pendingTelemetry = await pendingTelemetryResponse.json() as {
+      pendingContributionBacklog: number;
+      semanticBacklog: number;
+    };
+    assert.equal(pendingTelemetryResponse.status, 200);
+    assert.equal(pendingTelemetry.pendingContributionBacklog, 1);
+    assert.equal(pendingTelemetry.semanticBacklog, 0);
+
+    queueSnapshotRows(db, "top_1");
+    const flushResult = await flushPendingTopicState(
+      { storage } as never,
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: artifacts as never,
+        PUBLIC_CACHE: { delete: async () => undefined } as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+    );
+    assert.deepEqual(flushResult.flushedContributionIds, ["cnt_1"]);
+
+    const telemetryResponse = await object.fetch(new Request("https://topic-state.internal/telemetry"));
+    const telemetry = await telemetryResponse.json() as {
+      acceptLatencyMsSamples: number[];
+      recomputeDurationMsSamples: number[];
+      snapshotDurationMsSamples: number[];
+      drainThroughputSamples: Array<{
+        contributionsPerFlush: number;
+        votesPerFlush: number;
+        auxRowsPerFlush: number;
+      }>;
+      pendingContributionBacklog: number;
+      pendingVoteBacklog: number;
+      pendingAuxBacklog: number;
+      semanticBacklog: number;
+      publicationFreshnessLagMs: number;
+    };
+
+    assert.equal(telemetryResponse.status, 200);
+    assert.equal(telemetry.acceptLatencyMsSamples.length, 1);
+    assert.equal(telemetry.acceptLatencyMsSamples[0] >= 0, true);
+    assert.equal(telemetry.pendingContributionBacklog, 0);
+    assert.equal(telemetry.pendingVoteBacklog, 0);
+    assert.equal(telemetry.pendingAuxBacklog, 0);
+    assert.equal(telemetry.semanticBacklog, 0);
+    assert.equal(telemetry.snapshotDurationMsSamples.length >= 1, true);
+    assert.equal(telemetry.snapshotDurationMsSamples[0] >= 0, true);
+    assert.equal(telemetry.drainThroughputSamples.length, 1);
+    assert.equal(telemetry.drainThroughputSamples[0]?.contributionsPerFlush, 1);
+    assert.equal(telemetry.drainThroughputSamples[0]?.votesPerFlush, 0);
+    assert.equal(telemetry.drainThroughputSamples[0]?.auxRowsPerFlush, 0);
+    assert.equal(telemetry.publicationFreshnessLagMs, 0);
+  });
+
+  it("counts only deferred semantic work in semantic backlog telemetry", async () => {
+    const storage = new FakeStorage();
+
+    storage.sql.pendingScores.set("sc_semantic_pending", {
+      id: "sc_semantic_pending",
+      contribution_id: "cnt_pending",
+      payload_json: JSON.stringify({ semantic_score: null }),
+      flushed: 0,
+      created_at: "2026-03-25T00:00:00.000Z",
+    });
+    storage.sql.pendingScores.set("sc_semantic_complete", {
+      id: "sc_semantic_complete",
+      contribution_id: "cnt_complete",
+      payload_json: JSON.stringify({ semantic_score: 72 }),
+      flushed: 0,
+      created_at: "2026-03-25T00:01:00.000Z",
+    });
+
+    const telemetry = await readTopicStateTelemetry({ storage } as never);
+
+    assert.equal(telemetry.semanticBacklog, 1);
   });
 
   it("flushes pending vote records into D1 and recomputes contribution scores", async () => {

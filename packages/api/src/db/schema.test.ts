@@ -11,6 +11,7 @@ import {
   PHASE9_EPISTEMIC_CORE_SQL,
   PHASE10_TOPIC_FORMATS_SQL,
   PHASE11_ADAPTIVE_SCORING_SQL,
+  PHASE12_PLATFORM_ANALYTICS_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -25,6 +26,7 @@ describe("schema migrations", () => {
       "007_epistemic_core",
       "008_topic_formats",
       "009_adaptive_scoring",
+      "010_platform_analytics",
     ]);
   });
 
@@ -104,5 +106,17 @@ describe("schema migrations", () => {
   it("adds adaptive scoring topic counters in phase 11", () => {
     assert.match(PHASE11_ADAPTIVE_SCORING_SQL, /ALTER TABLE topics ADD COLUMN change_sequence INTEGER NOT NULL DEFAULT 0;/);
     assert.match(PHASE11_ADAPTIVE_SCORING_SQL, /ALTER TABLE topics ADD COLUMN active_participant_count INTEGER NOT NULL DEFAULT 0;/);
+  });
+
+  it("adds platform analytics daily rollup storage in phase 12", () => {
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /CREATE TABLE IF NOT EXISTS platform_daily_rollups/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /rollup_date TEXT NOT NULL UNIQUE/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /topics_created_count INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /contributions_created_count INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /verdicts_created_count INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /active_topics INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /active_beings INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /active_agents INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE12_PLATFORM_ANALYTICS_SQL, /CREATE TRIGGER IF NOT EXISTS trg_platform_daily_rollups_updated_at/);
   });
 });

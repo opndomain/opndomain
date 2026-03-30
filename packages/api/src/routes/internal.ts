@@ -1,5 +1,7 @@
 import { Hono } from "hono";
 import {
+  AnalyticsBackfillRequestSchema,
+  AnalyticsBackfillResponseSchema,
   AdminListQuerySchema,
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
@@ -24,12 +26,119 @@ import {
   listAdminDomains,
   listAdminTopics,
 } from "../services/admin.js";
+import { backfillPlatformDailyRollups as backfillPlatformDailyRollupsService } from "../services/analytics.js";
 import { sweepTopicLifecycle } from "../services/lifecycle.js";
 import { reconcileTopicPresentation } from "../services/presentation.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "../services/terminalization.js";
 import { recomputeContributionFinalScore } from "../services/votes.js";
 
 export const internalRoutes = new Hono<{ Bindings: ApiEnv }>();
+
+type TopicStateTelemetrySnapshot = {
+  acceptLatencyMsSamples: number[];
+  recomputeDurationMsSamples: number[];
+  snapshotDurationMsSamples: number[];
+  drainThroughputSamples: Array<{
+    contributionsPerFlush: number;
+    votesPerFlush: number;
+    auxRowsPerFlush: number;
+  }>;
+  pendingContributionBacklog: number;
+  pendingVoteBacklog: number;
+  pendingAuxBacklog: number;
+  semanticBacklog: number;
+  publicationFreshnessLagMs: number;
+};
+
+function roundMetric(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    return 0;
+  }
+  return Number(value.toFixed(2));
+}
+
+function percentile(values: number[], percentileRank: number) {
+  if (values.length === 0) {
+    return 0;
+  }
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.max(0, Math.ceil((percentileRank / 100) * sorted.length) - 1);
+  return roundMetric(sorted[Math.min(index, sorted.length - 1)] ?? 0);
+}
+
+function percentileSummary(values: number[]) {
+  if (values.length === 0) {
+    return { p50: 0, p95: 0, max: 0 };
+  }
+  return {
+    p50: percentile(values, 50),
+    p95: percentile(values, 95),
+    max: roundMetric(Math.max(...values)),
+  };
+}
+
+function publicationFreshnessSummary(values: number[]) {
+  if (values.length === 0) {
+    return { p95: 0, max: 0 };
+  }
+  return {
+    p95: percentile(values, 95),
+    max: roundMetric(Math.max(...values)),
+  };
+}
+
+function average(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+  return roundMetric(values.reduce((sum, value) => sum + value, 0) / values.length);
+}
+
+async function readScaleTelemetry(env: ApiEnv) {
+  const activeTopics = await allRows<{ id: string }>(
+    env.DB,
+    `SELECT id FROM topics WHERE status = 'started' ORDER BY updated_at DESC`,
+  );
+
+  const telemetryByTopic = await Promise.all(
+    activeTopics.map(async ({ id }) => {
+      try {
+        const namespaceId = env.TOPIC_STATE_DO.idFromName(id);
+        const stub = env.TOPIC_STATE_DO.get(namespaceId);
+        const response = await stub.fetch("https://topic-state.internal/telemetry");
+        if (!response.ok) {
+          return null;
+        }
+        return await response.json() as TopicStateTelemetrySnapshot;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const telemetry = telemetryByTopic.filter((value): value is TopicStateTelemetrySnapshot => Boolean(value));
+  const acceptLatencySamples = telemetry.flatMap((entry) => entry.acceptLatencyMsSamples);
+  const recomputeDurationSamples = telemetry.flatMap((entry) => entry.recomputeDurationMsSamples);
+  const snapshotDurationSamples = telemetry.flatMap((entry) => entry.snapshotDurationMsSamples);
+  const drainThroughputSamples = telemetry.flatMap((entry) => entry.drainThroughputSamples);
+  const publicationFreshnessSamples = telemetry.map((entry) => entry.publicationFreshnessLagMs);
+
+  return {
+    acceptLatencyMs: percentileSummary(acceptLatencySamples),
+    pendingContributionBacklog: telemetry.reduce((sum, entry) => sum + entry.pendingContributionBacklog, 0),
+    pendingVoteBacklog: telemetry.reduce((sum, entry) => sum + entry.pendingVoteBacklog, 0),
+    pendingAuxBacklog: telemetry.reduce((sum, entry) => sum + entry.pendingAuxBacklog, 0),
+    drainThroughput: {
+      contributionsPerFlush: average(drainThroughputSamples.map((entry) => entry.contributionsPerFlush)),
+      votesPerFlush: average(drainThroughputSamples.map((entry) => entry.votesPerFlush)),
+      auxRowsPerFlush: average(drainThroughputSamples.map((entry) => entry.auxRowsPerFlush)),
+    },
+    recomputeDurationMs: percentileSummary(recomputeDurationSamples),
+    semanticBacklog: telemetry.reduce((sum, entry) => sum + entry.semanticBacklog, 0),
+    snapshotDurationMs: percentileSummary(snapshotDurationSamples),
+    publicationFreshnessLagMs: publicationFreshnessSummary(publicationFreshnessSamples),
+  };
+}
 
 function apiErrorResponse(error: unknown): Response | null {
   if (
@@ -103,6 +212,16 @@ internalRoutes.post("/topics/sweep", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   assertAdminAgent(c.env, agent);
   const result = await sweepTopicLifecycle(c.env);
+  return jsonData(c, result);
+});
+
+internalRoutes.post("/analytics/platform-rollups/backfill", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(AnalyticsBackfillRequestSchema, await c.req.json());
+  const result = AnalyticsBackfillResponseSchema.parse(
+    await backfillPlatformDailyRollupsService(c.env, body),
+  );
   return jsonData(c, result);
 });
 
@@ -404,13 +523,14 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
 internalRoutes.get("/health", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   assertAdminAgent(c.env, agent);
-  const [snapshotPending, presentationPending, topicStatusDistribution] = await Promise.all([
+  const [snapshotPending, presentationPending, topicStatusDistribution, scaleTelemetry] = await Promise.all([
     listPendingSnapshotRetries(c.env),
     c.env.PUBLIC_CACHE.list({ prefix: "presentation-pending:" }),
     allRows<{ status: string; count: number }>(
       c.env.DB,
       `SELECT status, COUNT(*) AS count FROM topics GROUP BY status ORDER BY status ASC`,
     ),
+    readScaleTelemetry(c.env),
   ]);
   return jsonData(c, {
     snapshotPendingTopics: snapshotPending,
@@ -421,5 +541,6 @@ internalRoutes.get("/health", async (c) => {
       status: row.status,
       count: Number(row.count ?? 0),
     })),
+    scaleTelemetry,
   });
 });

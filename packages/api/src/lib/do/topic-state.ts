@@ -9,6 +9,7 @@ import {
 import type { ApiEnv } from "../env.js";
 import { createId } from "../ids.js";
 import { flushPendingTopicState } from "./flush.js";
+import { readTopicStateTelemetry, recordTopicStateAcceptLatency } from "./telemetry.js";
 import {
   TOPIC_STATE_INIT_SQL,
   type TopicStateIngestRequest,
@@ -308,9 +309,13 @@ export class TopicStateDurableObject {
   async fetch(request: Request): Promise<Response> {
     await this.ensureInitialized();
     const url = new URL(request.url);
+    const startedAt = Date.now();
 
     if (url.pathname === "/healthz" && request.method === "GET") {
       return Response.json({ ok: true });
+    }
+    if (url.pathname === "/telemetry" && request.method === "GET") {
+      return Response.json(await readTopicStateTelemetry(this.state));
     }
     if (url.pathname === "/count" && request.method === "GET") {
       const topicId = url.searchParams.get("topicId") ?? "";
@@ -406,6 +411,7 @@ export class TopicStateDurableObject {
 
       await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.acceptedAt);
       await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));
+      await recordTopicStateAcceptLatency(this.state, Date.now() - startedAt, payload.acceptedAt);
       return Response.json(responseJson, { status: 200 });
     }
     if (url.pathname === "/force-flush" && request.method === "POST") {
@@ -543,6 +549,7 @@ export class TopicStateDurableObject {
 
     await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.submittedAt);
     await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));
+    await recordTopicStateAcceptLatency(this.state, Date.now() - startedAt, payload.submittedAt);
     return Response.json(responseJson, { status: 200 });
   }
 

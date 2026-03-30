@@ -8,6 +8,7 @@ import { runStatement } from "../db.js";
 import { updateDomainClaimGraph } from "../epistemic/claim-graph.js";
 import { syncTopicSnapshots } from "../snapshot-sync.js";
 import { recomputeContributionFinalScores, type ContributionVoteAggregate, type TopicVoteStatsRow } from "../../services/votes.js";
+import { recordTopicStateFlushTelemetry } from "./telemetry.js";
 import {
   TOPIC_STATE_PENDING_RECORD_LIMIT,
   type PendingMessageRow,
@@ -410,13 +411,22 @@ async function flushVoteRecords(
   flushedTopicIds: string[];
   topicChangeSequences: Map<string, number>;
   remainingCount: number;
+  recomputeDurationMs: number | null;
+  flushedAuxRows: number;
 }> {
   const votes = [
     ...readPendingVotes(state).map((vote) => ({ ...vote, source: "legacy" as const })),
     ...readPendingAuxVotes(state).map((vote) => ({ ...vote, source: "aux" as const })),
   ].sort((left, right) => String(left.created_at).localeCompare(String(right.created_at)));
   if (votes.length === 0) {
-    return { flushedContributionIds: [], flushedTopicIds: [], topicChangeSequences: new Map(), remainingCount: 0 };
+    return {
+      flushedContributionIds: [],
+      flushedTopicIds: [],
+      topicChangeSequences: new Map(),
+      remainingCount: 0,
+      recomputeDurationMs: null,
+      flushedAuxRows: 0,
+    };
   }
 
   const parsedVotes = votes.map((vote) => ({
@@ -446,12 +456,20 @@ async function flushVoteRecords(
     results = (await env.DB.batch(statements)) as Array<{ success?: boolean; error?: string }>;
   } catch (error) {
     console.error("topic-state vote flush batch failed", error);
-    return { flushedContributionIds: [], flushedTopicIds: [], topicChangeSequences: new Map(), remainingCount: votes.length };
+    return {
+      flushedContributionIds: [],
+      flushedTopicIds: [],
+      topicChangeSequences: new Map(),
+      remainingCount: votes.length,
+      recomputeDurationMs: null,
+      flushedAuxRows: 0,
+    };
   }
 
   const flushedContributionIds = new Set<string>();
   const flushedTopicIds = new Set<string>();
   const topicChangeSequences = new Map<string, number>();
+  let flushedAuxRows = 0;
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
     if (!result || result.error || result.success === false) {
@@ -460,6 +478,7 @@ async function flushVoteRecords(
     const { vote, payload } = parsedVotes[index];
     if (vote.source === "aux") {
       sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, vote.id);
+      flushedAuxRows += 1;
     } else {
       sqlExec(state, `UPDATE pending_votes SET flushed = 1 WHERE id = ?`, vote.id);
     }
@@ -477,7 +496,9 @@ async function flushVoteRecords(
     Array.from(flushedContributionIds),
     Array.from(flushedTopicIds),
   );
+  const recomputeStartedAt = Date.now();
   await recomputeContributionFinalScores(env, Array.from(flushedContributionIds), reconciledVoteAggregates);
+  const recomputeDurationMs = Date.now() - recomputeStartedAt;
 
   const remainingLegacy = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_votes WHERE flushed = 0`)[0] as { count?: number } | undefined;
   const remainingAux = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0 AND table_name = 'votes'`)[0] as { count?: number } | undefined;
@@ -486,11 +507,14 @@ async function flushVoteRecords(
     flushedTopicIds: Array.from(flushedTopicIds),
     topicChangeSequences,
     remainingCount: Number(remainingLegacy?.count ?? 0) + Number(remainingAux?.count ?? 0),
+    recomputeDurationMs,
+    flushedAuxRows,
   };
 }
 
-async function flushEpistemicClaimRecords(state: DurableObjectState, env: ApiEnv): Promise<void> {
+async function flushEpistemicClaimRecords(state: DurableObjectState, env: ApiEnv): Promise<number> {
   const rows = readPendingAuxEpistemicClaims(state);
+  let flushedCount = 0;
   for (const row of rows) {
     const payload = JSON.parse(row.payload_json) as {
       contributionId: string;
@@ -513,10 +537,12 @@ async function flushEpistemicClaimRecords(state: DurableObjectState, env: ApiEnv
         claims: payload.claims,
       });
       sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, row.id);
+      flushedCount += 1;
     } catch (error) {
       console.error(`epistemic claim flush failed for contribution ${payload.contributionId}`, error);
     }
   }
+  return flushedCount;
 }
 
 export async function flushPendingTopicState(
@@ -526,7 +552,7 @@ export async function flushPendingTopicState(
 ): Promise<{ flushedContributionIds: string[]; remainingCount: number }> {
   const contributionResult = await flushContributionRecords(state, env);
   const voteResult = await flushVoteRecords(state, env);
-  await flushEpistemicClaimRecords(state, env);
+  const flushedEpistemicClaimRows = await flushEpistemicClaimRecords(state, env);
   const allFlushedContributionIds = new Set([
     ...contributionResult.flushedContributionIds,
     ...voteResult.flushedContributionIds,
@@ -563,9 +589,14 @@ export async function flushPendingTopicState(
     pendingSnapshotTopics.add(topicId);
   }
   const failedSnapshots: string[] = [];
+  const snapshotDurationMs: number[] = [];
+  let lastPublishedAt: string | null = null;
   for (const topicId of pendingSnapshotTopics) {
     try {
+      const startedAt = Date.now();
       await syncTopicSnapshots(env, topicId, "topic_state_flush");
+      snapshotDurationMs.push(Date.now() - startedAt);
+      lastPublishedAt = new Date().toISOString();
     } catch (error) {
       console.error(`snapshot sync failed after topic-state flush for topic ${topicId}`, error);
       failedSnapshots.push(topicId);
@@ -576,6 +607,15 @@ export async function flushPendingTopicState(
   } else {
     await state.storage.delete(TOPIC_STATE_SNAPSHOT_PENDING_KEY);
   }
+
+  await recordTopicStateFlushTelemetry(state, {
+    contributionsPerFlush: contributionResult.flushedContributionIds.length,
+    votesPerFlush: voteResult.flushedContributionIds.length,
+    auxRowsPerFlush: voteResult.flushedAuxRows + flushedEpistemicClaimRows,
+    recomputeDurationMs: voteResult.recomputeDurationMs,
+    snapshotDurationMs,
+    publishedAt: lastPublishedAt,
+  });
 
   const remainingMessages = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_messages WHERE flushed = 0`)[0] as { count?: number } | undefined;
   const remainingVotes = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_votes WHERE flushed = 0`)[0] as { count?: number } | undefined;

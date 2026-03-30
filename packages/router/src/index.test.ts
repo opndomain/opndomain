@@ -275,24 +275,39 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
 
   it("renders share panel only on closed topics", async () => {
     const db = new FakeDb();
-    db.queueResult("topics t", [topicMeta({ status: "closed" })]);
+    db.queueResult("topics t", [topicMeta({ id: "topic_featured", status: "closed" })]);
     const snapshots = new FakeR2();
-    snapshots.set("topics/topic_1/state.json", JSON.stringify({ memberCount: 3, contributionCount: 10, transcriptVersion: 1, rounds: [] }));
-    snapshots.set("topics/topic_1/transcript.json", JSON.stringify({ rounds: [] }));
+    snapshots.set("topics/topic_featured/state.json", JSON.stringify({ memberCount: 3, contributionCount: 10, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_featured/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 4,
+        roundKind: "synthesize",
+        contributions: [{
+          id: "ctr_featured",
+          beingHandle: "agent-alpha",
+          bodyClean: "This is the strongest final-round answer and it should appear as the featured answer near the top of the page.",
+          scores: { final: 93 },
+        }],
+      }],
+    }));
     const artifacts = new FakeR2();
-    artifacts.set(topicVerdictPresentationArtifactKey("topic_1"), JSON.stringify(verdictPresentation("topic_1")));
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_featured"), JSON.stringify(verdictPresentation("topic_featured")));
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics/topic_1"),
+      new Request("https://opndomain.com/topics/topic_featured"),
       buildEnv(db, artifacts, snapshots),
       ctx(),
     );
     const html = await response.text();
     assert.ok(html.includes("Share on X"), "closed topic should have share panel");
-    assert.ok(html.includes("Structured oversight should be required for frontier labs."), "closed topic should surface headline verdict");
+    assert.ok(html.includes("Test prompt"), "closed topic should lead with the topic prompt");
+    assert.ok(html.includes("Featured answer"), "closed topic should show featured answer section");
+    assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "featured answer should render full body text");
     assert.ok(html.includes("How the topic closed"), "closed topic should show narrative section");
     assert.ok(html.includes("Strongest contributions"), "closed topic should show highlight section");
     assert.ok(html.includes("Claim graph panel"), "closed topic should show claim graph section");
-    assert.ok(html.includes("Transcript audit log"), "closed topic should demote transcript to audit log");
+    assert.ok(html.includes("Transcript</h3>"), "closed topic should keep transcript in the document flow");
+    assert.ok(html.indexOf("Transcript</h3>") < html.indexOf("Claim graph panel"), "claim graph should render after transcript");
+    assert.ok(html.indexOf("Claim graph panel") < html.indexOf("Share this closed topic"), "share panel should remain after claim graph");
     assert.ok(html.includes("Large-image preview is ready for X and Reddit shares."), "share panel should call out social preview readiness");
   });
 
@@ -309,8 +324,8 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     );
     const html = await response.text();
     assert.ok(!html.includes("Share on X"), "open topic should not have share panel");
-    assert.ok(!html.includes("Transcript audit log"), "open topic should stay on the live transcript path");
-    assert.ok(html.includes("Reveal-Gated Transcript"), "open topic should keep reveal-gated transcript framing");
+    assert.ok(html.includes("Test prompt"), "open topic should also lead with the topic prompt");
+    assert.ok(html.includes("Transcript</h3>"), "open topic should keep transcript in the page flow");
   });
 
   it("renders transcript rounds with readable round and score hierarchy", async () => {
@@ -325,7 +340,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
         contributions: [{
           id: "ctr_1",
           beingHandle: "agent-alpha",
-          bodyClean: "A long argument about the topic that should still render as an excerpt on the page.",
+          bodyClean: "A long argument about the topic that should still render in full on the page, including the concluding sentence that used to get clipped by the transcript excerpt limit.",
           scores: { final: 87 },
         }],
       }],
@@ -341,6 +356,43 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("Round 1"), "transcript should label round sequence");
     assert.ok(html.includes("agent-alpha"), "transcript should show contributor handle");
     assert.ok(html.includes("Final score 87"), "transcript should show contribution score");
+    assert.ok(html.includes("including the concluding sentence that used to get clipped by the transcript excerpt limit."), "transcript should render full body text without clipping");
+  });
+
+  it("selects the first highest-scoring contribution in the final round as the featured answer", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_tie_break" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_tie_break/state.json", JSON.stringify({ memberCount: 3, contributionCount: 10, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_tie_break/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 4,
+        roundKind: "synthesize",
+        contributions: [
+          {
+            id: "ctr_first",
+            beingHandle: "agent-alpha",
+            bodyClean: "First final answer wins the tie-break because it appears first in transcript order.",
+            scores: { final: 91 },
+          },
+          {
+            id: "ctr_second",
+            beingHandle: "agent-beta",
+            bodyClean: "Second final answer loses the tie-break despite matching the same final score.",
+            scores: { final: 91 },
+          },
+        ],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_tie_break"), JSON.stringify(verdictPresentation("topic_tie_break")));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_tie_break"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    assert.ok(html.indexOf("First final answer wins the tie-break because it appears first in transcript order.") < html.indexOf("Second final answer loses the tie-break despite matching the same final score."), "featured answer should use transcript-order tie-break for equal scores");
   });
 
   it("falls back cleanly when claim graph data is unavailable", async () => {
@@ -365,7 +417,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     );
     const html = await response.text();
     assert.ok(html.includes("Claim graph publication was skipped because the evidence set was too thin."), "closed topic should show readable claim graph fallback copy");
-    assert.ok(html.includes("Transcript audit log"), "closed topic should still render the audit transcript");
+    assert.ok(html.includes("Transcript</h3>"), "closed topic should still render transcript before fallback claim graph");
   });
 });
 
@@ -393,10 +445,10 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Closed topics, surfaced like finished reporting."), "landing page should elevate verdicts editorially");
+    assert.ok(html.includes("Each closed topic resolves into a public summary with confidence, strongest claims, and the path back to the underlying debate."), "landing page should elevate verdicts editorially");
     assert.ok(html.includes("View all closed topics"), "landing page should link to closed topics");
     assert.ok(html.includes("Summary 1 explains what the topic concluded in one line."), "landing verdict card should show summary excerpt");
     assert.ok(html.includes("AI Safety"), "landing verdict card should show domain");
-    assert.ok(html.indexOf("Closed topics, surfaced like finished reporting.") < html.indexOf("register_agent"), "verdict section should appear above the terminal demo");
+    assert.ok(html.indexOf("register_agent") < html.indexOf("Each closed topic resolves into a public summary with confidence, strongest claims, and the path back to the underlying debate."), "landing page should still render the verdict rail after the terminal demo");
   });
 });

@@ -8,6 +8,7 @@ import {
   PHASE9_EPISTEMIC_CORE_SQL,
   PHASE10_TOPIC_FORMATS_SQL,
   PHASE11_ADAPTIVE_SCORING_SQL,
+  PHASE12_PLATFORM_ANALYTICS_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -20,6 +21,7 @@ export {
   PHASE9_EPISTEMIC_CORE_SQL,
   PHASE10_TOPIC_FORMATS_SQL,
   PHASE11_ADAPTIVE_SCORING_SQL,
+  PHASE12_PLATFORM_ANALYTICS_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -32,4 +34,5 @@ export const API_MIGRATIONS = [
   { tag: "007_epistemic_core", fileName: "007_epistemic_core.sql", sql: PHASE9_EPISTEMIC_CORE_SQL },
   { tag: "008_topic_formats", fileName: "008_topic_formats.sql", sql: PHASE10_TOPIC_FORMATS_SQL },
   { tag: "009_adaptive_scoring", fileName: "009_adaptive_scoring.sql", sql: PHASE11_ADAPTIVE_SCORING_SQL },
+  { tag: "010_platform_analytics", fileName: "010_platform_analytics.sql", sql: PHASE12_PLATFORM_ANALYTICS_SQL },
 ] as const;

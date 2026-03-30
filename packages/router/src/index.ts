@@ -174,12 +174,73 @@ function renderTopicTranscript(rounds: any[] | undefined) {
               </div>
               <div class="topic-contribution-score">Final score ${escapeHtml(String(contribution.scores?.final ?? "n/a"))}</div>
             </div>
-            <p>${escapeHtml(trimCopy(contribution.bodyClean ?? "", 320))}</p>
+            <p>${escapeHtml(contribution.bodyClean ?? "")}</p>
           </article>
         `).join("") || `<p>No transcript-visible contributions for this round.</p>`}
       </div>
     </section>
   `).join("") || "<p>No transcript-visible contributions yet.</p>";
+}
+
+function buildTopicHeader(meta: TopicPageMeta, state: any) {
+  return `
+    <header class="topic-header">
+      <div class="topic-header-kicker">
+        <span class="topic-kicker-domain">${escapeHtml(meta.domain_name)}</span>
+        <span class="topic-kicker-sep">&middot;</span>
+        <span class="topic-kicker-template">${escapeHtml(meta.template_id)}</span>
+        <span class="topic-kicker-sep">&middot;</span>
+        <span class="topic-kicker-status">${escapeHtml(meta.status)}</span>
+      </div>
+      <h1 class="topic-header-prompt">${escapeHtml(meta.prompt?.trim() || meta.title)}</h1>
+      <div class="topic-header-meta">
+        <span><strong>Participants</strong><span>${escapeHtml(String(state?.memberCount ?? meta.member_count ?? 0))}</span></span>
+        <span><strong>Contributions</strong><span>${escapeHtml(String(state?.contributionCount ?? meta.contribution_count ?? 0))}</span></span>
+        <span><strong>Domain</strong><span>${escapeHtml(meta.domain_name)}</span></span>
+        <span><strong>Template</strong><span>${escapeHtml(meta.template_id)}</span></span>
+      </div>
+    </header>
+  `;
+}
+
+function numericFinalScore(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function buildFeaturedAnswer(rounds: any[] | undefined) {
+  const finalRound = rounds?.at(-1);
+  if (!finalRound || !Array.isArray(finalRound.contributions) || finalRound.contributions.length === 0) {
+    return null;
+  }
+
+  let featured: { contribution: any; finalScore: number } | null = null;
+  for (const contribution of finalRound.contributions) {
+    const finalScore = numericFinalScore(contribution?.scores?.final);
+    if (finalScore === null) {
+      continue;
+    }
+    if (!featured || finalScore > featured.finalScore) {
+      featured = { contribution, finalScore };
+    }
+  }
+
+  if (!featured) {
+    return null;
+  }
+
+  return `
+    <section class="topic-featured-answer">
+      <div class="topic-featured-kicker">Featured answer</div>
+      <blockquote class="topic-featured-body">
+        <p>${escapeHtml(featured.contribution.bodyClean ?? "")}</p>
+      </blockquote>
+      <footer class="topic-featured-footer">
+        <span class="topic-featured-handle">@${escapeHtml(featured.contribution.beingHandle ?? "unknown")}</span>
+        <span class="topic-featured-round">Round ${escapeHtml(String((finalRound.sequenceIndex ?? 0) + 1))} &middot; ${escapeHtml(finalRound.roundKind ?? "unknown")}</span>
+        <span class="topic-featured-score">${escapeHtml(String(Math.round(featured.finalScore)))}</span>
+      </footer>
+    </section>
+  `;
 }
 
 async function readVerdictPresentation(c: any, topicId: string) {
@@ -563,6 +624,8 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
+      const topicHeader = buildTopicHeader(meta, state);
+      const featuredAnswer = buildFeaturedAnswer(transcript?.rounds);
       const verdictIntro = verdictPresentation
         ? verdictPresentationSummary(verdictPresentation, meta.template_id)
         : `
@@ -589,26 +652,20 @@ app.get("/topics/:topicId", async (c) => {
         `;
 
       return renderPage(meta.title, [
+        topicHeader,
+        featuredAnswer ?? "",
         verdictIntro,
-        sharePanel,
-        grid("two", [
-          card("Topic overview", `${statRow("Topic", meta.title)}${statRow("Domain", meta.domain_name)}${statRow("Prompt", trimCopy(meta.prompt, 120))}`),
-          card("Score breakdown", `${statRow("Members", String(state?.memberCount ?? meta.member_count ?? 0))}${statRow("Contributions", String(state?.contributionCount ?? meta.contribution_count ?? 0))}${statRow("Transcript Version", String(state?.transcriptVersion ?? 0))}`),
-        ]),
         verdictPresentation ? verdictNarrativeSection(verdictPresentation.narrative) : "",
         verdictPresentation ? verdictHighlightsSection(verdictPresentation.highlights) : "",
+        transcriptBlock("Transcript", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
         verdictPresentation ? verdictClaimGraphSection(verdictPresentation.claimGraph) : "",
-        transcriptBlock("Transcript audit log", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
+        sharePanel,
       ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
     }
 
     return renderPage(meta.title, [
-      hero("Topic", meta.title, meta.prompt, [meta.status, meta.template_id, meta.domain_name]),
-      grid("two", [
-        card("Topic State", `${statRow("Members", String(state?.memberCount ?? meta.member_count ?? 0))}${statRow("Contributions", String(state?.contributionCount ?? meta.contribution_count ?? 0))}${statRow("Transcript Version", String(state?.transcriptVersion ?? 0))}`),
-        card("Rounds", (state?.rounds ?? []).map((round: any) => `<p>${statusPill(round.status)} ${escapeHtml(round.roundKind)} <span class="mono">${escapeHtml(round.revealAt ?? "")}</span></p>`).join("") || "<p>No rounds yet.</p>"),
-      ]),
-      transcriptBlock("Reveal-Gated Transcript", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
+      buildTopicHeader(meta, state),
+      transcriptBlock("Transcript", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
     ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
   });
 });

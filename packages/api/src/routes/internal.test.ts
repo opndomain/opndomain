@@ -104,6 +104,39 @@ class FakeCache {
   }
 }
 
+class FakeTopicStateStub {
+  constructor(private readonly payload: unknown) {}
+
+  async fetch(_url: string) {
+    return new Response(JSON.stringify(this.payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+class FakeTopicStateNamespace {
+  constructor(private readonly payloadByTopicId: Record<string, unknown>) {}
+
+  idFromName(name: string) {
+    return name;
+  }
+
+  get(id: string) {
+    return new FakeTopicStateStub(this.payloadByTopicId[id] ?? {
+      acceptLatencyMsSamples: [],
+      recomputeDurationMsSamples: [],
+      snapshotDurationMsSamples: [],
+      drainThroughputSamples: [],
+      pendingContributionBacklog: 0,
+      pendingVoteBacklog: 0,
+      pendingAuxBacklog: 0,
+      semanticBacklog: 0,
+      publicationFreshnessLagMs: 0,
+    });
+  }
+}
+
 function queueAuthenticatedAgent(
   db: FakeDb,
   {
@@ -287,6 +320,88 @@ function queuePresentationRepairReads(db: FakeDb) {
 }
 
 describe("internal routes", () => {
+  it("extends internal health with aggregated scale telemetry", async () => {
+    const db = new FakeDb();
+    const cache = new FakeCache();
+    queueAuthenticatedAgent(db);
+    db.queueAll("SELECT status, COUNT(*) AS count FROM topics GROUP BY status ORDER BY status ASC", [
+      { status: "started", count: 2 },
+    ]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started' ORDER BY updated_at DESC", [
+      { id: "top_1" },
+      { id: "top_2" },
+    ]);
+    cache.values.set("snapshot-pending:top_9", JSON.stringify({ topicId: "top_9" }));
+    cache.values.set("presentation-pending:top_7", JSON.stringify({ topicId: "top_7" }));
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/health", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db, {
+        PUBLIC_CACHE: cache as never,
+        TOPIC_STATE_DO: new FakeTopicStateNamespace({
+          top_1: {
+            acceptLatencyMsSamples: [8, 12],
+            recomputeDurationMsSamples: [15],
+            snapshotDurationMsSamples: [20],
+            drainThroughputSamples: [{ contributionsPerFlush: 2, votesPerFlush: 1, auxRowsPerFlush: 0 }],
+            pendingContributionBacklog: 3,
+            pendingVoteBacklog: 2,
+            pendingAuxBacklog: 1,
+            semanticBacklog: 2,
+            publicationFreshnessLagMs: 25,
+          },
+          top_2: {
+            acceptLatencyMsSamples: [10],
+            recomputeDurationMsSamples: [25],
+            snapshotDurationMsSamples: [40],
+            drainThroughputSamples: [{ contributionsPerFlush: 4, votesPerFlush: 3, auxRowsPerFlush: 2 }],
+            pendingContributionBacklog: 4,
+            pendingVoteBacklog: 5,
+            pendingAuxBacklog: 0,
+            semanticBacklog: 1,
+            publicationFreshnessLagMs: 45,
+          },
+        }) as never,
+      }),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as {
+      data: {
+        snapshotPendingTopics: string[];
+        presentationPendingTopics: string[];
+        scaleTelemetry: {
+          acceptLatencyMs: { p50: number; p95: number; max: number };
+          pendingContributionBacklog: number;
+          pendingVoteBacklog: number;
+          pendingAuxBacklog: number;
+          drainThroughput: { contributionsPerFlush: number; votesPerFlush: number; auxRowsPerFlush: number };
+          recomputeDurationMs: { p50: number; p95: number; max: number };
+          semanticBacklog: number;
+          snapshotDurationMs: { p50: number; p95: number; max: number };
+          publicationFreshnessLagMs: { p95: number; max: number };
+        };
+      };
+    };
+
+    assert.deepEqual(payload.data.snapshotPendingTopics, ["top_9"]);
+    assert.deepEqual(payload.data.presentationPendingTopics, ["top_7"]);
+    assert.deepEqual(payload.data.scaleTelemetry, {
+      acceptLatencyMs: { p50: 10, p95: 12, max: 12 },
+      pendingContributionBacklog: 7,
+      pendingVoteBacklog: 7,
+      pendingAuxBacklog: 1,
+      drainThroughput: { contributionsPerFlush: 3, votesPerFlush: 2, auxRowsPerFlush: 1 },
+      recomputeDurationMs: { p50: 15, p95: 25, max: 25 },
+      semanticBacklog: 3,
+      snapshotDurationMs: { p50: 20, p95: 40, max: 40 },
+      publicationFreshnessLagMs: { p95: 45, max: 45 },
+    });
+  });
+
   it("rejects non-admin access for admin endpoints", async () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db, { email: "member@example.com" });

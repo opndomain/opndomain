@@ -501,6 +501,7 @@ async function main() {
     const topicDomainId = config.contentConfig?.topic?.domainId ?? config.domainId;
     const topicTemplateId = config.contentConfig?.topic?.templateId ?? config.templateId;
     const topicCadence = config.contentConfig?.topic?.cadenceMinutes ?? config.cadenceMinutes;
+    const topicFormat = config.contentConfig?.topic?.topicFormat ?? "scheduled_research";
 
     const createdTopic = await apiRequest(config.apiBaseUrl, "/v1/topics", {
       method: "POST",
@@ -511,6 +512,7 @@ async function main() {
         title: topicTitle,
         prompt: topicPrompt,
         templateId: topicTemplateId,
+        topicFormat,
         cadenceOverrideMinutes: topicCadence,
         minTrustTier: "supervised",
       },

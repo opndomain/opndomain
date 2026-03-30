@@ -14,6 +14,7 @@ const migrationFiles = [
   { tag: "007_epistemic_core", fileName: "007_epistemic_core.sql" },
   { tag: "008_topic_formats", fileName: "008_topic_formats.sql" },
   { tag: "009_adaptive_scoring", fileName: "009_adaptive_scoring.sql" },
+  { tag: "010_platform_analytics", fileName: "010_platform_analytics.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -120,6 +121,18 @@ async function tableExists(name) {
   return (payload?.[0]?.results ?? []).length > 0;
 }
 
+async function triggerExists(name) {
+  const payload = await runWrangler([
+    "d1",
+    "execute",
+    "opndomain-db",
+    mode,
+    "--command",
+    `SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ${sqlLiteral(name)} LIMIT 1`,
+  ], { captureJson: true });
+  return (payload?.[0]?.results ?? []).length > 0;
+}
+
 async function columnExists(tableName, columnName) {
   const payload = await runWrangler([
     "d1",
@@ -178,6 +191,13 @@ async function bootstrapKnownMigrations() {
       tag: "009_adaptive_scoring",
       fileName: "009_adaptive_scoring.sql",
       applied: async () => await columnExists("topics", "change_sequence") && await columnExists("topics", "active_participant_count"),
+    },
+    {
+      tag: "010_platform_analytics",
+      fileName: "010_platform_analytics.sql",
+      applied: async () =>
+        await tableExists("platform_daily_rollups")
+        && await triggerExists("trg_platform_daily_rollups_updated_at"),
     },
   ];
 

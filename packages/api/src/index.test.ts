@@ -45,6 +45,39 @@ class FakeCache {
   }
 }
 
+class FakeTopicStateStub {
+  constructor(private readonly payload: unknown) {}
+
+  async fetch(_url: string) {
+    return new Response(JSON.stringify(this.payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
+
+class FakeTopicStateNamespace {
+  constructor(private readonly payloadByTopicId: Record<string, unknown>) {}
+
+  idFromName(name: string) {
+    return name;
+  }
+
+  get(id: string) {
+    return new FakeTopicStateStub(this.payloadByTopicId[id] ?? {
+      acceptLatencyMsSamples: [],
+      recomputeDurationMsSamples: [],
+      snapshotDurationMsSamples: [],
+      drainThroughputSamples: [],
+      pendingContributionBacklog: 0,
+      pendingVoteBacklog: 0,
+      pendingAuxBacklog: 0,
+      semanticBacklog: 0,
+      publicationFreshnessLagMs: 0,
+    });
+  }
+}
+
 class FakePreparedStatement {
   constructor(
     readonly sql: string,
@@ -295,6 +328,7 @@ describe("worker fetch env parsing", () => {
       updated_at: "2026-03-25T00:00:00.000Z",
     }]);
     db.queueAll("FROM topics GROUP BY status", [{ status: "started", count: 1 }]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started' ORDER BY updated_at DESC", [{ id: "top_1" }]);
 
     const response = await worker.fetch(
       new Request("https://api.opndomain.com/v1/internal/health", {
@@ -305,7 +339,19 @@ describe("worker fetch env parsing", () => {
         PUBLIC_CACHE: cache as never,
         SNAPSHOTS: new FakeBucket(log) as never,
         PUBLIC_ARTIFACTS: new FakeBucket(log) as never,
-        TOPIC_STATE_DO: {} as never,
+        TOPIC_STATE_DO: new FakeTopicStateNamespace({
+          top_1: {
+            acceptLatencyMsSamples: [9, 11],
+            recomputeDurationMsSamples: [14],
+            snapshotDurationMsSamples: [22],
+            drainThroughputSamples: [{ contributionsPerFlush: 3, votesPerFlush: 1, auxRowsPerFlush: 0 }],
+            pendingContributionBacklog: 2,
+            pendingVoteBacklog: 1,
+            pendingAuxBacklog: 0,
+            semanticBacklog: 1,
+            publicationFreshnessLagMs: 18,
+          },
+        }) as never,
         OPNDOMAIN_ENV: "development",
         ROOT_DOMAIN: "opndomain.com",
         ROUTER_HOST: "opndomain.com",
@@ -363,7 +409,33 @@ describe("worker fetch env parsing", () => {
     );
 
     assert.equal(response.status, 200);
-    const payload = await response.json() as { data: { topicStatusDistribution: Array<{ status: string; count: number }> } };
+    const payload = await response.json() as {
+      data: {
+        topicStatusDistribution: Array<{ status: string; count: number }>;
+        scaleTelemetry: {
+          acceptLatencyMs: { p50: number; p95: number; max: number };
+          pendingContributionBacklog: number;
+          pendingVoteBacklog: number;
+          pendingAuxBacklog: number;
+          drainThroughput: { contributionsPerFlush: number; votesPerFlush: number; auxRowsPerFlush: number };
+          recomputeDurationMs: { p50: number; p95: number; max: number };
+          semanticBacklog: number;
+          snapshotDurationMs: { p50: number; p95: number; max: number };
+          publicationFreshnessLagMs: { p95: number; max: number };
+        };
+      };
+    };
     assert.deepEqual(payload.data.topicStatusDistribution, [{ status: "started", count: 1 }]);
+    assert.deepEqual(payload.data.scaleTelemetry, {
+      acceptLatencyMs: { p50: 9, p95: 11, max: 11 },
+      pendingContributionBacklog: 2,
+      pendingVoteBacklog: 1,
+      pendingAuxBacklog: 0,
+      drainThroughput: { contributionsPerFlush: 3, votesPerFlush: 1, auxRowsPerFlush: 0 },
+      recomputeDurationMs: { p50: 14, p95: 14, max: 14 },
+      semanticBacklog: 1,
+      snapshotDurationMs: { p50: 22, p95: 22, max: 22 },
+      publicationFreshnessLagMs: { p95: 18, max: 18 },
+    });
   });
 });

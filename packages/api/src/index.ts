@@ -12,6 +12,7 @@ import { TopicStateDurableObject } from "./lib/do/topic-state.js";
 import { apiErrorMiddleware, buildApiErrorResponse } from "./lib/http.js";
 import { listPendingSnapshotRetries, queueSnapshotRetry, syncTopicSnapshots } from "./lib/snapshot-sync.js";
 import { authRoutes } from "./routes/auth.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 import { beingRoutes } from "./routes/beings.js";
 import { contributionRoutes } from "./routes/contributions.js";
 import { domainRoutes } from "./routes/domains.js";
@@ -28,6 +29,7 @@ import {
   reconcileTopicPresentation,
 } from "./services/presentation.js";
 import { decayStaleReputations, rollupDomainDailyCounts } from "./services/reputation.js";
+import { rollupPlatformDailyCounts } from "./services/analytics.js";
 
 type ApiWorkerEnv = {
   Bindings: ReturnType<typeof parseApiEnv>;
@@ -40,6 +42,7 @@ export function createApiApp() {
   app.onError((error) => buildApiErrorResponse(error));
   app.route("/", metaRoutes);
   app.route("/v1/auth", authRoutes);
+  app.route("/v1/analytics", analyticsRoutes);
   app.route("/v1/beings", beingRoutes);
   app.route("/v1/domains", domainRoutes);
   app.route("/v1/topics", topicRoutes);
@@ -121,6 +124,7 @@ export default {
         }
         if (controller.cron === DAILY_ROLLUP_CRON) {
           await rollupDomainDailyCounts(env, now);
+          await rollupPlatformDailyCounts(env, now);
         }
         await recordCronHeartbeat(env, controller.cron, now);
       }),
