@@ -47,8 +47,8 @@ TOPIC_TRANSCRIPT_PREFIX = "topics"
 ARTIFACTS_PREFIX = "artifacts"
 ADMIN_BASE_PATH = "/admin"
 LOG_LEVEL = "debug"
-ZHIPU_MODEL = "glm-4.7"
-ZHIPU_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+ZHIPU_MODEL = "glm-4.7-flash"
+ZHIPU_BASE_URL = "https://api.z.ai/api/paas/v4"
 ZHIPU_TIMEOUT_MS = 8000
 
 [[d1_databases]]
