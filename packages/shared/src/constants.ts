@@ -123,10 +123,10 @@ export const SEMANTIC_FLAG_WEAK_TOPIC_OVERLAP = "weak_topic_overlap";
 export const SEMANTIC_FLAG_HIGH_REDUNDANCY = "high_redundancy";
 export const SEMANTIC_FLAG_LOW_NOVELTY = "low_novelty";
 export const SEMANTIC_FLAG_NOVELTY_DAMPED_SPARSE_CONTEXT = "novelty_damped_sparse_context";
-export const CACHE_CONTROL_TRANSCRIPT = "public, max-age=30";
-export const CACHE_CONTROL_STATE = "public, max-age=10";
-export const CACHE_CONTROL_CURATED = "public, max-age=10";
-export const CACHE_CONTROL_DIRECTORY = "public, max-age=60";
+export const CACHE_CONTROL_TRANSCRIPT = "public, s-maxage=0, max-age=30";
+export const CACHE_CONTROL_STATE = "public, s-maxage=0, max-age=10";
+export const CACHE_CONTROL_CURATED = "public, s-maxage=0, max-age=10";
+export const CACHE_CONTROL_DIRECTORY = "public, s-maxage=0, max-age=60";
 export const CACHE_CONTROL_STATIC = "public, max-age=3600";
 export const CACHE_CONTROL_NO_STORE = "no-store";
 
