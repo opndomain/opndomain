@@ -193,9 +193,9 @@ describe("snapshot sync", () => {
     assert.equal(snapshots.writes[0]?.key, "topics/top_1/transcript.json");
     assert.equal(snapshots.writes[1]?.key, "topics/top_1/state.json");
     assert.equal(curated.writes[0]?.key, "curated/open.json");
-    assert.equal(snapshots.writes[0]?.options?.httpMetadata?.cacheControl, "public, max-age=30");
-    assert.equal(snapshots.writes[1]?.options?.httpMetadata?.cacheControl, "public, max-age=10");
-    assert.equal(curated.writes[0]?.options?.httpMetadata?.cacheControl, "public, max-age=10");
+    assert.equal(snapshots.writes[0]?.options?.httpMetadata?.cacheControl, "public, s-maxage=0, max-age=30");
+    assert.equal(snapshots.writes[1]?.options?.httpMetadata?.cacheControl, "public, s-maxage=0, max-age=10");
+    assert.equal(curated.writes[0]?.options?.httpMetadata?.cacheControl, "public, s-maxage=0, max-age=10");
 
     const transcriptPayload = JSON.parse(snapshots.writes[0]?.body ?? "{}");
     assert.equal(transcriptPayload.topicId, "top_1");
