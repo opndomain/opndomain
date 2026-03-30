@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadParticipationConfig } from "./config.js";
@@ -79,6 +80,26 @@ function parseArgs(argv: string[]) {
   return { command, options };
 }
 
+type CliDeps = {
+  printJson: (value: unknown) => void;
+  loadState: (statePath?: string) => Promise<CliState | null>;
+  saveState: (state: CliState, statePath?: string) => Promise<void>;
+  clearState: (statePath?: string) => Promise<void>;
+  withClient: <T>(mcpUrl: string, fn: (client: Client) => Promise<T>) => Promise<T>;
+  callTool: <T>(client: Client, name: string, args: Record<string, unknown>) => Promise<T>;
+  prompt: (question: string) => Promise<string>;
+};
+
+const defaultDeps: CliDeps = {
+  printJson,
+  loadState,
+  saveState,
+  clearState,
+  withClient,
+  callTool,
+  prompt,
+};
+
 function defaultNameFromEmail(email: string): string {
   return email.split("@")[0] || "agent";
 }
@@ -101,7 +122,10 @@ async function prompt(question: string): Promise<string> {
   }
 }
 
-function stateFromLaunchResult(result: ToolResponse, fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string }): CliState {
+function stateFromLaunchResult(
+  result: ToolResponse,
+  fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string; beingId?: string | null },
+): CliState {
   return {
     version: 1,
     status: (result.status as LaunchStatus | undefined) ?? "launch_ready",
@@ -110,6 +134,7 @@ function stateFromLaunchResult(result: ToolResponse, fallback: { email?: string;
     clientId: result.launch?.clientId ?? result.clientId ?? null,
     clientSecret: result.launch?.clientSecret ?? result.clientSecret ?? fallback.clientSecret ?? null,
     agentId: result.launch?.agentId ?? result.agentId ?? null,
+    beingId: (result.beingId as string | null | undefined) ?? fallback.beingId ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
     expiresAt: result.launch?.expiresAt ?? result.expiresAt ?? null,
@@ -119,30 +144,72 @@ function stateFromLaunchResult(result: ToolResponse, fallback: { email?: string;
   };
 }
 
-async function commandLogin(options: Record<string, string | boolean>) {
+function requireOption(options: Record<string, string | boolean>, name: string): string {
+  const value = coerceOption(options[name]);
+  if (!value) {
+    throw new Error(`Missing required option: --${name} <value>`);
+  }
+  return value;
+}
+
+function requireVoteValue(options: Record<string, string | boolean>): "up" | "down" {
+  const value = requireOption(options, "value");
+  if (value !== "up" && value !== "down") {
+    throw new Error("Invalid value for --value. Expected: up | down");
+  }
+  return value;
+}
+
+async function loadStoredState(
+  options: Record<string, string | boolean>,
+  deps: CliDeps,
+): Promise<{ state: CliState; statePath: string }> {
   const statePath = resolveStatePath(options);
-  const existing = await loadState(statePath);
+  const state = await deps.loadState(statePath);
+  if (!state) {
+    throw new Error("No local launch state found. Run `opndomain login` first.");
+  }
+  if (!state.clientId) {
+    throw new Error("Local launch state is incomplete. Run `opndomain login` again.");
+  }
+  return { state, statePath };
+}
+
+function authArgsFromState(
+  state: CliState,
+  overrides?: { beingId?: string },
+): Record<string, unknown> {
+  return {
+    clientId: state.clientId,
+    email: state.email,
+    beingId: overrides?.beingId ?? state.beingId,
+  };
+}
+
+async function commandLogin(options: Record<string, string | boolean>, deps: CliDeps) {
+  const statePath = resolveStatePath(options);
+  const existing = await deps.loadState(statePath);
   const mcpUrl = coerceOption(options["mcp-url"]) ?? existing?.mcpUrl ?? DEFAULT_MCP_URL;
-  const email = coerceOption(options.email) ?? existing?.email ?? await prompt("Email: ");
+  const email = coerceOption(options.email) ?? existing?.email ?? await deps.prompt("Email: ");
   const name = coerceOption(options.name) ?? existing?.name ?? defaultNameFromEmail(email);
   const codeOption = coerceOption(options.code);
   const recover = options.recover === true;
 
-  await withClient(mcpUrl, async (client) => {
+  await deps.withClient(mcpUrl, async (client) => {
     if (recover) {
-      const request = await callTool<ToolResponse>(client, "request-magic-link", { email });
-      printJson(request);
-      const tokenOrUrl = coerceOption(options.token) ?? await prompt("Paste the magic link URL or token: ");
-      const recovered = await callTool<ToolResponse>(client, "recover-launch-state", { tokenOrUrl, email });
-      const state = stateFromLaunchResult(recovered, { email, name, mcpUrl });
-      await saveState(state, statePath);
-      printJson(recovered);
+      const request = await deps.callTool<ToolResponse>(client, "request-magic-link", { email });
+      deps.printJson(request);
+      const tokenOrUrl = coerceOption(options.token) ?? await deps.prompt("Paste the magic link URL or token: ");
+      const recovered = await deps.callTool<ToolResponse>(client, "recover-launch-state", { tokenOrUrl, email });
+      const state = stateFromLaunchResult(recovered, { email, name, mcpUrl, beingId: existing?.beingId ?? null });
+      await deps.saveState(state, statePath);
+      deps.printJson(recovered);
       return;
     }
 
     let workingState = existing;
     if (!workingState || (workingState.status !== "awaiting_verification" && workingState.status !== "launch_ready" && workingState.status !== "authenticated")) {
-      const registration = await callTool<any>(client, "register", { email, name });
+      const registration = await deps.callTool<any>(client, "register", { email, name });
       workingState = {
         version: 1,
         status: "awaiting_verification",
@@ -158,8 +225,8 @@ async function commandLogin(options: Record<string, string | boolean>) {
         apiOrigin: null,
         rootDomain: null,
       };
-      await saveState(workingState, statePath);
-      printJson({
+      await deps.saveState(workingState, statePath);
+      deps.printJson({
         status: "awaiting_verification",
         clientId: workingState.clientId,
         expiresAt: registration.verification?.expiresAt ?? null,
@@ -168,13 +235,13 @@ async function commandLogin(options: Record<string, string | boolean>) {
     }
 
     if (workingState.status === "awaiting_verification") {
-      const code = codeOption ?? await prompt("Verification code: ");
-      await callTool(client, "verify-email", {
+      const code = codeOption ?? await deps.prompt("Verification code: ");
+      await deps.callTool(client, "verify-email", {
         clientId: workingState.clientId,
         email,
         code,
       });
-      const launch = await callTool<ToolResponse>(client, "establish-launch-state", {
+      const launch = await deps.callTool<ToolResponse>(client, "establish-launch-state", {
         clientId: workingState.clientId,
         clientSecret: workingState.clientSecret,
         email,
@@ -184,13 +251,14 @@ async function commandLogin(options: Record<string, string | boolean>) {
         name,
         clientSecret: workingState.clientSecret ?? undefined,
         mcpUrl,
+        beingId: workingState.beingId ?? null,
       });
-      await saveState(nextState, statePath);
-      printJson(launch);
+      await deps.saveState(nextState, statePath);
+      deps.printJson(launch);
       return;
     }
 
-    const launch = await callTool<ToolResponse>(client, "establish-launch-state", {
+    const launch = await deps.callTool<ToolResponse>(client, "establish-launch-state", {
       clientId: workingState.clientId,
       email,
       refreshToken: workingState.refreshToken,
@@ -202,28 +270,29 @@ async function commandLogin(options: Record<string, string | boolean>) {
       name,
       clientSecret: workingState.clientSecret ?? undefined,
       mcpUrl,
+      beingId: workingState.beingId ?? null,
     });
-    await saveState(nextState, statePath);
-    printJson(launch);
+    await deps.saveState(nextState, statePath);
+    deps.printJson(launch);
   });
 }
 
-async function commandStatus(options: Record<string, string | boolean>) {
+async function commandStatus(options: Record<string, string | boolean>, deps: CliDeps) {
   const statePath = resolveStatePath(options);
-  const existing = await loadState(statePath);
+  const existing = await deps.loadState(statePath);
   if (!existing) {
-    printJson({ status: "recovery_required", message: "No local launch state found." });
+    deps.printJson({ status: "recovery_required", message: "No local launch state found." });
     return;
   }
 
   if (existing.status === "awaiting_verification") {
-    printJson(existing);
+    deps.printJson(existing);
     return;
   }
 
-  await withClient(coerceOption(options["mcp-url"]) ?? existing.mcpUrl, async (client) => {
+  await deps.withClient(coerceOption(options["mcp-url"]) ?? existing.mcpUrl, async (client) => {
     try {
-      const launch = await callTool<ToolResponse>(client, "establish-launch-state", {
+      const launch = await deps.callTool<ToolResponse>(client, "establish-launch-state", {
         clientId: existing.clientId,
         email: existing.email,
         refreshToken: existing.refreshToken,
@@ -235,11 +304,12 @@ async function commandStatus(options: Record<string, string | boolean>) {
         name: existing.name ?? undefined,
         clientSecret: existing.clientSecret ?? undefined,
         mcpUrl: existing.mcpUrl,
+        beingId: existing.beingId ?? null,
       });
-      await saveState(nextState, statePath);
-      printJson(launch);
+      await deps.saveState(nextState, statePath);
+      deps.printJson(launch);
     } catch (error) {
-      printJson({
+      deps.printJson({
         status: "reauth_required",
         clientId: existing.clientId,
         message: error instanceof Error ? error.message : String(error),
@@ -248,17 +318,13 @@ async function commandStatus(options: Record<string, string | boolean>) {
   });
 }
 
-async function commandLaunch(options: Record<string, string | boolean>) {
-  const statePath = resolveStatePath(options);
-  const existing = await loadState(statePath);
-  if (!existing) {
-    throw new Error("No local launch state found. Run `opndomain login` first.");
-  }
+async function commandLaunch(options: Record<string, string | boolean>, deps: CliDeps) {
+  const { state: existing, statePath } = await loadStoredState(options, deps);
 
   let launchPayload: LaunchPayload | null = null;
   if (existing.status === "launch_ready" && existing.clientId) {
-    await withClient(coerceOption(options["mcp-url"]) ?? existing.mcpUrl, async (client) => {
-      const launch = await callTool<ToolResponse>(client, "establish-launch-state", {
+    await deps.withClient(coerceOption(options["mcp-url"]) ?? existing.mcpUrl, async (client) => {
+      const launch = await deps.callTool<ToolResponse>(client, "establish-launch-state", {
         clientId: existing.clientId,
         email: existing.email,
         refreshToken: existing.refreshToken,
@@ -270,8 +336,9 @@ async function commandLaunch(options: Record<string, string | boolean>) {
         name: existing.name ?? undefined,
         clientSecret: existing.clientSecret ?? undefined,
         mcpUrl: existing.mcpUrl,
+        beingId: existing.beingId ?? null,
       });
-      await saveState(nextState, statePath);
+      await deps.saveState(nextState, statePath);
       launchPayload = launch.launch ?? null;
     });
   }
@@ -300,10 +367,42 @@ async function commandLaunch(options: Record<string, string | boolean>) {
     await mkdir(dirname(resolved), { recursive: true });
     await writeFile(resolved, JSON.stringify(launchPayload, null, 2));
   }
-  printJson(launchPayload);
+  deps.printJson(launchPayload);
 }
 
-async function commandParticipate(options: Record<string, string | boolean>) {
+async function commandTopicContext(options: Record<string, string | boolean>, deps: CliDeps) {
+  const topicId = requireOption(options, "topic-id");
+  const beingId = coerceOption(options["being-id"]);
+  const { state } = await loadStoredState(options, deps);
+
+  await deps.withClient(coerceOption(options["mcp-url"]) ?? state.mcpUrl, async (client) => {
+    const result = await deps.callTool<ToolResponse>(client, "get-topic-context", {
+      topicId,
+      ...authArgsFromState(state, { beingId }),
+    });
+    deps.printJson(result);
+  });
+}
+
+async function commandVote(options: Record<string, string | boolean>, deps: CliDeps) {
+  const topicId = requireOption(options, "topic-id");
+  const contributionId = requireOption(options, "contribution-id");
+  const value = requireVoteValue(options);
+  const beingId = coerceOption(options["being-id"]);
+  const { state } = await loadStoredState(options, deps);
+
+  await deps.withClient(coerceOption(options["mcp-url"]) ?? state.mcpUrl, async (client) => {
+    const result = await deps.callTool<ToolResponse>(client, "vote", {
+      topicId,
+      contributionId,
+      value,
+      ...authArgsFromState(state, { beingId }),
+    });
+    deps.printJson(result);
+  });
+}
+
+async function commandParticipate(options: Record<string, string | boolean>, deps: CliDeps) {
   const configPath = coerceOption(options.config);
   if (!configPath) {
     throw new Error("Missing required option: --config <path>");
@@ -313,48 +412,58 @@ async function commandParticipate(options: Record<string, string | boolean>) {
   const statePath = resolveStatePath(options, config.launchStatePath);
   const mcpUrl = config.mcpUrl ?? DEFAULT_MCP_URL;
 
-  const result = await withClient(mcpUrl, async (client) => runParticipate(
+  const result = await deps.withClient(mcpUrl, async (client) => runParticipate(
     { ...config, mcpUrl },
     {
-      loadState: async () => loadState(statePath),
-      saveState: async (state) => saveState(state, statePath),
-      callTool: async <T>(name: string, args: Record<string, unknown>) => callTool<T>(client, name, args),
+      loadState: async () => deps.loadState(statePath),
+      saveState: async (state) => deps.saveState(state, statePath),
+      callTool: async <T>(name: string, args: Record<string, unknown>) => deps.callTool<T>(client, name, args),
     },
   ));
 
-  printJson(result);
+  deps.printJson(result);
 }
 
-async function commandLogout(options: Record<string, string | boolean>) {
+async function commandLogout(options: Record<string, string | boolean>, deps: CliDeps) {
   const statePath = resolveStatePath(options);
-  await clearState(statePath);
-  printJson({ ok: true, message: "Local launch state cleared." });
+  await deps.clearState(statePath);
+  deps.printJson({ ok: true, message: "Local launch state cleared." });
 }
 
-async function main() {
-  const { command, options } = parseArgs(process.argv.slice(2));
+export async function runCli(argv: string[], deps: CliDeps = defaultDeps) {
+  const { command, options } = parseArgs(argv);
   switch (command) {
     case "login":
-      await commandLogin(options);
+      await commandLogin(options, deps);
       return;
     case "status":
-      await commandStatus(options);
+      await commandStatus(options, deps);
       return;
     case "launch":
-      await commandLaunch(options);
+      await commandLaunch(options, deps);
+      return;
+    case "topic-context":
+      await commandTopicContext(options, deps);
+      return;
+    case "vote":
+      await commandVote(options, deps);
       return;
     case "participate":
-      await commandParticipate(options);
+      await commandParticipate(options, deps);
       return;
     case "logout":
-      await commandLogout(options);
+      await commandLogout(options, deps);
       return;
     default:
       throw new Error(`Unknown command: ${command}`);
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-});
+const isEntrypoint = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+
+if (isEntrypoint) {
+  runCli(process.argv.slice(2)).catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
+  });
+}

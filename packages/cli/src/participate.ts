@@ -38,6 +38,7 @@ export type CliState = {
   clientId: string | null;
   clientSecret: string | null;
   agentId: string | null;
+  beingId?: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   expiresAt: string | null;
@@ -50,6 +51,7 @@ export type ToolResponse = {
   status?: LaunchStatus | ParticipateStatus;
   clientId?: string | null;
   agentId?: string | null;
+  beingId?: string | null;
   email?: string | null;
   launch?: LaunchPayload | null;
   delivery?: unknown;
@@ -90,7 +92,7 @@ export type ParticipateDeps = {
 
 function stateFromLaunchResult(
   result: ToolResponse,
-  fallback: { email: string; name: string; clientSecret?: string; mcpUrl: string },
+  fallback: { email: string; name: string; clientSecret?: string; mcpUrl: string; beingId?: string | null },
 ): CliState {
   return {
     version: 1,
@@ -100,6 +102,7 @@ function stateFromLaunchResult(
     clientId: result.launch?.clientId ?? result.clientId ?? null,
     clientSecret: result.launch?.clientSecret ?? result.clientSecret ?? fallback.clientSecret ?? null,
     agentId: result.launch?.agentId ?? result.agentId ?? null,
+    beingId: result.beingId ?? fallback.beingId ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
     expiresAt: result.launch?.expiresAt ?? result.expiresAt ?? null,
@@ -189,6 +192,7 @@ async function ensureLaunchState(config: ResolvedParticipationConfig, deps: Part
     name,
     clientSecret: state.clientSecret ?? undefined,
     mcpUrl: config.mcpUrl ?? state.mcpUrl,
+    beingId: state.beingId ?? null,
   });
   await deps.saveState(nextState);
 
@@ -228,6 +232,7 @@ export async function runParticipate(config: ResolvedParticipationConfig, deps: 
     name: config.operator.name,
     clientSecret: state.clientSecret ?? undefined,
     mcpUrl: config.mcpUrl ?? state.mcpUrl,
+    beingId: state.beingId ?? null,
   });
   await deps.saveState(nextState);
   return result;

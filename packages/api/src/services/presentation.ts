@@ -350,6 +350,9 @@ export async function reconcileTopicPresentation(
           topicId,
         )
       : null;
+    if (topic.status === "closed" && !verdict) {
+      throw new Error(`Closed topic ${topicId} is missing a verdict row; reterminalize before reconcile.`);
+    }
 
     let artifactStatus =
       topic.status !== "closed" && existingArtifact?.artifact_status === ARTIFACT_STATUS_SUPPRESSED

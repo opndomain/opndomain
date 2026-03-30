@@ -263,6 +263,90 @@ describe("presentation reconcile", () => {
     assert.ok(Array.from(cache.values.keys()).some((key) => key.startsWith("presentation-pending:top_1")));
   });
 
+  it("republishes a closed-topic verdict after an earlier artifact error", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    queueSnapshotReads(db);
+    db.queueFirst("FROM topic_artifacts", [{
+      transcript_snapshot_key: "topics/top_1/transcript.json",
+      state_snapshot_key: "topics/top_1/state.json",
+      verdict_html_key: null,
+      og_image_key: null,
+      artifact_status: "error",
+    }]);
+
+    const result = await reconcileTopicPresentation(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
+      } as never,
+      "top_1",
+      "artifact_render",
+    );
+
+    assert.equal(result.retryQueued, false);
+    assert.equal(result.artifact.artifactStatus, "published");
+    assert.equal(result.artifact.verdictHtmlKey, "artifacts/topics/top_1/verdict.html");
+    assert.equal(result.artifact.ogImageKey, "artifacts/topics/top_1/og.png");
+    assert.ok(publicArtifacts.writes.some((write) => write.key.endsWith("/verdict-presentation.json")));
+    assert.ok(publicArtifacts.writes.some((write) => write.key.endsWith("/verdict.html")));
+    assert.ok(publicArtifacts.writes.some((write) => write.key.endsWith("/og.png")));
+  });
+
+  it("marks closed topics without verdict rows as repair-required instead of leaving them ready", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    queueSnapshotReads(db, { verdictRows: [null] });
+    db.queueFirst("FROM topic_artifacts", [
+      {
+        transcript_snapshot_key: "topics/top_1/transcript.json",
+        state_snapshot_key: "topics/top_1/state.json",
+        verdict_html_key: null,
+        og_image_key: null,
+        artifact_status: "ready",
+      },
+      {
+        transcript_snapshot_key: "topics/top_1/transcript.json",
+        state_snapshot_key: "topics/top_1/state.json",
+        verdict_html_key: null,
+        og_image_key: null,
+        artifact_status: "error",
+      },
+    ]);
+
+    const result = await reconcileTopicPresentation(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
+      } as never,
+      "top_1",
+      "reconcile_unknown",
+    );
+
+    assert.equal(result.retryQueued, true);
+    assert.equal(result.artifact.artifactStatus, "error");
+    assert.equal(result.artifact.transcriptSnapshotKey, "topics/top_1/transcript.json");
+    assert.equal(result.artifact.stateSnapshotKey, "topics/top_1/state.json");
+    assert.equal(publicArtifacts.writes.some((write) => write.key.endsWith("/verdict-presentation.json")), false);
+    assert.equal(publicArtifacts.writes.some((write) => write.key.endsWith("/verdict.html")), false);
+    assert.equal(publicArtifacts.writes.some((write) => write.key.endsWith("/og.png")), false);
+    assert.ok(cache.values.has("presentation-pending:top_1"));
+  });
+
   it("suppresses artifacts for insufficient-signal verdicts by deleting both stable keys", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();

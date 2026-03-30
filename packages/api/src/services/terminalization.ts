@@ -5,11 +5,12 @@ import {
   TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS,
   VERDICT_TOP_CONTRIBUTIONS_PER_ROUND,
 } from "@opndomain/shared";
-import type { TerminalizationMode, VerdictConfidence } from "@opndomain/shared";
+import type { RoundKind, TerminalizationMode, VerdictConfidence } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { createId } from "../lib/ids.js";
 import { queuePresentationRetry, reconcileTopicPresentation } from "./presentation.js";
+import { generateVerdictEditorial } from "./verdict-editorial.js";
 import {
   rebuildDomainReputation,
   rebuildEpistemicReliability,
@@ -387,7 +388,32 @@ export async function runTerminalizationSequence(
   const terminalizationMode = evaluateTerminalizationMode(rounds, refreshedContributions);
   const completedRounds = rounds.filter((round) => round.status === "completed").length;
   const confidence = chooseConfidence(terminalizationMode, completedRounds);
-  const verdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
+  const fallbackVerdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
+  let verdictPresentation = fallbackVerdictPresentation;
+  try {
+    const aiEditorial = await generateVerdictEditorial(env, {
+      rounds: rounds.map((round) => ({
+        roundIndex: round.sequence_index,
+        roundKind: round.round_kind as RoundKind,
+        status: round.status,
+      })),
+      leaders: fallbackVerdictPresentation.leaders,
+      summary: fallbackVerdictPresentation.summary,
+      participantCount: fallbackVerdictPresentation.participantCount,
+      contributionCount: fallbackVerdictPresentation.contributionCount,
+    });
+    if (aiEditorial) {
+      verdictPresentation = {
+        ...fallbackVerdictPresentation,
+        summary: aiEditorial.summary,
+        editorialBody: aiEditorial.editorialBody,
+        narrative: aiEditorial.narrative,
+        highlights: aiEditorial.highlights,
+      };
+    }
+  } catch (error) {
+    console.warn(`zhipu verdict editorial generation failed for topic ${topicId}`, error);
+  }
   let epistemicReasoning: Record<string, unknown> | null = null;
   if (env.ENABLE_EPISTEMIC_SCORING) {
     try {

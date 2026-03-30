@@ -3,8 +3,29 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runCli } from "./cli.js";
 import { loadParticipationConfig } from "./config.js";
 import { runParticipate, type CliState, type ToolResponse } from "./participate.js";
+
+function buildCliState(overrides: Partial<CliState> = {}): CliState {
+  return {
+    version: 1,
+    status: "launch_ready",
+    email: "agent@example.com",
+    name: "Agent",
+    clientId: "cli_1",
+    clientSecret: "sec_1",
+    agentId: "agt_1",
+    beingId: "bng_state",
+    accessToken: "access_1",
+    refreshToken: "refresh_1",
+    expiresAt: "2026-03-28T00:15:00.000Z",
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    apiOrigin: "https://api.opndomain.com",
+    rootDomain: "opndomain.com",
+    ...overrides,
+  };
+}
 
 test("loadParticipationConfig resolves relative file paths", async () => {
   const root = await mkdtemp(join(tmpdir(), "opn-cli-config-"));
@@ -275,4 +296,219 @@ test("runParticipate preserves discovery-filter participation branches", async (
 
   assert.equal(result.status, "joined_awaiting_start");
   assert.equal(state?.status, "joined_awaiting_start");
+});
+
+test("runCli topic-context requires topic-id", async () => {
+  await assert.rejects(
+    () => runCli(["topic-context"], {
+      printJson: () => undefined,
+      loadState: async () => null,
+      saveState: async () => undefined,
+      clearState: async () => undefined,
+      withClient: async () => undefined as never,
+      callTool: async () => undefined as never,
+      prompt: async () => "",
+    }),
+    /Missing required option: --topic-id <value>/,
+  );
+});
+
+test("runCli vote requires contribution-id and value", async () => {
+  const deps = {
+    printJson: () => undefined,
+    loadState: async () => buildCliState(),
+    saveState: async () => undefined,
+    clearState: async () => undefined,
+    withClient: async () => undefined as never,
+    callTool: async () => undefined as never,
+    prompt: async () => "",
+  };
+
+  await assert.rejects(() => runCli(["vote", "--topic-id", "top_1"], deps), /Missing required option: --contribution-id <value>/);
+  await assert.rejects(() => runCli(["vote", "--topic-id", "top_1", "--contribution-id", "cnt_1"], deps), /Missing required option: --value <value>/);
+  await assert.rejects(
+    () => runCli(["vote", "--topic-id", "top_1", "--contribution-id", "cnt_1", "--value", "sideways"], deps),
+    /Invalid value for --value. Expected: up \| down/,
+  );
+});
+
+test("runCli topic-context uses stored launch state and explicit overrides", async () => {
+  const printed: unknown[] = [];
+  const calls: Array<{ mcpUrl: string; name: string; args: Record<string, unknown> }> = [];
+  let loadedStatePath: string | undefined;
+
+  await runCli([
+    "topic-context",
+    "--topic-id", "top_1",
+    "--being-id", "bng_override",
+    "--state-path", "./tmp/state.json",
+    "--mcp-url", "https://example.com/mcp",
+  ], {
+    printJson: (value) => {
+      printed.push(value);
+    },
+    loadState: async (statePath) => {
+      loadedStatePath = statePath;
+      return buildCliState();
+    },
+    saveState: async () => undefined,
+    clearState: async () => undefined,
+    withClient: async (mcpUrl, fn) => fn({ mcpUrl } as never),
+    callTool: async <T>(client: unknown, name: string, args: Record<string, unknown>) => {
+      calls.push({ mcpUrl: ((client as unknown) as { mcpUrl: string }).mcpUrl, name, args });
+      return { topicId: "top_1", currentRound: { status: "active" } } as T;
+    },
+    prompt: async () => "",
+  });
+
+  assert.equal(loadedStatePath?.endsWith(join("tmp", "state.json")), true);
+  assert.deepEqual(calls, [{
+    mcpUrl: "https://example.com/mcp",
+    name: "get-topic-context",
+    args: {
+      topicId: "top_1",
+      clientId: "cli_1",
+      email: "agent@example.com",
+      beingId: "bng_override",
+    },
+  }]);
+  assert.deepEqual(printed, [{ topicId: "top_1", currentRound: { status: "active" } }]);
+});
+
+test("runCli vote uses stored state defaults when no being override is provided", async () => {
+  const printed: unknown[] = [];
+  const calls: Array<{ mcpUrl: string; name: string; args: Record<string, unknown> }> = [];
+
+  await runCli([
+    "vote",
+    "--topic-id", "top_1",
+    "--contribution-id", "cnt_1",
+    "--value", "up",
+  ], {
+    printJson: (value) => {
+      printed.push(value);
+    },
+    loadState: async () => buildCliState(),
+    saveState: async () => undefined,
+    clearState: async () => undefined,
+    withClient: async (mcpUrl, fn) => fn({ mcpUrl } as never),
+    callTool: async <T>(client: unknown, name: string, args: Record<string, unknown>) => {
+      calls.push({ mcpUrl: ((client as unknown) as { mcpUrl: string }).mcpUrl, name, args });
+      return { ok: true, voteId: "vot_1" } as T;
+    },
+    prompt: async () => "",
+  });
+
+  assert.deepEqual(calls, [{
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    name: "vote",
+    args: {
+      topicId: "top_1",
+      contributionId: "cnt_1",
+      value: "up",
+      clientId: "cli_1",
+      email: "agent@example.com",
+      beingId: "bng_state",
+    },
+  }]);
+  assert.deepEqual(printed, [{ ok: true, voteId: "vot_1" }]);
+});
+
+test("runCli status preserves stored beingId when launch refresh omits it", async () => {
+  const savedStates: CliState[] = [];
+
+  await runCli(["status"], {
+    printJson: () => undefined,
+    loadState: async () => buildCliState(),
+    saveState: async (state) => {
+      savedStates.push(state);
+    },
+    clearState: async () => undefined,
+    withClient: async (mcpUrl, fn) => fn({ mcpUrl } as never),
+    callTool: async <T>() => ({
+      status: "launch_ready",
+      clientId: "cli_1",
+      agentId: "agt_1",
+      email: "agent@example.com",
+      launch: {
+        clientId: "cli_1",
+        agentId: "agt_1",
+        accessToken: "access_2",
+        refreshToken: "refresh_2",
+        expiresAt: "2026-03-29T00:15:00.000Z",
+        mcpUrl: "https://mcp.opndomain.com/mcp",
+        apiOrigin: "https://api.opndomain.com",
+        rootDomain: "opndomain.com",
+        clientSecret: "sec_1",
+      },
+    } as T),
+    prompt: async () => "",
+  });
+
+  assert.equal(savedStates[0]?.beingId, "bng_state");
+});
+
+test("runParticipate preserves stored beingId when launch refresh omits it", async () => {
+  let state: CliState | null = buildCliState();
+
+  const result = await runParticipate({
+    configPath: "participate.json",
+    configDir: ".",
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    operator: {
+      email: "agent@example.com",
+      name: "Agent",
+    },
+    contribution: {
+      bodyPath: "body.md",
+      body: "Contribution body",
+    },
+    output: {
+      format: "json",
+    },
+  }, {
+    loadState: async () => state,
+    saveState: async (nextState) => {
+      state = nextState;
+    },
+    callTool: async <T>(name: string) => {
+      if (name === "establish-launch-state") {
+        return {
+          status: "launch_ready",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_2",
+            refreshToken: "refresh_2",
+            expiresAt: "2026-03-29T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+            clientSecret: "sec_1",
+          },
+        } as T;
+      }
+      if (name === "participate") {
+        return {
+          status: "contributed",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_3",
+            refreshToken: "refresh_3",
+            expiresAt: "2026-03-30T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      throw new Error(`Unexpected tool ${name}`);
+    },
+  });
+
+  assert.equal(result.status, "contributed");
+  assert.equal(state?.beingId, "bng_state");
 });

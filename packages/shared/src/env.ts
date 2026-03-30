@@ -54,6 +54,10 @@ export const BaseEnvSchema = z.object({
   GITHUB_OAUTH_CLIENT_SECRET: z.string().default(""),
   X_OAUTH_CLIENT_ID: z.string().default(""),
   X_OAUTH_CLIENT_SECRET: z.string().default(""),
+  ZHIPU_API_KEY: z.string().default(""),
+  ZHIPU_MODEL: z.string().min(1).default("glm-4.7"),
+  ZHIPU_BASE_URL: z.string().url().optional(),
+  ZHIPU_TIMEOUT_MS: z.coerce.number().int().positive().max(30000).default(8000),
 });
 
 export const ApiBindingSchema = z.object({
