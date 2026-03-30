@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { RoundKind } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 
-const DEFAULT_ZHIPU_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
+const DEFAULT_ZHIPU_BASE_URL = "https://api.z.ai/api/paas/v4";
 const MAX_TRANSCRIPT_CHARS = 12000;
 const MAX_SUMMARY_CHARS = 320;
 const MAX_EDITORIAL_BODY_CHARS = 2400;
@@ -61,15 +61,6 @@ export type VerdictEditorialInput = {
 
 export type VerdictEditorialOutput = z.infer<typeof VerdictEditorialSchema>;
 
-function base64UrlEncode(value: Uint8Array | string): string {
-  const input = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  let binary = "";
-  for (const byte of input) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
 function normalizeText(value: string, maxLength: number): string {
   return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
@@ -102,35 +93,6 @@ function buildTranscriptContext(input: VerdictEditorialInput): string {
   return parts.join("\n\n").slice(0, MAX_TRANSCRIPT_CHARS);
 }
 
-async function createZhipuJwt(apiKey: string): Promise<string> {
-  const [apiKeyId, apiKeySecret] = apiKey.split(".");
-  if (!apiKeyId || !apiKeySecret) {
-    throw new Error("invalid zhipu api key");
-  }
-
-  const now = Date.now();
-  const header = {
-    alg: "HS256",
-    sign_type: "SIGN",
-    typ: "JWT",
-  };
-  const payload = {
-    api_key: apiKeyId,
-    exp: now + 60 * 1000,
-    timestamp: now,
-  };
-  const signingInput = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(payload))}`;
-  const imported = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(apiKeySecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC", imported, new TextEncoder().encode(signingInput));
-  return `${signingInput}.${base64UrlEncode(new Uint8Array(signature))}`;
-}
-
 function timeoutSignal(timeoutMs: number): AbortSignal {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("zhipu_timeout")), timeoutMs);
@@ -147,13 +109,6 @@ export async function generateVerdictEditorial(
     return null;
   }
 
-  let token: string;
-  try {
-    token = await createZhipuJwt(apiKey);
-  } catch {
-    return null;
-  }
-
   const transcriptContext = buildTranscriptContext(input);
   const completedRounds = input.rounds.filter((round) => round.status === "completed").length;
   const endpoint = `${(env.ZHIPU_BASE_URL ?? DEFAULT_ZHIPU_BASE_URL).replace(/\/+$/, "")}/chat/completions`;
@@ -161,7 +116,7 @@ export async function generateVerdictEditorial(
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

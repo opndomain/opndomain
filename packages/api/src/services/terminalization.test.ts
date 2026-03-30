@@ -386,6 +386,108 @@ describe("terminalization service", () => {
     );
   });
 
+  it("continues explicit reterminalize repairs when force-flush does not drain", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [{ id: "vrd_1" }]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+      { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
+      { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
+    ]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id", [
+      {
+        id: "cnt_1",
+        being_id: "bng_1",
+        being_handle: "alpha",
+        round_id: "rnd_1",
+        round_kind: "propose",
+        sequence_index: 0,
+        final_score: 73,
+        shadow_final_score: 72,
+        body_clean: "Body",
+        visibility: "normal",
+      },
+    ]);
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_1",
+      substance_score: 70,
+      role_bonus: 10,
+      details_json: JSON.stringify({ role: "claim" }),
+      relevance: 0.8,
+      novelty: 0.7,
+      reframe: 0.4,
+      initial_score: 68,
+      shadow_initial_score: 67,
+      scoring_profile: "adversarial",
+      round_kind: "propose",
+      template_id: "debate_v2",
+      topic_id: "top_1",
+    }]);
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
+    ]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueAll("SELECT cs.final_score, t.closed_at", [
+      { final_score: 73, closed_at: "2026-03-25T02:00:00.000Z" },
+    ]);
+    db.queueFirst("FROM domain_reputation", [null]);
+    db.queueAll("SELECT id, average_score, sample_count, m2, consistency_score, decayed_score, last_active_at\n      FROM domain_reputation", []);
+    queueClosedTopicPresentationReads(db);
+    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
+      {
+        confidence: "moderate",
+        terminalization_mode: "full_template",
+        summary: "summary",
+        reasoning_json: JSON.stringify({
+          topContributionsPerRound: [
+            {
+              roundKind: "propose",
+              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+            },
+          ],
+          completedRounds: 2,
+          totalRounds: 2,
+        }),
+      },
+    ]);
+
+    const warnings: string[] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (message?: unknown) => {
+      warnings.push(String(message ?? ""));
+    };
+
+    try {
+      const result = await runTerminalizationSequence(
+        {
+          DB: db as never,
+          SNAPSHOTS: snapshots as never,
+          PUBLIC_ARTIFACTS: publicArtifacts as never,
+          PUBLIC_CACHE: cache as never,
+          TOPIC_STATE_DO: {
+            idFromName: (name: string) => name,
+            get: () => ({
+              fetch: async () => Response.json({ flushed: false, remaining: 1 }),
+            }),
+          },
+          TOPIC_TRANSCRIPT_PREFIX: "topics",
+          CURATED_OPEN_KEY: "curated/open.json",
+        } as never,
+        "top_1",
+        { reterminalize: true },
+      );
+
+      assert.equal(result.terminalized, true);
+      assert.ok(warnings.some((warning) => warning.includes("continuing reterminalize")));
+      assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO verdicts")));
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+  });
+
   it("recomputes final scores during terminalization without mutating ingest-time live mirrors", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
@@ -931,7 +1033,7 @@ describe("terminalization service", () => {
 
     await withMockFetch(
       (async (input, init) => {
-        assert.equal(String(input), "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+        assert.equal(String(input), "https://api.z.ai/api/paas/v4/chat/completions");
         assert.match(String((init?.headers as Record<string, string>).Authorization), /^Bearer /);
         return Response.json({
           choices: [{
@@ -978,9 +1080,9 @@ describe("terminalization service", () => {
             },
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "test-key.test-secret",
+            ZHIPU_API_KEY: "test-api-key",
             ZHIPU_MODEL: "glm-4.7",
-            ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4",
+            ZHIPU_BASE_URL: "https://api.z.ai/api/paas/v4",
             ZHIPU_TIMEOUT_MS: 8000,
           } as never,
           "top_1",
@@ -1030,7 +1132,7 @@ describe("terminalization service", () => {
             },
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "test-key.test-secret",
+            ZHIPU_API_KEY: "test-api-key",
             ZHIPU_MODEL: "glm-4.7",
             ZHIPU_TIMEOUT_MS: 8000,
           } as never,
@@ -1071,7 +1173,7 @@ describe("terminalization service", () => {
             },
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "test-key.test-secret",
+            ZHIPU_API_KEY: "test-api-key",
             ZHIPU_MODEL: "glm-4.7",
             ZHIPU_TIMEOUT_MS: 1,
           } as never,
@@ -1080,49 +1182,6 @@ describe("terminalization service", () => {
       },
     );
 
-    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
-    assert.ok(verdictInsert);
-    assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
-  });
-
-  it("falls back without calling ZHIPU when the API key is malformed", async () => {
-    const db = new FakeDb();
-    const snapshots = new FakeBucket();
-    const publicArtifacts = new FakeBucket();
-    const cache = new FakeCache();
-    queueTerminalizationSuccessPath(db);
-    let fetchCalls = 0;
-
-    await withMockFetch(
-      (async () => {
-        fetchCalls += 1;
-        return Response.json({});
-      }) as typeof globalThis.fetch,
-      async () => {
-        await runTerminalizationSequence(
-          {
-            DB: db as never,
-            SNAPSHOTS: snapshots as never,
-            PUBLIC_ARTIFACTS: publicArtifacts as never,
-            PUBLIC_CACHE: cache as never,
-            TOPIC_STATE_DO: {
-              idFromName: (name: string) => name,
-              get: () => ({
-                fetch: async () => Response.json({ flushed: true, remaining: 0 }),
-              }),
-            },
-            TOPIC_TRANSCRIPT_PREFIX: "topics",
-            CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "malformed-key",
-            ZHIPU_MODEL: "glm-4.7",
-            ZHIPU_TIMEOUT_MS: 8000,
-          } as never,
-          "top_1",
-        );
-      },
-    );
-
-    assert.equal(fetchCalls, 0);
     const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
     assert.ok(verdictInsert);
     assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
