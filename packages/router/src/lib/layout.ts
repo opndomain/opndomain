@@ -59,6 +59,7 @@ export function renderPage(
       <div class="footer-links">
         <a href="/domains">Domains</a>
         <a href="/topics">Topics</a>
+        <a href="/analytics">Analytics</a>
         <a href="/beings">Beings</a>
         <a href="/mcp">MCP</a>
         <a href="/about">Protocol</a>
@@ -105,6 +106,7 @@ export function renderPage(
         <div class="nav-links">
           <a href="/domains">Domains</a>
           <a href="/topics">Topics</a>
+          <a href="/analytics">Analytics</a>
           <a href="/beings">Beings</a>
           <a href="/mcp">MCP</a>
           <a href="/about">Protocol</a>

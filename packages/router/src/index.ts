@@ -16,15 +16,18 @@ import {
   pageHtmlTopicKey,
   pageHtmlTopicsKey,
   parseBaseEnv,
+  TOPIC_TEMPLATES,
   topicVerdictPresentationArtifactKey,
   VerdictPresentationSchema,
 } from "@opndomain/shared";
+import type { AnalyticsOverviewResponse, AnalyticsTopicResponse, AnalyticsVoteReliabilityResponse } from "@opndomain/shared";
+import { analyticsRangeWindow, normalizeAnalyticsRange, renderAnalyticsPage } from "./lib/analytics.js";
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { renderPage, type PageHeadMetadata } from "./lib/layout.js";
-import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, transcriptBlock, verdictClaimGraphSection, verdictHighlightsSection, verdictNarrativeSection, verdictPresentationSummary } from "./lib/render.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection, verdictHighlightsSection, verdictNarrativeSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { ANALYTICS_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
@@ -154,35 +157,264 @@ function buildTopicShareDescription(meta: TopicPageMeta, verdictSummary?: string
   return trimCopy(`${meta.domain_name}. ${meta.prompt} ${countSummary}.`, 220);
 }
 
-function renderTopicTranscript(rounds: any[] | undefined) {
-  return (rounds ?? []).map((round: any) => `
-    <section class="topic-round">
-      <div class="topic-round-head">
-        <div>
-          <div class="topic-round-index">Round ${escapeHtml(String((round.sequenceIndex ?? 0) + 1))}</div>
-          <h4>${escapeHtml(round.roundKind ?? "Unknown round")}</h4>
-        </div>
-        <div class="topic-round-meta">${escapeHtml(String((round.contributions ?? []).length))} visible contribution${(round.contributions ?? []).length === 1 ? "" : "s"}</div>
-      </div>
-      <div class="topic-round-body">
-        ${(round.contributions ?? []).map((contribution: any) => `
-          <article class="topic-contribution">
-            <div class="topic-contribution-head">
-              <div class="topic-contribution-meta">
-                <strong>${escapeHtml(contribution.beingHandle ?? "Unknown being")}</strong>
-                <span>${escapeHtml(contribution.id ?? "")}</span>
-              </div>
-              <div class="topic-contribution-score">Final score ${escapeHtml(String(contribution.scores?.final ?? "n/a"))}</div>
-            </div>
-            <p>${escapeHtml(contribution.bodyClean ?? "")}</p>
-          </article>
-        `).join("") || `<p>No transcript-visible contributions for this round.</p>`}
-      </div>
-    </section>
-  `).join("") || "<p>No transcript-visible contributions yet.</p>";
+type TopicStateSnapshot = {
+  memberCount?: number;
+  contributionCount?: number;
+};
+
+type TopicTranscriptContribution = {
+  id?: string;
+  beingHandle?: string;
+  bodyClean?: string | null;
+  scores?: {
+    final?: number | null;
+  };
+};
+
+type TopicTranscriptRound = {
+  sequenceIndex?: number;
+  roundKind?: string;
+  contributions?: TopicTranscriptContribution[];
+};
+
+type TopicVerdictPresentation = NonNullable<Awaited<ReturnType<typeof readVerdictPresentation>>>;
+
+type RankedContributionViewModel = {
+  id: string;
+  handle: string;
+  bodyHtml: string;
+  finalScore: number | null;
+  finalScoreLabel: string;
+  finalScorePercent: number;
+  rank: number;
+  roundLabel: string;
+  roleLabel: string;
+};
+
+type TopicRoundViewModel = {
+  sequenceIndex: number;
+  roundLabel: string;
+  roundTitle: string;
+  contributionCount: number;
+  topScoreLabel: string;
+  contributions: RankedContributionViewModel[];
+};
+
+type TopicPageViewModel = {
+  prompt: string;
+  participants: number;
+  contributions: number;
+  visibleRoundCount: number;
+  headerMeta: Array<{ label: string; value: string }>;
+  metaPanel: {
+    title: string;
+    lede: string;
+    badges: string[];
+    stats: Array<{ label: string; value: string }>;
+    supportingCopy: string | null;
+    tone: "verdict" | "pending" | "open" | "unavailable";
+  };
+  featuredAnswer: RankedContributionViewModel | null;
+  rounds: TopicRoundViewModel[];
+  verdictNarrative: TopicVerdictPresentation["narrative"] | null;
+  verdictHighlights: TopicVerdictPresentation["highlights"] | null;
+  verdictClaimGraph: TopicVerdictPresentation["claimGraph"] | null;
+};
+
+function titleCaseLabel(value: string | null | undefined, fallback: string) {
+  if (!value) {
+    return fallback;
+  }
+  return value
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
-function buildTopicHeader(meta: TopicPageMeta, state: any) {
+function renderParagraphs(text: string | null | undefined, className: string) {
+  const source = text?.trim();
+  if (!source) {
+    return `<p class="${className}">${escapeHtml("No transcript content was published for this contribution.")}</p>`;
+  }
+  return source
+    .split(/\n\s*\n/)
+    .map((paragraph) => `<p class="${className}">${escapeHtml(paragraph.trim())}</p>`)
+    .join("");
+}
+
+function formatScoreLabel(score: number | null) {
+  return score === null ? "n/a" : String(Math.round(score));
+}
+
+function buildRankedContributionViewModel(contributions: TopicTranscriptContribution[] | undefined, round: TopicTranscriptRound): RankedContributionViewModel[] {
+  return (contributions ?? [])
+    .map((contribution, index) => ({
+      contribution,
+      index,
+      finalScore: numericFinalScore(contribution?.scores?.final),
+    }))
+    .sort((left, right) => {
+      if (left.finalScore === null && right.finalScore === null) {
+        return left.index - right.index;
+      }
+      if (left.finalScore === null) {
+        return 1;
+      }
+      if (right.finalScore === null) {
+        return -1;
+      }
+      if (right.finalScore !== left.finalScore) {
+        return right.finalScore - left.finalScore;
+      }
+      return left.index - right.index;
+    })
+    .map(({ contribution, finalScore }, index) => ({
+      id: contribution.id ?? `contribution-${index + 1}`,
+      handle: contribution.beingHandle ?? "unknown",
+      bodyHtml: renderParagraphs(contribution.bodyClean, "topic-contribution-paragraph"),
+      finalScore,
+      finalScoreLabel: formatScoreLabel(finalScore),
+      finalScorePercent: Math.max(0, Math.min(100, Math.round(finalScore ?? 0))),
+      rank: index + 1,
+      roleLabel: titleCaseLabel(round.roundKind, "Unknown round"),
+      roundLabel: `Round ${(round.sequenceIndex ?? 0) + 1} · ${titleCaseLabel(round.roundKind, "Unknown round")}`,
+    }));
+}
+
+function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined): TopicRoundViewModel[] {
+  return (rounds ?? []).map((round) => {
+    const sequenceIndex = round.sequenceIndex ?? 0;
+    const contributions = buildRankedContributionViewModel(round.contributions, round);
+    return {
+      sequenceIndex,
+      roundLabel: `Round ${sequenceIndex + 1}`,
+      roundTitle: titleCaseLabel(round.roundKind, "Unknown round"),
+      contributionCount: contributions.length,
+      topScoreLabel: contributions[0]?.finalScoreLabel ?? "n/a",
+      contributions,
+    };
+  });
+}
+
+function buildFeaturedAnswer(rounds: TopicTranscriptRound[] | undefined) {
+  const finalRound = rounds?.at(-1);
+  if (!finalRound) {
+    return null;
+  }
+  return buildRankedContributionViewModel(finalRound.contributions, finalRound)[0] ?? null;
+}
+
+function buildTopicPageViewModel(
+  meta: TopicPageMeta,
+  state: TopicStateSnapshot | null,
+  transcriptRounds: TopicTranscriptRound[] | undefined,
+  verdictPresentation: TopicVerdictPresentation | null,
+): TopicPageViewModel {
+  const rounds = buildTopicRoundViewModel(transcriptRounds);
+  const participants = state?.memberCount ?? meta.member_count ?? 0;
+  const contributions = state?.contributionCount ?? meta.contribution_count ?? 0;
+  const visibleRoundCount = rounds.length;
+  const prompt = meta.prompt?.trim() || meta.title;
+  const headerMeta = [
+    { label: "Participants", value: String(participants) },
+    { label: "Contributions", value: String(contributions) },
+    { label: "Rounds", value: String(visibleRoundCount) },
+    { label: "Domain", value: meta.domain_name },
+  ];
+
+  if (meta.status === "closed" && verdictPresentation) {
+    return {
+      prompt,
+      participants,
+      contributions,
+      visibleRoundCount,
+      headerMeta,
+      metaPanel: {
+        title: verdictPresentation.headline.text,
+        lede: verdictPresentation.summary,
+        badges: [
+          verdictPresentation.confidence.label,
+          verdictPresentation.domain,
+          meta.template_id,
+          verdictPresentation.headline.stance,
+        ],
+        stats: [
+          { label: "Confidence", value: `${Math.round(verdictPresentation.confidence.score * 100)}%` },
+          { label: "Completed rounds", value: `${verdictPresentation.scoreBreakdown.completedRounds}/${verdictPresentation.scoreBreakdown.totalRounds}` },
+          { label: "Participants", value: String(verdictPresentation.scoreBreakdown.participantCount) },
+          { label: "Contributions", value: String(verdictPresentation.scoreBreakdown.contributionCount) },
+        ],
+        supportingCopy: verdictPresentation.confidence.explanation,
+        tone: "verdict",
+      },
+      featuredAnswer: buildFeaturedAnswer(transcriptRounds),
+      rounds,
+      verdictNarrative: verdictPresentation.narrative,
+      verdictHighlights: verdictPresentation.highlights,
+      verdictClaimGraph: verdictPresentation.claimGraph,
+    };
+  }
+
+  if (meta.status === "closed") {
+    const verdictUnavailable = meta.artifact_status === "error";
+    return {
+      prompt,
+      participants,
+      contributions,
+      visibleRoundCount,
+      headerMeta,
+      metaPanel: {
+        title: verdictUnavailable ? "Verdict unavailable" : "Verdict pending",
+        lede: verdictUnavailable
+          ? "The verdict artifact could not be retrieved. The transcript remains available below."
+          : "This topic is closed, but the verdict artifact is still being published.",
+        badges: [meta.status, meta.artifact_status ?? "pending"],
+        stats: [
+          { label: "Participants", value: String(participants) },
+          { label: "Contributions", value: String(contributions) },
+          { label: "Visible rounds", value: String(visibleRoundCount) },
+        ],
+        supportingCopy: verdictUnavailable
+          ? "If this persists, the artifact may still be rendering or require re-publication."
+          : "Check back once the verdict presentation finishes publishing.",
+        tone: verdictUnavailable ? "unavailable" : "pending",
+      },
+      featuredAnswer: buildFeaturedAnswer(transcriptRounds),
+      rounds,
+      verdictNarrative: null,
+      verdictHighlights: null,
+      verdictClaimGraph: null,
+    };
+  }
+
+  return {
+    prompt,
+    participants,
+    contributions,
+    visibleRoundCount,
+    headerMeta,
+    metaPanel: {
+      title: "Verdict will appear after closure",
+      lede: "This topic is active. The transcript updates as rounds complete, and the verdict publishes when the topic closes.",
+      badges: [meta.status, meta.template_id],
+      stats: [
+        { label: "Participants", value: String(participants) },
+        { label: "Contributions", value: String(contributions) },
+        { label: "Visible rounds", value: String(visibleRoundCount) },
+      ],
+      supportingCopy: "Use the transcript below to inspect the debate while the topic is still live.",
+      tone: "open",
+    },
+    featuredAnswer: null,
+    rounds,
+    verdictNarrative: null,
+    verdictHighlights: null,
+    verdictClaimGraph: null,
+  };
+}
+
+function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel) {
   return `
     <header class="topic-header">
       <div class="topic-header-kicker">
@@ -192,12 +424,11 @@ function buildTopicHeader(meta: TopicPageMeta, state: any) {
         <span class="topic-kicker-sep">&middot;</span>
         <span class="topic-kicker-status">${escapeHtml(meta.status)}</span>
       </div>
-      <h1 class="topic-header-prompt">${escapeHtml(meta.prompt?.trim() || meta.title)}</h1>
+      <h1 class="topic-header-prompt">${escapeHtml(viewModel.prompt)}</h1>
       <div class="topic-header-meta">
-        <span><strong>Participants</strong><span>${escapeHtml(String(state?.memberCount ?? meta.member_count ?? 0))}</span></span>
-        <span><strong>Contributions</strong><span>${escapeHtml(String(state?.contributionCount ?? meta.contribution_count ?? 0))}</span></span>
-        <span><strong>Domain</strong><span>${escapeHtml(meta.domain_name)}</span></span>
-        <span><strong>Template</strong><span>${escapeHtml(meta.template_id)}</span></span>
+        ${viewModel.headerMeta.map((item) => `
+          <span class="topic-header-meta-item"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.value)}</span></span>
+        `).join("")}
       </div>
     </header>
   `;
@@ -207,39 +438,119 @@ function numericFinalScore(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function buildFeaturedAnswer(rounds: any[] | undefined) {
-  const finalRound = rounds?.at(-1);
-  if (!finalRound || !Array.isArray(finalRound.contributions) || finalRound.contributions.length === 0) {
-    return null;
-  }
-
-  let featured: { contribution: any; finalScore: number } | null = null;
-  for (const contribution of finalRound.contributions) {
-    const finalScore = numericFinalScore(contribution?.scores?.final);
-    if (finalScore === null) {
-      continue;
-    }
-    if (!featured || finalScore > featured.finalScore) {
-      featured = { contribution, finalScore };
-    }
-  }
-
+function buildFeaturedAnswerMarkup(featured: RankedContributionViewModel | null) {
   if (!featured) {
-    return null;
+    return "";
   }
-
   return `
     <section class="topic-featured-answer">
       <div class="topic-featured-kicker">Featured answer</div>
       <blockquote class="topic-featured-body">
-        <p>${escapeHtml(featured.contribution.bodyClean ?? "")}</p>
+        ${featured.bodyHtml}
       </blockquote>
       <footer class="topic-featured-footer">
-        <span class="topic-featured-handle">@${escapeHtml(featured.contribution.beingHandle ?? "unknown")}</span>
-        <span class="topic-featured-round">Round ${escapeHtml(String((finalRound.sequenceIndex ?? 0) + 1))} &middot; ${escapeHtml(finalRound.roundKind ?? "unknown")}</span>
-        <span class="topic-featured-score">${escapeHtml(String(Math.round(featured.finalScore)))}</span>
+        <span class="topic-featured-handle">@${escapeHtml(featured.handle)}</span>
+        <span class="topic-featured-round">${escapeHtml(featured.roundLabel)}</span>
+        <span class="topic-featured-score-chip">
+          <span class="topic-featured-score-num">${escapeHtml(featured.finalScoreLabel)}</span>
+          <span class="topic-featured-score-bar-track"><span class="topic-featured-score-bar-fill" style="width: ${escapeHtml(String(featured.finalScorePercent))}%;"></span></span>
+          <span class="topic-featured-score-label">Final score</span>
+        </span>
       </footer>
     </section>
+  `;
+}
+
+function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
+  if (!rounds.length) {
+    return "<p class=\"topic-transcript-empty\">No transcript-visible contributions yet.</p>";
+  }
+
+  return rounds.map((round) => `
+    <details class="topic-round-details">
+      <summary class="topic-round-summary-row">
+        <div class="topic-round-summary-left">
+          <span class="topic-round-index">R${escapeHtml(String(round.sequenceIndex + 1))}</span>
+          <div class="topic-round-summary-copy">
+            <h4>${escapeHtml(round.roundTitle)}</h4>
+            <span class="topic-round-summary-label">${escapeHtml(round.roundLabel)}</span>
+          </div>
+        </div>
+        <div class="topic-round-summary-meta">
+          <span>${escapeHtml(String(round.contributionCount))} contribution${round.contributionCount === 1 ? "" : "s"}</span>
+          <span class="topic-round-summary-topscore"><span>Top score</span><strong>${escapeHtml(round.topScoreLabel)}</strong></span>
+        </div>
+        <span class="topic-round-toggle" aria-hidden="true"></span>
+      </summary>
+      <div class="topic-round-body">
+        ${round.contributions.length
+          ? round.contributions.map((contribution) => `
+            <article class="topic-contribution-card">
+              <div class="topic-contribution-head">
+                <div class="topic-contribution-identity">
+                  <span class="topic-contribution-rank">#${escapeHtml(String(contribution.rank))}</span>
+                  <div class="topic-contribution-meta">
+                    <strong>@${escapeHtml(contribution.handle)}</strong>
+                    <span>${escapeHtml(contribution.roleLabel)}</span>
+                  </div>
+                </div>
+                <div class="topic-score-chip">
+                  <span class="topic-score-num">${escapeHtml(contribution.finalScoreLabel)}</span>
+                  <div class="topic-score-bar-track">
+                    <div class="topic-score-bar-fill" style="width: ${escapeHtml(String(contribution.finalScorePercent))}%;"></div>
+                  </div>
+                  <span class="topic-score-label">Final score</span>
+                </div>
+              </div>
+              <div class="topic-contribution-body">${contribution.bodyHtml}</div>
+            </article>
+          `).join("")
+          : `<p class="topic-round-empty">No transcript-visible contributions for this round.</p>`}
+      </div>
+    </details>
+  `).join("");
+}
+
+function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
+  return `
+    <section class="topic-transcript-section">
+      <div class="topic-transcript-head">
+        <div>
+          <span class="topic-transcript-kicker">Transcript</span>
+          <h2>Round-by-round record</h2>
+        </div>
+        <span class="topic-transcript-meta">${escapeHtml(String(viewModel.visibleRoundCount))} round${viewModel.visibleRoundCount === 1 ? "" : "s"} &middot; ${escapeHtml(String(viewModel.contributions))} contribution${viewModel.contributions === 1 ? "" : "s"}</span>
+      </div>
+      <div class="topic-transcript">${renderTopicTranscript(viewModel.rounds)}</div>
+    </section>
+  `;
+}
+
+function renderTopicMetaPanel(viewModel: TopicPageViewModel) {
+  return `
+    <aside class="topic-meta-panel">
+      <section class="topic-verdict-panel topic-verdict-panel--${escapeHtml(viewModel.metaPanel.tone)}">
+        <div class="topic-verdict-panel-head">
+          <div class="topic-verdict-kicker">Verdict</div>
+          <div class="topic-verdict-meta">
+            ${viewModel.metaPanel.badges.map((badge) => dataBadge(badge)).join("")}
+          </div>
+        </div>
+        <div class="topic-verdict-panel-copy">
+          <h2>${escapeHtml(viewModel.metaPanel.title)}</h2>
+          <p class="topic-verdict-lede">${escapeHtml(viewModel.metaPanel.lede)}</p>
+        </div>
+        <div class="topic-meta-stats">
+          ${viewModel.metaPanel.stats.map((stat) => `
+            <div class="topic-meta-stat">
+              <span class="topic-meta-stat-label">${escapeHtml(stat.label)}</span>
+              <strong class="topic-meta-stat-value">${escapeHtml(stat.value)}</strong>
+            </div>
+          `).join("")}
+        </div>
+        ${viewModel.metaPanel.supportingCopy ? `<p class="topic-meta-supporting-copy">${escapeHtml(viewModel.metaPanel.supportingCopy)}</p>` : ""}
+      </section>
+    </aside>
   `;
 }
 
@@ -289,6 +600,29 @@ function topicShareLinks(meta: TopicPageMeta, canonicalUrl: string) {
     x: xUrl.toString(),
     reddit: redditUrl.toString(),
   };
+}
+
+function renderTopicViewBeacon(env: RouterEnv["Bindings"], topicId: string) {
+  const endpoint = new URL(`/v1/topics/${encodeURIComponent(topicId)}/views`, env.API_ORIGIN).toString();
+  return `
+    <script>
+      (() => {
+        const endpoint = ${JSON.stringify(endpoint)};
+        const send = () => {
+          fetch(endpoint, {
+            method: "POST",
+            mode: "cors",
+            keepalive: true,
+          }).catch(() => {});
+        };
+        if ("requestIdleCallback" in window) {
+          window.requestIdleCallback(send, { timeout: 1500 });
+          return;
+        }
+        window.setTimeout(send, 0);
+      })();
+    </script>
+  `;
 }
 
 function pngResponse(body: ReadableStream | ArrayBuffer | ArrayBufferView, status = 200) {
@@ -466,6 +800,64 @@ app.get("/", async (c) =>
     return renderLandingPage(snapshot);
   }));
 
+app.get("/analytics", async (c) => {
+  const range = normalizeAnalyticsRange(c.req.query("range"));
+  const rawTopicId = c.req.query("topicId")?.trim() ?? "";
+  const topicId = rawTopicId || null;
+  const rawMinVotes = Number.parseInt(c.req.query("minVotes") ?? "5", 10);
+  const minVotes = [3, 5, 10, 25].includes(rawMinVotes) ? rawMinVotes : 5;
+  const { from, to } = analyticsRangeWindow(range);
+  const overviewPath = new URL("/v1/analytics/overview", "https://api.internal");
+  if (from && to) {
+    overviewPath.searchParams.set("from", from);
+    overviewPath.searchParams.set("to", to);
+  }
+  const topicsPath = new URL("/v1/topics", "https://api.internal");
+  topicsPath.searchParams.set("status", "closed");
+  const reliabilityPath = new URL("/v1/analytics/vote-reliability", "https://api.internal");
+  reliabilityPath.searchParams.set("minVotes", String(minVotes));
+
+  try {
+    const [{ data: overview }, { data: topics }, { data: reliability }, topicData] = await Promise.all([
+      apiJson<AnalyticsOverviewResponse>(c.env, `${overviewPath.pathname}${overviewPath.search}`),
+      apiJson<Array<{ id: string; title: string; status: string }>>(c.env, `${topicsPath.pathname}${topicsPath.search}`),
+      apiJson<AnalyticsVoteReliabilityResponse>(c.env, `${reliabilityPath.pathname}${reliabilityPath.search}`),
+      topicId
+        ? apiJson<AnalyticsTopicResponse>(c.env, `/v1/analytics/topic/${encodeURIComponent(topicId)}`)
+          .then((response) => response.data)
+          .catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    return htmlResponse(
+      renderPage(
+        "Analytics",
+        renderAnalyticsPage({
+          overview,
+          topics,
+          topicData,
+          reliability,
+          range,
+          topicId,
+          minVotes,
+        }),
+        "Protocol analytics across engagement, scoring distribution, and vote reliability.",
+        ANALYTICS_PAGE_STYLES,
+      ),
+      CACHE_CONTROL_NO_STORE,
+    );
+  } catch {
+    return htmlResponse(
+      renderPage(
+        "Analytics Unavailable",
+        hero("Analytics", "Analytics unavailable.", "The analytics API did not return a complete public dataset."),
+      ),
+      CACHE_CONTROL_NO_STORE,
+      502,
+    );
+  }
+});
+
 app.get("/topics", async (c) => {
   const status = c.req.query("status") ?? "";
   const domain = c.req.query("domain") ?? "";
@@ -476,67 +868,66 @@ app.get("/topics", async (c) => {
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
-    const [result, domains, templates] = await Promise.all([
-      c.env.DB.prepare(`
-        SELECT
-          t.id,
-          t.title,
-          t.status,
-          t.template_id,
-          t.prompt,
-          t.created_at,
-          t.updated_at,
-          t.current_round_index,
-          d.slug AS domain_slug,
-          d.name AS domain_name,
-          (SELECT COUNT(*) FROM topic_members tm WHERE tm.topic_id = t.id AND tm.status = 'active') AS member_count,
-          (SELECT COUNT(*) FROM rounds r WHERE r.topic_id = t.id) AS round_count
-        FROM topics t
-        INNER JOIN domains d ON d.id = t.domain_id
-        WHERE (? = '' OR t.status = ?)
-          AND (? = '' OR d.slug = ?)
-          AND (? = '' OR t.template_id = ?)
-        ORDER BY t.updated_at DESC
-      `).bind(status, status, domain, domain, template, template).all<{
+    const topicsPath = new URL("/v1/topics", "https://api.internal");
+    if (status) {
+      topicsPath.searchParams.set("status", status);
+    }
+    if (domain) {
+      topicsPath.searchParams.set("domain", domain);
+    }
+    if (template) {
+      topicsPath.searchParams.set("templateId", template);
+    }
+
+    const [{ data: topics }, { data: domains }] = await Promise.all([
+      apiJson<Array<{
         id: string;
         title: string;
         status: string;
-        template_id: string;
-        prompt: string | null;
-        created_at: string;
-        updated_at: string;
-        current_round_index: number | null;
-        domain_slug: string;
-        domain_name: string;
-        member_count: number;
-        round_count: number;
-      }>(),
-      c.env.DB.prepare(`
-        SELECT slug, name
-        FROM domains
-        ORDER BY name ASC
-      `).all<{ slug: string; name: string }>(),
-      c.env.DB.prepare(`
-        SELECT DISTINCT template_id
-        FROM topics
-        WHERE template_id IS NOT NULL AND template_id != ''
-        ORDER BY template_id ASC
-      `).all<{ template_id: string }>(),
+        templateId: string;
+        prompt: string;
+        createdAt: string;
+        updatedAt: string;
+        currentRoundIndex: number | null;
+        domainSlug: string;
+        domainName: string;
+        memberCount: number;
+        roundCount: number;
+      }>>(c.env, `${topicsPath.pathname}${topicsPath.search}`),
+      apiJson<Array<{ slug: string; name: string }>>(c.env, "/v1/domains"),
     ]);
-    const topics = result.results ?? [];
+
+    const topicCards = topics.map((topic) => ({
+      id: topic.id,
+      title: topic.title,
+      status: topic.status,
+      template_id: topic.templateId,
+      prompt: topic.prompt,
+      created_at: topic.createdAt,
+      updated_at: topic.updatedAt,
+      current_round_index: topic.currentRoundIndex,
+      domain_slug: topic.domainSlug,
+      domain_name: topic.domainName,
+      member_count: topic.memberCount,
+      round_count: topic.roundCount,
+    }));
+    const templateOptions = Object.values(TOPIC_TEMPLATES)
+      .map((definition) => ({ value: definition.templateId, label: definition.templateId }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+
     return renderPage("Topics", rawHtml(`
       <section class="topics-page">
         <div class="topics-shell">
-          ${topicsHeader({ totalCount: topics.length, status, domain, template })}
+          ${topicsHeader({ totalCount: topicCards.length, status, domain, template })}
           ${topicsFilterBar({
             status,
             domain,
             template,
-            domainOptions: (domains.results ?? []).map((row) => ({ value: row.slug, label: row.name })),
-            templateOptions: (templates.results ?? []).map((row) => ({ value: row.template_id, label: row.template_id })),
+            domainOptions: domains.map((row) => ({ value: row.slug, label: row.name })),
+            templateOptions,
           })}
           <section class="topics-list">
-            ${topics.length ? topics.map((row) => topicCard(row)).join("") : topicsEmpty()}
+            ${topicCards.length ? topicCards.map((row) => topicCard(row)).join("") : topicsEmpty()}
           </section>
         </div>
       </section>
@@ -610,7 +1001,7 @@ app.get("/topics/:topicId", async (c) => {
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
     const hasPublishedOgCard = meta.status === "closed" && meta.artifact_status === "published" && Boolean(meta.og_image_key);
-    const transcriptHtml = renderTopicTranscript(transcript?.rounds);
+    const viewModel = buildTopicPageViewModel(meta, state, transcript?.rounds, verdictPresentation);
     const sharePanel = meta.status === "closed"
       ? topicSharePanel({
           url: canonicalUrl,
@@ -624,49 +1015,32 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
-      const topicHeader = buildTopicHeader(meta, state);
-      const featuredAnswer = buildFeaturedAnswer(transcript?.rounds);
-      const verdictIntro = verdictPresentation
-        ? verdictPresentationSummary(verdictPresentation, meta.template_id)
-        : `
-          <section class="topic-verdict-summary">
-            <div class="topic-verdict-header">
-              <div>
-                <div class="topic-verdict-kicker">Verdict</div>
-                <h2>${escapeHtml(meta.title)}</h2>
-              </div>
-              <div class="topic-verdict-meta">
-                ${statusPill(meta.status)}
-                ${statusPill(meta.artifact_status ?? "pending")}
-              </div>
-            </div>
-            <p class="topic-verdict-lede">${escapeHtml(meta.verdict_summary ?? "A published verdict summary is not available yet, but the topic is closed and the audit log remains below.")}</p>
-            <div class="topic-verdict-confidence">
-              <div>
-                <span class="topic-verdict-stat-label">Confidence</span>
-                <strong>${escapeHtml(meta.verdict_confidence ?? "pending")}</strong>
-              </div>
-              <p>Published verdict presentation data is unavailable, so this page is falling back to summary metadata and transcript audit content.</p>
-            </div>
-          </section>
-        `;
-
-      return renderPage(meta.title, [
-        topicHeader,
-        featuredAnswer ?? "",
-        verdictIntro,
-        verdictPresentation ? verdictNarrativeSection(verdictPresentation.narrative) : "",
-        verdictPresentation ? verdictHighlightsSection(verdictPresentation.highlights) : "",
-        transcriptBlock("Transcript", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
-        verdictPresentation ? verdictClaimGraphSection(verdictPresentation.claimGraph) : "",
+      const pageBody = [
+        `<section class="topic-above-fold">${[
+          `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
+          renderTopicMetaPanel(viewModel),
+        ].join("")}</section>`,
+        viewModel.verdictNarrative ? verdictNarrativeSection(viewModel.verdictNarrative) : "",
+        viewModel.verdictHighlights ? verdictHighlightsSection(viewModel.verdictHighlights) : "",
+        renderTopicTranscriptSection(viewModel),
+        viewModel.verdictClaimGraph ? verdictClaimGraphSection(viewModel.verdictClaimGraph) : "",
         sharePanel,
-      ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
+        renderTopicViewBeacon(c.env, topicId),
+      ].join("");
+
+      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head);
     }
 
-    return renderPage(meta.title, [
-      buildTopicHeader(meta, state),
-      transcriptBlock("Transcript", rawHtml(`<div class="topic-transcript">${transcriptHtml}</div>`)),
-    ].join(""), description, TOPIC_DETAIL_PAGE_STYLES, head);
+    const pageBody = [
+      `<section class="topic-above-fold">${[
+        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}</div>`,
+        renderTopicMetaPanel(viewModel),
+      ].join("")}</section>`,
+      renderTopicTranscriptSection(viewModel),
+      renderTopicViewBeacon(c.env, topicId),
+    ].join("");
+
+    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head);
   });
 });
 
