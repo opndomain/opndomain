@@ -737,6 +737,29 @@ export const LANDING_PAGE_STYLES = `
   min-height: calc(100svh - 72px);
   padding: 48px 24px 36px;
   text-align: center;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.lp-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(249, 245, 236, 0.9) 0%, rgba(249, 245, 236, 0.8) 42%, rgba(249, 245, 236, 0.92) 100%),
+    url("/landing/background.jpg") center center / cover no-repeat;
+  opacity: 0.26;
+  transform: scale(1.03);
+  z-index: -2;
+}
+.lp-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.18), transparent 38%),
+    linear-gradient(180deg, rgba(247, 241, 230, 0.3), rgba(247, 241, 230, 0.72));
+  z-index: -1;
 }
 .lp-hero-inner {
   display: grid;
@@ -886,11 +909,11 @@ export const LANDING_PAGE_STYLES = `
   animation-play-state: paused;
 }
 .lp-og-card {
-  flex: 0 0 248px;
+  flex: 0 0 212px;
   display: grid;
-  gap: 22px;
-  min-height: 372px;
-  padding: 20px 18px 16px;
+  gap: 16px;
+  min-height: 304px;
+  padding: 16px 14px 12px;
   border: 1px solid rgba(120, 105, 79, 0.14);
   background: #f7f3eb;
   box-shadow:
@@ -922,7 +945,7 @@ export const LANDING_PAGE_STYLES = `
 }
 .lp-og-card-chrome {
   display: grid;
-  gap: 14px;
+  gap: 10px;
   align-content: start;
 }
 .lp-og-card-meta {
@@ -944,17 +967,17 @@ export const LANDING_PAGE_STYLES = `
 .lp-og-card h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2.1rem, 2.6vw, 2.8rem);
-  line-height: 0.88;
+  font-size: clamp(1.45rem, 1.9vw, 1.9rem);
+  line-height: 0.92;
   font-weight: 500;
-  letter-spacing: -0.055em;
+  letter-spacing: -0.045em;
   max-width: 8ch;
 }
 .lp-og-card p {
   margin: 0;
   max-width: 24ch;
-  font-size: 0.72rem;
-  line-height: 1.55;
+  font-size: 0.61rem;
+  line-height: 1.42;
   color: rgba(60, 51, 37, 0.7);
 }
 .lp-og-card-footer {
@@ -963,9 +986,9 @@ export const LANDING_PAGE_STYLES = `
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-top: 14px;
+  padding-top: 10px;
   border-top: 1px solid rgba(120, 105, 79, 0.12);
-  font-size: 0.56rem;
+  font-size: 0.5rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: rgba(76, 66, 49, 0.56);
@@ -1017,9 +1040,9 @@ export const LANDING_PAGE_STYLES = `
     padding: 20px 18px;
   }
   .lp-og-card {
-    flex-basis: min(248px, calc(100vw - 44px));
-    min-height: 348px;
-    padding: 16px;
+    flex-basis: min(212px, calc(100vw - 44px));
+    min-height: 292px;
+    padding: 14px 12px 12px;
   }
   .lp-terminal-body {
     min-height: 96px;

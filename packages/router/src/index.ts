@@ -24,6 +24,7 @@ import type { AnalyticsOverviewResponse, AnalyticsTopicResponse, AnalyticsVoteRe
 import { analyticsRangeWindow, normalizeAnalyticsRange, renderAnalyticsPage } from "./lib/analytics.js";
 import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
+import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generated/landing-background.js";
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
@@ -939,6 +940,16 @@ function pngNotFoundResponse() {
   });
 }
 
+function binaryResponse(body: ArrayBuffer | ArrayBufferView, contentType: string, cacheControl = CACHE_CONTROL_STATIC, status = 200) {
+  return new Response(body, {
+    status,
+    headers: {
+      "content-type": contentType,
+      "cache-control": cacheControl,
+    },
+  });
+}
+
 async function bucketJson<T>(object: R2ObjectBody | null): Promise<T | null> {
   if (!object) {
     return null;
@@ -1267,6 +1278,11 @@ app.get("/topics/:topicId/og.png", async (c) => {
   }
 
   return pngResponse(object.body);
+});
+
+app.get("/landing/background.jpg", (c) => {
+  const bytes = Uint8Array.from(atob(LANDING_HERO_BG_BASE64), (char) => char.charCodeAt(0));
+  return binaryResponse(bytes, LANDING_HERO_BG_CONTENT_TYPE);
 });
 
 app.get("/topics/:topicId", async (c) => {
