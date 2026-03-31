@@ -128,6 +128,7 @@ export type TopicListFilters = {
   status?: TopicDirectoryQuery["status"];
   domainSlug?: string;
   templateId?: TopicDirectoryQuery["templateId"];
+  q?: string;
 };
 
 type TopicDirectoryRow = {
@@ -371,6 +372,11 @@ export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
   if (filters.templateId) {
     whereClauses.push("t.template_id = ?");
     bindings.push(filters.templateId);
+  }
+  if (filters.q) {
+    whereClauses.push("(t.title LIKE ? OR t.prompt LIKE ? OR d.name LIKE ? OR d.slug LIKE ?)");
+    const pattern = `%${filters.q}%`;
+    bindings.push(pattern, pattern, pattern, pattern);
   }
 
   const rows = await allRows<TopicDirectoryRow>(

@@ -672,7 +672,8 @@ describe("GET /topics", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Topic directory"));
+    assert.ok(html.includes("Metadata index"));
+    assert.ok(html.includes("Keyword Search"));
     assert.ok(html.includes("Should frontier model audits be mandatory?"));
     assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
     assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
@@ -718,6 +719,27 @@ describe("GET /topics", () => {
     assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
     assert.ok(html.includes('input type="hidden" name="status" value="open"'));
     assert.ok(html.includes('href="/topics">Clear all</a>'));
+  });
+
+  it("passes the metadata query to the API and preserves it across filters", async () => {
+    const db = new FakeDb();
+    const api = new FakeApiService();
+    queueTopicsApi(api, {
+      path: "/v1/topics?q=frontier",
+    });
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics?q=frontier"),
+      buildEnv(db, undefined, undefined, api),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.ok(html.includes('<input id="topics-query" name="q" type="search" value="frontier"'));
+    assert.ok(html.includes("<strong>Query</strong><span>frontier</span>"));
+    assert.ok(html.includes('href="/topics?q=frontier'));
+    assert.ok(html.includes('input type="hidden" name="q" value="frontier"'));
   });
 
   it("passes the public template filter to the API as templateId", async () => {

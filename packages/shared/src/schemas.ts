@@ -367,6 +367,7 @@ export const TopicDirectoryQuerySchema = z.object({
   status: TopicStatusSchema.optional(),
   domain: z.string().trim().min(1).optional(),
   templateId: TopicTemplateIdSchema.optional(),
+  q: z.string().trim().min(1).optional(),
 });
 
 export const TopicDirectoryListItemSchema = z.object({

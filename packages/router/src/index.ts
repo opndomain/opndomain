@@ -1180,6 +1180,7 @@ app.get("/analytics", async (c) => {
 });
 
 app.get("/topics", async (c) => {
+  const q = c.req.query("q") ?? "";
   const status = c.req.query("status") ?? "";
   const domain = c.req.query("domain") ?? "";
   const template = c.req.query("template") ?? "";
@@ -1190,6 +1191,9 @@ app.get("/topics", async (c) => {
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
     const topicsPath = new URL("/v1/topics", "https://api.internal");
+    if (q) {
+      topicsPath.searchParams.set("q", q);
+    }
     if (status) {
       topicsPath.searchParams.set("status", status);
     }
@@ -1236,11 +1240,12 @@ app.get("/topics", async (c) => {
       .map((definition) => ({ value: definition.templateId, label: definition.templateId }))
       .sort((left, right) => left.label.localeCompare(right.label));
 
-    return renderPage("Topics", rawHtml(`
+    return renderPage("Metadata", rawHtml(`
       <section class="topics-page">
         <div class="topics-shell">
-          ${topicsHeader({ totalCount: topicCards.length, status, domain, template })}
+          ${topicsHeader({ totalCount: topicCards.length, status, domain, template, q })}
           ${topicsFilterBar({
+            q,
             status,
             domain,
             template,

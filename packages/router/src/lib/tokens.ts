@@ -48,6 +48,36 @@ export const TOPICS_PAGE_STYLES = `
   background:
     linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(246,248,250,0.92) 100%);
 }
+.topics-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: end;
+}
+.topics-search-field {
+  display: grid;
+  gap: 6px;
+}
+.topics-search-field label {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.topics-search-field input {
+  border-radius: 0;
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: none;
+  min-height: 48px;
+  padding: 12px 14px;
+  color: var(--text);
+}
+.topics-search-field input:hover,
+.topics-search-field input:focus {
+  border-color: var(--cyan);
+}
 .topics-filter-status {
   display: grid;
   gap: 8px;
@@ -270,6 +300,9 @@ export const TOPICS_PAGE_STYLES = `
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .topics-filter-form {
+    grid-template-columns: 1fr;
+  }
+  .topics-search-form {
     grid-template-columns: 1fr;
   }
   .topics-filter-actions {

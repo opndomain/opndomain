@@ -32,6 +32,7 @@ function parseTopicListFilters(c: { req: { query: (name: string) => string | und
     status: c.req.query("status"),
     domain: c.req.query("domain"),
     templateId: c.req.query("templateId"),
+    q: c.req.query("q"),
   });
   if (!result.success) {
     if (result.error.issues.some((issue) => issue.path[0] === "status")) {
@@ -62,6 +63,7 @@ function parseTopicListFilters(c: { req: { query: (name: string) => string | und
     status: result.data.status,
     domainSlug: result.data.domain,
     templateId: result.data.templateId,
+    q: result.data.q,
   };
 }
 

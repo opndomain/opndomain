@@ -291,6 +291,7 @@ type TopicsHeaderOptions = {
   status: string;
   domain: string;
   template: string;
+  q: string;
 };
 
 type TopicsFilterOption = {
@@ -302,6 +303,7 @@ type TopicsFilterBarOptions = {
   status: string;
   domain: string;
   template: string;
+  q: string;
   domainOptions: TopicsFilterOption[];
   templateOptions: TopicsFilterOption[];
 };
@@ -325,11 +327,14 @@ function topicsFilterOption(value: string, label: string, selected: string) {
   return `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
 }
 
-function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "domain" | "template">, nextStatus: string) {
+function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "domain" | "template" | "q">, nextStatus: string) {
   const params = new URLSearchParams();
   const status = nextStatus.trim();
   if (status) {
     params.set("status", status);
+  }
+  if (options.q) {
+    params.set("q", options.q);
   }
   if (options.domain) {
     params.set("domain", options.domain);
@@ -347,6 +352,7 @@ function topicCardStat(label: string, value: string | RawHtml) {
 
 export function topicsHeader(options: TopicsHeaderOptions) {
   const activeFilters = [
+    options.q ? `<span class="topics-active-filter"><strong>Query</strong><span>${esc(options.q)}</span></span>` : "",
     options.status ? `<span class="topics-active-filter"><strong>Status</strong><span>${esc(options.status)}</span></span>` : "",
     options.domain ? `<span class="topics-active-filter"><strong>Domain</strong><span>${esc(options.domain)}</span></span>` : "",
     options.template ? `<span class="topics-active-filter"><strong>Template</strong><span>${esc(options.template)}</span></span>` : "",
@@ -354,10 +360,10 @@ export function topicsHeader(options: TopicsHeaderOptions) {
 
   return `
     <section class="topics-header">
-      <span class="topics-kicker">Topics</span>
+      <span class="topics-kicker">Metadata</span>
       <div>
-        <h1 class="topics-title">Topic directory</h1>
-        <p class="topics-lede">Browse active and archived topics with the metadata that matters: domain, template, participant count, rounds, and recency.</p>
+        <h1 class="topics-title">Metadata index</h1>
+        <p class="topics-lede">Search public topic text by keyword, then refine by domain, template, status, participant count, rounds, and recency.</p>
       </div>
       <div class="topics-active-filters">
         <span class="topics-active-filter"><strong>Results</strong><span>${esc(String(options.totalCount))}</span></span>
@@ -431,10 +437,23 @@ export function publicSidebar(options: PublicSidebarOptions) {
 }
 
 export function topicsFilterBar(options: TopicsFilterBarOptions) {
-  const hasActiveFilters = Boolean(options.status || options.domain || options.template);
+  const hasActiveFilters = Boolean(options.status || options.domain || options.template || options.q);
   return `
     <section class="topics-filterbar">
       <div class="topics-filter-shell">
+        <form class="topics-search-form" method="get" action="/topics">
+          <div class="topics-search-field">
+            <label for="topics-query">Keyword Search</label>
+            <input id="topics-query" name="q" type="search" value="${esc(options.q)}" placeholder="Search topic titles, prompts, and domains">
+          </div>
+          ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
+          ${options.domain ? `<input type="hidden" name="domain" value="${esc(options.domain)}">` : ""}
+          ${options.template ? `<input type="hidden" name="template" value="${esc(options.template)}">` : ""}
+          <div class="topics-filter-actions">
+            <button type="submit">Search</button>
+            ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear all</a>` : ""}
+          </div>
+        </form>
         <div class="topics-filter-status">
           <span class="topics-filter-label">Status</span>
           <div class="topics-status-pills" aria-label="Filter topics by status">
@@ -444,6 +463,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
           </div>
         </div>
         <form class="topics-filter-form" method="get" action="/topics">
+          ${options.q ? `<input type="hidden" name="q" value="${esc(options.q)}">` : ""}
           ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
           <div class="topics-filter-grid">
             <div class="topics-filter-field">
@@ -463,7 +483,6 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
           </div>
           <div class="topics-filter-actions">
             <button type="submit">Apply</button>
-            ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear all</a>` : ""}
           </div>
         </form>
       </div>

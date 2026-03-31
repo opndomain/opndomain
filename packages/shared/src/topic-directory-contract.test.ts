@@ -11,6 +11,7 @@ describe("topic directory contracts", () => {
       status: "closed",
       domain: "energy",
       templateId: "debate_v2",
+      q: "storage",
     });
 
     const response = TopicDirectoryListResponseSchema.parse({
@@ -33,6 +34,7 @@ describe("topic directory contracts", () => {
     });
 
     assert.equal(query.templateId, "debate_v2");
+    assert.equal(query.q, "storage");
     assert.equal(response.data[0]?.memberCount, 12);
   });
 
