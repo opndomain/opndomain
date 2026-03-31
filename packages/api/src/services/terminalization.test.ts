@@ -1002,7 +1002,7 @@ describe("terminalization service", () => {
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"epistemic":\{"status":"unavailable"\}/);
   });
 
-  it("writes AI-backed verdict editorial fields when ZHIPU generation succeeds", async () => {
+  it("writes AI-backed verdict editorial fields when xAI generation succeeds", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
@@ -1033,7 +1033,7 @@ describe("terminalization service", () => {
 
     await withMockFetch(
       (async (input, init) => {
-        assert.equal(String(input), "https://api.z.ai/api/paas/v4/chat/completions");
+        assert.equal(String(input), "https://api.x.ai/v1/chat/completions");
         assert.match(String((init?.headers as Record<string, string>).Authorization), /^Bearer /);
         return Response.json({
           choices: [{
@@ -1080,10 +1080,10 @@ describe("terminalization service", () => {
             },
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "test-api-key",
-            ZHIPU_MODEL: "glm-4.7-flash",
-            ZHIPU_BASE_URL: "https://api.z.ai/api/paas/v4",
-            ZHIPU_TIMEOUT_MS: 30000,
+            XAI_API_KEY: "test-api-key",
+            XAI_MODEL: "grok-3-mini",
+            XAI_BASE_URL: "https://api.x.ai/v1",
+            XAI_TIMEOUT_MS: 30000,
           } as never,
           "top_1",
         );
@@ -1100,7 +1100,63 @@ describe("terminalization service", () => {
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"AI excerpt"/);
   });
 
-  it("falls back when ZHIPU output fails schema validation and logs the failure kind", async () => {
+  it("falls back to template when xAI returns HTTP error", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    queueTerminalizationSuccessPath(db);
+    const warnings: unknown[][] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+
+    try {
+      await withMockFetch(
+        (async () => new Response("{\"error\":{\"message\":\"Rate limit reached\"}}", {
+          status: 429,
+          headers: { "x-request-id": "req_429" },
+        })) as typeof globalThis.fetch,
+        async () => {
+          await runTerminalizationSequence(
+            {
+              DB: db as never,
+              SNAPSHOTS: snapshots as never,
+              PUBLIC_ARTIFACTS: publicArtifacts as never,
+              PUBLIC_CACHE: cache as never,
+              TOPIC_STATE_DO: {
+                idFromName: (name: string) => name,
+                get: () => ({
+                  fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+                }),
+              },
+              TOPIC_TRANSCRIPT_PREFIX: "topics",
+              CURATED_OPEN_KEY: "curated/open.json",
+              XAI_API_KEY: "test-api-key",
+              XAI_MODEL: "grok-3-mini",
+              XAI_TIMEOUT_MS: 30000,
+            } as never,
+            "top_1",
+          );
+        },
+      );
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
+    assert.ok(verdictInsert);
+    assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
+    assert.equal(warnings.some(([message, payload]) =>
+      message === "xai_verdict_editorial_failure"
+      && typeof payload === "object"
+      && payload !== null
+      && "statusCode" in payload
+      && payload.statusCode === 429), true);
+  });
+
+  it("falls back when xAI output fails schema validation and logs the failure kind", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
@@ -1138,9 +1194,9 @@ describe("terminalization service", () => {
               },
               TOPIC_TRANSCRIPT_PREFIX: "topics",
               CURATED_OPEN_KEY: "curated/open.json",
-              ZHIPU_API_KEY: "test-api-key",
-              ZHIPU_MODEL: "glm-4.7-flash",
-              ZHIPU_TIMEOUT_MS: 30000,
+              XAI_API_KEY: "test-api-key",
+              XAI_MODEL: "grok-3-mini",
+              XAI_TIMEOUT_MS: 30000,
             } as never,
             "top_1",
           );
@@ -1161,7 +1217,7 @@ describe("terminalization service", () => {
       && payload.failureKind === "schema_validation_failure"), true);
   });
 
-  it("falls back when the ZHIPU request times out", async () => {
+  it("falls back when the xAI request times out", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
@@ -1170,7 +1226,7 @@ describe("terminalization service", () => {
 
     await withMockFetch(
       (async () => {
-        throw new Error("zhipu_timeout");
+        throw new Error("xai_timeout");
       }) as typeof globalThis.fetch,
       async () => {
         await runTerminalizationSequence(
@@ -1187,9 +1243,9 @@ describe("terminalization service", () => {
             },
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "test-api-key",
-            ZHIPU_MODEL: "glm-4.7-flash",
-            ZHIPU_TIMEOUT_MS: 1,
+            XAI_API_KEY: "test-api-key",
+            XAI_MODEL: "grok-3-mini",
+            XAI_TIMEOUT_MS: 1,
           } as never,
           "top_1",
         );
@@ -1201,7 +1257,7 @@ describe("terminalization service", () => {
     assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
   });
 
-  it("falls back without calling ZHIPU when config is missing", async () => {
+  it("falls back without calling xAI when config is missing", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
@@ -1229,9 +1285,9 @@ describe("terminalization service", () => {
             },
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "",
-            ZHIPU_MODEL: "glm-4.7-flash",
-            ZHIPU_TIMEOUT_MS: 30000,
+            XAI_API_KEY: "",
+            XAI_MODEL: "grok-3-mini",
+            XAI_TIMEOUT_MS: 30000,
           } as never,
           "top_1",
         );

@@ -39,7 +39,10 @@ export function createApiApp() {
   const app = new Hono<ApiWorkerEnv>();
 
   app.use("*", apiErrorMiddleware);
-  app.onError((error) => buildApiErrorResponse(error));
+  app.onError((error) => {
+    console.error("api request failed", error);
+    return buildApiErrorResponse(error);
+  });
   app.route("/", metaRoutes);
   app.route("/v1/auth", authRoutes);
   app.route("/v1/analytics", analyticsRoutes);

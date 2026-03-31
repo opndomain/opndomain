@@ -396,7 +396,7 @@ export async function runTerminalizationSequence(
   const fallbackVerdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
   let verdictPresentation = fallbackVerdictPresentation;
   try {
-    const aiEditorial = await generateVerdictEditorial(env, {
+    const editorialResult = await generateVerdictEditorial(env, {
       rounds: rounds.map((round) => ({
         roundIndex: round.sequence_index,
         roundKind: round.round_kind as RoundKind,
@@ -407,18 +407,28 @@ export async function runTerminalizationSequence(
       participantCount: fallbackVerdictPresentation.participantCount,
       contributionCount: fallbackVerdictPresentation.contributionCount,
     });
-    if (aiEditorial) {
+    if (editorialResult.failure) {
+      console.warn("xai_verdict_editorial_failure", {
+        topicId,
+        provider: "xai",
+        failureKind: editorialResult.failure.kind,
+        statusCode: editorialResult.failure.statusCode ?? null,
+        requestId: editorialResult.failure.requestId,
+        details: editorialResult.failure.details ?? null,
+      });
+    }
+    if (editorialResult.editorial) {
       verdictPresentation = {
         ...fallbackVerdictPresentation,
-        summary: aiEditorial.summary,
-        editorialBody: aiEditorial.editorialBody,
-        narrative: aiEditorial.narrative,
-        highlights: aiEditorial.highlights,
+        summary: editorialResult.editorial.summary,
+        editorialBody: editorialResult.editorial.editorialBody,
+        narrative: editorialResult.editorial.narrative,
+        highlights: editorialResult.editorial.highlights,
       };
     }
   } catch (error) {
     if (error instanceof VerdictEditorialError) {
-      console.warn("zhipu verdict editorial generation failed", {
+      console.warn("xai verdict editorial generation failed", {
         topicId,
         failureKind: error.kind,
         statusCode: error.statusCode ?? null,
@@ -426,7 +436,7 @@ export async function runTerminalizationSequence(
         details: error.details ?? null,
       });
     } else {
-      console.warn("zhipu verdict editorial generation failed", {
+      console.warn("xai verdict editorial generation failed", {
         topicId,
         failureKind: "unexpected_error",
         message: error instanceof Error ? error.message : String(error),

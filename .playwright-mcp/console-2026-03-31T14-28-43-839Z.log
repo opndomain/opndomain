@@ -1,0 +1,2 @@
+[   48282ms] [ERROR] Access to fetch at 'https://api.opndomain.com/v1/topics/top_db8df18d31054d32beb3e51b148eafed/views' from origin 'https://opndomain.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. @ https://opndomain.com/topics/top_db8df18d31054d32beb3e51b148eafed:0
+[   48282ms] [ERROR] Failed to load resource: net::ERR_FAILED @ https://api.opndomain.com/v1/topics/top_db8df18d31054d32beb3e51b148eafed/views:0

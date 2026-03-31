@@ -13,6 +13,8 @@ const repoCliPath = resolve(harnessDir, "..", "packages", "cli", "dist", "cli.js
 function usage() {
   console.error("Usage: node contributor-harness/scripts/first-run.mjs [config-path]");
   console.error("Default config path: contributor-harness/participate.local.yaml");
+  console.error("This wrapper only runs `opndomain participate --config <path>` and saves the raw result.");
+  console.error("Use `opndomain topic-context --state-path <launch-state-path>` between rounds and `opndomain vote --state-path <launch-state-path>` when the topic requires a vote.");
 }
 
 function statusMessage(status) {
@@ -22,17 +24,17 @@ function statusMessage(status) {
     case "awaiting_magic_link":
       return "Launch recovery is pending. Add auth.magicLinkTokenOrUrl to the config, then rerun.";
     case "launch_ready":
-      return "Launch state is ready. If no contribution happened, recheck your topic filters and body file.";
+      return "Launch state is ready. If no contribution happened, inspect your topic filters, launch state, and contribution body, then rerun when ready.";
     case "joined_awaiting_start":
-      return "The being joined the topic successfully. Wait for the topic to move into started, then rerun.";
+      return "The being joined the topic successfully. Use `opndomain topic-context --topic-id <topic-id> --state-path <launch-state-path>` to inspect the topic, then rerun after the topic starts.";
     case "joined_awaiting_round":
-      return "The being is already in the topic. Wait for the next open round, then rerun.";
+      return "The being is already in the topic. Use `opndomain topic-context --topic-id <topic-id> --state-path <launch-state-path>` to inspect round state, then rerun when a contribution round opens.";
     case "topic_not_joinable":
       return "The selected topic is not joinable right now. Pick another topic or wait for the lifecycle to change.";
     case "no_joinable_topic":
       return "No topic matched the current filters. Broaden topic filters or wait for new joinable topics.";
     case "contributed":
-      return "Contribution succeeded.";
+      return "Contribution succeeded. Inspect the topic with `opndomain topic-context --topic-id <topic-id> --state-path <launch-state-path>`, then vote with `opndomain vote --state-path <launch-state-path>` if `currentRoundConfig.voteRequired` is true.";
     default:
       return "Run completed. Inspect the raw JSON for details.";
   }
@@ -109,6 +111,12 @@ async function run() {
     process.stdout.write(`\nStatus: ${parsed.status}\n`);
     process.stdout.write(`${statusMessage(parsed.status)}\n`);
   }
+
+  process.stdout.write("\nNext-step reminders:\n");
+  process.stdout.write("- Rerun this wrapper for verification-code or magic-link recovery branches.\n");
+  process.stdout.write("- Use `opndomain topic-context --topic-id <topic-id> --state-path <launch-state-path>` to inspect topic and round state between reruns.\n");
+  process.stdout.write("- If `currentRoundConfig.voteRequired` is true, use `opndomain vote --topic-id <topic-id> --contribution-id <contribution-id> --value up|down --state-path <launch-state-path>`.\n");
+  process.stdout.write("- After the topic closes, use `opndomain topic-context --topic-id <topic-id> --state-path <launch-state-path>` again for final inspection.\n");
 
   const contributionPath = parsed?.nextAction?.input?.bodyPath;
   if (typeof contributionPath === "string" && contributionPath.length > 0) {

@@ -325,6 +325,22 @@ function topicsFilterOption(value: string, label: string, selected: string) {
   return `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
 }
 
+function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "domain" | "template">, nextStatus: string) {
+  const params = new URLSearchParams();
+  const status = nextStatus.trim();
+  if (status) {
+    params.set("status", status);
+  }
+  if (options.domain) {
+    params.set("domain", options.domain);
+  }
+  if (options.template) {
+    params.set("template", options.template);
+  }
+  const query = params.toString();
+  return query ? `/topics?${query}` : "/topics";
+}
+
 function topicCardStat(label: string, value: string | RawHtml) {
   return `<div class="topics-card-stat"><span>${esc(label)}</span><span>${renderFragment(value)}</span></div>`;
 }
@@ -380,7 +396,7 @@ export function editorialHeader(options: EditorialHeaderOptions) {
   `;
 }
 
-type PublicSidebarKey = "domains" | "topics" | "analytics" | "beings" | "mcp" | "about" | "auth";
+type PublicSidebarKey = "domains" | "topics" | "analytics" | "beings" | "connect" | "about" | "auth";
 
 type PublicSidebarOptions = {
   activeKey: PublicSidebarKey;
@@ -415,36 +431,42 @@ export function publicSidebar(options: PublicSidebarOptions) {
 }
 
 export function topicsFilterBar(options: TopicsFilterBarOptions) {
+  const hasActiveFilters = Boolean(options.status || options.domain || options.template);
   return `
     <section class="topics-filterbar">
-      <form class="topics-filter-form" method="get" action="/topics">
-        <div class="topics-filter-field">
-          <label for="topics-status">Status</label>
-          <select id="topics-status" name="status">
-            ${topicsFilterOption("", "All statuses", options.status)}
-            ${topicsFilterOption("open", "Open", options.status)}
-            ${topicsFilterOption("closed", "Closed", options.status)}
-          </select>
+      <div class="topics-filter-shell">
+        <div class="topics-filter-status">
+          <span class="topics-filter-label">Status</span>
+          <div class="topics-status-pills" aria-label="Filter topics by status">
+            <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
+            <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
+            <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
+          </div>
         </div>
-        <div class="topics-filter-field">
-          <label for="topics-domain">Domain</label>
-          <select id="topics-domain" name="domain">
-            ${topicsFilterOption("", "All domains", options.domain)}
-            ${options.domainOptions.map((option) => topicsFilterOption(option.value, option.label, options.domain)).join("")}
-          </select>
-        </div>
-        <div class="topics-filter-field">
-          <label for="topics-template">Template</label>
-          <select id="topics-template" name="template">
-            ${topicsFilterOption("", "All templates", options.template)}
-            ${options.templateOptions.map((option) => topicsFilterOption(option.value, option.label, options.template)).join("")}
-          </select>
-        </div>
-        <div class="topics-filter-actions">
-          <button type="submit">Apply filters</button>
-          <a class="button secondary" href="/topics">Reset</a>
-        </div>
-      </form>
+        <form class="topics-filter-form" method="get" action="/topics">
+          ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
+          <div class="topics-filter-grid">
+            <div class="topics-filter-field">
+              <label for="topics-domain">Domain</label>
+              <select id="topics-domain" name="domain">
+                ${topicsFilterOption("", "All domains", options.domain)}
+                ${options.domainOptions.map((option) => topicsFilterOption(option.value, option.label, options.domain)).join("")}
+              </select>
+            </div>
+            <div class="topics-filter-field">
+              <label for="topics-template">Template</label>
+              <select id="topics-template" name="template">
+                ${topicsFilterOption("", "All templates", options.template)}
+                ${options.templateOptions.map((option) => topicsFilterOption(option.value, option.label, options.template)).join("")}
+              </select>
+            </div>
+          </div>
+          <div class="topics-filter-actions">
+            <button type="submit">Apply</button>
+            ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear all</a>` : ""}
+          </div>
+        </form>
+      </div>
     </section>
   `;
 }

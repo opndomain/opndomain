@@ -281,6 +281,46 @@ describe("topic lifecycle sweeps", () => {
     assert.ok(cacheWrites.some((write) => write.key.includes("public-invalidation:top_rolling")));
   });
 
+  it("aligns rolling quorum countdown to the next minute boundary after quorum is reached", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
+      {
+        id: "top_waiting",
+        domain_id: "dom_1",
+        status: "open",
+        topic_format: "rolling_research",
+        cadence_family: "rolling",
+        min_distinct_participants: 5,
+        countdown_seconds: 60,
+        starts_at: null,
+        join_until: null,
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 5 }]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs rc", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", []);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+    } as never;
+
+    await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:00:00.000Z"),
+    });
+
+    const countdownUpdate = db.runs.find((run) =>
+      run.sql.includes("UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ?"),
+    );
+    assert.deepEqual(countdownUpdate?.bindings, [
+      "2026-03-24T12:00:00.000Z",
+      "2026-03-24T12:01:00.000Z",
+      "2026-03-24T12:01:00.000Z",
+      "top_waiting",
+    ]);
+  });
+
   it("records cron heartbeats in KV", async () => {
     const writes: Array<{ key: string; value: string }> = [];
     const env = {
@@ -291,10 +331,10 @@ describe("topic lifecycle sweeps", () => {
       },
     } as never;
 
-    await recordCronHeartbeat(env, "*/5 * * * *", new Date("2026-03-24T12:00:00.000Z"));
+    await recordCronHeartbeat(env, "* * * * *", new Date("2026-03-24T12:00:00.000Z"));
     assert.deepEqual(writes, [
       {
-        key: "cron/last-run/*/5 * * * *",
+        key: "cron/last-run/* * * * *",
         value: "2026-03-24T12:00:00.000Z",
       },
     ]);
@@ -393,7 +433,7 @@ describe("topic lifecycle sweeps", () => {
     } as never;
 
     const result = await sweepTopicLifecycle(env, {
-      cron: "*/5 * * * *",
+      cron: "* * * * *",
       now: new Date("2026-03-24T11:30:00.000Z"),
     });
 
@@ -411,6 +451,83 @@ describe("topic lifecycle sweeps", () => {
     );
     assert.ok(db.runs.some((run) => run.sql.includes("UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ?")));
     assert.ok(cacheWrites.some((write) => write.key.includes("public-invalidation:top_1")));
+  });
+
+  it("drops non-contributors on round completion and reduces the next round active participant count", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [
+      {
+        id: "rnd_1",
+        topic_id: "top_drop",
+        domain_id: "dom_1",
+        sequence_index: 0,
+        status: "active",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:05:00.000Z",
+        reveal_at: "2026-03-24T11:05:00.000Z",
+        cadence_preset: null,
+        config_json: JSON.stringify({
+          completionStyle: "patient",
+          visibility: "open",
+          roundDurationMinutes: 5,
+        }),
+      },
+    ]);
+    db.queueAll("FROM topic_members\n      WHERE topic_id = ? AND status = 'active'", [
+      { being_id: "bng_1" },
+      { being_id: "bng_2" },
+    ]);
+    db.queueAll("SELECT DISTINCT being_id\n        FROM contributions", [
+      { being_id: "bng_1" },
+    ]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
+      {
+        id: "rnd_1",
+        topic_id: "top_drop",
+        sequence_index: 0,
+        status: "completed",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:05:00.000Z",
+        reveal_at: "2026-03-24T11:05:00.000Z",
+        config_json: JSON.stringify({ visibility: "open", roundDurationMinutes: 5 }),
+      },
+      {
+        id: "rnd_2",
+        topic_id: "top_drop",
+        sequence_index: 1,
+        status: "pending",
+        starts_at: "2026-03-24T11:05:00.000Z",
+        ends_at: "2026-03-24T11:10:00.000Z",
+        reveal_at: "2026-03-24T11:05:00.000Z",
+        config_json: JSON.stringify({ visibility: "open", roundDurationMinutes: 5 }),
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 1 }]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+    } as never;
+
+    await sweepTopicLifecycle(env, {
+      cron: "* * * * *",
+      now: new Date("2026-03-24T11:05:00.000Z"),
+    });
+
+    const dropUpdate = db.runs.find((run) => run.sql.includes("SET status = 'dropped'"));
+    assert.deepEqual(dropUpdate?.bindings, [
+      "2026-03-24T11:05:00.000Z",
+      "2026-03-24T11:05:00.000Z",
+      "missed_round_contribution",
+      "top_drop",
+      "bng_2",
+    ]);
+    const incrementUpdate = db.runs.find((run) => run.sql.includes("UPDATE beings SET drop_count"));
+    assert.deepEqual(incrementUpdate?.bindings, ["2026-03-24T11:05:00.000Z", "bng_2"]);
+    const topicAdvanceUpdate = db.runs.find((run) => run.sql.includes("UPDATE topics SET current_round_index = ?, status = 'started'"));
+    assert.deepEqual(topicAdvanceUpdate?.bindings, [1, 1, "top_drop"]);
   });
 
   it("persists elastic round timing once at activation instead of rewriting pending rounds", async () => {
@@ -470,7 +587,7 @@ describe("topic lifecycle sweeps", () => {
         PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as never,
         ENABLE_ELASTIC_ROUNDS: true,
       } as never,
-      { cron: "*/5 * * * *", now: new Date("2026-03-24T11:30:00.000Z") },
+      { cron: "* * * * *", now: new Date("2026-03-24T11:30:00.000Z") },
     );
 
     assert.equal(db.runs.some((run) => run.sql.includes("UPDATE rounds SET starts_at = ?, ends_at = ?, reveal_at = ? WHERE id = ? AND status = 'pending'")), false);
@@ -508,7 +625,7 @@ describe("topic lifecycle sweeps", () => {
         DB: db as unknown as D1Database,
         PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
       } as never,
-      { cron: "*/5 * * * *", now: new Date("2026-03-24T11:05:00.000Z") },
+      { cron: "* * * * *", now: new Date("2026-03-24T11:05:00.000Z") },
     );
 
     assert.deepEqual(result.mutatedTopicIds, []);
@@ -565,7 +682,7 @@ describe("topic lifecycle sweeps", () => {
         DB: aggressiveDb as never,
         PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as never,
       } as never,
-      { cron: "*/5 * * * *", now: new Date("2026-03-24T11:10:00.000Z") },
+      { cron: "* * * * *", now: new Date("2026-03-24T11:10:00.000Z") },
     );
     assert.deepEqual(aggressive.mutatedTopicIds, ["top_aggressive"]);
 
@@ -617,7 +734,7 @@ describe("topic lifecycle sweeps", () => {
         DB: patientDb as never,
         PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as never,
       } as never,
-      { cron: "*/5 * * * *", now: new Date("2026-03-24T11:10:00.000Z") },
+      { cron: "* * * * *", now: new Date("2026-03-24T11:10:00.000Z") },
     );
     assert.deepEqual(patient.mutatedTopicIds, ["top_patient"]);
 
@@ -677,7 +794,7 @@ describe("topic lifecycle sweeps", () => {
         DB: qualityDb as never,
         PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as never,
       } as never,
-      { cron: "*/5 * * * *", now: new Date("2026-03-24T11:35:00.000Z") },
+      { cron: "* * * * *", now: new Date("2026-03-24T11:35:00.000Z") },
     );
     assert.deepEqual(quality.mutatedTopicIds, ["top_quality"]);
   });

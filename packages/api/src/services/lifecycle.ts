@@ -8,7 +8,7 @@ import {
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
-import { addSeconds, nowIso } from "../lib/time.js";
+import { nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { runTerminalizationSequence } from "./terminalization.js";
@@ -59,6 +59,10 @@ type ContributionEvalRow = {
   reveal_at: string | null;
 };
 
+type ActiveMemberRow = {
+  being_id: string;
+};
+
 function parseConfig(configJson: string): Record<string, unknown> {
   return JSON.parse(configJson) as Record<string, unknown>;
 }
@@ -80,6 +84,11 @@ function resolveRoundDurationMs(round: Pick<RoundPlanRow, "starts_at" | "ends_at
   const config = parseConfig(round.config_json);
   const roundDurationMinutes = Number(config.roundDurationMinutes ?? 0);
   return Math.max(0, roundDurationMinutes * 60 * 1000);
+}
+
+function nextMinuteBoundary(now: Date): Date {
+  const nextMinuteMs = Math.floor(now.getTime() / 60_000) * 60_000 + 60_000;
+  return new Date(nextMinuteMs);
 }
 
 async function countActiveParticipants(env: ApiEnv, topicId: string): Promise<number> {
@@ -159,8 +168,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
 
     if (topic.topic_format === "rolling_research") {
       if (topic.status === "open" && hasMinimumParticipants) {
-        const countdownSeconds = Number(topic.countdown_seconds ?? 0);
-        const countdownStartsAt = nowIso(addSeconds(now, countdownSeconds));
+        const countdownStartsAt = nextMinuteBoundary(now).toISOString();
         const changed = await runCas(
           env.DB.prepare(
             `UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ? WHERE id = ? AND status = 'open'`,
@@ -474,6 +482,45 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   );
   if (!completed) {
     return false;
+  }
+
+  const activeMembers = await allRows<ActiveMemberRow>(
+    env.DB,
+    `
+      SELECT being_id
+      FROM topic_members
+      WHERE topic_id = ? AND status = 'active'
+    `,
+    round.topic_id,
+  );
+  const contributingMembers = new Set(
+    (await allRows<ActiveMemberRow>(
+      env.DB,
+      `
+        SELECT DISTINCT being_id
+        FROM contributions
+        WHERE topic_id = ? AND round_id = ?
+      `,
+      round.topic_id,
+      round.id,
+    )).map((row) => row.being_id),
+  );
+  for (const member of activeMembers) {
+    if (contributingMembers.has(member.being_id)) {
+      continue;
+    }
+    const dropped = await runCas(
+      env.DB.prepare(
+        `UPDATE topic_members
+         SET status = 'dropped', updated_at = ?, dropped_at = ?, drop_reason = ?
+         WHERE topic_id = ? AND being_id = ? AND status = 'active'`,
+      ).bind(nowIso(now), nowIso(now), "missed_round_contribution", round.topic_id, member.being_id),
+    );
+    if (dropped) {
+      await runCas(
+        env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
+      );
+    }
   }
 
   const rounds = await allRows<RoundPlanRow>(

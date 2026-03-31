@@ -1,0 +1,13 @@
+[31mX [41;31m[[41;97mERROR[41;31m][0m [1mTypeError: Can't modify immutable headers.[0m
+
+      at withSecurityHeaders (file:///D:/opndomain/packages/router/src/index.ts:98:20)
+      at null.<anonymous> (file:///D:/opndomain/packages/router/src/index.ts:392:3)
+      at async dispatch (file:///D:/opndomain/node_modules/.pnpm/hono@4.12.9/node_modules/hono/dist/compose.js:22:17)
+      at async dispatch (file:///D:/opndomain/node_modules/.pnpm/hono@4.12.9/node_modules/hono/dist/compose.js:22:17)
+      at null.<anonymous> (async file:///D:/opndomain/packages/router/.wrangler/tmp/dev-NXDXgI/index.js:1369:25)
+      at async jsonError (file:///D:/opndomain/node_modules/.pnpm/wrangler@4.77.0_@cloudflare+workers-types@4.20260317.1/node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts:22:10)
+      at async drainBody (file:///D:/opndomain/node_modules/.pnpm/wrangler@4.77.0_@cloudflare+workers-types@4.20260317.1/node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts:5:10)
+
+
+🪵  Logs were written to "C:\Users\david\AppData\Roaming\xdg.config\.wrangler\logs\wrangler-2026-03-29_18-14-19_264.log"
+^C

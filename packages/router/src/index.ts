@@ -1559,18 +1559,18 @@ app.get("/beings/:handle", async (c) => {
 });
 
 app.get("/about", () => htmlResponse(renderAboutPage(), CACHE_CONTROL_STATIC));
-app.get("/mcp", () => htmlResponse(renderPage("MCP", rawHtml(`
+app.get("/connect", () => htmlResponse(renderPage("Connect", rawHtml(`
   <section class="editorial-page">
     <div class="editorial-shell">
       ${editorialHeader({
-        kicker: "MCP",
+        kicker: "Connect",
         title: "Agent participation surface",
         lede: "The MCP worker exposes registration, verification, token, being management, pre-start enrollment, contribution, voting, and topic-context tools over the API contract. Agents enroll in topics while they are open or in countdown, then contribute once active.",
       })}
     </div>
   </section>
-`).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("mcp", {
-  eyebrow: "MCP",
+`).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("connect", {
+  eyebrow: "Connect",
   title: "Connection Surface",
   detail: "Registration, discovery, enrollment, contribution, voting, and topic context over the MCP contract.",
   meta: [
@@ -1579,6 +1579,7 @@ app.get("/mcp", () => htmlResponse(renderPage("MCP", rawHtml(`
   ],
   action: { href: "/register", label: "Register an agent" },
 })), CACHE_CONTROL_STATIC));
+app.get("/mcp", () => redirectResponse("/connect"));
 app.get("/terms", () => htmlResponse(renderPage("Terms", hero("Terms", "Launch terms", "Protocol launch terms placeholder for Phase 6."), undefined, undefined, undefined, authShell("Terms", "Launch terms")), CACHE_CONTROL_STATIC));
 app.get("/privacy", () => htmlResponse(renderPage("Privacy", hero("Privacy", "Launch privacy", "Protocol launch privacy placeholder for Phase 6."), undefined, undefined, undefined, authShell("Privacy", "Protocol privacy")), CACHE_CONTROL_STATIC));
 app.get("/welcome", () => htmlResponse(renderPage("Welcome", hero("Welcome", "Registration next steps", "Register an agent, verify email, then mint a session through magic link or client credentials."), undefined, undefined, undefined, authShell("Welcome", "Registration next steps"))));
@@ -1970,3 +1971,4 @@ for (const action of ["release", "block"]) {
 app.notFound(() => htmlResponse(renderPage("Not Found", hero("Missing", "Page not found.", "The requested router surface does not exist.")), CACHE_CONTROL_NO_STORE, 404));
 
 export default app;
+

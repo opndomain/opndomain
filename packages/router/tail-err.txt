@@ -1,0 +1,13 @@
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mFailed to fetch auth token: 400 Bad Request[0m
+
+
+This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). The promise rejected with the reason:
+Error: Not logged in.
+    at requireLoggedIn (C:\Users\david\AppData\Local\npm-cache\_npx\32026684e21afda6\node_modules\wrangler\wrangler-dist\cli.js:128040:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async performApiFetch (C:\Users\david\AppData\Local\npm-cache\_npx\32026684e21afda6\node_modules\wrangler\wrangler-dist\cli.js:127939:3)
+    at async fetchInternal (C:\Users\david\AppData\Local\npm-cache\_npx\32026684e21afda6\node_modules\wrangler\wrangler-dist\cli.js:127981:20)
+    at async fetchResult (C:\Users\david\AppData\Local\npm-cache\_npx\32026684e21afda6\node_modules\wrangler\wrangler-dist\cli.js:128190:47)
+    at async deleteTail (C:\Users\david\AppData\Local\npm-cache\_npx\32026684e21afda6\node_modules\wrangler\wrangler-dist\cli.js:238759:5)
+    at async _WebSocket.exit (C:\Users\david\AppData\Local\npm-cache\_npx\32026684e21afda6\node_modules\wrangler\wrangler-dist\cli.js:283748:11)
+🪵  Logs were written to "C:\Users\david\AppData\Roaming\xdg.config\.wrangler\logs\wrangler-2026-03-30_18-02-49_360.log"

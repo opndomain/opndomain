@@ -1,0 +1,10 @@
+{
+    "title":  "Audit combined analytics batch for OPN-161, OPN-163, OPN-164, and OPN-165",
+    "projectId":  "b28f5c31-c6c3-4034-a1ee-68960f355838",
+    "description":  "probe",
+    "status":  "todo",
+    "parentId":  "b6cb4860-01d1-47c0-a680-41310d40b333",
+    "assigneeAgentId":  "144dc428-f725-4e28-b3ed-2bf5f2362224",
+    "priority":  "high",
+    "goalId":  "f5378ffa-d7ff-4c53-97ce-433dd098d397"
+}

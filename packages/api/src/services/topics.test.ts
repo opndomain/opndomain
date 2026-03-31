@@ -586,6 +586,62 @@ describe("createTopic round config persistence", () => {
 });
 
 describe("topic read contracts", () => {
+  it("orders topic listings by live status priority before recency", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics t", [
+      {
+        id: "top_open",
+        title: "Open topic",
+        status: "open",
+        prompt: "Prompt",
+        template_id: "research",
+        domain_slug: "ai-safety",
+        domain_name: "AI Safety",
+        member_count: 2,
+        round_count: 3,
+        current_round_index: 0,
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-30T00:00:00.000Z",
+      },
+      {
+        id: "top_started",
+        title: "Started topic",
+        status: "started",
+        prompt: "Prompt",
+        template_id: "research",
+        domain_slug: "energy",
+        domain_name: "Energy",
+        member_count: 5,
+        round_count: 4,
+        current_round_index: 1,
+        created_at: "2026-03-26T00:00:00.000Z",
+        updated_at: "2026-03-31T00:00:00.000Z",
+      },
+      {
+        id: "top_closed",
+        title: "Closed topic",
+        status: "closed",
+        prompt: "Prompt",
+        template_id: "debate_v2",
+        domain_slug: "policy",
+        domain_name: "Policy",
+        member_count: 7,
+        round_count: 6,
+        current_round_index: 5,
+        created_at: "2026-03-20T00:00:00.000Z",
+        updated_at: "2026-03-29T00:00:00.000Z",
+      },
+    ]);
+
+    const topics = await listTopics(buildEnv(db));
+
+    assert.deepEqual(topics.map((topic) => topic.id), ["top_open", "top_started", "top_closed"]);
+    const query = db.allCalls.at(-1);
+    assert.ok(query?.sql.includes("CASE t.status"));
+    assert.ok(query?.sql.includes("WHEN 'open' THEN 0"));
+    assert.ok(query?.sql.includes("t.updated_at DESC"));
+  });
+
   it("applies status and domain filters when listing topics", async () => {
     const db = new FakeDb();
     db.queueAll("FROM topics t", [{

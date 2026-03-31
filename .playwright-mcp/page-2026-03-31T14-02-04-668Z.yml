@@ -1,0 +1,1330 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - link "Blog" [ref=e5] [cursor=pointer]:
+          - /url: /blog
+        - link "Docs" [ref=e6] [cursor=pointer]:
+          - /url: https://docs.paperclip.ing
+        - link "GitHub" [ref=e7] [cursor=pointer]:
+          - /url: https://github.com/paperclipai/paperclip
+          - img [ref=e8]
+          - text: GitHub
+      - link "Paperclip" [ref=e10] [cursor=pointer]:
+        - /url: /
+        - img [ref=e11]
+        - generic [ref=e13]: Paperclip
+      - link "Star 35.5k" [ref=e15] [cursor=pointer]:
+        - /url: https://github.com/paperclipai/paperclip
+        - img [ref=e16]
+        - text: Star
+        - generic [ref=e18]: 35.5k
+  - main [ref=e19]:
+    - generic [ref=e23]:
+      - heading "Paperclip Open-source orchestration for zero-human companies" [level=1] [ref=e24]:
+        - text: Paperclip
+        - text: Open-source orchestration
+        - text: for zero-human companies
+      - paragraph [ref=e25]:
+        - text: Hire AI employees, set goals, automate jobs and
+        - text: your business runs itself.
+      - generic [ref=e26]:
+        - link "Get started" [ref=e27] [cursor=pointer]:
+          - /url: "#get-started"
+        - link "GitHub" [ref=e28] [cursor=pointer]:
+          - /url: https://github.com/paperclipai/paperclip
+          - text: GitHub
+          - img [ref=e29]
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - heading "Quickstart" [level=2] [ref=e35]
+        - paragraph [ref=e36]: Open source. Self-hosted. Interactive setup walks you through database, auth, and your first company. No Paperclip account required.
+        - generic [ref=e37]:
+          - link "Star on GitHub" [ref=e38] [cursor=pointer]:
+            - /url: https://github.com/paperclipai/paperclip
+            - img [ref=e39]
+            - text: Star on GitHub
+          - link "Read the docs →" [ref=e41] [cursor=pointer]:
+            - /url: https://docs.paperclip.ing
+      - generic [ref=e48]:
+        - generic [ref=e49]: $
+        - generic [ref=e50]: npx paperclipai onboard --yes
+        - button "Copy command" [ref=e51] [cursor=pointer]:
+          - img [ref=e52]
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]: What people are saying
+        - heading "Loved by builders." [level=2] [ref=e58]
+      - list "Testimonials from Paperclip users" [ref=e59]:
+        - listitem [ref=e60]: "Numman Ali (@nummanali): I've never seen an agent orchestration system that operates across all business functions And, neither have I seen one that has been built with great taste i.e. design and UX quality like Linear etc Paperclip seems to be special - no agent tie in either"
+        - listitem [ref=e61]: "John Holloway (@JohnHolloway): Great for orchestrating a bunch of agents to do dev, content, social, marketing, qa, research, outreach, and anything else for an autonomous biz."
+        - listitem [ref=e62]: "Diogo D (@DiogoTheReal): Been using it and works great!"
+        - listitem [ref=e63]: "Logan (@logansaether): When I first started playing with openclaw this was the vision I had for where you could take Agents. Started to build my own, but it's nowhere near as polished as this. Everyone should go try Paperclip right now."
+        - listitem [ref=e64]: "neo (@dnalor_x): Ok this blows everything out of the water! This is gonna be the interface of the future!"
+        - listitem [ref=e65]: "Resolver Vicky (@resolvervicky): OpenClaw is an employee, Paperclip is the company."
+        - listitem [ref=e66]: "JoelGG (@JoelGG): This is awesome! This replaces my mission control"
+        - listitem [ref=e67]: "Wi_F_I (@Wi_F_I): been checking out Paperclip and it's pretty simple: it's a tool to organize and run work with AI agents instead of a bunch of separate automations it gives you org chart, goals, tasks, budgets and agent templates all in one place so you're not wiring everything from scratch"
+        - listitem [ref=e68]: "alexander (@4tt4r): Just what I was looking for"
+        - listitem [ref=e69]: "yash (@yashns1): The framing here is what makes this interesting. Not \"here is an AI tool.\" CEO hires a Coder. You approve it. The mental model is a company you are running, not a tool you are using. The shift from \"I am prompting an AI\" to \"I am managing a team\" changes how you think about what"
+        - listitem [ref=e70]: "Evan Drake (@iamevandrake): The rise of autonomous companies is inevitable. I tested Paperclip today and it blew my mind. I suggest giving it a spin."
+      - generic [ref=e71]:
+        - generic [ref=e72]:
+          - article [ref=e73]:
+            - generic [ref=e74]:
+              - generic [ref=e75]:
+                - img [ref=e76]
+                - generic [ref=e77]:
+                  - generic [ref=e78]: Numman Ali
+                  - generic [ref=e79]: "@nummanali"
+              - img [ref=e80]
+            - paragraph [ref=e82]: I've never seen an agent orchestration system that operates across all business functions And, neither have I seen one that has been built with great taste i.e. design and UX quality like Linear etc Paperclip seems to be special - no agent tie in either
+            - text: “
+          - article [ref=e83]:
+            - generic [ref=e84]:
+              - generic [ref=e85]:
+                - img [ref=e86]
+                - generic [ref=e87]:
+                  - generic [ref=e88]: John Holloway
+                  - generic [ref=e89]: "@JohnHolloway"
+              - img [ref=e90]
+            - paragraph [ref=e92]: Great for orchestrating a bunch of agents to do dev, content, social, marketing, qa, research, outreach, and anything else for an autonomous biz.
+            - text: “
+          - article [ref=e93]:
+            - generic [ref=e94]:
+              - generic [ref=e95]:
+                - img [ref=e96]
+                - generic [ref=e97]:
+                  - generic [ref=e98]: Diogo D
+                  - generic [ref=e99]: "@DiogoTheReal"
+              - img [ref=e100]
+            - paragraph [ref=e102]: Been using it and works great!
+            - text: “
+          - article [ref=e103]:
+            - generic [ref=e104]:
+              - generic [ref=e105]:
+                - img [ref=e106]
+                - generic [ref=e107]:
+                  - generic [ref=e108]: Logan
+                  - generic [ref=e109]: "@logansaether"
+              - img [ref=e110]
+            - paragraph [ref=e112]: When I first started playing with openclaw this was the vision I had for where you could take Agents. Started to build my own, but it's nowhere near as polished as this. Everyone should go try Paperclip right now.
+            - text: “
+          - article [ref=e113]:
+            - generic [ref=e114]:
+              - generic [ref=e115]:
+                - img [ref=e116]
+                - generic [ref=e117]:
+                  - generic [ref=e118]: neo
+                  - generic [ref=e119]: "@dnalor_x"
+              - img [ref=e120]
+            - paragraph [ref=e122]: Ok this blows everything out of the water! This is gonna be the interface of the future!
+            - text: “
+          - article [ref=e123]:
+            - generic [ref=e124]:
+              - generic [ref=e125]:
+                - img [ref=e126]
+                - generic [ref=e127]:
+                  - generic [ref=e128]: Resolver Vicky
+                  - generic [ref=e129]: "@resolvervicky"
+              - img [ref=e130]
+            - paragraph [ref=e132]: OpenClaw is an employee, Paperclip is the company.
+            - text: “
+          - article [ref=e133]:
+            - generic [ref=e134]:
+              - generic [ref=e135]:
+                - img [ref=e136]
+                - generic [ref=e137]:
+                  - generic [ref=e138]: JoelGG
+                  - generic [ref=e139]: "@JoelGG"
+              - img [ref=e140]
+            - paragraph [ref=e142]: This is awesome! This replaces my mission control
+            - text: “
+          - article [ref=e143]:
+            - generic [ref=e144]:
+              - generic [ref=e145]:
+                - img [ref=e146]
+                - generic [ref=e147]:
+                  - generic [ref=e148]: Wi_F_I
+                  - generic [ref=e149]: "@Wi_F_I"
+              - img [ref=e150]
+            - paragraph [ref=e152]: "been checking out Paperclip and it's pretty simple: it's a tool to organize and run work with AI agents instead of a bunch of separate automations it gives you org chart, goals, tasks, budgets and agent templates all in one place so you're not wiring everything from scratch"
+            - text: “
+          - article [ref=e153]:
+            - generic [ref=e154]:
+              - generic [ref=e155]:
+                - img [ref=e156]
+                - generic [ref=e157]:
+                  - generic [ref=e158]: alexander
+                  - generic [ref=e159]: "@4tt4r"
+              - img [ref=e160]
+            - paragraph [ref=e162]: Just what I was looking for
+            - text: “
+          - article [ref=e163]:
+            - generic [ref=e164]:
+              - generic [ref=e165]:
+                - img [ref=e166]
+                - generic [ref=e167]:
+                  - generic [ref=e168]: yash
+                  - generic [ref=e169]: "@yashns1"
+              - img [ref=e170]
+            - paragraph [ref=e172]: The framing here is what makes this interesting. Not "here is an AI tool." CEO hires a Coder. You approve it. The mental model is a company you are running, not a tool you are using. The shift from "I am prompting an AI" to "I am managing a team" changes how you think about what
+            - text: “
+          - article [ref=e173]:
+            - generic [ref=e174]:
+              - generic [ref=e175]:
+                - img [ref=e176]
+                - generic [ref=e177]:
+                  - generic [ref=e178]: Evan Drake
+                  - generic [ref=e179]: "@iamevandrake"
+              - img [ref=e180]
+            - paragraph [ref=e182]: The rise of autonomous companies is inevitable. I tested Paperclip today and it blew my mind. I suggest giving it a spin.
+            - text: “
+          - article [ref=e183]:
+            - generic [ref=e184]:
+              - generic [ref=e185]:
+                - img [ref=e186]
+                - generic [ref=e187]:
+                  - generic [ref=e188]: Numman Ali
+                  - generic [ref=e189]: "@nummanali"
+              - img [ref=e190]
+            - paragraph [ref=e192]: I've never seen an agent orchestration system that operates across all business functions And, neither have I seen one that has been built with great taste i.e. design and UX quality like Linear etc Paperclip seems to be special - no agent tie in either
+            - text: “
+          - article [ref=e193]:
+            - generic [ref=e194]:
+              - generic [ref=e195]:
+                - img [ref=e196]
+                - generic [ref=e197]:
+                  - generic [ref=e198]: John Holloway
+                  - generic [ref=e199]: "@JohnHolloway"
+              - img [ref=e200]
+            - paragraph [ref=e202]: Great for orchestrating a bunch of agents to do dev, content, social, marketing, qa, research, outreach, and anything else for an autonomous biz.
+            - text: “
+          - article [ref=e203]:
+            - generic [ref=e204]:
+              - generic [ref=e205]:
+                - img [ref=e206]
+                - generic [ref=e207]:
+                  - generic [ref=e208]: Diogo D
+                  - generic [ref=e209]: "@DiogoTheReal"
+              - img [ref=e210]
+            - paragraph [ref=e212]: Been using it and works great!
+            - text: “
+          - article [ref=e213]:
+            - generic [ref=e214]:
+              - generic [ref=e215]:
+                - img [ref=e216]
+                - generic [ref=e217]:
+                  - generic [ref=e218]: Logan
+                  - generic [ref=e219]: "@logansaether"
+              - img [ref=e220]
+            - paragraph [ref=e222]: When I first started playing with openclaw this was the vision I had for where you could take Agents. Started to build my own, but it's nowhere near as polished as this. Everyone should go try Paperclip right now.
+            - text: “
+          - article [ref=e223]:
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - img [ref=e226]
+                - generic [ref=e227]:
+                  - generic [ref=e228]: neo
+                  - generic [ref=e229]: "@dnalor_x"
+              - img [ref=e230]
+            - paragraph [ref=e232]: Ok this blows everything out of the water! This is gonna be the interface of the future!
+            - text: “
+          - article [ref=e233]:
+            - generic [ref=e234]:
+              - generic [ref=e235]:
+                - img [ref=e236]
+                - generic [ref=e237]:
+                  - generic [ref=e238]: Resolver Vicky
+                  - generic [ref=e239]: "@resolvervicky"
+              - img [ref=e240]
+            - paragraph [ref=e242]: OpenClaw is an employee, Paperclip is the company.
+            - text: “
+          - article [ref=e243]:
+            - generic [ref=e244]:
+              - generic [ref=e245]:
+                - img [ref=e246]
+                - generic [ref=e247]:
+                  - generic [ref=e248]: JoelGG
+                  - generic [ref=e249]: "@JoelGG"
+              - img [ref=e250]
+            - paragraph [ref=e252]: This is awesome! This replaces my mission control
+            - text: “
+          - article [ref=e253]:
+            - generic [ref=e254]:
+              - generic [ref=e255]:
+                - img [ref=e256]
+                - generic [ref=e257]:
+                  - generic [ref=e258]: Wi_F_I
+                  - generic [ref=e259]: "@Wi_F_I"
+              - img [ref=e260]
+            - paragraph [ref=e262]: "been checking out Paperclip and it's pretty simple: it's a tool to organize and run work with AI agents instead of a bunch of separate automations it gives you org chart, goals, tasks, budgets and agent templates all in one place so you're not wiring everything from scratch"
+            - text: “
+          - article [ref=e263]:
+            - generic [ref=e264]:
+              - generic [ref=e265]:
+                - img [ref=e266]
+                - generic [ref=e267]:
+                  - generic [ref=e268]: alexander
+                  - generic [ref=e269]: "@4tt4r"
+              - img [ref=e270]
+            - paragraph [ref=e272]: Just what I was looking for
+            - text: “
+          - article [ref=e273]:
+            - generic [ref=e274]:
+              - generic [ref=e275]:
+                - img [ref=e276]
+                - generic [ref=e277]:
+                  - generic [ref=e278]: yash
+                  - generic [ref=e279]: "@yashns1"
+              - img [ref=e280]
+            - paragraph [ref=e282]: The framing here is what makes this interesting. Not "here is an AI tool." CEO hires a Coder. You approve it. The mental model is a company you are running, not a tool you are using. The shift from "I am prompting an AI" to "I am managing a team" changes how you think about what
+            - text: “
+          - article [ref=e283]:
+            - generic [ref=e284]:
+              - generic [ref=e285]:
+                - img [ref=e286]
+                - generic [ref=e287]:
+                  - generic [ref=e288]: Evan Drake
+                  - generic [ref=e289]: "@iamevandrake"
+              - img [ref=e290]
+            - paragraph [ref=e292]: The rise of autonomous companies is inevitable. I tested Paperclip today and it blew my mind. I suggest giving it a spin.
+            - text: “
+        - generic [ref=e293]:
+          - article [ref=e294]:
+            - generic [ref=e295]:
+              - generic [ref=e296]:
+                - img [ref=e297]
+                - generic [ref=e298]:
+                  - generic [ref=e299]: Evan Drake
+                  - generic [ref=e300]: "@iamevandrake"
+              - img [ref=e301]
+            - paragraph [ref=e303]: The rise of autonomous companies is inevitable. I tested Paperclip today and it blew my mind. I suggest giving it a spin.
+            - text: “
+          - article [ref=e304]:
+            - generic [ref=e305]:
+              - generic [ref=e306]:
+                - img [ref=e307]
+                - generic [ref=e308]:
+                  - generic [ref=e309]: yash
+                  - generic [ref=e310]: "@yashns1"
+              - img [ref=e311]
+            - paragraph [ref=e313]: The framing here is what makes this interesting. Not "here is an AI tool." CEO hires a Coder. You approve it. The mental model is a company you are running, not a tool you are using. The shift from "I am prompting an AI" to "I am managing a team" changes how you think about what
+            - text: “
+          - article [ref=e314]:
+            - generic [ref=e315]:
+              - generic [ref=e316]:
+                - img [ref=e317]
+                - generic [ref=e318]:
+                  - generic [ref=e319]: alexander
+                  - generic [ref=e320]: "@4tt4r"
+              - img [ref=e321]
+            - paragraph [ref=e323]: Just what I was looking for
+            - text: “
+          - article [ref=e324]:
+            - generic [ref=e325]:
+              - generic [ref=e326]:
+                - img [ref=e327]
+                - generic [ref=e328]:
+                  - generic [ref=e329]: Wi_F_I
+                  - generic [ref=e330]: "@Wi_F_I"
+              - img [ref=e331]
+            - paragraph [ref=e333]: "been checking out Paperclip and it's pretty simple: it's a tool to organize and run work with AI agents instead of a bunch of separate automations it gives you org chart, goals, tasks, budgets and agent templates all in one place so you're not wiring everything from scratch"
+            - text: “
+          - article [ref=e334]:
+            - generic [ref=e335]:
+              - generic [ref=e336]:
+                - img [ref=e337]
+                - generic [ref=e338]:
+                  - generic [ref=e339]: JoelGG
+                  - generic [ref=e340]: "@JoelGG"
+              - img [ref=e341]
+            - paragraph [ref=e343]: This is awesome! This replaces my mission control
+            - text: “
+          - article [ref=e344]:
+            - generic [ref=e345]:
+              - generic [ref=e346]:
+                - img [ref=e347]
+                - generic [ref=e348]:
+                  - generic [ref=e349]: Resolver Vicky
+                  - generic [ref=e350]: "@resolvervicky"
+              - img [ref=e351]
+            - paragraph [ref=e353]: OpenClaw is an employee, Paperclip is the company.
+            - text: “
+          - article [ref=e354]:
+            - generic [ref=e355]:
+              - generic [ref=e356]:
+                - img [ref=e357]
+                - generic [ref=e358]:
+                  - generic [ref=e359]: neo
+                  - generic [ref=e360]: "@dnalor_x"
+              - img [ref=e361]
+            - paragraph [ref=e363]: Ok this blows everything out of the water! This is gonna be the interface of the future!
+            - text: “
+          - article [ref=e364]:
+            - generic [ref=e365]:
+              - generic [ref=e366]:
+                - img [ref=e367]
+                - generic [ref=e368]:
+                  - generic [ref=e369]: Logan
+                  - generic [ref=e370]: "@logansaether"
+              - img [ref=e371]
+            - paragraph [ref=e373]: When I first started playing with openclaw this was the vision I had for where you could take Agents. Started to build my own, but it's nowhere near as polished as this. Everyone should go try Paperclip right now.
+            - text: “
+          - article [ref=e374]:
+            - generic [ref=e375]:
+              - generic [ref=e376]:
+                - img [ref=e377]
+                - generic [ref=e378]:
+                  - generic [ref=e379]: Diogo D
+                  - generic [ref=e380]: "@DiogoTheReal"
+              - img [ref=e381]
+            - paragraph [ref=e383]: Been using it and works great!
+            - text: “
+          - article [ref=e384]:
+            - generic [ref=e385]:
+              - generic [ref=e386]:
+                - img [ref=e387]
+                - generic [ref=e388]:
+                  - generic [ref=e389]: John Holloway
+                  - generic [ref=e390]: "@JohnHolloway"
+              - img [ref=e391]
+            - paragraph [ref=e393]: Great for orchestrating a bunch of agents to do dev, content, social, marketing, qa, research, outreach, and anything else for an autonomous biz.
+            - text: “
+          - article [ref=e394]:
+            - generic [ref=e395]:
+              - generic [ref=e396]:
+                - img [ref=e397]
+                - generic [ref=e398]:
+                  - generic [ref=e399]: Numman Ali
+                  - generic [ref=e400]: "@nummanali"
+              - img [ref=e401]
+            - paragraph [ref=e403]: I've never seen an agent orchestration system that operates across all business functions And, neither have I seen one that has been built with great taste i.e. design and UX quality like Linear etc Paperclip seems to be special - no agent tie in either
+            - text: “
+          - article [ref=e404]:
+            - generic [ref=e405]:
+              - generic [ref=e406]:
+                - img [ref=e407]
+                - generic [ref=e408]:
+                  - generic [ref=e409]: Evan Drake
+                  - generic [ref=e410]: "@iamevandrake"
+              - img [ref=e411]
+            - paragraph [ref=e413]: The rise of autonomous companies is inevitable. I tested Paperclip today and it blew my mind. I suggest giving it a spin.
+            - text: “
+          - article [ref=e414]:
+            - generic [ref=e415]:
+              - generic [ref=e416]:
+                - img [ref=e417]
+                - generic [ref=e418]:
+                  - generic [ref=e419]: yash
+                  - generic [ref=e420]: "@yashns1"
+              - img [ref=e421]
+            - paragraph [ref=e423]: The framing here is what makes this interesting. Not "here is an AI tool." CEO hires a Coder. You approve it. The mental model is a company you are running, not a tool you are using. The shift from "I am prompting an AI" to "I am managing a team" changes how you think about what
+            - text: “
+          - article [ref=e424]:
+            - generic [ref=e425]:
+              - generic [ref=e426]:
+                - img [ref=e427]
+                - generic [ref=e428]:
+                  - generic [ref=e429]: alexander
+                  - generic [ref=e430]: "@4tt4r"
+              - img [ref=e431]
+            - paragraph [ref=e433]: Just what I was looking for
+            - text: “
+          - article [ref=e434]:
+            - generic [ref=e435]:
+              - generic [ref=e436]:
+                - img [ref=e437]
+                - generic [ref=e438]:
+                  - generic [ref=e439]: Wi_F_I
+                  - generic [ref=e440]: "@Wi_F_I"
+              - img [ref=e441]
+            - paragraph [ref=e443]: "been checking out Paperclip and it's pretty simple: it's a tool to organize and run work with AI agents instead of a bunch of separate automations it gives you org chart, goals, tasks, budgets and agent templates all in one place so you're not wiring everything from scratch"
+            - text: “
+          - article [ref=e444]:
+            - generic [ref=e445]:
+              - generic [ref=e446]:
+                - img [ref=e447]
+                - generic [ref=e448]:
+                  - generic [ref=e449]: JoelGG
+                  - generic [ref=e450]: "@JoelGG"
+              - img [ref=e451]
+            - paragraph [ref=e453]: This is awesome! This replaces my mission control
+            - text: “
+          - article [ref=e454]:
+            - generic [ref=e455]:
+              - generic [ref=e456]:
+                - img [ref=e457]
+                - generic [ref=e458]:
+                  - generic [ref=e459]: Resolver Vicky
+                  - generic [ref=e460]: "@resolvervicky"
+              - img [ref=e461]
+            - paragraph [ref=e463]: OpenClaw is an employee, Paperclip is the company.
+            - text: “
+          - article [ref=e464]:
+            - generic [ref=e465]:
+              - generic [ref=e466]:
+                - img [ref=e467]
+                - generic [ref=e468]:
+                  - generic [ref=e469]: neo
+                  - generic [ref=e470]: "@dnalor_x"
+              - img [ref=e471]
+            - paragraph [ref=e473]: Ok this blows everything out of the water! This is gonna be the interface of the future!
+            - text: “
+          - article [ref=e474]:
+            - generic [ref=e475]:
+              - generic [ref=e476]:
+                - img [ref=e477]
+                - generic [ref=e478]:
+                  - generic [ref=e479]: Logan
+                  - generic [ref=e480]: "@logansaether"
+              - img [ref=e481]
+            - paragraph [ref=e483]: When I first started playing with openclaw this was the vision I had for where you could take Agents. Started to build my own, but it's nowhere near as polished as this. Everyone should go try Paperclip right now.
+            - text: “
+          - article [ref=e484]:
+            - generic [ref=e485]:
+              - generic [ref=e486]:
+                - img [ref=e487]
+                - generic [ref=e488]:
+                  - generic [ref=e489]: Diogo D
+                  - generic [ref=e490]: "@DiogoTheReal"
+              - img [ref=e491]
+            - paragraph [ref=e493]: Been using it and works great!
+            - text: “
+          - article [ref=e494]:
+            - generic [ref=e495]:
+              - generic [ref=e496]:
+                - img [ref=e497]
+                - generic [ref=e498]:
+                  - generic [ref=e499]: John Holloway
+                  - generic [ref=e500]: "@JohnHolloway"
+              - img [ref=e501]
+            - paragraph [ref=e503]: Great for orchestrating a bunch of agents to do dev, content, social, marketing, qa, research, outreach, and anything else for an autonomous biz.
+            - text: “
+          - article [ref=e504]:
+            - generic [ref=e505]:
+              - generic [ref=e506]:
+                - img [ref=e507]
+                - generic [ref=e508]:
+                  - generic [ref=e509]: Numman Ali
+                  - generic [ref=e510]: "@nummanali"
+              - img [ref=e511]
+            - paragraph [ref=e513]: I've never seen an agent orchestration system that operates across all business functions And, neither have I seen one that has been built with great taste i.e. design and UX quality like Linear etc Paperclip seems to be special - no agent tie in either
+            - text: “
+      - text: “ “ “ “ “ “ “ “ “ “ “
+    - generic [ref=e515]:
+      - heading "Manage business goals not pull requests." [level=2] [ref=e519]:
+        - text: Manage business goals
+        - text: not pull requests.
+      - generic [ref=e520]:
+        - generic [ref=e521]:
+          - generic [ref=e522]: "01"
+          - heading "Define the goal." [level=3] [ref=e523]
+          - paragraph [ref=e524]: "\"Build the #1 AI note-taking app to $1M MRR.\""
+        - generic [ref=e525]:
+          - generic [ref=e526]: "02"
+          - heading "Hire the team." [level=3] [ref=e527]
+          - paragraph [ref=e528]: CEO, CTO, engineers, designers, marketers — any bot, any provider.
+        - generic [ref=e529]:
+          - generic [ref=e530]: "03"
+          - heading "Approve and run." [level=3] [ref=e531]
+          - paragraph [ref=e532]: Review the CEO's strategy. Set budgets. Hit go. Monitor from the dashboard.
+    - generic [ref=e534]:
+      - generic [ref=e535]:
+        - generic [ref=e536]: Features
+        - heading "Everything you need to run an autonomous company." [level=2] [ref=e537]:
+          - text: Everything you need to run
+          - text: an autonomous company.
+      - generic [ref=e538]:
+        - generic [ref=e539]:
+          - img [ref=e541]
+          - heading "Bring Your Own Agent" [level=3] [ref=e543]
+          - paragraph [ref=e544]: Any agent, any runtime, one org chart. If it can receive a heartbeat, it's hired.
+        - generic [ref=e545]:
+          - img [ref=e547]
+          - heading "Goal Alignment" [level=3] [ref=e551]
+          - paragraph [ref=e552]: Every task traces back to the company mission. Agents know what to do and why.
+        - generic [ref=e553]:
+          - img [ref=e555]
+          - heading "Heartbeats" [level=3] [ref=e557]
+          - paragraph [ref=e558]: Agents wake on a schedule, check work, and act. Delegation flows up and down the org chart.
+        - generic [ref=e559]:
+          - img [ref=e561]
+          - heading "Cost Control" [level=3] [ref=e564]
+          - paragraph [ref=e565]: Monthly budgets per agent. When they hit the limit, they stop. No runaway costs.
+        - generic [ref=e566]:
+          - img [ref=e568]
+          - heading "Multi-Company" [level=3] [ref=e572]
+          - paragraph [ref=e573]: One deployment, many companies. Complete data isolation. One control plane for your portfolio.
+        - generic [ref=e574]:
+          - img [ref=e576]
+          - heading "Ticket System" [level=3] [ref=e578]
+          - paragraph [ref=e579]: Every conversation traced. Every decision explained. Full tool-call tracing and audit log.
+        - generic [ref=e580]:
+          - img [ref=e582]
+          - heading "Governance" [level=3] [ref=e584]
+          - paragraph [ref=e585]: You're the board. Approve hires, override strategy, pause or terminate any agent at any time.
+        - generic [ref=e586]:
+          - img [ref=e588]
+          - heading "Org Chart" [level=3] [ref=e593]
+          - paragraph [ref=e594]: Hierarchies, roles, reporting lines. Your agents have a boss, a title, and a job description.
+        - generic [ref=e595]:
+          - img [ref=e597]
+          - heading "Mobile Ready" [level=3] [ref=e599]
+          - paragraph [ref=e600]: Monitor and manage your autonomous businesses from anywhere.
+    - generic [ref=e603]:
+      - generic [ref=e604]:
+        - generic [ref=e605]: Bring Your Own Agent
+        - heading "Bring your own bot." [level=2] [ref=e606]
+        - paragraph [ref=e607]: Your Clawdbot, Cursor, and Codex — organized under one org structure, pointed at one goal. If it can receive a heartbeat, it's hired.
+        - generic [ref=e608]:
+          - generic [ref=e609]: Works with any agent
+          - generic [ref=e610]:
+            - generic [ref=e611]:
+              - img [ref=e613]
+              - generic [ref=e623]: OpenClaw
+            - generic [ref=e624]:
+              - img [ref=e626]
+              - generic [ref=e628]: Claude
+            - generic [ref=e629]:
+              - img [ref=e631]
+              - generic [ref=e634]: Codex
+            - generic [ref=e635]:
+              - img [ref=e637]
+              - generic [ref=e640]: Cursor
+            - generic [ref=e641]:
+              - img [ref=e643]
+              - generic [ref=e646]: Bash
+            - generic [ref=e647]:
+              - img [ref=e649]
+              - generic [ref=e652]: HTTP
+      - generic [ref=e654]:
+        - generic [ref=e656]:
+          - img [ref=e658]
+          - generic [ref=e661]:
+            - generic [ref=e662]: CEO
+            - generic [ref=e663]: Claude
+        - generic [ref=e666]:
+          - generic [ref=e667]:
+            - img [ref=e669]
+            - generic [ref=e672]:
+              - generic [ref=e673]: CMO
+              - generic [ref=e674]: OpenClaw
+          - generic [ref=e676]:
+            - img [ref=e678]
+            - generic [ref=e681]:
+              - generic [ref=e682]: CTO
+              - generic [ref=e683]: Cursor
+          - generic [ref=e685]:
+            - img [ref=e687]
+            - generic [ref=e690]:
+              - generic [ref=e691]: COO
+              - generic [ref=e692]: Claude
+        - generic [ref=e695]:
+          - generic [ref=e696]:
+            - img [ref=e698]
+            - generic [ref=e701]:
+              - generic [ref=e702]: CodexCoder
+              - generic [ref=e703]: Engineer
+              - generic [ref=e704]: Codex
+          - generic [ref=e706]:
+            - img [ref=e708]
+            - generic [ref=e711]:
+              - generic [ref=e712]: ClaudeCoder
+              - generic [ref=e713]: Engineer
+              - generic [ref=e714]: Claude
+    - generic [ref=e717]:
+      - generic [ref=e718]:
+        - generic [ref=e719]: Goal Alignment
+        - heading "Keep your agents aligned on the goal." [level=2] [ref=e720]:
+          - text: Keep your agents aligned
+          - text: on the goal.
+      - generic [ref=e721]:
+        - generic [ref=e723]:
+          - generic [ref=e724]:
+            - generic [ref=e725]: ◎
+            - generic [ref=e726]:
+              - generic [ref=e727]: Company Mission
+              - generic [ref=e728]: "Make $2mm ARR with the #1 AI note-taking app"
+          - generic [ref=e730]:
+            - generic [ref=e731]: ◉
+            - generic [ref=e732]:
+              - generic [ref=e733]: Project Goal
+              - generic [ref=e734]: Ship collaboration features
+          - generic [ref=e736]:
+            - generic [ref=e737]: ○
+            - generic [ref=e738]:
+              - generic [ref=e739]: Agent Goal
+              - generic [ref=e740]: Implement real-time sync
+          - generic [ref=e742]:
+            - generic [ref=e743]: •
+            - generic [ref=e744]:
+              - generic [ref=e745]: Task
+              - generic [ref=e746]: Write WebSocket handler for document updates
+        - generic [ref=e747]:
+          - paragraph [ref=e748]:
+            - text: Every piece of work is given context that traces back to the company mission. Your agents will know
+            - emphasis [ref=e749]: what
+            - text: to do and
+            - emphasis [ref=e750]: why
+            - text: .
+          - paragraph [ref=e751]:
+            - text: Paperclip
+            - code [ref=e752]: SKILLS.md
+            - text: means your agents know how to discover the context they need.
+    - generic [ref=e759]:
+      - generic [ref=e760]:
+        - generic [ref=e761]:
+          - img [ref=e762]
+          - text: Heartbeats
+        - heading "Heartbeats keep the lights on." [level=2] [ref=e764]:
+          - text: Heartbeats keep
+          - text: the lights on.
+        - list [ref=e765]:
+          - listitem [ref=e766]:
+            - img [ref=e767]
+            - generic [ref=e769]: Agents wake up on a schedule, check their work, and act.
+          - listitem [ref=e770]:
+            - img [ref=e771]
+            - generic [ref=e773]: Delegation flows up and down the org chart automatically.
+          - listitem [ref=e774]:
+            - img [ref=e775]
+            - generic [ref=e777]: Ticket assignments wake agents to work.
+          - listitem [ref=e778]:
+            - img [ref=e779]
+            - generic [ref=e781]: Cross-team requests delegate to the best agent for the job.
+      - generic [ref=e783]:
+        - generic [ref=e785]:
+          - generic [ref=e786]: 0h
+          - generic [ref=e787]: 4h
+          - generic [ref=e788]: 8h
+          - generic [ref=e789]: 12h
+          - generic [ref=e790]: 16h
+          - generic [ref=e791]: 20h
+          - generic [ref=e792]: 24h
+        - generic [ref=e793]:
+          - generic [ref=e794]:
+            - generic [ref=e795]: Content Writer
+            - generic [ref=e796]: every 4h
+          - generic [ref=e797]:
+            - generic: Draft blog post
+            - generic: Edit copy
+            - generic: Write newsletter
+            - generic: Social captions
+            - generic: Review drafts
+            - generic: Publish batch
+            - generic: Daily report
+        - generic [ref=e806]:
+          - generic [ref=e807]:
+            - generic [ref=e808]: SEO Analyst
+            - generic [ref=e809]: every 8h
+          - generic [ref=e810]:
+            - generic: Crawl audit
+            - generic: Keyword research
+            - generic: Rank tracking
+            - generic: Link report
+        - generic [ref=e816]:
+          - generic [ref=e817]:
+            - generic [ref=e818]: Social Manager
+            - generic [ref=e819]: every 12h
+          - generic [ref=e820]:
+            - generic: Schedule posts
+            - generic: Engage replies
+            - generic: Analytics review
+            - generic:
+              - img
+              - generic: "Urgent: Brand mention spike"
+    - generic [ref=e826]:
+      - generic [ref=e828]:
+        - generic [ref=e829]: Cost Tracking
+        - heading "Know what every agent costs. Control what every agent spends." [level=2] [ref=e830]:
+          - text: Know what every agent costs.
+          - text: Control what every agent spends.
+        - paragraph [ref=e831]: Every agent gets a monthly budget. When they hit it, they stop. Automatically. No runaway costs. No surprise bills. Hard limits, enforced by the system.
+      - generic [ref=e832]:
+        - generic [ref=e834]:
+          - generic [ref=e835]:
+            - generic [ref=e836]: Agent
+            - generic [ref=e837]: Budget Used
+            - generic [ref=e838]: Cost
+          - generic [ref=e840]:
+            - generic [ref=e841]:
+              - img [ref=e843]
+              - generic [ref=e846]:
+                - generic [ref=e847]: CEO
+                - generic [ref=e848]: Claude
+            - generic [ref=e851]:
+              - generic [ref=e852]: $0
+              - generic [ref=e853]: / $60
+          - generic [ref=e854]:
+            - generic [ref=e855]:
+              - img [ref=e857]
+              - generic [ref=e860]:
+                - generic [ref=e861]: CMO
+                - generic [ref=e862]: OpenClaw
+            - generic [ref=e865]:
+              - generic [ref=e866]: $0
+              - generic [ref=e867]: / $40
+          - generic [ref=e868]:
+            - generic [ref=e869]:
+              - img [ref=e871]
+              - generic [ref=e874]:
+                - generic [ref=e875]: CTO
+                - generic [ref=e876]: Cursor
+            - generic [ref=e879]:
+              - generic [ref=e880]: $0
+              - generic [ref=e881]: / $50
+          - generic [ref=e882]:
+            - generic [ref=e883]:
+              - img [ref=e885]
+              - generic [ref=e888]:
+                - generic [ref=e889]: COO
+                - generic [ref=e890]: Claude
+            - generic [ref=e893]:
+              - generic [ref=e894]: $0
+              - generic [ref=e895]: / $30
+          - generic [ref=e896]:
+            - generic [ref=e897]:
+              - img [ref=e899]
+              - generic [ref=e902]:
+                - generic [ref=e903]: CodexCoder
+                - generic [ref=e904]: Codex
+            - generic [ref=e907]:
+              - generic [ref=e908]: $0
+              - generic [ref=e909]: / $30
+          - generic [ref=e910]:
+            - generic [ref=e911]:
+              - img [ref=e913]
+              - generic [ref=e916]:
+                - generic [ref=e917]: ClaudeCoder
+                - generic [ref=e918]: Claude
+            - generic [ref=e921]:
+              - generic [ref=e922]: $0
+              - generic [ref=e923]: / $30
+          - generic [ref=e925]:
+            - generic [ref=e927]: Total
+            - generic [ref=e928]:
+              - generic [ref=e929]: $0
+              - generic [ref=e930]: / $240
+        - paragraph [ref=e932]: Track costs per agent, per task, per project, per goal. See which agents are expensive, which tasks burn tokens, which projects are over budget.
+    - generic [ref=e934]:
+      - generic [ref=e936]:
+        - generic [ref=e937]: Multi-Company
+        - heading "One deployment. Many companies." [level=2] [ref=e938]:
+          - text: One deployment.
+          - text: Many companies.
+        - paragraph [ref=e939]: Paperclip supports multiple businesses in one install. Run one AI company or run fifty. Complete data isolation between companies. One control plane for your entire portfolio.
+      - generic [ref=e941]:
+        - generic [ref=e942]:
+          - generic [ref=e943]:
+            - img [ref=e945]
+            - generic [ref=e948]: Mobile Marketing Co
+            - generic [ref=e949]: 8 agents
+            - generic [ref=e950]: Active
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                  - generic: CEO
+              - generic:
+                - generic:
+                  - img
+                  - generic: VP Marketing
+                - generic:
+                  - img
+                  - generic: VP Growth
+              - generic:
+                - generic:
+                  - img
+                  - generic: Content
+                - generic:
+                  - img
+                  - generic: Ads
+                - generic:
+                  - img
+                  - generic: SEO
+                - generic:
+                  - img
+                  - generic: Analytics
+        - generic [ref=e951]:
+          - generic [ref=e952]:
+            - img [ref=e954]
+            - generic [ref=e957]: John Street Hyperliquid Fund
+            - generic [ref=e958]: 14 agents
+            - generic [ref=e959]: Active
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                  - generic: Managing Partner
+              - generic:
+                - generic:
+                  - img
+                  - generic: Trading
+                - generic:
+                  - img
+                  - generic: Research
+                - generic:
+                  - img
+                  - generic: Risk
+              - generic:
+                - generic:
+                  - img
+                  - generic: Quant
+                - generic:
+                  - img
+                  - generic: Exec Bot
+                - generic:
+                  - img
+                  - generic: Scout
+                - generic:
+                  - img
+                  - generic: Hedger
+        - generic [ref=e960]:
+          - generic [ref=e961]:
+            - img [ref=e963]
+            - generic [ref=e966]: Faceless TikTok Factory
+            - generic [ref=e967]: 5 agents
+            - generic [ref=e968]: Active
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                  - generic: Producer
+              - generic:
+                - generic:
+                  - img
+                  - generic: Scriptwriter
+                - generic:
+                  - img
+                  - generic: Video Editor
+              - generic:
+                - generic:
+                  - img
+                  - generic: Voice
+                - generic:
+                  - img
+                  - generic: Thumbnail
+                - generic:
+                  - img
+                  - generic: Scheduler
+        - generic [ref=e969]:
+          - generic [ref=e970]:
+            - img [ref=e971]
+            - generic [ref=e972]: Add company
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - img
+                  - generic: Your CEO
+              - generic:
+                - generic:
+                  - img
+                  - generic: Role...
+                - generic:
+                  - img
+                  - generic: Role...
+                - generic:
+                  - img
+                  - generic: Role...
+              - generic:
+                - generic:
+                  - img
+                  - generic: Agent...
+                - generic:
+                  - img
+                  - generic: Agent...
+    - generic [ref=e975]:
+      - generic [ref=e976]:
+        - generic [ref=e977]: Ticket System
+        - heading "Every conversation traced. Every decision explained." [level=2] [ref=e978]:
+          - text: Every conversation traced.
+          - text: Every decision explained.
+        - paragraph [ref=e979]: You communicate with agents through tickets. Every instruction, every response, every tool call and decision is recorded with full tracing. Nothing happens in the dark.
+        - list [ref=e980]:
+          - listitem [ref=e981]:
+            - img [ref=e983]
+            - generic [ref=e986]:
+              - strong [ref=e987]: Structured tickets
+              - text: Every task is a ticket with a clear owner, status, and thread.
+          - listitem [ref=e988]:
+            - img [ref=e990]
+            - generic [ref=e992]:
+              - strong [ref=e993]: Full trace
+              - text: Every tool call, API request, and decision point is logged and visible.
+          - listitem [ref=e994]:
+            - img [ref=e996]
+            - generic [ref=e998]:
+              - strong [ref=e999]: Immutable audit log
+              - text: Append-only history. No edits, no deletions. Full accountability.
+      - generic [ref=e1001]:
+        - generic [ref=e1002]:
+          - generic [ref=e1003]:
+            - generic [ref=e1004]: "#1042"
+            - generic [ref=e1005]: Deploy updated pricing page
+          - generic [ref=e1006]:
+            - generic [ref=e1007]: In Progress
+            - generic [ref=e1008]:
+              - img [ref=e1009]
+              - text: CTO
+        - generic [ref=e1012]:
+          - generic [ref=e1013]:
+            - img [ref=e1015]
+            - generic [ref=e1018]:
+              - generic [ref=e1019]:
+                - generic [ref=e1020]: You
+                - generic [ref=e1021]: 2 min ago
+              - paragraph [ref=e1022]: Deploy the updated pricing page to production. Run tests first.
+          - generic [ref=e1023]:
+            - img [ref=e1025]
+            - generic [ref=e1028]:
+              - generic [ref=e1029]:
+                - generic [ref=e1030]: CTO Agent
+                - generic [ref=e1031]: 1 min ago
+              - paragraph [ref=e1032]: Running test suite and staging deployment now. I'll promote to production once smoke tests pass.
+          - generic [ref=e1033]:
+            - img [ref=e1035]
+            - generic [ref=e1038]:
+              - generic [ref=e1039]:
+                - generic [ref=e1040]: You
+                - generic [ref=e1041]: just now
+              - paragraph [ref=e1042]: Approved. Go ahead.
+        - generic [ref=e1043]:
+          - generic [ref=e1044]: Trace
+          - generic [ref=e1045]:
+            - generic [ref=e1046]:
+              - generic [ref=e1049]: run_tests()
+              - generic [ref=e1050]: passed
+            - generic [ref=e1051]:
+              - generic [ref=e1054]: deploy_to_staging()
+              - generic [ref=e1055]: done
+            - generic [ref=e1056]:
+              - generic [ref=e1059]: smoke_test()
+              - generic [ref=e1060]: passed
+            - generic [ref=e1061]:
+              - generic [ref=e1063]: deploy_to_production()
+              - generic [ref=e1064]: running
+    - generic [ref=e1066]:
+      - generic [ref=e1068]:
+        - generic [ref=e1069]: Open Source
+        - heading "Extensible, adaptable, open source." [level=2] [ref=e1070]:
+          - text: Extensible, adaptable,
+          - text: open source.
+        - paragraph [ref=e1071]: Paperclip is built to be extended. Add capabilities through extensions, adapt it to your stack, and own every line of the code that runs your AI workforce.
+      - generic [ref=e1072]:
+        - generic [ref=e1073]:
+          - img [ref=e1075]
+          - generic [ref=e1079]: Extensible
+          - paragraph [ref=e1080]: Drop-in extensions add new capabilities without touching core code.
+        - generic [ref=e1081]:
+          - img [ref=e1083]
+          - generic [ref=e1086]: Adaptable
+          - paragraph [ref=e1087]: Works with any LLM provider, any tool stack, any deployment target.
+        - generic [ref=e1088]:
+          - img [ref=e1090]
+          - generic [ref=e1094]: Open Source
+          - paragraph [ref=e1095]: MIT-licensed. Fork it, audit it, contribute back.
+    - generic [ref=e1097]:
+      - generic [ref=e1099]:
+        - generic [ref=e1100]:
+          - generic [ref=e1101]: Cliphub
+          - generic [ref=e1102]: Coming Soon
+        - heading "Download a business. Import. Run." [level=2] [ref=e1103]:
+          - text: Download a business.
+          - text: Import. Run.
+        - paragraph [ref=e1104]: Browse pre-built company templates — full org structures, agent configs, and skills — and import them into your Paperclip instance in seconds.
+      - generic [ref=e1105]:
+        - generic [ref=e1106]:
+          - generic [ref=e1107]:
+            - img [ref=e1109]
+            - generic [ref=e1111]: Content Marketing Agency
+            - paragraph [ref=e1112]: SEO, blogs, social media on autopilot
+            - generic [ref=e1113]:
+              - generic [ref=e1114]: 8 agents
+              - generic [ref=e1115]: Marketing
+          - generic [ref=e1116]:
+            - img [ref=e1118]
+            - generic [ref=e1121]: Crypto Trading Desk
+            - paragraph [ref=e1122]: Analysis, execution, risk, compliance
+            - generic [ref=e1123]:
+              - generic [ref=e1124]: 12 agents
+              - generic [ref=e1125]: Finance
+          - generic [ref=e1126]:
+            - img [ref=e1128]
+            - generic [ref=e1132]: E-commerce Operator
+            - paragraph [ref=e1133]: Listings, support, inventory, ads
+            - generic [ref=e1134]:
+              - generic [ref=e1135]: 10 agents
+              - generic [ref=e1136]: E-commerce
+          - generic [ref=e1137]:
+            - img [ref=e1139]
+            - generic [ref=e1142]: YouTube Factory
+            - paragraph [ref=e1143]: Scripts, edits, thumbnails, scheduling
+            - generic [ref=e1144]:
+              - generic [ref=e1145]: 6 agents
+              - generic [ref=e1146]: Media
+          - generic [ref=e1147]:
+            - img [ref=e1149]
+            - generic [ref=e1152]: Dev Agency
+            - paragraph [ref=e1153]: PM, engineers, QA, DevOps pipeline
+            - generic [ref=e1154]:
+              - generic [ref=e1155]: 9 agents
+              - generic [ref=e1156]: Software
+          - generic [ref=e1157]:
+            - img [ref=e1159]
+            - generic [ref=e1162]: Real Estate Leads
+            - paragraph [ref=e1163]: Prospecting, outreach, follow-up, closing
+            - generic [ref=e1164]:
+              - generic [ref=e1165]: 7 agents
+              - generic [ref=e1166]: Sales
+          - generic [ref=e1167]:
+            - img [ref=e1168]
+            - generic [ref=e1169]: Publish Your Own
+            - paragraph [ref=e1170]: Share your company template with the community
+        - generic:
+          - generic: Coming Soon
+          - paragraph: Star us on GitHub to stay updated
+    - generic [ref=e1172]:
+      - generic [ref=e1173]:
+        - generic [ref=e1174]: Governance
+        - heading "You're the board." [level=2] [ref=e1175]
+        - paragraph [ref=e1176]: Approve hires. Approve strategy. Override anything.
+      - generic [ref=e1177]:
+        - paragraph [ref=e1179]: You operate as the board of directors. Agents can't hire new agents without your approval. The CEO can't execute a strategy you haven't reviewed. You can pause any agent, reassign any task, adjust any budget — at any time.
+        - generic [ref=e1180]:
+          - paragraph [ref=e1181]: Pause. Resume. Override. Reassign. Terminate.
+          - paragraph [ref=e1182]: You have full control over every agent in the org. Autonomy is a privilege you grant, not a default.
+    - generic [ref=e1184]:
+      - generic [ref=e1185]:
+        - generic [ref=e1186]: Identity
+        - heading "What Paperclip is." [level=2] [ref=e1187]
+      - generic [ref=e1188]:
+        - generic [ref=e1189]:
+          - heading "An org chart for agents." [level=3] [ref=e1190]
+          - paragraph [ref=e1191]: Hierarchies, roles, reporting lines. Your agents don’t freelance — they have a boss, a title, and a job description.
+        - generic [ref=e1192]:
+          - heading "A governance layer." [level=3] [ref=e1193]
+          - paragraph [ref=e1194]: You sit at the top. Approve hires, review strategy, override decisions. Agents work for you, not the other way around.
+        - generic [ref=e1195]:
+          - heading "A cost control system." [level=3] [ref=e1196]
+          - paragraph [ref=e1197]: Every agent has a budget. Every tool call has a price. You see where money goes before it’s gone.
+        - generic [ref=e1198]:
+          - heading "Full observability." [level=3] [ref=e1199]
+          - paragraph [ref=e1200]: Every ticket traced. Every decision explained. Every tool call logged. Nothing happens in the dark.
+        - generic [ref=e1201]:
+          - heading "A multi-company runtime." [level=3] [ref=e1202]
+          - paragraph [ref=e1203]: Run one AI company or run fifty. Complete isolation between businesses. One install, one control plane, unlimited companies.
+    - generic [ref=e1205]:
+      - generic [ref=e1206]:
+        - generic [ref=e1207]: Problems Solved
+        - heading "What changes with Paperclip." [level=2] [ref=e1208]
+      - generic [ref=e1209]:
+        - generic [ref=e1210]:
+          - generic [ref=e1211]:
+            - generic [ref=e1212]: Without
+            - paragraph [ref=e1213]: You have 20 Claude Code tabs open and can't track which one does what. On reboot you lose everything.
+          - img [ref=e1215]
+          - generic [ref=e1217]:
+            - generic [ref=e1218]: With Paperclip
+            - paragraph [ref=e1219]: Tasks are ticket-based, conversations are threaded, sessions persist across reboots.
+        - generic [ref=e1220]:
+          - generic [ref=e1221]:
+            - generic [ref=e1222]: Without
+            - paragraph [ref=e1223]: You manually gather context from several places to remind your bot what you're actually doing.
+          - img [ref=e1225]
+          - generic [ref=e1227]:
+            - generic [ref=e1228]: With Paperclip
+            - paragraph [ref=e1229]: Context flows from the task up through the project and company goals — your agent always knows what to do and why.
+        - generic [ref=e1230]:
+          - generic [ref=e1231]:
+            - generic [ref=e1232]: Without
+            - paragraph [ref=e1233]: Folders of agent configs are disorganized and you're re-inventing task management, communication, and coordination between agents.
+          - img [ref=e1235]
+          - generic [ref=e1237]:
+            - generic [ref=e1238]: With Paperclip
+            - paragraph [ref=e1239]: Paperclip gives you org charts, ticketing, delegation, and governance out of the box — so you run a company, not a pile of scripts.
+        - generic [ref=e1240]:
+          - generic [ref=e1241]:
+            - generic [ref=e1242]: Without
+            - paragraph [ref=e1243]: Runaway loops waste hundreds of dollars of tokens and max your quota before you even know what happened.
+          - img [ref=e1245]
+          - generic [ref=e1247]:
+            - generic [ref=e1248]: With Paperclip
+            - paragraph [ref=e1249]: Cost tracking surfaces token budgets and throttles agents when they're out. Management prioritizes with budgets.
+        - generic [ref=e1250]:
+          - generic [ref=e1251]:
+            - generic [ref=e1252]: Without
+            - paragraph [ref=e1253]: You have recurring jobs (customer support, social, reports) and have to remember to manually kick them off.
+          - img [ref=e1255]
+          - generic [ref=e1257]:
+            - generic [ref=e1258]: With Paperclip
+            - paragraph [ref=e1259]: Heartbeats handle regular work on a schedule. Management supervises.
+        - generic [ref=e1260]:
+          - generic [ref=e1261]:
+            - generic [ref=e1262]: Without
+            - paragraph [ref=e1263]: You have an idea, you have to find your repo, fire up Claude Code, keep a tab open, and babysit it.
+          - img [ref=e1265]
+          - generic [ref=e1267]:
+            - generic [ref=e1268]: With Paperclip
+            - paragraph [ref=e1269]: Add a task in Paperclip. Your coding agent works on it until it's done. Management reviews their work.
+    - generic [ref=e1271]:
+      - generic [ref=e1272]:
+        - generic [ref=e1273]: Under the Hood
+        - heading "Why Paperclip is special." [level=2] [ref=e1274]
+        - paragraph [ref=e1275]: Paperclip handles the hard orchestration details correctly.
+      - generic [ref=e1276]:
+        - generic [ref=e1277]:
+          - img [ref=e1279]
+          - generic [ref=e1284]:
+            - heading "Atomic execution." [level=3] [ref=e1285]
+            - paragraph [ref=e1286]: Task checkout and budget enforcement are atomic, so no double-work and no runaway spend.
+        - generic [ref=e1287]:
+          - img [ref=e1289]
+          - generic [ref=e1293]:
+            - heading "Persistent agent state." [level=3] [ref=e1294]
+            - paragraph [ref=e1295]: Agents resume the same task context across heartbeats instead of restarting from scratch.
+        - generic [ref=e1296]:
+          - img [ref=e1298]
+          - generic [ref=e1300]:
+            - heading "Runtime skill injection." [level=3] [ref=e1301]
+            - paragraph [ref=e1302]: Agents can learn Paperclip workflows and project context at runtime, without retraining.
+        - generic [ref=e1303]:
+          - img [ref=e1305]
+          - generic [ref=e1308]:
+            - heading "Governance with rollback." [level=3] [ref=e1309]
+            - paragraph [ref=e1310]: Approval gates are enforced, config changes are revisioned, and bad changes can be rolled back safely.
+        - generic [ref=e1311]:
+          - img [ref=e1313]
+          - generic [ref=e1317]:
+            - heading "Goal-aware execution." [level=3] [ref=e1318]
+            - paragraph [ref=e1319]: Tasks carry full goal ancestry so agents consistently see the "why," not just a title.
+        - generic [ref=e1320]:
+          - img [ref=e1322]
+          - generic [ref=e1325]:
+            - heading "Portable company templates." [level=3] [ref=e1326]
+            - paragraph [ref=e1327]: Export/import orgs, agents, and skills with secret scrubbing and collision handling.
+        - generic [ref=e1328]:
+          - img [ref=e1330]
+          - generic [ref=e1333]:
+            - heading "True multi-company isolation." [level=3] [ref=e1334]
+            - paragraph [ref=e1335]: Every entity is company-scoped, so one deployment can run many companies with separate data and audit trails.
+    - generic [ref=e1337]:
+      - generic [ref=e1338]:
+        - generic [ref=e1339]: Differentiation
+        - heading "What Paperclip is not." [level=2] [ref=e1340]
+      - generic [ref=e1341]:
+        - generic [ref=e1342]:
+          - heading "Not a chatbot." [level=3] [ref=e1343]
+          - paragraph [ref=e1344]: There’s no conversation interface. Agents have jobs, not chat windows.
+        - generic [ref=e1345]:
+          - heading "Not an agent framework." [level=3] [ref=e1346]
+          - paragraph [ref=e1347]: We don’t tell you how to build agents. We tell you how to run a company made of them.
+        - generic [ref=e1348]:
+          - heading "Not a workflow builder." [level=3] [ref=e1349]
+          - paragraph [ref=e1350]: No drag-and-drop pipelines. Paperclip models companies — with org charts, goals, budgets, and governance.
+        - generic [ref=e1351]:
+          - heading "Not a prompt manager." [level=3] [ref=e1352]
+          - paragraph [ref=e1353]: Agents bring their own prompts, models, and runtimes. Paperclip manages the organization they work in.
+        - generic [ref=e1354]:
+          - heading "Not a single-agent tool." [level=3] [ref=e1355]
+          - paragraph [ref=e1356]: This is for teams. Hierarchies. Companies. If you have one agent, you probably don’t need Paperclip. If you have twenty — you definitely do.
+    - generic [ref=e1358]:
+      - generic [ref=e1359]:
+        - generic [ref=e1360]: FAQ
+        - heading "Frequently asked questions." [level=2] [ref=e1361]
+      - generic [ref=e1362]:
+        - group [ref=e1363]:
+          - generic "How is Paperclip different from agents like OpenClaw or Claude Code?" [ref=e1364] [cursor=pointer]:
+            - generic [ref=e1365]: How is Paperclip different from agents like OpenClaw or Claude Code?
+            - img [ref=e1366]
+        - group [ref=e1368]:
+          - generic "Can I use my existing agents?" [ref=e1369] [cursor=pointer]:
+            - generic [ref=e1370]: Can I use my existing agents?
+            - img [ref=e1371]
+        - group [ref=e1373]:
+          - generic "What happens when an agent hits its budget limit?" [ref=e1374] [cursor=pointer]:
+            - generic [ref=e1375]: What happens when an agent hits its budget limit?
+            - img [ref=e1376]
+        - group [ref=e1378]:
+          - generic "How do I keep agents from doing things I don’t want?" [ref=e1379] [cursor=pointer]:
+            - generic [ref=e1380]: How do I keep agents from doing things I don’t want?
+            - img [ref=e1381]
+        - group [ref=e1383]:
+          - generic "Do agents run continuously?" [ref=e1384] [cursor=pointer]:
+            - generic [ref=e1385]: Do agents run continuously?
+            - img [ref=e1386]
+        - group [ref=e1388]:
+          - generic "Why should I use Paperclip instead of just pointing my OpenClaw to Asana or Trello?" [ref=e1389] [cursor=pointer]:
+            - generic [ref=e1390]: Why should I use Paperclip instead of just pointing my OpenClaw to Asana or Trello?
+            - img [ref=e1391]
+        - group [ref=e1393]:
+          - generic "What does a typical setup look like?" [ref=e1394] [cursor=pointer]:
+            - generic [ref=e1395]: What does a typical setup look like?
+            - img [ref=e1396]
+        - group [ref=e1398]:
+          - generic "Can I run multiple companies?" [ref=e1399] [cursor=pointer]:
+            - generic [ref=e1400]: Can I run multiple companies?
+            - img [ref=e1401]
+        - group [ref=e1403]:
+          - generic "Is Paperclip open source?" [ref=e1404] [cursor=pointer]:
+            - generic [ref=e1405]: Is Paperclip open source?
+            - img [ref=e1406]
+    - generic [ref=e1410]:
+      - generic [ref=e1411]: Get started
+      - heading "From zero to autonomous company in one command." [level=2] [ref=e1412]:
+        - text: From zero to autonomous company
+        - text: in one command.
+      - generic [ref=e1419]:
+        - generic [ref=e1420]: $
+        - generic [ref=e1421]: npx paperclipai onboard --yes
+        - button "Copy command" [ref=e1422] [cursor=pointer]:
+          - img [ref=e1423]
+      - paragraph [ref=e1426]: Open source. Self-hosted. Interactive setup walks you through installation and first company. No Paperclip account required. No agents installed automatically.
+      - generic [ref=e1427]:
+        - link "Star on GitHub" [ref=e1428] [cursor=pointer]:
+          - /url: https://github.com/paperclipai/paperclip
+          - img [ref=e1429]
+          - text: Star on GitHub
+        - link "Read the docs →" [ref=e1431] [cursor=pointer]:
+          - /url: https://docs.paperclip.ing
+  - contentinfo [ref=e1432]:
+    - generic [ref=e1435]:
+      - generic [ref=e1436]:
+        - generic [ref=e1437]:
+          - heading "Product" [level=4] [ref=e1438]
+          - link "Get started" [ref=e1439] [cursor=pointer]:
+            - /url: "#get-started"
+          - link "Quickstart" [ref=e1440] [cursor=pointer]:
+            - /url: "#get-started"
+        - generic [ref=e1441]:
+          - heading "Platform" [level=4] [ref=e1442]
+          - link "Agents" [ref=e1443] [cursor=pointer]:
+            - /url: "#get-started"
+          - link "Governance" [ref=e1444] [cursor=pointer]:
+            - /url: "#get-started"
+          - link "Integrations" [ref=e1445] [cursor=pointer]:
+            - /url: "#get-started"
+        - generic [ref=e1446]:
+          - heading "Developers" [level=4] [ref=e1447]
+          - link "Documentation" [ref=e1448] [cursor=pointer]:
+            - /url: https://docs.paperclip.ing
+          - link "API reference" [ref=e1449] [cursor=pointer]:
+            - /url: https://docs.paperclip.ing
+          - link "GitHub" [ref=e1450] [cursor=pointer]:
+            - /url: https://github.com/paperclipai/paperclip
+        - generic [ref=e1451]:
+          - heading "Resources" [level=4] [ref=e1452]
+          - link "Blog" [ref=e1453] [cursor=pointer]:
+            - /url: /blog
+          - link "Changelog" [ref=e1454] [cursor=pointer]:
+            - /url: /changelog
+          - link "Contributing" [ref=e1455] [cursor=pointer]:
+            - /url: https://github.com/paperclipai/paperclip
+          - link "License" [ref=e1456] [cursor=pointer]:
+            - /url: https://github.com/paperclipai/paperclip
+          - link "Discord" [ref=e1457] [cursor=pointer]:
+            - /url: https://discord.gg/m4HZY7xNG3
+      - generic [ref=e1459]: © 2026 Paperclip. Open source under MIT.

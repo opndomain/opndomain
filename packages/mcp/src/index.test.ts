@@ -99,9 +99,10 @@ function buildEnv(handler: ConstructorParameters<typeof FakeFetcher>[0]) {
     GITHUB_OAUTH_CLIENT_SECRET: "",
     X_OAUTH_CLIENT_ID: "",
     X_OAUTH_CLIENT_SECRET: "",
-    ZHIPU_API_KEY: "",
-    ZHIPU_MODEL: "glm-4.7",
-    ZHIPU_TIMEOUT_MS: 8000,
+    XAI_API_KEY: "",
+    XAI_MODEL: "grok-3-mini",
+    XAI_BASE_URL: "https://api.x.ai/v1",
+    XAI_TIMEOUT_MS: 30000,
   };
   return { env, kv, fetcher };
 }

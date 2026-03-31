@@ -1,0 +1,846 @@
+{
+    "wallTime": 393,
+    "cpuTime": 6,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927787313,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/auth/token",
+            "method": "POST",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c458e9dd2a4d3",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "136",
+                "content-type": "application/json",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 13,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "AiaOY/ipfw2ZUAlp9KRk+DUXeDIhcg/apARdTFNFC9E=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "9cfd32d61aa92cdde4ef866fd86c738763aec5dd87f8fe4e73b738b56f5a5ce0c1ac83715aa1bb898e56a3bc8054d901",
+                    "serverHandshake": "b89a8a552426c27e15a3115a456fe78a7bf9e0f612008ef05eff64f0335402e9b9dd270d2431363a7b8d204679ad72b2",
+                    "clientFinished": "53db23ca18e1beef349292187dd5a132e0ce36f3e152cb60493e0e17f05ce52dec2a2d84f06b138163962a2a76a3e96d",
+                    "serverFinished": "c18c7b10b805db8ab37fd0e21ab3a693e16a92a319539f262a06bb911003a015b44086d49290c8c36d261d368e9b1710"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 196553
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 27,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "7086652f8e7d391baa3d2b3c4ec791aed91cd66b6bbb508d46bcb56653d01e0e",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "entrypoint": "TopicStateDurableObject",
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927754448,
+    "event": {
+        "request": {
+            "url": "http://do/force-flush",
+            "method": "POST",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 9735,
+    "cpuTime": 861,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [
+        {
+            "message": [
+                "zhipu verdict editorial generation failed",
+                {
+                    "topicId": "top_6f550c25af4b4fa7b33a53041d552528",
+                    "failureKind": "http_failure",
+                    "statusCode": 429,
+                    "requestId": null,
+                    "details": {
+                        "bodySnippet": "{\"error\":{\"code\":\"1302\",\"message\":\"Rate limit reached for requests\"}}"
+                    }
+                }
+            ],
+            "level": "warn",
+            "timestamp": 1774927789854
+        }
+    ],
+    "eventTimestamp": 1774927787761,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/internal/topics/top_6f550c25af4b4fa7b33a53041d552528/reterminalize",
+            "method": "POST",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c45916f98a4d3",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "42",
+                "content-type": "application/json",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 13,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "AiaOY/ipfw2ZUAlp9KRk+DUXeDIhcg/apARdTFNFC9E=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "9cfd32d61aa92cdde4ef866fd86c738763aec5dd87f8fe4e73b738b56f5a5ce0c1ac83715aa1bb898e56a3bc8054d901",
+                    "serverHandshake": "b89a8a552426c27e15a3115a456fe78a7bf9e0f612008ef05eff64f0335402e9b9dd270d2431363a7b8d204679ad72b2",
+                    "clientFinished": "53db23ca18e1beef349292187dd5a132e0ce36f3e152cb60493e0e17f05ce52dec2a2d84f06b138163962a2a76a3e96d",
+                    "serverFinished": "c18c7b10b805db8ab37fd0e21ab3a693e16a92a319539f262a06bb911003a015b44086d49290c8c36d261d368e9b1710"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 238017
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 395,
+    "cpuTime": 3,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927806913,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774927806000
+    }
+}
+{
+    "wallTime": 61,
+    "cpuTime": 8,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927893288,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/robots.txt",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "216.73.216.57",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c48249c253524",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "216.73.216.57"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/2",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "weight=16;exclusive=0;group=0;group-weight=0",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 1,
+                "clientQuicRtt": 0,
+                "colo": "CMH",
+                "asn": 16509,
+                "asOrganization": "Anthropic, PBC",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Columbus",
+                "continent": "NA",
+                "region": "Ohio",
+                "regionCode": "OH",
+                "timezone": "America/New_York",
+                "longitude": "-82.99879",
+                "latitude": "39.96118",
+                "postalCode": "43215",
+                "metroCode": "535",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "gFhtDjTha9/Kg4YVlWuQ/WbcUoyO0Z9Ry/diIPYW55Q=",
+                "tlsClientCiphersSha1": "WUS9+h7TjVkF9aEouGuCEMjGQGA=",
+                "tlsClientExtensionsSha1": "DyGXBAlq5+ewW8RVzeQfm4LF0+M=",
+                "tlsClientExtensionsSha1Le": "PxpQ8G9gBsKQY217uoIdwf3IGwA=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "6dfdfd702e86d7317bfe02a075a33670658a7a46a0d97e850731608205c4d0cffbf9bc54f97a6f488ea92f315e7b4cd6",
+                    "serverHandshake": "cc0898f75085e0ac50f05aa6ea697506dd47a1f75d5bab992cec5ebdc330dfa4146c08a4ab21192a80a5fd775c8019ea",
+                    "clientFinished": "d3b0f315f0de4790fe6ba67bc7bdae49bfba80a0089d5464906fd95b76ccb28ae1f203cad1fac8a2d63eff697b8811c5",
+                    "serverFinished": "d32d6f724d107134bfd3fef42795bb2d11960f85403e72ca6c8eebc1e4d2dc5a0d6fc6f7634842753c943eea4a5d5c71"
+                },
+                "tlsClientHelloLength": "253",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 2373770
+                }
+            }
+        },
+        "response": {
+            "status": 404
+        }
+    }
+}
+{
+    "wallTime": 357,
+    "cpuTime": 4,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927913469,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/auth/token",
+            "method": "POST",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c48a309fd8733",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "136",
+                "content-type": "application/json",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 15,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "PxUXR1oHiBPVEdKQ7KPJjCVGqtlyMvFGNN8LE48SzJk=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "c6fada4daaaf779c79d8608bd363f5c2e2311891bc6f0e2c421d3a6326b3a32bf2945983f278f4bdce7940d6b2ce025f",
+                    "serverHandshake": "b1fbad6f24f68922ae9e7a8c8cadf65e9c8f55f1dc8fefb733aefaa5d9da469c686c4be20111e101436e387924c8e465",
+                    "clientFinished": "394184cc38f9836c1f6644a1c1f7d7a643bc761299c7babaae2a11ed43f045fb913f757d50cb2b8d0fcdeccf8d65fa79",
+                    "serverFinished": "e5bee5fd10036eb9bca54ecf4066ff049cdff08d2a1c6ba107d62afd135faa6917614c13218b4564c884eb0bbdfbe889"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 207018
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 585,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "7086652f8e7d391baa3d2b3c4ec791aed91cd66b6bbb508d46bcb56653d01e0e",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "entrypoint": "TopicStateDurableObject",
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927914083,
+    "event": {
+        "request": {
+            "url": "http://do/force-flush",
+            "method": "POST",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 72,
+    "cpuTime": 10,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927917417,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/",
+            "method": "GET",
+            "headers": {
+                "accept-charset": "utf-8",
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "185.8.106.156",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c48bbc8f9225b",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.36 Safari/535.7",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "185.8.106.156"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 1,
+                "clientQuicRtt": 0,
+                "colo": "ORD",
+                "asn": 204770,
+                "asOrganization": "UAB Cherry Servers",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Chicago",
+                "continent": "NA",
+                "region": "Illinois",
+                "regionCode": "IL",
+                "timezone": "America/Chicago",
+                "longitude": "-87.65005",
+                "latitude": "41.85003",
+                "postalCode": "60602",
+                "metroCode": "602",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES128-GCM-SHA256",
+                "tlsClientRandom": "bBKl1YfU+fgoAMSUOiQQYnhqb/uZ3MXEywYxhy/HGJY=",
+                "tlsClientCiphersSha1": "TR/nWVyRwvW06zCmsHLGssxPcfk=",
+                "tlsClientExtensionsSha1": "7gh9M0xU7JRTNsBTBvc0SaKHeKU=",
+                "tlsClientExtensionsSha1Le": "2qCxaUqAy9srmxr3uziJQbkXykw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "6a9f7b367a1a7719e922ec8a9639bc43d13e65392b720bfaff1c631d73364b17",
+                    "serverHandshake": "2c191df4233ef2b2528daef39a20027b927592f2032b3c76f1d9fc7ffeaedd0f",
+                    "clientFinished": "c8454922c9e6d5d46839223fdad3738fb774abc3064c34edad0811302afa2adc",
+                    "serverFinished": "878e7c9b513fe48b8f908aed9e15b22db62f95f8e18339afd39f9c7941df14ad"
+                },
+                "tlsClientHelloLength": "256",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 3466879
+                }
+            }
+        },
+        "response": {
+            "status": 404
+        }
+    }
+}
+{
+    "wallTime": 9070,
+    "cpuTime": 430,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [
+        {
+            "message": [
+                "zhipu verdict editorial generation failed",
+                {
+                    "topicId": "top_6f550c25af4b4fa7b33a53041d552528",
+                    "failureKind": "http_failure",
+                    "statusCode": 429,
+                    "requestId": null,
+                    "details": {
+                        "bodySnippet": "{\"error\":{\"code\":\"1302\",\"message\":\"Rate limit reached for requests\"}}"
+                    }
+                }
+            ],
+            "level": "warn",
+            "timestamp": 1774927916462
+        }
+    ],
+    "eventTimestamp": 1774927914018,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/internal/topics/top_6f550c25af4b4fa7b33a53041d552528/reterminalize",
+            "method": "POST",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c48a5e88c8733",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "41",
+                "content-type": "application/json",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 15,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "PxUXR1oHiBPVEdKQ7KPJjCVGqtlyMvFGNN8LE48SzJk=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "c6fada4daaaf779c79d8608bd363f5c2e2311891bc6f0e2c421d3a6326b3a32bf2945983f278f4bdce7940d6b2ce025f",
+                    "serverHandshake": "b1fbad6f24f68922ae9e7a8c8cadf65e9c8f55f1dc8fefb733aefaa5d9da469c686c4be20111e101436e387924c8e465",
+                    "clientFinished": "394184cc38f9836c1f6644a1c1f7d7a643bc761299c7babaae2a11ed43f045fb913f757d50cb2b8d0fcdeccf8d65fa79",
+                    "serverFinished": "e5bee5fd10036eb9bca54ecf4066ff049cdff08d2a1c6ba107d62afd135faa6917614c13218b4564c884eb0bbdfbe889"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 207018
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 179,
+    "cpuTime": 3,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774927923123,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/internal/admin/topics/top_6f550c25af4b4fa7b33a53041d552528/report",
+            "method": "GET",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4c48df8a1b8733",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 27,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "PxUXR1oHiBPVEdKQ7KPJjCVGqtlyMvFGNN8LE48SzJk=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "c6fada4daaaf779c79d8608bd363f5c2e2311891bc6f0e2c421d3a6326b3a32bf2945983f278f4bdce7940d6b2ce025f",
+                    "serverHandshake": "b1fbad6f24f68922ae9e7a8c8cadf65e9c8f55f1dc8fefb733aefaa5d9da469c686c4be20111e101436e387924c8e465",
+                    "clientFinished": "394184cc38f9836c1f6644a1c1f7d7a643bc761299c7babaae2a11ed43f045fb913f757d50cb2b8d0fcdeccf8d65fa79",
+                    "serverFinished": "e5bee5fd10036eb9bca54ecf4066ff049cdff08d2a1c6ba107d62afd135faa6917614c13218b4564c884eb0bbdfbe889"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 207018
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 713,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774928106874,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774928106000
+    }
+}
+{
+    "wallTime": 762,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "2d4abc48-2cb5-48ce-a4ec-14c49fa34ecb"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774928406906,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774928406000
+    }
+}

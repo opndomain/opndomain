@@ -1,0 +1,2017 @@
+{
+    "wallTime": 614,
+    "cpuTime": 12,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774942442256,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/auth/token",
+            "method": "POST",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4dab580c165022",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "162",
+                "content-type": "application/json",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 12,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "niUHm9G4+rHLe+yq3IJT6CeqFoe/xtPnxuNS9LAwP1k=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "c3da40aa0065c64ed4568837a81dd0188da83604984c3894688b8a1eed48f198c785f1913568fe32ee972b7d7a938449",
+                    "serverHandshake": "b484a854e866458988890d57822443ce4b3605ca0b1fc0ad621b3b4731133bf673c1edf085d3ad39271cc4b276362b53",
+                    "clientFinished": "1af27dd774ab9cf0ee4b536e0eef00d4bd7b13446cd68c5ba9a722d728ca8b2381ef32e7e46d487c2aab1fbc6f10ff60",
+                    "serverFinished": "f2bb577a64e7277b87c2516a18f162f722bc3b61936e261318b449b0a93a9b175bf1aa3d872ad1ba272e3faf7ce5dbd0"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 246039
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 35006,
+    "cpuTime": 326,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "canceled",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [
+        {
+            "message": [
+                "zhipu verdict editorial generation failed",
+                {
+                    "topicId": "top_6f550c25af4b4fa7b33a53041d552528",
+                    "failureKind": "timeout",
+                    "statusCode": null,
+                    "requestId": null,
+                    "details": null
+                }
+            ],
+            "level": "warn",
+            "timestamp": 1774942474351
+        }
+    ],
+    "eventTimestamp": 1774942442948,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/internal/topics/top_6f550c25af4b4fa7b33a53041d552528/reterminalize",
+            "method": "POST",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4dab5c58c45022",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "53",
+                "content-type": "application/json",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 12,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "niUHm9G4+rHLe+yq3IJT6CeqFoe/xtPnxuNS9LAwP1k=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "Bxwn0Bs0z+5dY69ZcqleTRGmlpE=",
+                "tlsClientExtensionsSha1Le": "sb2ftGg4/laBHA9Q/MJ4X/0+cJY=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "c3da40aa0065c64ed4568837a81dd0188da83604984c3894688b8a1eed48f198c785f1913568fe32ee972b7d7a938449",
+                    "serverHandshake": "b484a854e866458988890d57822443ce4b3605ca0b1fc0ad621b3b4731133bf673c1edf085d3ad39271cc4b276362b53",
+                    "clientFinished": "1af27dd774ab9cf0ee4b536e0eef00d4bd7b13446cd68c5ba9a722d728ca8b2381ef32e7e46d487c2aab1fbc6f10ff60",
+                    "serverFinished": "f2bb577a64e7277b87c2516a18f162f722bc3b61936e261318b449b0a93a9b175bf1aa3d872ad1ba272e3faf7ce5dbd0"
+                },
+                "tlsClientHelloLength": "435",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 246039
+                }
+            }
+        }
+    }
+}
+{
+    "wallTime": 175,
+    "cpuTime": 4,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774942478023,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/internal/admin/topics/top_6f550c25af4b4fa7b33a53041d552528/report",
+            "method": "GET",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4dac379aacb887",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Windows NT; Windows NT 10.0; en-US) WindowsPowerShell/5.1.26100.7920",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 16,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "JklWatrBgs0ftEBvg9GkyY3vAn1M8NjK/BrUKz0Un/M=",
+                "tlsClientCiphersSha1": "kTkJ+HAwBvIuoPFncb1wEDLcgfg=",
+                "tlsClientExtensionsSha1": "lf5q7awZSBiIczJVKjOX/yrO1/8=",
+                "tlsClientExtensionsSha1Le": "GEbde1I7IelzRL2Iu/DQxSXdJak=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "64728c1a548799113c7187c22eeb7d8a326f60d9f02f2b17fb880fcb8dddb7a624afb5ee2d1baabbc5f274c3f460aa7b",
+                    "serverHandshake": "f2c5f8825096387f74a483e36befdf613ff547cc5ed7f89af3025225858d91a9bf5b2d4a7c206aa7ad3675088e19e712",
+                    "clientFinished": "e0a2244bc8c9ef8bd585fcc0d10531c46ae783272384f16fa1b1ec51f923dbb6583d318db8d8b5db9079837fbeea0252",
+                    "serverFinished": "9b84ecba7ab7a0c77950be1c9fb580b08ed3cec5e35cbe2f2c12f10f46ca264a6cebea4e7b917eab5b309c8ce4970c6f"
+                },
+                "tlsClientHelloLength": "690",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 42294
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 1224,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774942519550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774942519000
+    }
+}
+{
+    "wallTime": 1499,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774942819550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774942819000
+    }
+}
+{
+    "wallTime": 1507,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774943119549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774943119000
+    }
+}
+{
+    "wallTime": 1465,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774943419550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774943419000
+    }
+}
+{
+    "wallTime": 1503,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774943719549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774943719000
+    }
+}
+{
+    "wallTime": 1451,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944019550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774944019000
+    }
+}
+{
+    "wallTime": 1459,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944319550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774944319000
+    }
+}
+{
+    "wallTime": 131,
+    "cpuTime": 9,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944431126,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 227,
+    "cpuTime": 3,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944431125,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview?from=2026-03-25&to=2026-03-31",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 239,
+    "cpuTime": 3,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944431126,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 1454,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944619549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774944619000
+    }
+}
+{
+    "wallTime": 1435,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774944919550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774944919000
+    }
+}
+{
+    "wallTime": 1450,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774945219554,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774945219000
+    }
+}
+{
+    "wallTime": 1534,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774945519550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774945519000
+    }
+}
+{
+    "wallTime": 1488,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774945819550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774945819000
+    }
+}
+{
+    "wallTime": 1505,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774946119549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774946119000
+    }
+}
+{
+    "wallTime": 1429,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774946419550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774946419000
+    }
+}
+{
+    "wallTime": 1572,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774946719549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774946719000
+    }
+}
+{
+    "wallTime": 1543,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774947019551,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774947019000
+    }
+}
+{
+    "wallTime": 1514,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774947319550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774947319000
+    }
+}
+{
+    "wallTime": 55,
+    "cpuTime": 8,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774947428258,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/robots.txt",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "216.73.216.57",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4e25129a3a2c38",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "216.73.216.57"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/2",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "weight=16;exclusive=0;group=0;group-weight=0",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 1,
+                "clientQuicRtt": 0,
+                "colo": "CMH",
+                "asn": 16509,
+                "asOrganization": "Anthropic, PBC",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Columbus",
+                "continent": "NA",
+                "region": "Ohio",
+                "regionCode": "OH",
+                "timezone": "America/New_York",
+                "longitude": "-82.99879",
+                "latitude": "39.96118",
+                "postalCode": "43215",
+                "metroCode": "535",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "CxLTiggv/ByQ1/DHEJKbwNKdjOQLwENgpP4uSZjLUF4=",
+                "tlsClientCiphersSha1": "WUS9+h7TjVkF9aEouGuCEMjGQGA=",
+                "tlsClientExtensionsSha1": "7HQFnjq3lkNgRRr/VXDkoCsP6jQ=",
+                "tlsClientExtensionsSha1Le": "0ZXv37N//dadlMEhmf++5/QUoac=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "8e9fa8e0eaf931db2c58285e3bb7329192f1a5f239fc80a5595a271a98aa686ad6b02dca138695c1768b531d167d3c8f",
+                    "serverHandshake": "29499b36fa814cfef2701d9b98d17dbb479f05a5d9aaf34ba1b4a02d2853223dd49fac31928e60533f7ddee007708e7a",
+                    "clientFinished": "75411960b5e106833d2f52eabb78a289301ddf4eb69413d5b898b488d14fac5db2991fc764f8d0cc805d58bd3765ee17",
+                    "serverFinished": "23d1759901b9ae676d050e5315a8e59faa0ec3db3a10184bd95f8995691b7858b84e320486b5d43d7bdddc1748896b1a"
+                },
+                "tlsClientHelloLength": "253",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 2313099
+                }
+            }
+        },
+        "response": {
+            "status": 404
+        }
+    }
+}
+{
+    "wallTime": 1525,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774947619550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774947619000
+    }
+}
+{
+    "wallTime": 1518,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774947919548,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774947919000
+    }
+}
+{
+    "wallTime": 1429,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774948219549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774948219000
+    }
+}
+{
+    "wallTime": 1492,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774948519549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774948519000
+    }
+}
+{
+    "wallTime": 1498,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774948819550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774948819000
+    }
+}
+{
+    "wallTime": 1424,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949119549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774949119000
+    }
+}
+{
+    "wallTime": 329,
+    "cpuTime": 8,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949251120,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/robots.txt",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "74.7.230.53",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4e51937d90e4bb",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "from": "oai-searchbot(at)openai.com",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36; compatible; OAI-SearchBot/1.3; robots.txt; +https://openai.com/searchbot",
+                "x-forwarded-proto": "https",
+                "x-openai-host-hash": "135017275",
+                "x-real-ip": "74.7.230.53"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/2",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "weight=16;exclusive=0;group=0;group-weight=0",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 1,
+                "clientQuicRtt": 0,
+                "colo": "ATL",
+                "asn": 8075,
+                "asOrganization": "Microsoft Limited",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Atlanta",
+                "continent": "NA",
+                "region": "Georgia",
+                "regionCode": "GA",
+                "timezone": "America/New_York",
+                "longitude": "-84.38798",
+                "latitude": "33.749",
+                "postalCode": "30302",
+                "metroCode": "524",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "EyPeRVzL1nck4g3Im7EyciQVgvROJlLZOqiQA8U2fZk=",
+                "tlsClientCiphersSha1": "WUS9+h7TjVkF9aEouGuCEMjGQGA=",
+                "tlsClientExtensionsSha1": "Gd8jT9y8B2wlFK4lVW4Ao5xwolU=",
+                "tlsClientExtensionsSha1Le": "LChKR/99vVRwXDaF2youzhVAfzc=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "25294c07bfe732bfae0bbd6a985a1414a413a3063b14d2c78f4455e34b38a7dfb06f4b5c7e305ae18250422d835fae2c",
+                    "serverHandshake": "654c9815069d8bd9a4f60750a09dd7d89b8f1b32c9b56d45e9032e554d476b95ae4fd38e5bcebcc75a1d90b1edfa7868",
+                    "clientFinished": "1684201c125c27a15b7ca20a4ab1fa7f378fe8eeb06cc831df866328eb29c03c9df0d7a8e2bd36b5d8afef75465a9c70",
+                    "serverFinished": "0cbbef7ec802a2d5e3e27321f9a3e3161bf9c500c347bbd714e04c734737160a6d4e71a79104e8b71995c71cf6788545"
+                },
+                "tlsClientHelloLength": "253",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "AI Search",
+                "edgeL4": {
+                    "deliveryRate": 2804613
+                }
+            }
+        },
+        "response": {
+            "status": 404
+        }
+    }
+}
+{
+    "wallTime": 1436,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949419628,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774949419000
+    }
+}
+{
+    "wallTime": 419,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949705662,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 515,
+    "cpuTime": 9,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949705662,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview?from=2026-03-02&to=2026-03-31",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 530,
+    "cpuTime": 4,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949705662,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 1203,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949719550,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774949719000
+    }
+}
+{
+    "wallTime": 461,
+    "cpuTime": 14,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774949966256,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/.git/config",
+            "method": "GET",
+            "headers": {
+                "accept-charset": "utf-8",
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "45.148.10.238",
+                "cf-ipcountry": "NL",
+                "cf-ray": "9e4e63090e6b668d",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "user-agent": "Mozilla/4.0 (compatible; MSIE 6.0; Windows 98; PalmSource/hspr-H102; Blazer/4.0) 16;320x320",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "45.148.10.238"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 2,
+                "clientQuicRtt": 0,
+                "colo": "AMS",
+                "asn": 48090,
+                "asOrganization": "TECHOFF SRV LIMITED",
+                "country": "NL",
+                "isEUCountry": "1",
+                "city": "Amsterdam",
+                "continent": "EU",
+                "region": "North Holland",
+                "regionCode": "NH",
+                "timezone": "Europe/Amsterdam",
+                "longitude": "4.88969",
+                "latitude": "52.37403",
+                "postalCode": "1012",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES128-GCM-SHA256",
+                "tlsClientRandom": "f23mQfdjcrQQsvBwHhKczvznALk8Ml+v/mTBUdsipes=",
+                "tlsClientCiphersSha1": "TR/nWVyRwvW06zCmsHLGssxPcfk=",
+                "tlsClientExtensionsSha1": "7gh9M0xU7JRTNsBTBvc0SaKHeKU=",
+                "tlsClientExtensionsSha1Le": "2qCxaUqAy9srmxr3uziJQbkXykw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "2ec02490a2c4cefe6ed9d674739bade31e892f4004e9ae266c847466f1bab150",
+                    "serverHandshake": "2d8ddfc4ec45e6be1a85123f1b2e1005169faf89e88455b2bac88b0f6e9c92e8",
+                    "clientFinished": "d84dcbb20867564537867b037d26f53e19b52949c9c5a87236729a1fc7109571",
+                    "serverFinished": "3ac5eccb8f9dfcd6d64d100338db31651a74c72dd876fdd3ae05dc1cee624c3a"
+                },
+                "tlsClientHelloLength": "256",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 2005540
+                }
+            }
+        },
+        "response": {
+            "status": 404
+        }
+    }
+}
+{
+    "wallTime": 1212,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950019549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774950019000
+    }
+}
+{
+    "wallTime": 1544,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950319549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774950319000
+    }
+}
+{
+    "wallTime": 375,
+    "cpuTime": 6,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950350081,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 365,
+    "cpuTime": 8,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950350081,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/domains",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 171,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950350823,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 181,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950350823,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 334,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950350823,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview?from=2026-03-02&to=2026-03-31",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 175,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950357414,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/domains",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 182,
+    "cpuTime": 3,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950357414,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 174,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950419131,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 185,
+    "cpuTime": 3,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950419131,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 331,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950419131,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview?from=2026-03-25&to=2026-03-31",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 178,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950419909,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 193,
+    "cpuTime": 5,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950419909,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 336,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950419909,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview?from=2026-03-02&to=2026-03-31",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 168,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950421006,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 179,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950421006,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 328,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950421006,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview?from=2026-01-01&to=2026-03-31",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 169,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950421763,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/vote-reliability?minVotes=5",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 172,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950421763,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/analytics/overview",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 184,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950421763,
+    "event": {
+        "request": {
+            "url": "https://api.internal/v1/topics?status=closed",
+            "method": "GET",
+            "headers": {}
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 265,
+    "cpuTime": 5,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950475448,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/auth/oauth/google/authorize?redirect=%2Faccount",
+            "method": "GET",
+            "headers": {
+                "accept-encoding": "gzip, br",
+                "cf-connecting-ip": "82.80.249.194",
+                "cf-ipcountry": "IL",
+                "cf-ray": "9e4e6f778fed4afa",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "api.opndomain.com",
+                "referer": "http://www.opndomain.com/login",
+                "user-agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:27.0) Gecko/20100101 Firefox/27.0",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "82.80.249.194"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 0,
+                "clientQuicRtt": 0,
+                "colo": "TLV",
+                "asn": 8551,
+                "asOrganization": "BEZEQINT-HOSTING",
+                "country": "IL",
+                "isEUCountry": false,
+                "city": "Jerusalem",
+                "continent": "AS",
+                "region": "Jerusalem",
+                "regionCode": "JM",
+                "timezone": "Asia/Jerusalem",
+                "longitude": "35.21633",
+                "latitude": "31.76904",
+                "tlsVersion": "TLSv1.2",
+                "tlsCipher": "ECDHE-ECDSA-AES128-GCM-SHA256",
+                "tlsClientRandom": "acuYS4dxChqztuuueCdAytI4bK24Q+IfqAoghbKT71E=",
+                "tlsClientCiphersSha1": "P0UGmedpEy5CFbnCk06MlhlWYwo=",
+                "tlsClientExtensionsSha1": "6kBUVzKUeutcGF96Axo8gSUFzcE=",
+                "tlsClientExtensionsSha1Le": "xXglYOV7AUOfP4++EBiPE5G23v8=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "9126d2cbc6f67ff0e904af31c75f63c134c56b0ddeab39ed689c70f43e739dfe",
+                    "serverHandshake": "26fc266d16be60fe9922d035912772bfe629d516dd7747da7e597596d222b39d",
+                    "clientFinished": "b911e617f7637c6366913e6586afb9f1afade5c5f9e9ff9a93a06265c41ab448",
+                    "serverFinished": "6d6a60f1eca291c3300abe3a81137d29439d081860a557a0d26427a9a6de1f67"
+                },
+                "tlsClientHelloLength": "164",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 6033057
+                }
+            }
+        },
+        "response": {
+            "status": 302
+        }
+    }
+}
+{
+    "wallTime": 1509,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950619548,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774950619000
+    }
+}
+{
+    "wallTime": 1533,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774950919549,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774950919000
+    }
+}
+{
+    "wallTime": 1484,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774951220930,
+    "event": {
+        "cron": "*/5 * * * *",
+        "scheduledTime": 1774951219000
+    }
+}
+{
+    "wallTime": 351,
+    "cpuTime": 8,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "96844894-b21d-4861-ac57-06af6648c98d"
+    },
+    "scriptName": "opndomain-api",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1774951494401,
+    "event": {
+        "request": {
+            "url": "https://api.opndomain.com/v1/topics/top_6f550c25af4b4fa7b33a53041d552528/views",
+            "method": "POST",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "en-US,en;q=0.9",
+                "cf-connecting-ip": "47.204.251.136",
+                "cf-ipcountry": "US",
+                "cf-ray": "9e4e8857f92bd965",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "content-length": "0",
+                "host": "api.opndomain.com",
+                "origin": "https://opndomain.com",
+                "priority": "u=1, i",
+                "referer": "https://opndomain.com/",
+                "sec-ch-ua": "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-site",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "47.204.251.136"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/2",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "weight=220;exclusive=1",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": {},
+                "clientTcpRtt": 16,
+                "clientQuicRtt": 0,
+                "colo": "MIA",
+                "asn": 5650,
+                "asOrganization": "Frontier Communications of America, Inc.",
+                "country": "US",
+                "isEUCountry": false,
+                "city": "Land O' Lakes",
+                "continent": "NA",
+                "region": "Florida",
+                "regionCode": "FL",
+                "timezone": "America/New_York",
+                "longitude": "-82.45759",
+                "latitude": "28.2189",
+                "postalCode": "34639",
+                "metroCode": "539",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES128-GCM-SHA256",
+                "tlsClientRandom": "MMyXsEjb07mF9kS9ZmYeOCHaq4nrmdGuPLeULfU3jPE=",
+                "tlsClientCiphersSha1": "KuGfs2vBuh8l0G+IPFHc60e2nNk=",
+                "tlsClientExtensionsSha1": "uD7XGni8VfvYF+dwTopZ5EVALoM=",
+                "tlsClientExtensionsSha1Le": "QvpgdtNM14t6aMrLLJMiXeq0de0=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "9a921b9fc4e85d5077cb75eb102efbf3e56ed1e0f23bc5893b73b581a78ed0a2",
+                    "serverHandshake": "155e48d00912e5076597b88079fa9f3e07ef5f446b071fab2c953554c832a27c",
+                    "clientFinished": "6c9bc070222dcaae17f9bd94b0f6e906c0108d325885d52dd7961029f63e1068",
+                    "serverFinished": "57aefe0f22dfaa5cac25ad5b0b49eccf6da68dd60cbbef2a610f0c479bfd0f7d"
+                },
+                "tlsClientHelloLength": "2053",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 98762
+                }
+            }
+        },
+        "response": {
+            "status": 404
+        }
+    }
+}

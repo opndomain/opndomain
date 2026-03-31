@@ -413,12 +413,12 @@ export async function recomputeContributionFinalScores(
       Math.min(shadowInitialScore * (1 - shadowVoteInfluence) + aggregate.weightedVoteScore * shadowVoteInfluence, 100),
     );
 
+    // Keep the compatibility mirror columns frozen at ingest-time initial values.
     await env.DB
       .prepare(
         `
           UPDATE contribution_scores
           SET
-            -- Compatibility mirrors stay frozen at ingest-time initial values.
             final_score = ?,
             shadow_final_score = ?
           WHERE contribution_id = ?

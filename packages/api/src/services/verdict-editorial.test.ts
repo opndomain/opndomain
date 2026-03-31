@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  VerdictEditorialError,
   generateVerdictEditorial,
 } from "./verdict-editorial.js";
 
@@ -42,30 +41,20 @@ async function withMockFetch<T>(
   }
 }
 
-async function expectFailure(
-  implementation: typeof globalThis.fetch,
-  expectedKind: VerdictEditorialError["kind"],
-) {
-  await withMockFetch(implementation, async () => {
-    await assert.rejects(
-      () => generateVerdictEditorial({
-        ZHIPU_API_KEY: "test-api-key",
-        ZHIPU_MODEL: "glm-4.7-flash",
-        ZHIPU_BASE_URL: "https://api.z.ai/api/paas/v4",
-        ZHIPU_TIMEOUT_MS: 30000,
-      } as never, VALID_INPUT),
-      (error: unknown) => error instanceof VerdictEditorialError && error.kind === expectedKind,
-    );
-  });
-}
+const XAI_ENV = {
+  XAI_API_KEY: "test-api-key",
+  XAI_MODEL: "grok-3-mini",
+  XAI_BASE_URL: "https://api.x.ai/v1",
+  XAI_TIMEOUT_MS: 30000,
+} as never;
 
 describe("verdict editorial service", () => {
-  it("parses the provider-supported ZHIPU string content shape", async () => {
+  it("parses xAI OpenAI-compatible response", async () => {
     await withMockFetch(
       (async (input) => {
-        assert.equal(String(input), "https://api.z.ai/api/paas/v4/chat/completions");
+        assert.equal(String(input), "https://api.x.ai/v1/chat/completions");
         return Response.json({
-          id: "req_123",
+          id: "chatcmpl-123",
           choices: [{
             message: {
               content: JSON.stringify({
@@ -96,40 +85,46 @@ describe("verdict editorial service", () => {
         });
       }) as typeof globalThis.fetch,
       async () => {
-        const result = await generateVerdictEditorial({
-          ZHIPU_API_KEY: "test-api-key",
-          ZHIPU_MODEL: "glm-4.7-flash",
-          ZHIPU_BASE_URL: "https://api.z.ai/api/paas/v4",
-          ZHIPU_TIMEOUT_MS: 30000,
-        } as never, VALID_INPUT);
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
 
-        assert.equal(result?.summary, "AI summary");
-        assert.equal(result?.narrative[0]?.summary, "AI narrative beat");
+        assert.equal(result.provider, "xai");
+        assert.equal(result.failure, null);
+        assert.equal(result.editorial?.summary, "AI summary");
+        assert.equal(result.editorial?.narrative[0]?.summary, "AI narrative beat");
       },
     );
   });
 
-  it("classifies HTTP failures", async () => {
-    await expectFailure(
+  it("returns failure result on HTTP error without throwing", async () => {
+    await withMockFetch(
       (async () => new Response("upstream down", {
         status: 502,
         headers: { "x-request-id": "req_http" },
       })) as typeof globalThis.fetch,
-      "http_failure",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "http_failure");
+        assert.equal(result.failure?.statusCode, 502);
+      },
     );
   });
 
-  it("classifies timeout failures", async () => {
-    await expectFailure(
+  it("returns failure result on timeout without throwing", async () => {
+    await withMockFetch(
       (async () => {
-        throw new Error("zhipu_timeout");
+        throw new Error("xai_timeout");
       }) as typeof globalThis.fetch,
-      "timeout",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "timeout");
+      },
     );
   });
 
-  it("classifies empty model output", async () => {
-    await expectFailure(
+  it("returns failure for empty model output", async () => {
+    await withMockFetch(
       (async () => Response.json({
         choices: [{
           message: {
@@ -137,12 +132,16 @@ describe("verdict editorial service", () => {
           },
         }],
       })) as typeof globalThis.fetch,
-      "empty_model_output",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "empty_model_output");
+      },
     );
   });
 
-  it("classifies unsupported message content shapes", async () => {
-    await expectFailure(
+  it("returns failure for unsupported message content shapes", async () => {
+    await withMockFetch(
       (async () => Response.json({
         choices: [{
           message: {
@@ -150,12 +149,16 @@ describe("verdict editorial service", () => {
           },
         }],
       })) as typeof globalThis.fetch,
-      "unsupported_content_shape",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "unsupported_content_shape");
+      },
     );
   });
 
-  it("classifies invalid JSON payloads", async () => {
-    await expectFailure(
+  it("returns failure for invalid JSON payloads", async () => {
+    await withMockFetch(
       (async () => Response.json({
         choices: [{
           message: {
@@ -163,12 +166,16 @@ describe("verdict editorial service", () => {
           },
         }],
       })) as typeof globalThis.fetch,
-      "invalid_json_payload",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "invalid_json_payload");
+      },
     );
   });
 
-  it("classifies schema validation failures", async () => {
-    await expectFailure(
+  it("returns failure for schema validation errors", async () => {
+    await withMockFetch(
       (async () => Response.json({
         choices: [{
           message: {
@@ -176,12 +183,16 @@ describe("verdict editorial service", () => {
           },
         }],
       })) as typeof globalThis.fetch,
-      "schema_validation_failure",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "schema_validation_failure");
+      },
     );
   });
 
-  it("classifies unsafe text rejection", async () => {
-    await expectFailure(
+  it("returns failure for unsafe text", async () => {
+    await withMockFetch(
       (async () => Response.json({
         choices: [{
           message: {
@@ -211,7 +222,22 @@ describe("verdict editorial service", () => {
           },
         }],
       })) as typeof globalThis.fetch,
-      "unsafe_text_rejection",
+      async () => {
+        const result = await generateVerdictEditorial(XAI_ENV, VALID_INPUT);
+        assert.equal(result.editorial, null);
+        assert.equal(result.failure?.kind, "unsafe_text_rejection");
+      },
     );
+  });
+
+  it("returns provider_unavailable when XAI_API_KEY is missing", async () => {
+    const result = await generateVerdictEditorial({
+      XAI_API_KEY: "",
+      XAI_MODEL: "grok-3-mini",
+      XAI_BASE_URL: "https://api.x.ai/v1",
+      XAI_TIMEOUT_MS: 30000,
+    } as never, VALID_INPUT);
+    assert.equal(result.editorial, null);
+    assert.equal(result.failure?.kind, "provider_unavailable");
   });
 });

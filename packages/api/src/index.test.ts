@@ -440,7 +440,7 @@ describe("worker fetch env parsing", () => {
     });
   });
 
-  it("defaults the ZHIPU timeout to 30000ms when the env var is omitted", () => {
+  it("defaults the xAI timeout to 30000ms when the env var is omitted", () => {
     const env = parseApiEnv({
       DB: {} as D1Database,
       PUBLIC_CACHE: {} as KVNamespace,
@@ -449,6 +449,6 @@ describe("worker fetch env parsing", () => {
       TOPIC_STATE_DO: {} as DurableObjectNamespace,
     });
 
-    assert.equal(env.ZHIPU_TIMEOUT_MS, 30000);
+    assert.equal(env.XAI_TIMEOUT_MS, 30000);
   });
 });

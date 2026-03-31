@@ -1,0 +1,507 @@
+
+> opndomain-rebuild@ dev:router D:\opndomain
+> pnpm --filter @opndomain/router dev
+
+
+> @opndomain/router@0.0.1 dev D:\opndomain\packages\router
+> wrangler dev --local
+
+
+ ⛅️ wrangler 4.77.0 (update available 4.78.0)
+─────────────────────────────────────────────
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [not connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+
+Service bindings, Durable Object bindings, and Tail consumers connect to other Wrangler or Vite dev processes running locally, with their connection status indicated by [connected] or [not connected]. For more details, refer to https://developers.cloudflare.com/workers/runtime-apis/bindings/service-bindings/#local-development
+
+⎔ Starting local server...
+[wrangler:info] Ready on http://127.0.0.1:8788
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [not connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Reloading local server...
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [not connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                             ⎔ Connection status updated
+Your Worker has ⎔ Local server updated and ready
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Reloading local server...
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [not connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Local server updated and ready
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Reloading local server...
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [not connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Local server updated and ready
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Connection status updated
+Your Worker has access to the following bindings:
+Binding                                                                          Resource                  Mode
+env.PUBLIC_CACHE (8e54809ee19b433daa64a2c199cdeeba)                              KV Namespace              local
+env.DB (0b856e56-7996-471f-bb40-cc8c41897cde)                                    D1 Database               local
+env.PUBLIC_ARTIFACTS (opndomain-public)                                          R2 Bucket                 local
+env.SNAPSHOTS (opndomain-snapshots)                                              R2 Bucket                 local
+env.API_SERVICE (opndomain-api)                                                  Worker                    local [not connected]
+env.MCP_SERVICE (opndomain-mcp)                                                  Worker                    local [not connected]
+env.OPNDOMAIN_ENV ("development")                                                Environment Variable      local
+env.ROOT_DOMAIN ("opndomain.com")                                                Environment Variable      local
+env.ROUTER_HOST ("opndomain.com")                                                Environment Variable      local
+env.API_HOST ("api.opndomain.com")                                               Environment Variable      local
+env.MCP_HOST ("mcp.opndomain.com")                                               Environment Variable      local
+env.ROUTER_ORIGIN ("https://opndomain.com")                                      Environment Variable      local
+env.API_ORIGIN ("https://api.opndomain.com")                                     Environment Variable      local
+env.MCP_ORIGIN ("https://mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+D:\opndomain\packages\router:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @opndomain/router@0.0.1 dev: `wrangler dev --local`
+Exit status 3221225786
+ ELIFECYCLE  Command failed with exit code 3221225786.
+//mcp.opndomain.com")                                     Environment Variable      local
+env.JWT_ISSUER ("https://api.opndomain.com")                                     Environment Variable      local
+env.JWT_AUDIENCE ("https://api.opndomain.com")                                   Environment Variable      local
+env.SESSION_COOKIE_NAME ("opn_session")                                          Environment Variable      local
+env.SESSION_COOKIE_DOMAIN (".opndomain.com")                                     Environment Variable      local
+env.ACCESS_TOKEN_TTL_SECONDS (3600)                                              Environment Variable      local
+env.REFRESH_TOKEN_TTL_SECONDS (2592000)                                          Environment Variable      local
+env.WEB_SESSION_TTL_SECONDS (604800)                                             Environment Variable      local
+env.REGISTRATION_RATE_LIMIT_PER_HOUR (5)                                         Environment Variable      local
+env.TOKEN_RATE_LIMIT_PER_HOUR (30)                                               Environment Variable      local
+env.ENABLE_SEMANTIC_SCORING (true)                                               Environment Variable      local
+env.ENABLE_TRANSCRIPT_GUARDRAILS (true)                                          Environment Variable      local
+env.CURATED_OPEN_KEY ("curated/open.json")                                       Environment Variable      local
+env.TOPIC_TRANSCRIPT_PREFIX ("topics")                                           Environment Variable      local
+env.ARTIFACTS_PREFIX ("artifacts")                                               Environment Variable      local
+env.ADMIN_BASE_PATH ("/admin")                                                   Environment Variable      local
+env.LOG_LEVEL ("debug")                                                          Environment Variable      local
+
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+⎔ Reloading local server...
+⎔ Local server updated and ready
+D:\opndomain\packages\router:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @opndomain/router@0.0.1 dev: `wrangler dev --local`
+Exit status 3221225786

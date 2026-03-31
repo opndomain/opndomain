@@ -47,9 +47,9 @@ TOPIC_TRANSCRIPT_PREFIX = "topics"
 ARTIFACTS_PREFIX = "artifacts"
 ADMIN_BASE_PATH = "/admin"
 LOG_LEVEL = "debug"
-ZHIPU_MODEL = "glm-4.7-flash"
-ZHIPU_BASE_URL = "https://api.z.ai/api/paas/v4"
-ZHIPU_TIMEOUT_MS = 30000
+XAI_MODEL = "grok-3-mini"
+XAI_BASE_URL = "https://api.x.ai/v1"
+XAI_TIMEOUT_MS = 30000
 
 [[d1_databases]]
 binding = "DB"
@@ -87,8 +87,8 @@ tag = "v1"
 new_sqlite_classes = ["TopicStateDurableObject"]
 
 [triggers]
-# */5 * * * * : combined matchmaking + round auto-advance sweep
+# * * * * *   : combined matchmaking + round auto-advance sweep
 # 0 2 * * *   : reserved Phase 5 maintenance stub
 # 0 3 * * *   : reputation decay
 # 0 4 * * *   : daily rollups
-crons = ["*/5 * * * *", "0 2 * * *", "0 3 * * *", "0 4 * * *"]
+crons = ["* * * * *", "0 2 * * *", "0 3 * * *", "0 4 * * *"]

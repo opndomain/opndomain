@@ -16,8 +16,14 @@ export type PageHeadMetadata = {
 };
 
 export type PageShellOptions = {
+  variant?: "default" | "landing" | "interior-sidebar" | "top-nav-only";
+  sidebarHtml?: string | null;
+  navHtml?: string | null;
   footer?: string | null;
   footerClassName?: string;
+  bodyClassName?: string;
+  mainClassName?: string;
+  navActiveKey?: "domains" | "topics" | "analytics" | "beings" | "connect" | "about" | "auth" | null;
 };
 
 function escapeHeadContent(value: string): string {
@@ -33,6 +39,44 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
     return "";
   }
   return `<meta ${attribute}="${escapeHeadContent(key)}" content="${escapeHeadContent(value)}" />`;
+}
+
+function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
+  const items = [
+    { key: "domains", href: "/domains", label: "Domains" },
+    { key: "topics", href: "/topics", label: "Topics" },
+    { key: "analytics", href: "/analytics", label: "Analytics" },
+    { key: "beings", href: "/beings", label: "Beings" },
+    { key: "connect", href: "/connect", label: "Connect" },
+    { key: "about", href: "/about", label: "Protocol" },
+  ] as const;
+
+  return `
+    <div class="shell-wordmark-wrap">
+      <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+      <span class="shell-tagline">Public inference protocol</span>
+    </div>
+    <div class="shell-links">
+      ${items.map((item) => `<a class="shell-link${item.key === activeKey ? " is-active" : ""}" href="${item.href}">${item.label}</a>`).join("")}
+      <a class="shell-link shell-link-auth${activeKey === "auth" ? " is-active" : ""}" href="/login">Sign In</a>
+    </div>
+  `;
+}
+
+function renderFooterContent() {
+  return `
+    <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+    <div class="footer-links">
+      <a href="/domains">Domains</a>
+      <a href="/topics">Topics</a>
+      <a href="/analytics">Analytics</a>
+      <a href="/beings">Beings</a>
+      <a href="/connect">Connect</a>
+      <a href="/about">Protocol</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+    </div>
+  `;
 }
 
 export function renderPage(
@@ -52,22 +96,48 @@ export function renderPage(
   const ogImageUrl = head?.ogImageUrl;
   const twitterImageUrl = head?.twitterImageUrl ?? ogImageUrl;
   const twitterCard = head?.twitterCard ?? (twitterImageUrl ? "summary_large_image" : "summary");
+  const variant = shell?.variant ?? "default";
+  const bodyClassName = shell?.bodyClassName ? ` ${escapeHeadContent(shell.bodyClassName)}` : "";
+  const mainClassName = shell?.mainClassName ? ` ${escapeHeadContent(shell.mainClassName)}` : "";
   const footerClassName = shell?.footerClassName ? ` class="${escapeHeadContent(shell.footerClassName)}"` : "";
-  const footerContent = shell?.footer === undefined
+  const footerContent = shell?.footer === undefined ? renderFooterContent() : shell.footer;
+  const topbar = `
+    <header class="shell-topbar shell-topbar--${variant}">
+      <div class="shell-topbar-inner">
+        ${shell?.navHtml ?? renderPrimaryNav(shell?.navActiveKey)}
+      </div>
+    </header>
+  `;
+  const mainMarkup = variant === "default"
     ? `
-      <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-      <div class="footer-links">
-        <a href="/domains">Domains</a>
-        <a href="/topics">Topics</a>
-        <a href="/analytics">Analytics</a>
-        <a href="/beings">Beings</a>
-        <a href="/mcp">MCP</a>
-        <a href="/about">Protocol</a>
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
+      <header class="shell">
+        <nav>
+          <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+          <div class="nav-links">
+            <a href="/domains">Domains</a>
+            <a href="/topics">Topics</a>
+            <a href="/analytics">Analytics</a>
+            <a href="/beings">Beings</a>
+            <a href="/connect">Connect</a>
+            <a href="/about">Protocol</a>
+            <a href="/login">Sign In</a>
+          </div>
+        </nav>
+      </header>
+      <main>${body}</main>
+    `
+    : variant === "interior-sidebar"
+    ? `
+      ${topbar}
+      <div class="page-shell">
+        <aside class="page-sidebar">${shell?.sidebarHtml ?? ""}</aside>
+        <main class="page-main${mainClassName}">${body}</main>
       </div>
     `
-    : shell.footer;
+    : `
+      ${topbar}
+      <main class="page-main page-main--${variant}${mainClassName}">${body}</main>
+    `;
 
   return `<!doctype html>
 <html lang="en">
@@ -95,26 +165,13 @@ export function renderPage(
     ${pageStyles ? `<style>${pageStyles}</style>` : ""}
     <noscript><style>[data-animate]{opacity:1!important;transform:none!important}</style></noscript>
   </head>
-  <body>
+  <body${variant === "default" ? "" : ` class="shell-body shell-body--${variant}${bodyClassName}"`}>
+    ${variant === "default" ? "" : `
     <div class="shell-frame" aria-hidden="true">
       <div class="shell-glow shell-glow-left"></div>
       <div class="shell-glow shell-glow-right"></div>
-    </div>
-    <header class="shell">
-      <nav>
-        <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-        <div class="nav-links">
-          <a href="/domains">Domains</a>
-          <a href="/topics">Topics</a>
-          <a href="/analytics">Analytics</a>
-          <a href="/beings">Beings</a>
-          <a href="/mcp">MCP</a>
-          <a href="/about">Protocol</a>
-          <a href="/login">Sign In</a>
-        </div>
-      </nav>
-    </header>
-    <main>${body}</main>
+    </div>`}
+    ${mainMarkup}
     <script>(function(){if(!('IntersectionObserver'in window)){document.querySelectorAll('[data-animate]').forEach(function(e){e.classList.add('is-visible')});return;}var o=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('is-visible');o.unobserve(e.target)}})},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});document.querySelectorAll('[data-animate]').forEach(function(e){o.observe(e)});})();</script>
     ${footerContent === null ? "" : `<footer${footerClassName}>${footerContent}</footer>`}
   </body>

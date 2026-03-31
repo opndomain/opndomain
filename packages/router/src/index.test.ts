@@ -674,6 +674,8 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes("Topic directory"));
     assert.ok(html.includes("Should frontier model audits be mandatory?"));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
     assert.ok(html.includes('value="ai-safety"'));
     assert.ok(html.includes('value="debate_v2"'));
   });
@@ -693,6 +695,29 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes("No topics matched those filters."));
     assert.ok(html.includes("<strong>Status</strong><span>open</span>"));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open">Open</a>'));
+  });
+
+  it("preserves domain and template filters in segmented status links", async () => {
+    const db = new FakeDb();
+    const api = new FakeApiService();
+    queueTopicsApi(api, {
+      path: "/v1/topics?status=open&domain=ai-safety&templateId=debate_v2",
+    });
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics?status=open&domain=ai-safety&template=debate_v2"),
+      buildEnv(db, undefined, undefined, api),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?domain=ai-safety&amp;template=debate_v2">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
+    assert.ok(html.includes('input type="hidden" name="status" value="open"'));
+    assert.ok(html.includes('href="/topics">Clear all</a>'));
   });
 
   it("passes the public template filter to the API as templateId", async () => {
@@ -953,7 +978,7 @@ describe("GET /analytics", () => {
 });
 
 describe("GET / landing verdict highlighting", () => {
-  it("renders the screenshot-driven landing layout with live verdict data", async () => {
+  it("renders the connect-first landing layout with OG verdict cards", async () => {
     const db = new FakeDb();
     db.queueResult("COUNT(*) AS c FROM beings", [{ c: 12 }]);
     db.queueResult("COUNT(DISTINCT being_id) AS c", [{ c: 8 }]);
@@ -968,6 +993,7 @@ describe("GET / landing verdict highlighting", () => {
       summary: `Summary ${index + 1} explains what the topic concluded in one line.`,
       domain_name: "AI Safety",
       created_at: "2026-03-28T12:00:00.000Z",
+      og_image_key: `og/topic_${index + 1}.png`,
     })));
     const response = await app.fetch(
       new Request("https://opndomain.com/"),
@@ -976,13 +1002,13 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Public research systems with durable verdicts."), "landing page should use the hero headline");
-    assert.ok(html.includes("Research documentation"), "landing page should expose the secondary hero action");
-    assert.ok(html.includes("Verdict Artifacts"), "landing page should render the verdict artifacts section");
-    assert.ok(html.includes("Summary 1 explains what the topic concluded in one line."), "landing page should still surface live verdict summaries");
-    assert.ok(html.includes('class="landing-shell-nav"'), "landing page should render the custom landing nav");
-    assert.ok(html.includes('class="landing-terminal"'), "landing page should render the terminal component");
-    assert.ok(html.includes("data-terminal-typing"), "landing page should include the typing animation hook");
+    assert.ok(html.includes("Public research protocol for AI agents"), "landing page should use the new hero headline");
+    assert.ok(html.includes("Quick Connect"), "landing page should expose the primary connect action");
+    assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
+    assert.ok(html.includes('/topics/topic_1/og.png'), "landing page should render OG verdict card images");
+    assert.ok(html.includes('class="landing-nav"'), "landing page should render the simplified landing nav");
+    assert.ok(html.includes('class="lp-terminal"'), "landing page should render the terminal component");
+    assert.ok(html.includes("data-term-output"), "landing page should include the typewriter output hook");
   });
 });
 
@@ -1071,7 +1097,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(detailHtml.includes("Recent Topic Contributions"));
   });
 
-  it("renders about and mcp pages inside the sidebar shell", async () => {
+  it("renders about and connect pages inside the sidebar shell and redirects /mcp", async () => {
     const aboutResponse = await app.fetch(
       new Request("https://opndomain.com/about"),
       buildEnv(new FakeDb()),
@@ -1082,15 +1108,23 @@ describe("SSR shell coverage for redesigned routes", () => {
     assertSidebarShell(aboutHtml, "/about");
     assert.ok(aboutHtml.includes("Methodology"));
 
+    const connectResponse = await app.fetch(
+      new Request("https://opndomain.com/connect"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(connectResponse.status, 200);
+    const connectHtml = await connectResponse.text();
+    assertSidebarShell(connectHtml, "/connect");
+    assert.ok(connectHtml.includes("Connection Surface"));
+
     const mcpResponse = await app.fetch(
       new Request("https://opndomain.com/mcp"),
       buildEnv(new FakeDb()),
       ctx(),
     );
-    assert.equal(mcpResponse.status, 200);
-    const mcpHtml = await mcpResponse.text();
-    assertSidebarShell(mcpHtml, "/mcp");
-    assert.ok(mcpHtml.includes("Connection Surface"));
+    assert.equal(mcpResponse.status, 302);
+    assert.equal(mcpResponse.headers.get("location"), "/connect");
   });
 
   it("renders auth and legal pages inside the top-nav-only shell", async () => {

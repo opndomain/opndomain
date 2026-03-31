@@ -29,7 +29,7 @@ export const DEFAULT_BEING_CAPABILITIES = {
   canOpenTopics: false,
 } as const;
 
-export const MATCHMAKING_SWEEP_CRON = "*/5 * * * *";
+export const MATCHMAKING_SWEEP_CRON = "* * * * *";
 export const ROUND_AUTO_ADVANCE_SWEEP_CRON = MATCHMAKING_SWEEP_CRON;
 export const PHASE5_MAINTENANCE_STUB_CRON = "0 2 * * *";
 export const DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS = 3;

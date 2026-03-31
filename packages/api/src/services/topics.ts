@@ -20,7 +20,7 @@ import { ApiError, badRequest, forbidden, notFound, rateLimited } from "../lib/e
 import { createId } from "../lib/ids.js";
 import { signJwt, verifyJwt } from "../lib/jwt.js";
 import { meetsTrustTier } from "../lib/trust.js";
-import { addMinutes, addSeconds, nowIso } from "../lib/time.js";
+import { addMinutes, nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import type { AgentRecord } from "./auth.js";
 import { findActingBeingForTopicCreation } from "./beings.js";
@@ -121,6 +121,8 @@ type PendingRoundScheduleRow = {
   ends_at: string | null;
   config_json: string;
 };
+
+const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 5;
 
 export type TopicListFilters = {
   status?: TopicDirectoryQuery["status"];
@@ -282,7 +284,7 @@ function resolveFormatDefaults(input: {
     return {
       minDistinctParticipants: input.minDistinctParticipants ?? 5,
       countdownSeconds: input.countdownSeconds,
-      startsAt: nowIso(addSeconds(new Date(), input.countdownSeconds)),
+      startsAt: null,
       joinUntil: null,
     };
   }
@@ -326,6 +328,13 @@ function resolveCadence(
     cadenceOverrideMinutes,
     roundDurationMinutes,
   };
+}
+
+function resolveTopicRoundDurationMinutes(topicFormat: TopicFormat, cadenceRoundDurationMinutes: number) {
+  if (topicFormat === "rolling_research") {
+    return ROLLING_QUEUE_ROUND_DURATION_MINUTES;
+  }
+  return cadenceRoundDurationMinutes;
 }
 
 async function getTopicRow(env: ApiEnv, topicId: string) {
@@ -389,7 +398,16 @@ export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
         GROUP BY topic_id
       ) r ON r.topic_id = t.id
       ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
-      ORDER BY t.created_at DESC
+      ORDER BY
+        CASE t.status
+          WHEN 'open' THEN 0
+          WHEN 'countdown' THEN 1
+          WHEN 'started' THEN 2
+          WHEN 'closed' THEN 3
+          WHEN 'stalled' THEN 4
+          ELSE 5
+        END ASC,
+        t.updated_at DESC
     `,
     ...bindings,
   );
@@ -902,6 +920,7 @@ export async function createTopic(
   const actingBeing = await findActingBeingForTopicCreation(env, agent);
   const cadence = resolveCadence(input.templateId, input);
   const formatDefaults = resolveFormatDefaults(input);
+  const roundDurationMinutes = resolveTopicRoundDurationMinutes(input.topicFormat, cadence.roundDurationMinutes);
   const topicId = createId("top");
 
   const statements: D1PreparedStatement[] = [
@@ -935,8 +954,8 @@ export async function createTopic(
   cadence.template.roundSequence.forEach((roundKind, index) => {
     const roundDefinition = cadence.template.rounds[index];
     const roundId = createId("rnd");
-    const roundStart = addMinutes(new Date(formatDefaults.startsAt), index * cadence.roundDurationMinutes);
-    const roundEnd = addMinutes(roundStart, cadence.roundDurationMinutes);
+    const roundStart = addMinutes(new Date(formatDefaults.startsAt ?? nowIso(new Date())), index * roundDurationMinutes);
+    const roundEnd = addMinutes(roundStart, roundDurationMinutes);
     const revealAt = roundDefinition.visibility === ROUND_VISIBILITY_SEALED
       ? nowIso(roundEnd)
       : nowIso(roundStart);
@@ -965,7 +984,7 @@ export async function createTopic(
           cadenceFamily: cadence.cadenceFamily,
           cadencePreset: cadence.cadencePreset,
           cadenceOverrideMinutes: cadence.cadenceOverrideMinutes,
-          roundDurationMinutes: cadence.roundDurationMinutes,
+          roundDurationMinutes,
           enrollmentType: roundDefinition.enrollmentType,
           visibility: roundDefinition.visibility,
           completionStyle: roundDefinition.completionStyle,
@@ -1058,6 +1077,7 @@ export async function createRollingTopicSuccessor(env: ApiEnv, topicId: string) 
     cadencePreset: (source.cadence_preset as "3h" | "9h" | "24h" | null) ?? undefined,
     cadenceOverrideMinutes: source.cadence_override_minutes ?? undefined,
   });
+  const roundDurationMinutes = resolveTopicRoundDurationMinutes("rolling_research", cadence.roundDurationMinutes);
   const topicInsertDefaults = resolveFormatDefaults({
     topicFormat: "rolling_research",
     minDistinctParticipants: source.min_distinct_participants,
@@ -1095,8 +1115,8 @@ export async function createRollingTopicSuccessor(env: ApiEnv, topicId: string) 
   cadence.template.roundSequence.forEach((roundKind, index) => {
     const roundDefinition = cadence.template.rounds[index];
     const roundId = createId("rnd");
-    const roundStart = addMinutes(new Date(topicInsertDefaults.startsAt), index * cadence.roundDurationMinutes);
-    const roundEnd = addMinutes(roundStart, cadence.roundDurationMinutes);
+    const roundStart = addMinutes(new Date(topicInsertDefaults.startsAt ?? nowIso(new Date())), index * roundDurationMinutes);
+    const roundEnd = addMinutes(roundStart, roundDurationMinutes);
     const revealAt = roundDefinition.visibility === ROUND_VISIBILITY_SEALED
       ? nowIso(roundEnd)
       : nowIso(roundStart);
@@ -1126,7 +1146,7 @@ export async function createRollingTopicSuccessor(env: ApiEnv, topicId: string) 
           cadenceFamily: cadence.cadenceFamily,
           cadencePreset: cadence.cadencePreset,
           cadenceOverrideMinutes: cadence.cadenceOverrideMinutes,
-          roundDurationMinutes: cadence.roundDurationMinutes,
+          roundDurationMinutes,
           enrollmentType: roundDefinition.enrollmentType,
           visibility: roundDefinition.visibility,
           completionStyle: roundDefinition.completionStyle,
