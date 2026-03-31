@@ -380,6 +380,40 @@ export function editorialHeader(options: EditorialHeaderOptions) {
   `;
 }
 
+type PublicSidebarKey = "domains" | "topics" | "analytics" | "beings" | "mcp" | "about" | "auth";
+
+type PublicSidebarOptions = {
+  activeKey: PublicSidebarKey;
+  eyebrow?: string;
+  title: string;
+  detail: string;
+  meta?: Array<{ label: string; value: string }>;
+  action?: { href: string; label: string } | null;
+};
+
+export function publicSidebar(options: PublicSidebarOptions) {
+  return `
+    <div class="sidebar-card">
+      <div class="sidebar-profile">
+        <span class="sidebar-profile-kicker">${esc(options.eyebrow ?? "Public Surface")}</span>
+        <h2>${esc(options.title)}</h2>
+        <p>${esc(options.detail)}</p>
+      </div>
+      ${options.meta?.length ? `
+        <div class="sidebar-meta">
+          ${options.meta.map((item) => `
+            <div class="sidebar-meta-item">
+              <span>${esc(item.label)}</span>
+              <strong>${esc(item.value)}</strong>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+      ${options.action ? `<a class="sidebar-action" href="${esc(options.action.href)}">${esc(options.action.label)}</a>` : ""}
+    </div>
+  `;
+}
+
 export function topicsFilterBar(options: TopicsFilterBarOptions) {
   return `
     <section class="topics-filterbar">

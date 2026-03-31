@@ -131,6 +131,60 @@ function buildEnv(db: FakeDb, artifacts?: FakeR2, snapshots?: FakeR2, apiService
 
 function ctx() { return { waitUntil() {} } as never; }
 
+function assertSidebarShell(html: string, _activeLabel?: string) {
+  assert.ok(html.includes('class="shell-body shell-body--interior-sidebar'), "route should use the interior sidebar shell");
+  assert.ok(html.includes('class="page-shell"'), "route should render the page shell wrapper");
+  assert.ok(html.includes('class="page-sidebar"'), "route should render the sidebar column");
+}
+
+function assertTopNavShell(html: string) {
+  assert.ok(html.includes('class="shell-body shell-body--top-nav-only'), "route should use the top-nav-only shell");
+  assert.ok(html.includes('class="shell-topbar shell-topbar--top-nav-only"'), "route should render the top nav shell");
+  assert.ok(html.includes('class="page-main page-main--top-nav-only'), "route should render the top-nav main layout");
+}
+
+function assertLegacyShell(html: string) {
+  assert.ok(html.includes('<header class="shell">'), "default routes should keep the legacy shell");
+  assert.ok(html.includes('<div class="nav-links">'), "legacy shell should keep the original nav links");
+  assert.ok(!html.includes('class="shell-topbar'), "default routes should not render the redesigned topbar");
+  assert.ok(!html.includes('class="shell-body shell-body--'), "default routes should not use redesigned shell body classes");
+}
+
+function queueAccountApi(api: FakeApiService) {
+  api.set("/v1/auth/session", {
+    data: {
+      agent: { email: "agent@example.com", clientId: "client_123" },
+      beings: [{ id: "being_1", handle: "agent-alpha" }],
+    },
+  });
+  api.set("/v1/auth/session/account", {
+    data: {
+      agent: {
+        id: "agent_1",
+        clientId: "client_123",
+        name: "Agent Alpha",
+        email: "agent@example.com",
+        emailVerifiedAt: "2026-03-28T00:00:00.000Z",
+        trustTier: "verified",
+        status: "active",
+        createdAt: "2026-03-01T00:00:00.000Z",
+      },
+      beings: [
+        { id: "being_1", handle: "agent-alpha", trustTier: "verified", status: "active" },
+      ],
+      linkedIdentities: [
+        { id: "li_1", provider: "google", emailSnapshot: "agent@example.com", linkedAt: "2026-03-29T00:00:00.000Z", lastLoginAt: "2026-03-30T00:00:00.000Z" },
+      ],
+    },
+  });
+  api.set("/v1/auth/oauth/welcome", {
+    data: {
+      clientId: "client_123",
+      clientSecret: "secret_123",
+    },
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /*  OG image route: /topics/:topicId/og.png                           */
 /* ------------------------------------------------------------------ */
@@ -899,7 +953,7 @@ describe("GET /analytics", () => {
 });
 
 describe("GET / landing verdict highlighting", () => {
-  it("surfaces recent verdict cards ahead of the terminal and shows richer verdict metadata", async () => {
+  it("renders the screenshot-driven landing layout with live verdict data", async () => {
     const db = new FakeDb();
     db.queueResult("COUNT(*) AS c FROM beings", [{ c: 12 }]);
     db.queueResult("COUNT(DISTINCT being_id) AS c", [{ c: 8 }]);
@@ -922,10 +976,250 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Each closed topic resolves into a public verdict with confidence, strongest contributions, and a path back to the underlying debate."), "landing page should elevate verdicts editorially");
-    assert.ok(html.includes("Read all verdicts"), "landing page should link to closed topics");
-    assert.ok(html.includes("Summary 1 explains what the topic concluded in one line."), "landing verdict card should show summary excerpt");
-    assert.ok(html.includes("AI Safety"), "landing verdict card should show domain");
-    assert.ok(html.indexOf("Each closed topic resolves into a public verdict with confidence, strongest contributions, and a path back to the underlying debate.") < html.indexOf("register_agent"), "landing page should render the verdict rail before the terminal quickstart");
+    assert.ok(html.includes("Public research systems with durable verdicts."), "landing page should use the hero headline");
+    assert.ok(html.includes("Research documentation"), "landing page should expose the secondary hero action");
+    assert.ok(html.includes("Verdict Artifacts"), "landing page should render the verdict artifacts section");
+    assert.ok(html.includes("Summary 1 explains what the topic concluded in one line."), "landing page should still surface live verdict summaries");
+    assert.ok(html.includes('class="landing-shell-nav"'), "landing page should render the custom landing nav");
+    assert.ok(html.includes('class="landing-terminal"'), "landing page should render the terminal component");
+    assert.ok(html.includes("data-terminal-typing"), "landing page should include the typing animation hook");
+  });
+});
+
+describe("SSR shell coverage for redesigned routes", () => {
+  it("renders the domains index inside the sidebar shell", async () => {
+    const db = new FakeDb();
+    db.queueResult("FROM domains d", [
+      { slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", topic_count: 4 },
+    ]);
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/domains"),
+      buildEnv(db),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assertSidebarShell(html, "/domains");
+    assert.ok(html.includes("Research Nodes"));
+    assert.ok(html.includes("AI Safety"));
+  });
+
+  it("renders the domain detail page inside the sidebar shell", async () => {
+    const db = new FakeDb();
+    db.queueResult("SELECT id, slug, name, description FROM domains WHERE slug = ?", [
+      { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards." },
+    ]);
+    db.queueResult("FROM topics", [
+      { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate_v2" },
+    ]);
+    db.queueResult("FROM domain_reputation dr", [
+      { handle: "agent-alpha", display_name: "Agent Alpha", decayed_score: 82.4, sample_count: 11 },
+    ]);
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/domains/ai-safety"),
+      buildEnv(db),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assertSidebarShell(html, "/domains");
+    assert.ok(html.includes("Should audits be mandatory?"));
+    assert.ok(html.includes("Agent Alpha"));
+  });
+
+  it("renders beings index and detail pages inside the sidebar shell", async () => {
+    const indexDb = new FakeDb();
+    indexDb.queueResult("LEFT JOIN contributions c ON c.being_id = b.id", [
+      { handle: "agent-alpha", display_name: "Agent Alpha", bio: "Specialist in model evaluations.", contribution_count: 9 },
+    ]);
+
+    const indexResponse = await app.fetch(
+      new Request("https://opndomain.com/beings"),
+      buildEnv(indexDb),
+      ctx(),
+    );
+
+    assert.equal(indexResponse.status, 200);
+    const indexHtml = await indexResponse.text();
+    assertSidebarShell(indexHtml, "/beings");
+    assert.ok(indexHtml.includes("Participant Index"));
+
+    const detailDb = new FakeDb();
+    detailDb.queueResult("WHERE handle = ?", [
+      { id: "being_1", handle: "agent-alpha", display_name: "Agent Alpha", bio: "Specialist in model evaluations.", trust_tier: "verified" },
+    ]);
+    detailDb.queueResult("FROM domain_reputation dr", [
+      { slug: "ai-safety", name: "AI Safety", decayed_score: 91.5, sample_count: 14 },
+    ]);
+    detailDb.queueResult("FROM contributions c", [
+      { topic_id: "topic_1", title: "Should audits be mandatory?", round_kind: "synthesize", submitted_at: "2026-03-30T00:00:00.000Z" },
+    ]);
+
+    const detailResponse = await app.fetch(
+      new Request("https://opndomain.com/beings/agent-alpha"),
+      buildEnv(detailDb),
+      ctx(),
+    );
+
+    assert.equal(detailResponse.status, 200);
+    const detailHtml = await detailResponse.text();
+    assertSidebarShell(detailHtml, "/beings");
+    assert.ok(detailHtml.includes("Recent Topic Contributions"));
+  });
+
+  it("renders about and mcp pages inside the sidebar shell", async () => {
+    const aboutResponse = await app.fetch(
+      new Request("https://opndomain.com/about"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(aboutResponse.status, 200);
+    const aboutHtml = await aboutResponse.text();
+    assertSidebarShell(aboutHtml, "/about");
+    assert.ok(aboutHtml.includes("Methodology"));
+
+    const mcpResponse = await app.fetch(
+      new Request("https://opndomain.com/mcp"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(mcpResponse.status, 200);
+    const mcpHtml = await mcpResponse.text();
+    assertSidebarShell(mcpHtml, "/mcp");
+    assert.ok(mcpHtml.includes("Connection Surface"));
+  });
+
+  it("renders auth and legal pages inside the top-nav-only shell", async () => {
+    const loginResponse = await app.fetch(
+      new Request("https://opndomain.com/login"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(loginResponse.status, 200);
+    const loginHtml = await loginResponse.text();
+    assertTopNavShell(loginHtml);
+    assert.ok(loginHtml.includes('action="/login/credentials"'));
+
+    const registerResponse = await app.fetch(
+      new Request("https://opndomain.com/register"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(registerResponse.status, 200);
+    assertTopNavShell(await registerResponse.text());
+
+    const privacyResponse = await app.fetch(
+      new Request("https://opndomain.com/privacy"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(privacyResponse.status, 200);
+    const privacyHtml = await privacyResponse.text();
+    assertTopNavShell(privacyHtml);
+    assert.ok(privacyHtml.includes("Launch privacy"));
+  });
+
+  it("renders auth success and error states inside the top-nav-only shell", async () => {
+    const registerApi = new FakeApiService();
+    registerApi.set("/v1/auth/register", {
+      data: {
+        clientId: "client_123",
+        clientSecret: "secret_123",
+        agent: { email: "agent@example.com" },
+        verification: { expiresAt: "2026-04-01T00:00:00.000Z", delivery: { code: "123456" } },
+      },
+    });
+    const registerResponse = await app.fetch(
+      new Request("https://opndomain.com/register", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "name=Agent+Alpha&email=agent%40example.com",
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, registerApi),
+      ctx(),
+    );
+    assert.equal(registerResponse.status, 403);
+    assertTopNavShell(await registerResponse.text());
+
+    const verifyApi = new FakeApiService();
+    verifyApi.set("/v1/auth/verify-email", { data: {} });
+    const verifyResponse = await app.fetch(
+      new Request("https://opndomain.com/verify-email", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "clientId=client_123&code=123456",
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, verifyApi),
+      ctx(),
+    );
+    assert.equal(verifyResponse.status, 403);
+    assertTopNavShell(await verifyResponse.text());
+
+    const loginVerifyResponse = await app.fetch(
+      new Request("https://opndomain.com/login/verify"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(loginVerifyResponse.status, 400);
+    assertTopNavShell(await loginVerifyResponse.text());
+  });
+
+  it("renders account and welcome credentials correctly for authenticated users", async () => {
+    const api = new FakeApiService();
+    queueAccountApi(api);
+
+    const accountResponse = await app.fetch(
+      new Request("https://opndomain.com/account", {
+        headers: { cookie: "opn_session=abc123" },
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, api),
+      ctx(),
+    );
+    assert.equal(accountResponse.status, 200);
+    const accountHtml = await accountResponse.text();
+    assertSidebarShell(accountHtml);
+    assert.ok(accountHtml.includes("Agent credentials, beings, linked identities, and session controls."));
+    assert.ok(accountHtml.includes("Agent Alpha"));
+
+    const welcomeResponse = await app.fetch(
+      new Request("https://opndomain.com/welcome/credentials", {
+        headers: { cookie: "opn_session=abc123" },
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, api),
+      ctx(),
+    );
+    assert.equal(welcomeResponse.status, 200);
+    const welcomeHtml = await welcomeResponse.text();
+    assertTopNavShell(welcomeHtml);
+    assert.ok(welcomeHtml.includes("OAuth account created."));
+    assert.ok(welcomeHtml.includes("client_123"));
+  });
+
+  it("redirects unauthenticated account requests to login", async () => {
+    const response = await app.fetch(
+      new Request("https://opndomain.com/account"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "/login?next=%2Faccount");
+  });
+
+  it("keeps default shell routes on the legacy layout", async () => {
+    const response = await app.fetch(
+      new Request("https://opndomain.com/nope"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+
+    assert.equal(response.status, 404);
+    const html = await response.text();
+    assertLegacyShell(html);
+    assert.ok(html.includes("Page not found."));
   });
 });
