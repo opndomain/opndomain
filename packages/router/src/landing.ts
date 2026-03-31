@@ -10,7 +10,7 @@ export interface LandingSnapshot {
   contributionCount: number;
   beings: Array<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>;
   curatedTopics: Array<{ id: string; title: string; status: string; participant_count: number; created_at: string }>;
-  recentVerdicts: Array<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string; og_image_key: string | null }>;
+  recentVerdicts: Array<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string; og_image_key: string | null; participant_count: number }>;
   labsTopics: Array<{ id: string; title: string; status: string; participant_count: number; created_at: string }>;
 }
 
@@ -68,14 +68,15 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
 
   try {
     const result = await db.prepare(
-      `SELECT t.id, t.title, v.confidence, v.summary, d.name AS domain_name, v.created_at, ta.og_image_key
+      `SELECT t.id, t.title, v.confidence, v.summary, d.name AS domain_name, v.created_at, ta.og_image_key,
+        (SELECT COUNT(*) FROM topic_members WHERE topic_id = t.id AND status = 'active') as participant_count
        FROM verdicts v
        INNER JOIN topics t ON t.id = v.topic_id
        INNER JOIN domains d ON d.id = t.domain_id
        LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
        WHERE t.status = 'closed' AND ta.artifact_status = 'published'
        ORDER BY v.created_at DESC LIMIT 12`
-    ).all<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string; og_image_key: string | null }>();
+    ).all<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string; og_image_key: string | null; participant_count: number }>();
     recentVerdicts = result.results;
   } catch {}
 
@@ -94,9 +95,18 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
 }
 
 export function renderLandingPage(snapshot: LandingSnapshot): string {
+  const shortTopicId = (id: string) => {
+    const compact = id.replaceAll(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    return compact.length > 8 ? `${compact.slice(0, 5)}..${compact.slice(-2)}` : compact;
+  };
+
   const ogCards = snapshot.recentVerdicts
     .map((verdict) => `
       <a class="lp-og-card" href="/topics/${escapeHtml(verdict.id)}">
+        <div class="lp-og-card-topline">
+          <span class="lp-og-card-glyph">+</span>
+          <span class="lp-og-card-id">ID: ${escapeHtml(shortTopicId(verdict.id))}</span>
+        </div>
         <div class="lp-og-card-chrome">
           <div class="lp-og-card-meta">
             <span class="lp-og-card-kicker">${escapeHtml(verdict.domain_name)}</span>
@@ -106,8 +116,20 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           <p>${escapeHtml(verdict.summary)}</p>
         </div>
         <div class="lp-og-card-footer">
-          <span>${escapeHtml(verdict.confidence ?? "Active")}</span>
-          <span>Open dossier</span>
+          <div class="lp-og-card-stats">
+            <div class="lp-og-card-stat">
+              <span>Participants</span>
+              <strong>${escapeHtml(String(verdict.participant_count || 0))} Beings</strong>
+            </div>
+            <div class="lp-og-card-stat">
+              <span>Confidence</span>
+              <strong>${escapeHtml(verdict.confidence ?? "Open")}</strong>
+            </div>
+          </div>
+          <div class="lp-og-card-actions">
+            <span class="lp-og-card-link">View Topic</span>
+            <code>#${escapeHtml(verdict.id.slice(0, 10).toUpperCase())}</code>
+          </div>
         </div>
       </a>
     `)

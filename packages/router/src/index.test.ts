@@ -994,6 +994,7 @@ describe("GET / landing verdict highlighting", () => {
       domain_name: "AI Safety",
       created_at: "2026-03-28T12:00:00.000Z",
       og_image_key: `og/topic_${index + 1}.png`,
+      participant_count: 12 + index,
     })));
     const response = await app.fetch(
       new Request("https://opndomain.com/"),
@@ -1006,7 +1007,8 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary connect action");
     assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
     assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
-    assert.ok(html.includes("Open dossier"), "landing page should render the verdict card footer");
+    assert.ok(html.includes("Participants"), "landing page should render the verdict card stat labels");
+    assert.ok(html.includes("View Topic"), "landing page should render the verdict card action row");
     assert.ok(html.includes('class="shell-topbar shell-topbar--landing"'), "landing page should render the shared top nav shell");
     assert.ok(html.includes('class="shell-link"'), "landing page should render the shared top nav links");
     assert.ok(html.includes('class="lp-terminal"'), "landing page should render the terminal component");

@@ -875,7 +875,7 @@ export const LANDING_PAGE_STYLES = `
   flex: 0 0 212px;
   display: grid;
   gap: 16px;
-  min-height: 304px;
+  min-height: 326px;
   padding: 16px 14px 12px;
   border: 1px solid rgba(120, 105, 79, 0.14);
   background: #f7f3eb;
@@ -906,9 +906,29 @@ export const LANDING_PAGE_STYLES = `
 .lp-og-card:nth-child(4n + 4) {
   transform: translateY(-6px) rotate(0.78deg);
 }
+.lp-og-card-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+.lp-og-card-glyph {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.lp-og-card-id {
+  color: rgba(76, 66, 49, 0.52);
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
 .lp-og-card-chrome {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   align-content: start;
 }
 .lp-og-card-meta {
@@ -939,22 +959,60 @@ export const LANDING_PAGE_STYLES = `
 .lp-og-card p {
   margin: 0;
   max-width: 24ch;
-  font-size: 0.61rem;
-  line-height: 1.42;
+  font-size: 0.68rem;
+  line-height: 1.52;
   color: rgba(60, 51, 37, 0.7);
 }
 .lp-og-card-footer {
   margin-top: auto;
+  display: grid;
+  gap: 12px;
+  padding-top: 10px;
+}
+.lp-og-card-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(120, 105, 79, 0.1);
+}
+.lp-og-card-stat {
+  display: grid;
+  gap: 4px;
+}
+.lp-og-card-stat span,
+.lp-og-card-actions,
+.lp-og-card-actions code {
+  color: rgba(76, 66, 49, 0.56);
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.lp-og-card-stat strong {
+  color: #201812;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+.lp-og-card-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(120, 105, 79, 0.12);
-  font-size: 0.5rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(76, 66, 49, 0.56);
+  gap: 10px;
+  padding-top: 2px;
+}
+.lp-og-card-link {
+  color: var(--text);
+}
+.lp-og-card-actions code {
+  border: 1px solid rgba(120, 105, 79, 0.12);
+  background: rgba(255, 255, 255, 0.34);
+  padding: 3px 5px 2px;
+  border-radius: 2px;
+  font-size: 0.47rem;
 }
 @keyframes lp-blink {
   50% {
@@ -994,7 +1052,7 @@ export const LANDING_PAGE_STYLES = `
   }
   .lp-og-card {
     flex-basis: min(212px, calc(100vw - 44px));
-    min-height: 292px;
+    min-height: 314px;
     padding: 14px 12px 12px;
   }
   .lp-terminal-body {
