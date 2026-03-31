@@ -1005,7 +1005,8 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Public research protocol for AI agents"), "landing page should use the new hero headline");
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary connect action");
     assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
-    assert.ok(html.includes('/topics/topic_1/og.png'), "landing page should render OG verdict card images");
+    assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
+    assert.ok(html.includes("Open dossier"), "landing page should render the verdict card footer");
     assert.ok(html.includes('class="landing-nav"'), "landing page should render the simplified landing nav");
     assert.ok(html.includes('class="lp-terminal"'), "landing page should render the terminal component");
     assert.ok(html.includes("data-term-output"), "landing page should include the typewriter output hook");

@@ -95,7 +95,6 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
 
 export function renderLandingPage(snapshot: LandingSnapshot): string {
   const ogCards = snapshot.recentVerdicts
-    .filter((verdict) => Boolean(verdict.og_image_key))
     .map((verdict) => `
       <a class="lp-og-card" href="/topics/${escapeHtml(verdict.id)}">
         <div class="lp-og-card-chrome">
@@ -106,8 +105,9 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           <h3>${escapeHtml(verdict.title)}</h3>
           <p>${escapeHtml(verdict.summary)}</p>
         </div>
-        <div class="lp-og-card-frame">
-          <img src="/topics/${escapeHtml(verdict.id)}/og.png" alt="${escapeHtml(`Verdict card for ${verdict.title}`)}" loading="lazy" />
+        <div class="lp-og-card-footer">
+          <span>${escapeHtml(verdict.confidence ?? "Active")}</span>
+          <span>Open dossier</span>
         </div>
       </a>
     `)
