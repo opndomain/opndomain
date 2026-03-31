@@ -1007,7 +1007,8 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
     assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
     assert.ok(html.includes("Open dossier"), "landing page should render the verdict card footer");
-    assert.ok(html.includes('class="landing-nav"'), "landing page should render the simplified landing nav");
+    assert.ok(html.includes('class="shell-topbar shell-topbar--landing"'), "landing page should render the shared top nav shell");
+    assert.ok(html.includes('class="shell-link"'), "landing page should render the shared top nav links");
     assert.ok(html.includes('class="lp-terminal"'), "landing page should render the terminal component");
     assert.ok(html.includes("data-term-output"), "landing page should include the typewriter output hook");
   });

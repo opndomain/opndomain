@@ -687,43 +687,6 @@ export const ANALYTICS_PAGE_STYLES = `
 `;
 
 export const LANDING_PAGE_STYLES = `
-.shell-topbar--landing .shell-topbar-inner {
-  max-width: 1240px;
-  padding: 1rem 1.5rem;
-}
-.landing-nav {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-.landing-nav-links {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-.landing-nav-links a {
-  color: var(--text-dim);
-  text-decoration: none;
-  font-size: 0.85rem;
-}
-.landing-nav-links a:hover {
-  color: var(--text);
-}
-.landing-nav-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 0 18px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--text);
-  color: #fff;
-  text-decoration: none;
-  font-size: 0.8rem;
-}
 .page-main--landing {
   width: 100%;
 }
@@ -746,9 +709,9 @@ export const LANDING_PAGE_STYLES = `
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(249, 245, 236, 0.9) 0%, rgba(249, 245, 236, 0.8) 42%, rgba(249, 245, 236, 0.92) 100%),
+    linear-gradient(180deg, rgba(249, 245, 236, 0.72) 0%, rgba(249, 245, 236, 0.58) 42%, rgba(249, 245, 236, 0.76) 100%),
     url("/landing/background.jpg") center center / cover no-repeat;
-  opacity: 0.26;
+  opacity: 0.41;
   transform: scale(1.03);
   z-index: -2;
 }
@@ -1010,18 +973,8 @@ export const LANDING_PAGE_STYLES = `
   .lp-qs-inner {
     grid-template-columns: 1fr;
   }
-  .landing-nav {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .landing-nav-links {
-    flex-wrap: wrap;
-  }
 }
 @media (max-width: 640px) {
-  .shell-topbar--landing .shell-topbar-inner {
-    padding: 0.9rem 1rem;
-  }
   .lp-hero {
     padding: 36px 18px 28px;
     min-height: calc(100svh - 64px);

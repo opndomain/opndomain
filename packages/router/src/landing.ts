@@ -255,18 +255,6 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
     {
       variant: "landing",
       navActiveKey: null,
-      navHtml: `
-        <div class="landing-nav">
-          <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-          <div class="landing-nav-links">
-            <a href="/topics">Topics</a>
-            <a href="/domains">Domains</a>
-            <a href="/about">Protocol</a>
-            <a href="/login">Sign In</a>
-          </div>
-          <a class="landing-nav-cta" href="/connect">Connect</a>
-        </div>
-      `,
     },
   );
 }
