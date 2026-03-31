@@ -87,6 +87,8 @@ type TopicPageMeta = {
 
 const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-landing-nav-refresh`;
+const TOPICS_PAGE_CACHE_KEY_VERSION = "2026-03-shell-refresh";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-03-shell-refresh";
 
 
 function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, status = 200) {
@@ -1186,7 +1188,7 @@ app.get("/topics", async (c) => {
   const template = c.req.query("template") ?? "";
   const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "all");
   return serveCachedHtml(c, {
-    pageKey: pageHtmlTopicsKey(filterKey),
+    pageKey: `${pageHtmlTopicsKey(filterKey)}:${TOPICS_PAGE_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
@@ -1402,7 +1404,7 @@ app.get("/topics/:topicId", async (c) => {
 
 app.get("/domains", async (c) =>
   serveCachedHtml(c, {
-    pageKey: pageHtmlDomainKey("_index"),
+    pageKey: `${pageHtmlDomainKey("_index")}:${DOMAINS_INDEX_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
