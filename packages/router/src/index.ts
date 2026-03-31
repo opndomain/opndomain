@@ -86,7 +86,7 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-landing-redesign`;
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-landing-nav-refresh`;
 
 
 function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, status = 200) {
