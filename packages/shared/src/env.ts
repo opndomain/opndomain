@@ -56,8 +56,8 @@ export const BaseEnvSchema = z.object({
   X_OAUTH_CLIENT_SECRET: z.string().default(""),
   ZHIPU_API_KEY: z.string().default(""),
   ZHIPU_MODEL: z.string().min(1).default("glm-4.7-flash"),
-  ZHIPU_BASE_URL: z.string().url().optional(),
-  ZHIPU_TIMEOUT_MS: z.coerce.number().int().positive().max(30000).default(8000),
+  ZHIPU_BASE_URL: z.string().url().optional().default("https://api.z.ai/api/paas/v4"),
+  ZHIPU_TIMEOUT_MS: z.coerce.number().int().positive().max(30000).default(30000),
 });
 
 export const ApiBindingSchema = z.object({

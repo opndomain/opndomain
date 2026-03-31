@@ -9,6 +9,7 @@ const MAX_EDITORIAL_BODY_CHARS = 2400;
 const MAX_NARRATIVE_SUMMARY_CHARS = 280;
 const MAX_HIGHLIGHT_EXCERPT_CHARS = 240;
 const MAX_HIGHLIGHT_REASON_CHARS = 180;
+const MAX_ERROR_BODY_CHARS = 400;
 
 const VerdictEditorialSchema = z.object({
   summary: z.string().trim().min(1).max(MAX_SUMMARY_CHARS),
@@ -31,12 +32,52 @@ const VerdictEditorialSchema = z.object({
 });
 
 const ZhipuChatResponseSchema = z.object({
+  id: z.string().optional(),
+  request_id: z.string().optional(),
   choices: z.array(z.object({
     message: z.object({
-      content: z.string().min(1),
+      content: z.unknown().optional(),
     }),
   })).min(1),
 });
+
+export type VerdictEditorialFailureKind =
+  | "http_failure"
+  | "timeout"
+  | "empty_model_output"
+  | "unsupported_content_shape"
+  | "invalid_json_payload"
+  | "schema_validation_failure"
+  | "unsafe_text_rejection";
+
+export class VerdictEditorialError extends Error {
+  readonly name = "VerdictEditorialError";
+
+  constructor(
+    readonly kind: VerdictEditorialFailureKind,
+    message: string,
+    readonly options?: {
+      cause?: unknown;
+      details?: Record<string, unknown>;
+      requestId?: string | null;
+      statusCode?: number;
+    },
+  ) {
+    super(message, { cause: options?.cause });
+  }
+
+  get details() {
+    return this.options?.details;
+  }
+
+  get requestId() {
+    return this.options?.requestId ?? null;
+  }
+
+  get statusCode() {
+    return this.options?.statusCode;
+  }
+}
 
 export type VerdictEditorialInput = {
   rounds: Array<{
@@ -67,7 +108,7 @@ function normalizeText(value: string, maxLength: number): string {
 
 function ensureSafeText(value: string): string {
   if (/[<>]/.test(value) || /```/.test(value)) {
-    throw new Error("unsafe editorial output");
+    throw new VerdictEditorialError("unsafe_text_rejection", "unsafe editorial output");
   }
   return value;
 }
@@ -100,63 +141,70 @@ function timeoutSignal(timeoutMs: number): AbortSignal {
   return controller.signal;
 }
 
-export async function generateVerdictEditorial(
-  env: ApiEnv,
-  input: VerdictEditorialInput,
-): Promise<VerdictEditorialOutput | null> {
-  const apiKey = env.ZHIPU_API_KEY?.trim?.() ?? "";
-  if (!apiKey) {
-    return null;
+function normalizeErrorBody(value: string): string {
+  return value.replace(/\s+/g, " ").trim().slice(0, MAX_ERROR_BODY_CHARS);
+}
+
+function extractResponseRequestId(response: Response): string | null {
+  return response.headers.get("x-request-id")
+    ?? response.headers.get("request-id")
+    ?? response.headers.get("x-zhipu-request-id");
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (error instanceof Error) {
+    return error.name === "AbortError" || error.message === "zhipu_timeout";
+  }
+  return false;
+}
+
+function extractModelContent(payload: z.infer<typeof ZhipuChatResponseSchema>): string {
+  const content = payload.choices[0]?.message?.content;
+  if (typeof content !== "string") {
+    throw new VerdictEditorialError(
+      "unsupported_content_shape",
+      "ZHIPU returned an unsupported message.content shape.",
+      {
+        requestId: payload.request_id ?? payload.id ?? null,
+        details: {
+          contentType: Array.isArray(content) ? "array" : typeof content,
+        },
+      },
+    );
   }
 
-  const transcriptContext = buildTranscriptContext(input);
-  const completedRounds = input.rounds.filter((round) => round.status === "completed").length;
-  const endpoint = `${(env.ZHIPU_BASE_URL ?? DEFAULT_ZHIPU_BASE_URL).replace(/\/+$/, "")}/chat/completions`;
-  const timeoutMs = env.ZHIPU_TIMEOUT_MS ?? 8000;
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.ZHIPU_MODEL || "glm-4.7",
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: [
-            "You generate verdict editorial JSON for opndomain closed topics.",
-            "Return only valid JSON with keys: summary, editorialBody, narrative, highlights.",
-            "Use only transcript-visible information. Do not invent facts, actors, or rounds.",
-            "summary must be one concise paragraph.",
-            "editorialBody must be two or three short paragraphs.",
-            "narrative must cover the completed rounds in order.",
-            "highlights must reference only contributionId/beingId/beingHandle/roundKind values from the provided transcript.",
-            "Reject unsafe output by avoiding markup, code fences, or HTML.",
-          ].join(" "),
-        },
-        {
-          role: "user",
-          content: [
-            `The topic closed after ${completedRounds} completed rounds.`,
-            "Produce verdict editorial JSON for this transcript context:",
-            transcriptContext,
-          ].join("\n\n"),
-        },
-      ],
-    }),
-    signal: timeoutSignal(timeoutMs),
-  });
-
-  if (!response.ok) {
-    throw new Error(`zhipu_http_${response.status}`);
+  const trimmed = content.trim();
+  if (trimmed.length === 0) {
+    throw new VerdictEditorialError(
+      "empty_model_output",
+      "ZHIPU returned empty message content.",
+      { requestId: payload.request_id ?? payload.id ?? null },
+    );
   }
 
-  const rawPayload = ZhipuChatResponseSchema.parse(await response.json());
-  const rawContent = rawPayload.choices[0]?.message.content;
-  const parsedEditorial = VerdictEditorialSchema.parse(JSON.parse(rawContent));
+  return trimmed;
+}
+
+function parseEditorialPayload(rawContent: string, requestId: string | null): VerdictEditorialOutput {
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(rawContent);
+  } catch (error) {
+    throw new VerdictEditorialError("invalid_json_payload", "ZHIPU returned invalid JSON.", {
+      cause: error,
+      requestId,
+    });
+  }
+
+  let parsedEditorial: VerdictEditorialOutput;
+  try {
+    parsedEditorial = VerdictEditorialSchema.parse(parsedJson);
+  } catch (error) {
+    throw new VerdictEditorialError("schema_validation_failure", "ZHIPU editorial JSON failed schema validation.", {
+      cause: error,
+      requestId,
+    });
+  }
 
   return {
     summary: ensureSafeText(parsedEditorial.summary),
@@ -177,4 +225,87 @@ export async function generateVerdictEditorial(
       reason: ensureSafeText(item.reason),
     })),
   };
+}
+
+export async function generateVerdictEditorial(
+  env: ApiEnv,
+  input: VerdictEditorialInput,
+): Promise<VerdictEditorialOutput | null> {
+  const apiKey = env.ZHIPU_API_KEY?.trim?.() ?? "";
+  if (!apiKey) {
+    return null;
+  }
+
+  const transcriptContext = buildTranscriptContext(input);
+  const completedRounds = input.rounds.filter((round) => round.status === "completed").length;
+  const endpoint = `${(env.ZHIPU_BASE_URL ?? DEFAULT_ZHIPU_BASE_URL).replace(/\/+$/, "")}/chat/completions`;
+  const timeoutMs = env.ZHIPU_TIMEOUT_MS ?? 30000;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.ZHIPU_MODEL || "glm-4.7-flash",
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You generate verdict editorial JSON for opndomain closed topics.",
+              "Return only valid JSON with keys: summary, editorialBody, narrative, highlights.",
+              "Use only transcript-visible information. Do not invent facts, actors, or rounds.",
+              "summary must be one concise paragraph.",
+              "editorialBody must be two or three short paragraphs.",
+              "narrative must cover the completed rounds in order.",
+              "highlights must reference only contributionId/beingId/beingHandle/roundKind values from the provided transcript.",
+              "Reject unsafe output by avoiding markup, code fences, or HTML.",
+            ].join(" "),
+          },
+          {
+            role: "user",
+            content: [
+              `The topic closed after ${completedRounds} completed rounds.`,
+              "Produce verdict editorial JSON for this transcript context:",
+              transcriptContext,
+            ].join("\n\n"),
+          },
+        ],
+      }),
+      signal: timeoutSignal(timeoutMs),
+    });
+  } catch (error) {
+    if (isTimeoutError(error)) {
+      throw new VerdictEditorialError("timeout", "ZHIPU verdict editorial request timed out.", { cause: error });
+    }
+    throw error;
+  }
+
+  if (!response.ok) {
+    let bodySnippet = "";
+    try {
+      bodySnippet = normalizeErrorBody(await response.text());
+    } catch {
+      bodySnippet = "";
+    }
+    throw new VerdictEditorialError(
+      "http_failure",
+      `ZHIPU returned HTTP ${response.status}.`,
+      {
+        requestId: extractResponseRequestId(response),
+        statusCode: response.status,
+        details: bodySnippet ? { bodySnippet } : undefined,
+      },
+    );
+  }
+
+  const rawPayload = ZhipuChatResponseSchema.parse(await response.json());
+  const requestId = rawPayload.request_id ?? rawPayload.id ?? extractResponseRequestId(response);
+  const rawContent = extractModelContent(rawPayload);
+  return parseEditorialPayload(rawContent, requestId);
 }

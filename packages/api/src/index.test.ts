@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { MATCHMAKING_SWEEP_CRON } from "@opndomain/shared";
+import { parseApiEnv } from "./lib/env.js";
 import worker from "./index.js";
 
 class FakeBucket {
@@ -437,5 +438,17 @@ describe("worker fetch env parsing", () => {
       snapshotDurationMs: { p50: 22, p95: 22, max: 22 },
       publicationFreshnessLagMs: { p95: 18, max: 18 },
     });
+  });
+
+  it("defaults the ZHIPU timeout to 30000ms when the env var is omitted", () => {
+    const env = parseApiEnv({
+      DB: {} as D1Database,
+      PUBLIC_CACHE: {} as KVNamespace,
+      PUBLIC_ARTIFACTS: {} as R2Bucket,
+      SNAPSHOTS: {} as R2Bucket,
+      TOPIC_STATE_DO: {} as DurableObjectNamespace,
+    });
+
+    assert.equal(env.ZHIPU_TIMEOUT_MS, 30000);
   });
 });

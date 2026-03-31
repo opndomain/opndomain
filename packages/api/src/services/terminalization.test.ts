@@ -1081,9 +1081,9 @@ describe("terminalization service", () => {
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
             ZHIPU_API_KEY: "test-api-key",
-            ZHIPU_MODEL: "glm-4.7",
+            ZHIPU_MODEL: "glm-4.7-flash",
             ZHIPU_BASE_URL: "https://api.z.ai/api/paas/v4",
-            ZHIPU_TIMEOUT_MS: 8000,
+            ZHIPU_TIMEOUT_MS: 30000,
           } as never,
           "top_1",
         );
@@ -1100,51 +1100,65 @@ describe("terminalization service", () => {
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"AI excerpt"/);
   });
 
-  it("falls back when ZHIPU output fails schema validation", async () => {
+  it("falls back when ZHIPU output fails schema validation and logs the failure kind", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
     queueTerminalizationSuccessPath(db);
+    const warnings: unknown[][] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
 
-    await withMockFetch(
-      (async () => Response.json({
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              summary: "Broken response without required fields",
-            }),
-          },
-        }],
-      })) as typeof globalThis.fetch,
-      async () => {
-        await runTerminalizationSequence(
-          {
-            DB: db as never,
-            SNAPSHOTS: snapshots as never,
-            PUBLIC_ARTIFACTS: publicArtifacts as never,
-            PUBLIC_CACHE: cache as never,
-            TOPIC_STATE_DO: {
-              idFromName: (name: string) => name,
-              get: () => ({
-                fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+    try {
+      await withMockFetch(
+        (async () => Response.json({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                summary: "Broken response without required fields",
               }),
             },
-            TOPIC_TRANSCRIPT_PREFIX: "topics",
-            CURATED_OPEN_KEY: "curated/open.json",
-            ZHIPU_API_KEY: "test-api-key",
-            ZHIPU_MODEL: "glm-4.7",
-            ZHIPU_TIMEOUT_MS: 8000,
-          } as never,
-          "top_1",
-        );
-      },
-    );
+          }],
+        })) as typeof globalThis.fetch,
+        async () => {
+          await runTerminalizationSequence(
+            {
+              DB: db as never,
+              SNAPSHOTS: snapshots as never,
+              PUBLIC_ARTIFACTS: publicArtifacts as never,
+              PUBLIC_CACHE: cache as never,
+              TOPIC_STATE_DO: {
+                idFromName: (name: string) => name,
+                get: () => ({
+                  fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+                }),
+              },
+              TOPIC_TRANSCRIPT_PREFIX: "topics",
+              CURATED_OPEN_KEY: "curated/open.json",
+              ZHIPU_API_KEY: "test-api-key",
+              ZHIPU_MODEL: "glm-4.7-flash",
+              ZHIPU_TIMEOUT_MS: 30000,
+            } as never,
+            "top_1",
+          );
+        },
+      );
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
 
     const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
     assert.ok(verdictInsert);
     assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"editorialBody":"This topic closed after 2 completed rounds/);
+    assert.equal(warnings.some(([, payload]) =>
+      typeof payload === "object"
+      && payload !== null
+      && "failureKind" in payload
+      && payload.failureKind === "schema_validation_failure"), true);
   });
 
   it("falls back when the ZHIPU request times out", async () => {
@@ -1174,7 +1188,7 @@ describe("terminalization service", () => {
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
             ZHIPU_API_KEY: "test-api-key",
-            ZHIPU_MODEL: "glm-4.7",
+            ZHIPU_MODEL: "glm-4.7-flash",
             ZHIPU_TIMEOUT_MS: 1,
           } as never,
           "top_1",
@@ -1216,8 +1230,8 @@ describe("terminalization service", () => {
             TOPIC_TRANSCRIPT_PREFIX: "topics",
             CURATED_OPEN_KEY: "curated/open.json",
             ZHIPU_API_KEY: "",
-            ZHIPU_MODEL: "glm-4.7",
-            ZHIPU_TIMEOUT_MS: 8000,
+            ZHIPU_MODEL: "glm-4.7-flash",
+            ZHIPU_TIMEOUT_MS: 30000,
           } as never,
           "top_1",
         );

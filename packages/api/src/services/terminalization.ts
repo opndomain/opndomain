@@ -10,7 +10,7 @@ import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { createId } from "../lib/ids.js";
 import { queuePresentationRetry, reconcileTopicPresentation } from "./presentation.js";
-import { generateVerdictEditorial } from "./verdict-editorial.js";
+import { VerdictEditorialError, generateVerdictEditorial } from "./verdict-editorial.js";
 import {
   rebuildDomainReputation,
   rebuildEpistemicReliability,
@@ -335,8 +335,13 @@ export async function runTerminalizationSequence(
 ): Promise<{ topicId: string; terminalized: boolean; alreadyTerminalized: boolean }> {
   const flushResult = await forceFlushTopicState(env, topicId);
   if (flushResult.remaining !== TERMINALIZATION_FORCE_FLUSH_EMPTY_REMAINING) {
-    await queuePresentationRetry(env, topicId, PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN, new Error("force_flush_not_drained"));
-    throw new Error(`Force flush did not drain topic ${topicId} after ${TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS} attempts.`);
+    if (!options?.reterminalize) {
+      await queuePresentationRetry(env, topicId, PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN, new Error("force_flush_not_drained"));
+      throw new Error(`Force flush did not drain topic ${topicId} after ${TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS} attempts.`);
+    }
+    console.warn(
+      `Force flush did not drain topic ${topicId} after ${TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS} attempts; continuing reterminalize from committed D1 state.`,
+    );
   }
 
   const topic = await firstRow<TopicContextRow>(
@@ -412,7 +417,21 @@ export async function runTerminalizationSequence(
       };
     }
   } catch (error) {
-    console.warn(`zhipu verdict editorial generation failed for topic ${topicId}`, error);
+    if (error instanceof VerdictEditorialError) {
+      console.warn("zhipu verdict editorial generation failed", {
+        topicId,
+        failureKind: error.kind,
+        statusCode: error.statusCode ?? null,
+        requestId: error.requestId,
+        details: error.details ?? null,
+      });
+    } else {
+      console.warn("zhipu verdict editorial generation failed", {
+        topicId,
+        failureKind: "unexpected_error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   let epistemicReasoning: Record<string, unknown> | null = null;
   if (env.ENABLE_EPISTEMIC_SCORING) {
