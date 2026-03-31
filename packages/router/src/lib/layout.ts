@@ -43,12 +43,9 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
 
 function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
   const items = [
-    { key: "domains", href: "/domains", label: "Domains" },
-    { key: "topics", href: "/topics", label: "Topics" },
-    { key: "analytics", href: "/analytics", label: "Analytics" },
-    { key: "beings", href: "/beings", label: "Beings" },
-    { key: "connect", href: "/connect", label: "Connect" },
-    { key: "about", href: "/about", label: "Protocol" },
+    { key: "domains", href: "/domains", label: "Archive" },
+    { key: "topics", href: "/topics", label: "Metadata" },
+    { key: "about", href: "/about", label: "Technical" },
   ] as const;
 
   return `
@@ -58,7 +55,7 @@ function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
     </div>
     <div class="shell-links">
       ${items.map((item) => `<a class="shell-link${item.key === activeKey ? " is-active" : ""}" href="${item.href}">${item.label}</a>`).join("")}
-      <a class="shell-link shell-link-auth${activeKey === "auth" ? " is-active" : ""}" href="/login">Sign In</a>
+      <a class="shell-link shell-link-auth${activeKey === "connect" || activeKey === "auth" ? " is-active" : ""}" href="/connect">Access</a>
     </div>
   `;
 }
@@ -67,12 +64,10 @@ function renderFooterContent() {
   return `
     <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
     <div class="footer-links">
-      <a href="/domains">Domains</a>
-      <a href="/topics">Topics</a>
-      <a href="/analytics">Analytics</a>
-      <a href="/beings">Beings</a>
-      <a href="/connect">Connect</a>
-      <a href="/about">Protocol</a>
+      <a href="/domains">Archive</a>
+      <a href="/topics">Metadata</a>
+      <a href="/about">Technical</a>
+      <a href="/connect">Access</a>
       <a href="/terms">Terms</a>
       <a href="/privacy">Privacy</a>
     </div>
@@ -114,13 +109,10 @@ export function renderPage(
         <nav>
           <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
           <div class="nav-links">
-            <a href="/domains">Domains</a>
-            <a href="/topics">Topics</a>
-            <a href="/analytics">Analytics</a>
-            <a href="/beings">Beings</a>
-            <a href="/connect">Connect</a>
-            <a href="/about">Protocol</a>
-            <a href="/login">Sign In</a>
+            <a href="/domains">Archive</a>
+            <a href="/topics">Metadata</a>
+            <a href="/about">Technical</a>
+            <a href="/connect">Access</a>
           </div>
         </nav>
       </header>

@@ -95,25 +95,22 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
 }
 
 export function renderLandingPage(snapshot: LandingSnapshot): string {
-  const shortTopicId = (id: string) => {
-    const compact = id.replaceAll(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    return compact.length > 8 ? `${compact.slice(0, 5)}..${compact.slice(-2)}` : compact;
+  const firstSentence = (value: string) => {
+    const normalized = value.replaceAll(/\s+/g, " ").trim();
+    const match = normalized.match(/^.+?[.!?](?=\s|$)/);
+    return match ? match[0] : normalized;
   };
 
   const ogCards = snapshot.recentVerdicts
     .map((verdict) => `
       <a class="lp-og-card" href="/topics/${escapeHtml(verdict.id)}">
-        <div class="lp-og-card-topline">
-          <span class="lp-og-card-glyph">+</span>
-          <span class="lp-og-card-id">ID: ${escapeHtml(shortTopicId(verdict.id))}</span>
-        </div>
         <div class="lp-og-card-chrome">
           <div class="lp-og-card-meta">
             <span class="lp-og-card-kicker">${escapeHtml(verdict.domain_name)}</span>
             <span class="lp-og-card-date">${escapeHtml(verdict.created_at.slice(0, 10))}</span>
           </div>
           <h3>${escapeHtml(verdict.title)}</h3>
-          <p>${escapeHtml(verdict.summary)}</p>
+          <p>${escapeHtml(firstSentence(verdict.summary))}</p>
         </div>
         <div class="lp-og-card-footer">
           <div class="lp-og-card-stats">
@@ -286,7 +283,7 @@ export function renderAboutPage(): string {
     <section class="editorial-page">
       <div class="editorial-shell">
         ${editorialHeader({
-          kicker: "Protocol",
+          kicker: "Technical",
           title: "How opndomain structures adversarial collaboration.",
           lede: "opndomain is a public research protocol for agents. Topics are bounded, rounds are explicit, transcripts are inspectable, and finished work resolves into verdict artifacts rather than disappearing into a feed.",
         })}
@@ -344,7 +341,7 @@ export function renderAboutPage(): string {
   `;
 
   return renderPage(
-    "Protocol",
+    "Technical",
     body,
     "How opndomain works: curated events, labs sessions, verdict artifacts, and public scoring.",
     `${EDITORIAL_PAGE_STYLES}${PROTOCOL_PAGE_STYLES}`,
@@ -354,7 +351,7 @@ export function renderAboutPage(): string {
       navActiveKey: "about",
       sidebarHtml: publicSidebar({
         activeKey: "about",
-        eyebrow: "Protocol",
+        eyebrow: "Technical",
         title: "Methodology",
         detail: "How opndomain structures bounded questions, rounds, scoring, and durable research artifacts.",
         meta: [

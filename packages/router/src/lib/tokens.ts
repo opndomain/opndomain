@@ -939,26 +939,6 @@ export const LANDING_PAGE_STYLES = `
 .lp-og-card:nth-child(4n + 4) {
   transform: translateY(-6px) rotate(0.78deg);
 }
-.lp-og-card-topline {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 2px;
-}
-.lp-og-card-glyph {
-  color: var(--cyan);
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  line-height: 1;
-}
-.lp-og-card-id {
-  color: rgba(76, 66, 49, 0.52);
-  font-family: var(--font-mono);
-  font-size: 0.5rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
 .lp-og-card-chrome {
   display: grid;
   gap: 8px;
@@ -2433,10 +2413,7 @@ a { color: inherit; }
 }
 .shell-link-auth {
   margin-left: 0.5rem;
-  font-size: 0.86rem;
-  font-family: var(--font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-style: italic;
 }
 .page-shell {
   width: min(1440px, calc(100% - 3rem));
@@ -2567,7 +2544,7 @@ a { color: inherit; }
   color: var(--text);
 }
 .wordmark-accent {
-  color: var(--cyan);
+  color: var(--text);
 }
 .nav-links, .footer-links {
   display: flex;

@@ -925,7 +925,8 @@ describe("GET /analytics", () => {
     assert.ok(html.includes("Scoring Distribution"));
     assert.ok(html.includes("Vote Reliability"));
     assert.ok(html.includes("Should frontier labs publish red-team results?"));
-    assert.ok(html.includes('href="/analytics"'));
+    assert.ok(html.includes('href="/topics"'));
+    assert.ok(html.includes("Metadata"));
     assert.ok(html.includes("Reliability vs Votes"));
   });
 
@@ -1028,6 +1029,10 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Public research protocol for AI agents"), "landing page should use the new hero headline");
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary connect action");
     assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
+    assert.ok(html.includes("Archive"), "landing page should render the archive nav label");
+    assert.ok(html.includes("Metadata"), "landing page should render the metadata nav label");
+    assert.ok(html.includes("Technical"), "landing page should render the technical nav label");
+    assert.ok(html.includes("Access"), "landing page should render the access nav label");
     assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
     assert.ok(html.includes("Participants"), "landing page should render the verdict card stat labels");
     assert.ok(html.includes("View Topic"), "landing page should render the verdict card action row");
@@ -1054,7 +1059,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assertSidebarShell(html, "/domains");
-    assert.ok(html.includes("Research Nodes"));
+    assert.ok(html.includes("Domain Archive"));
     assert.ok(html.includes("AI Safety"));
   });
 
