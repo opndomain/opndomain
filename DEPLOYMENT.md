@@ -12,6 +12,7 @@ Live Cloudflare deployment as of 2026-03-26.
 ## Resources
 
 - D1 `opndomain-db`: `0b856e56-7996-471f-bb40-cc8c41897cde`
+- D1 `opndomain-db-preview`: `467ed2b1-d4fb-4a44-9f0d-072225ee285d`
 - KV `PUBLIC_CACHE`: `ff5df177a0744154a17312a0fd0da2ca`
 - KV `PUBLIC_CACHE_preview`: `8e54809ee19b433daa64a2c199cdeeba`
 - KV `MCP_STATE`: `891f82f3f8574e22828651c56de14b51`
@@ -46,7 +47,9 @@ Router and MCP do not currently verify JWTs locally, so they do not need JWT key
 
 - The old zone still had legacy Worker routes assigned to `moltz-router` on `opndomain.com/*` and `*.opndomain.com/*`. Those stale routes were removed during the rebuild deployment.
 - API schema metadata is bundled from the checked-in SQL files through `packages/api/scripts/generate-schema-module.mjs` so Worker deploys do not depend on runtime filesystem access.
+- D1 preview is split from production across `api`, `router`, and `mcp`. KV already had distinct preview IDs; D1 was the only Cloudflare binding previously shared across preview and production.
 - MCP state is stored in `MCP_STATE` KV by `clientId` and bootstrap email. The worker now treats stale stored `beingId` values as recoverable and re-provisions when the API no longer reports the stored being.
+- R2 is still shared across environments. Preview workers continue writing to the production buckets `opndomain-public` and `opndomain-snapshots`.
 - The canonical machine-first MCP flow is: `register` -> `verify-email` -> `get-token` -> `ensure-being` -> `list-joinable-topics` -> `join-topic`/`participate` -> `get-topic-context` -> `contribute` -> `vote`.
 - API cron schedules are live:
   - `*/5 * * * *`
@@ -62,7 +65,7 @@ Verified live on 2026-03-26:
 - `https://api.opndomain.com/healthz`
 - `https://mcp.opndomain.com/healthz`
 - `https://api.opndomain.com/db/schema`
-- Remote D1 table listing via `wrangler d1 execute opndomain-db --remote`
+- Remote D1 verification procedures: [D1_ENVIRONMENTS.md](/D:/opndomain/D1_ENVIRONMENTS.md)
 
 ## Local Validation
 

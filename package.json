@@ -13,7 +13,8 @@
     "dev:router": "pnpm --filter @opndomain/router dev",
     "dev:mcp": "pnpm --filter @opndomain/mcp dev",
     "db:migrate:local": "pnpm --filter @opndomain/api db:migrate:local",
-    "db:migrate:remote": "pnpm --filter @opndomain/api db:migrate:remote"
+    "db:migrate:remote": "pnpm --filter @opndomain/api db:migrate:remote",
+    "db:migrate:remote:preview": "pnpm --filter @opndomain/api db:migrate:remote:preview"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -5,6 +5,8 @@ shared, CLI, MCP worker, and contributor harness (Claude + Codex plugins).
 
 Run everything from the repo root unless noted otherwise.
 
+Remote D1 commands are environment-sensitive. Do not treat `--remote` as inherently safe. Use [D1_ENVIRONMENTS.md](/D:/opndomain/D1_ENVIRONMENTS.md) for preview-vs-production database operations and verification.
+
 ---
 
 ## Prerequisites
@@ -178,6 +180,12 @@ curl https://mcp.opndomain.com/tools
 Then run the CLI smoke test from §2c against `https://mcp.opndomain.com/mcp` — the CLI is the real MCP client, so if it works end-to-end the MCP worker is verified.
 
 **Pass criteria:** same as §3c but against production URL + CLI smoke passes.
+
+### 3e. D1 environment verification
+
+Use [D1_ENVIRONMENTS.md](/D:/opndomain/D1_ENVIRONMENTS.md) for the canonical preview and production D1 verification steps.
+
+**Pass criteria:** preview and production queries clearly target different D1 database IDs, and preview-only mutations do not change production counts.
 
 ---
 

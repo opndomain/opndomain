@@ -4,6 +4,8 @@ import { spawn } from "node:child_process";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const mode = process.argv.includes("--remote") ? "--remote" : "--local";
+const databaseNameArgIndex = process.argv.indexOf("--database");
+const databaseName = databaseNameArgIndex === -1 ? "opndomain-db" : process.argv[databaseNameArgIndex + 1];
 const migrationFiles = [
   { tag: "001_launch_core", fileName: "001_launch_core.sql" },
   { tag: "002_phase2_integrity", fileName: "002_phase2_integrity.sql" },
@@ -15,8 +17,15 @@ const migrationFiles = [
   { tag: "008_topic_formats", fileName: "008_topic_formats.sql" },
   { tag: "009_adaptive_scoring", fileName: "009_adaptive_scoring.sql" },
   { tag: "010_platform_analytics", fileName: "010_platform_analytics.sql" },
+  { tag: "011_topic_view_reputation_history_vote_timing", fileName: "011_topic_view_reputation_history_vote_timing.sql" },
+  { tag: "012_topic_member_drop_tracking", fileName: "012_topic_member_drop_tracking.sql" },
+  { tag: "013_topic_candidates", fileName: "013_topic_candidates.sql" },
 ];
 const migrationsTable = "schema_migrations";
+
+if (databaseNameArgIndex !== -1 && !databaseName) {
+  throw new Error("Missing value for --database. Example: --database opndomain-db-preview");
+}
 
 function sqlLiteral(value) {
   return `'${String(value).replace(/'/g, "''")}'`;
@@ -78,7 +87,7 @@ async function ensureMigrationsTable() {
   await runWrangler([
     "d1",
     "execute",
-    "opndomain-db",
+    databaseName,
     mode,
     "--command",
     `CREATE TABLE IF NOT EXISTS ${migrationsTable} (tag TEXT PRIMARY KEY, file_name TEXT NOT NULL, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
@@ -89,7 +98,7 @@ async function migrationApplied(tag) {
   const payload = await runWrangler([
     "d1",
     "execute",
-    "opndomain-db",
+    databaseName,
     mode,
     "--command",
     `SELECT tag FROM ${migrationsTable} WHERE tag = ${sqlLiteral(tag)} LIMIT 1`,
@@ -102,7 +111,7 @@ async function recordMigration(tag, fileName) {
   await runWrangler([
     "d1",
     "execute",
-    "opndomain-db",
+    databaseName,
     mode,
     "--command",
     `INSERT INTO ${migrationsTable} (tag, file_name) VALUES (${sqlLiteral(tag)}, ${sqlLiteral(fileName)})`,
@@ -113,7 +122,7 @@ async function tableExists(name) {
   const payload = await runWrangler([
     "d1",
     "execute",
-    "opndomain-db",
+    databaseName,
     mode,
     "--command",
     `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${sqlLiteral(name)} LIMIT 1`,
@@ -125,7 +134,7 @@ async function triggerExists(name) {
   const payload = await runWrangler([
     "d1",
     "execute",
-    "opndomain-db",
+    databaseName,
     mode,
     "--command",
     `SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ${sqlLiteral(name)} LIMIT 1`,
@@ -137,7 +146,7 @@ async function columnExists(tableName, columnName) {
   const payload = await runWrangler([
     "d1",
     "execute",
-    "opndomain-db",
+    databaseName,
     mode,
     "--command",
     `PRAGMA table_info(${tableName})`,
@@ -199,6 +208,30 @@ async function bootstrapKnownMigrations() {
         await tableExists("platform_daily_rollups")
         && await triggerExists("trg_platform_daily_rollups_updated_at"),
     },
+    {
+      tag: "011_topic_view_reputation_history_vote_timing",
+      fileName: "011_topic_view_reputation_history_vote_timing.sql",
+      applied: async () =>
+        await columnExists("topics", "view_count")
+        && await tableExists("domain_reputation_history")
+        && await columnExists("votes", "vote_position_pct")
+        && await columnExists("votes", "round_elapsed_pct"),
+    },
+    {
+      tag: "012_topic_member_drop_tracking",
+      fileName: "012_topic_member_drop_tracking.sql",
+      applied: async () =>
+        await columnExists("topic_members", "dropped_at")
+        && await columnExists("topic_members", "drop_reason")
+        && await columnExists("beings", "drop_count"),
+    },
+    {
+      tag: "013_topic_candidates",
+      fileName: "013_topic_candidates.sql",
+      applied: async () =>
+        await tableExists("topic_candidates")
+        && await triggerExists("trg_topic_candidates_updated_at"),
+    },
   ];
 
   for (const migration of knownMigrations) {
@@ -223,7 +256,7 @@ async function run() {
     }
 
     const sqlPath = join(currentDir, "..", "src", "db", migration.fileName);
-    await runWrangler(["d1", "execute", "opndomain-db", mode, "--file", sqlPath]);
+    await runWrangler(["d1", "execute", databaseName, mode, "--file", sqlPath]);
     await recordMigration(migration.tag, migration.fileName);
   }
 }

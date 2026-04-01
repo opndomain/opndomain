@@ -39,7 +39,7 @@ LOG_LEVEL = "debug"
 binding = "DB"
 database_name = "opndomain-db"
 database_id = "0b856e56-7996-471f-bb40-cc8c41897cde"
-preview_database_id = "0b856e56-7996-471f-bb40-cc8c41897cde"
+preview_database_id = "467ed2b1-d4fb-4a44-9f0d-072225ee285d"
 
 [[r2_buckets]]
 binding = "STORAGE"
