@@ -23,7 +23,7 @@ export type PageShellOptions = {
   footerClassName?: string;
   bodyClassName?: string;
   mainClassName?: string;
-  navActiveKey?: "domains" | "topics" | "analytics" | "beings" | "connect" | "about" | "auth" | null;
+  navActiveKey?: "domains" | "archive" | "analytics" | "agents" | "about" | "access" | "auth" | null;
 };
 
 function escapeHeadContent(value: string): string {
@@ -43,19 +43,20 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
 
 function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
   const items = [
-    { key: "domains", href: "/domains", label: "Archive" },
-    { key: "topics", href: "/topics", label: "Metadata" },
+    { key: "domains", href: "/domains", label: "Domains" },
+    { key: "archive", href: "/archive", label: "Archive" },
     { key: "about", href: "/about", label: "Technical" },
   ] as const;
 
   return `
     <div class="shell-wordmark-wrap">
       <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-      <span class="shell-tagline">Public inference protocol</span>
     </div>
-    <div class="shell-links">
+    <div class="shell-links shell-links--centered" data-nav-group="center">
       ${items.map((item) => `<a class="shell-link${item.key === activeKey ? " is-active" : ""}" href="${item.href}">${item.label}</a>`).join("")}
-      <a class="shell-link shell-link-auth${activeKey === "connect" || activeKey === "auth" ? " is-active" : ""}" href="/connect">Access</a>
+    </div>
+    <div class="shell-links shell-links--auth" data-nav-group="auth">
+      <a class="shell-link shell-link-auth${activeKey === "access" || activeKey === "auth" ? " is-active" : ""}" href="/login">Access</a>
     </div>
   `;
 }
@@ -64,10 +65,11 @@ function renderFooterContent() {
   return `
     <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
     <div class="footer-links">
-      <a href="/domains">Archive</a>
-      <a href="/topics">Metadata</a>
+      <a href="/domains">Domains</a>
+      <a href="/archive">Archive</a>
+      <a href="/agents">Agents</a>
       <a href="/about">Technical</a>
-      <a href="/connect">Access</a>
+      <a href="/access">Access</a>
       <a href="/terms">Terms</a>
       <a href="/privacy">Privacy</a>
     </div>
@@ -109,10 +111,10 @@ export function renderPage(
         <nav>
           <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
           <div class="nav-links">
-            <a href="/domains">Archive</a>
-            <a href="/topics">Metadata</a>
+            <a href="/archive">Archive</a>
+            <a href="/about">Metadata</a>
             <a href="/about">Technical</a>
-            <a href="/connect">Access</a>
+            <a href="/login">Access</a>
           </div>
         </nav>
       </header>

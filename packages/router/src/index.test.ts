@@ -141,13 +141,13 @@ function assertTopNavShell(html: string) {
   assert.ok(html.includes('class="shell-body shell-body--top-nav-only'), "route should use the top-nav-only shell");
   assert.ok(html.includes('class="shell-topbar shell-topbar--top-nav-only"'), "route should render the top nav shell");
   assert.ok(html.includes('class="page-main page-main--top-nav-only'), "route should render the top-nav main layout");
+  assert.ok(html.includes('data-nav-group="center"'), "route should render the centered nav group");
+  assert.ok(html.includes('href="/login">Access</a>'), "route should render the access link to login");
+  assert.ok(!html.includes("Public Inference Protocol"), "route should not render the retired topbar tagline");
 }
 
 function assertLegacyShell(html: string) {
-  assert.ok(html.includes('<header class="shell">'), "default routes should keep the legacy shell");
-  assert.ok(html.includes('<div class="nav-links">'), "legacy shell should keep the original nav links");
-  assert.ok(!html.includes('class="shell-topbar'), "default routes should not render the redesigned topbar");
-  assert.ok(!html.includes('class="shell-body shell-body--'), "default routes should not use redesigned shell body classes");
+  assertTopNavShell(html);
 }
 
 function queueAccountApi(api: FakeApiService) {
@@ -659,24 +659,24 @@ describe("GET /topics", () => {
     });
   }
 
-  it("renders the topic directory from API-backed topics and domain filters", async () => {
+  it("renders the archive directory from API-backed topics and domain filters", async () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api);
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics"),
+      new Request("https://opndomain.com/archive"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Metadata index"));
+    assert.ok(html.includes("Archive index"));
     assert.ok(html.includes("Keyword Search"));
     assert.ok(html.includes("Should frontier model audits be mandatory?"));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/archive">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/archive?status=open">Open</a>'));
     assert.ok(html.includes('value="ai-safety"'));
     assert.ok(html.includes('value="debate_v2"'));
   });
@@ -687,7 +687,7 @@ describe("GET /topics", () => {
     queueTopicsApi(api, { topics: [] });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics?status=open"),
+      new Request("https://opndomain.com/archive?status=open"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -696,7 +696,7 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes("No topics matched those filters."));
     assert.ok(html.includes("<strong>Status</strong><span>open</span>"));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/archive?status=open">Open</a>'));
   });
 
   it("preserves domain and template filters in segmented status links", async () => {
@@ -707,18 +707,18 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics?status=open&domain=ai-safety&template=debate_v2"),
+      new Request("https://opndomain.com/archive?status=open&domain=ai-safety&template=debate_v2"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?domain=ai-safety&amp;template=debate_v2">All</a>'));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/archive?domain=ai-safety&amp;template=debate_v2">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/archive?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/archive?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
     assert.ok(html.includes('input type="hidden" name="status" value="open"'));
-    assert.ok(html.includes('href="/topics">Clear all</a>'));
+    assert.ok(html.includes('href="/archive">Clear all</a>'));
   });
 
   it("passes the metadata query to the API and preserves it across filters", async () => {
@@ -729,7 +729,7 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics?q=frontier"),
+      new Request("https://opndomain.com/archive?q=frontier"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -738,7 +738,7 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes('<input id="topics-query" name="q" type="search" value="frontier"'));
     assert.ok(html.includes("<strong>Query</strong><span>frontier</span>"));
-    assert.ok(html.includes('href="/topics?q=frontier'));
+    assert.ok(html.includes('href="/archive?q=frontier'));
     assert.ok(html.includes('input type="hidden" name="q" value="frontier"'));
   });
 
@@ -764,7 +764,7 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics?template=debate_v2"),
+      new Request("https://opndomain.com/archive?template=debate_v2"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -925,8 +925,8 @@ describe("GET /analytics", () => {
     assert.ok(html.includes("Scoring Distribution"));
     assert.ok(html.includes("Vote Reliability"));
     assert.ok(html.includes("Should frontier labs publish red-team results?"));
-    assert.ok(html.includes('href="/topics"'));
-    assert.ok(html.includes("Metadata"));
+    assert.ok(html.includes('href="/archive"'));
+    assert.ok(html.includes("Archive"));
     assert.ok(html.includes("Reliability vs Votes"));
   });
 
@@ -969,7 +969,7 @@ describe("GET /analytics", () => {
     const html = await response.text();
     assert.ok(html.includes("No activity recorded for this period."));
     assert.ok(html.includes("Select a topic above to view scoring distribution."));
-    assert.ok(html.includes("No beings meet the minimum vote threshold. Try a lower minimum."));
+    assert.ok(html.includes("No agents meet the minimum vote threshold. Try a lower minimum."));
   });
 
   it("returns 502 when required analytics data cannot be loaded", async () => {
@@ -1027,10 +1027,10 @@ describe("GET / landing verdict highlighting", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.ok(html.includes("Public research protocol for AI agents"), "landing page should use the new hero headline");
-    assert.ok(html.includes("Quick Connect"), "landing page should expose the primary connect action");
+    assert.ok(html.includes("Open Access"), "landing page should expose the primary access action");
     assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
     assert.ok(html.includes("Archive"), "landing page should render the archive nav label");
-    assert.ok(html.includes("Metadata"), "landing page should render the metadata nav label");
+    assert.ok(html.includes("Domains"), "landing page should render the domains nav label");
     assert.ok(html.includes("Technical"), "landing page should render the technical nav label");
     assert.ok(html.includes("Access"), "landing page should render the access nav label");
     assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
@@ -1044,7 +1044,7 @@ describe("GET / landing verdict highlighting", () => {
 });
 
 describe("SSR shell coverage for redesigned routes", () => {
-  it("renders the domains index inside the sidebar shell", async () => {
+  it("renders the domains index as a centered domain archive", async () => {
     const db = new FakeDb();
     db.queueResult("FROM domains d", [
       { slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", topic_count: 4 },
@@ -1058,9 +1058,13 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assertSidebarShell(html, "/domains");
-    assert.ok(html.includes("Domain Archive"));
+    assertTopNavShell(html);
+    assert.ok(!html.includes('class="page-sidebar"'));
+    assert.ok(html.includes("Domain archive"));
     assert.ok(html.includes("AI Safety"));
+    assert.ok(html.includes("Domains organize the protocol into durable fields of inquiry."));
+    assert.ok(!html.includes("Results"));
+    assert.ok(!html.includes("Scope"));
   });
 
   it("renders the domain detail page inside the sidebar shell", async () => {
@@ -1088,22 +1092,30 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(html.includes("Agent Alpha"));
   });
 
-  it("renders beings index and detail pages inside the sidebar shell", async () => {
+  it("redirects legacy beings routes and renders agents index/detail inside the sidebar shell", async () => {
     const indexDb = new FakeDb();
-    indexDb.queueResult("LEFT JOIN contributions c ON c.being_id = b.id", [
-      { handle: "agent-alpha", display_name: "Agent Alpha", bio: "Specialist in model evaluations.", contribution_count: 9 },
+    indexDb.queueResult("LEFT JOIN domain_reputation dr ON dr.being_id = b.id", [
+      { handle: "agent-alpha", display_name: "Agent Alpha", bio: "Specialist in model evaluations.", trust_tier: "verified", contribution_count: 9, aggregate_score: 91.5, aggregate_samples: 14 },
     ]);
 
-    const indexResponse = await app.fetch(
+    const legacyIndexResponse = await app.fetch(
       new Request("https://opndomain.com/beings"),
+      buildEnv(indexDb),
+      ctx(),
+    );
+    assert.equal(legacyIndexResponse.status, 302);
+    assert.equal(legacyIndexResponse.headers.get("location"), "/agents");
+
+    const indexResponse = await app.fetch(
+      new Request("https://opndomain.com/agents"),
       buildEnv(indexDb),
       ctx(),
     );
 
     assert.equal(indexResponse.status, 200);
     const indexHtml = await indexResponse.text();
-    assertSidebarShell(indexHtml, "/beings");
-    assert.ok(indexHtml.includes("Participant Index"));
+    assertSidebarShell(indexHtml, "/agents");
+    assert.ok(indexHtml.includes("Agent Scoreboard"));
 
     const detailDb = new FakeDb();
     detailDb.queueResult("WHERE handle = ?", [
@@ -1116,19 +1128,27 @@ describe("SSR shell coverage for redesigned routes", () => {
       { topic_id: "topic_1", title: "Should audits be mandatory?", round_kind: "synthesize", submitted_at: "2026-03-30T00:00:00.000Z" },
     ]);
 
-    const detailResponse = await app.fetch(
+    const legacyDetailResponse = await app.fetch(
       new Request("https://opndomain.com/beings/agent-alpha"),
+      buildEnv(detailDb),
+      ctx(),
+    );
+    assert.equal(legacyDetailResponse.status, 302);
+    assert.equal(legacyDetailResponse.headers.get("location"), "/agents/agent-alpha");
+
+    const detailResponse = await app.fetch(
+      new Request("https://opndomain.com/agents/agent-alpha"),
       buildEnv(detailDb),
       ctx(),
     );
 
     assert.equal(detailResponse.status, 200);
     const detailHtml = await detailResponse.text();
-    assertSidebarShell(detailHtml, "/beings");
+    assertSidebarShell(detailHtml, "/agents");
     assert.ok(detailHtml.includes("Recent Topic Contributions"));
   });
 
-  it("renders about and connect pages inside the sidebar shell and redirects /mcp", async () => {
+  it("renders about, access, and legacy access redirects correctly", async () => {
     const aboutResponse = await app.fetch(
       new Request("https://opndomain.com/about"),
       buildEnv(new FakeDb()),
@@ -1136,18 +1156,26 @@ describe("SSR shell coverage for redesigned routes", () => {
     );
     assert.equal(aboutResponse.status, 200);
     const aboutHtml = await aboutResponse.text();
-    assertSidebarShell(aboutHtml, "/about");
-    assert.ok(aboutHtml.includes("Methodology"));
+    assertTopNavShell(aboutHtml);
+    assert.ok(aboutHtml.includes("Public reasoning for agents."));
+
+    const accessResponse = await app.fetch(
+      new Request("https://opndomain.com/access"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(accessResponse.status, 200);
+    const accessHtml = await accessResponse.text();
+    assertTopNavShell(accessHtml);
+    assert.ok(accessHtml.includes("Sign in, register, and verify"));
 
     const connectResponse = await app.fetch(
       new Request("https://opndomain.com/connect"),
       buildEnv(new FakeDb()),
       ctx(),
     );
-    assert.equal(connectResponse.status, 200);
-    const connectHtml = await connectResponse.text();
-    assertSidebarShell(connectHtml, "/connect");
-    assert.ok(connectHtml.includes("Connection Surface"));
+    assert.equal(connectResponse.status, 302);
+    assert.equal(connectResponse.headers.get("location"), "/login");
 
     const mcpResponse = await app.fetch(
       new Request("https://opndomain.com/mcp"),
@@ -1155,27 +1183,27 @@ describe("SSR shell coverage for redesigned routes", () => {
       ctx(),
     );
     assert.equal(mcpResponse.status, 302);
-    assert.equal(mcpResponse.headers.get("location"), "/connect");
+    assert.equal(mcpResponse.headers.get("location"), "/access");
   });
 
-  it("renders auth and legal pages inside the top-nav-only shell", async () => {
-    const loginResponse = await app.fetch(
+  it("renders canonical access and legal pages inside the top-nav-only shell", async () => {
+    const accessResponse = await app.fetch(
+      new Request("https://opndomain.com/access"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+    assert.equal(accessResponse.status, 200);
+    const accessHtml = await accessResponse.text();
+    assertTopNavShell(accessHtml);
+    assert.ok(accessHtml.includes('action="/login/credentials"'));
+
+    const loginRedirect = await app.fetch(
       new Request("https://opndomain.com/login"),
       buildEnv(new FakeDb()),
       ctx(),
     );
-    assert.equal(loginResponse.status, 200);
-    const loginHtml = await loginResponse.text();
-    assertTopNavShell(loginHtml);
-    assert.ok(loginHtml.includes('action="/login/credentials"'));
-
-    const registerResponse = await app.fetch(
-      new Request("https://opndomain.com/register"),
-      buildEnv(new FakeDb()),
-      ctx(),
-    );
-    assert.equal(registerResponse.status, 200);
-    assertTopNavShell(await registerResponse.text());
+    assert.equal(loginRedirect.status, 302);
+    assert.equal(loginRedirect.headers.get("location"), "/access");
 
     const privacyResponse = await app.fetch(
       new Request("https://opndomain.com/privacy"),
@@ -1247,7 +1275,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(accountResponse.status, 200);
     const accountHtml = await accountResponse.text();
     assertSidebarShell(accountHtml);
-    assert.ok(accountHtml.includes("Agent credentials, beings, linked identities, and session controls."));
+    assert.ok(accountHtml.includes("Agent credentials, agents, linked identities, and session controls."));
     assert.ok(accountHtml.includes("Agent Alpha"));
 
     const welcomeResponse = await app.fetch(
@@ -1264,7 +1292,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(welcomeHtml.includes("client_123"));
   });
 
-  it("redirects unauthenticated account requests to login", async () => {
+  it("redirects unauthenticated account requests to access", async () => {
     const response = await app.fetch(
       new Request("https://opndomain.com/account"),
       buildEnv(new FakeDb()),
@@ -1272,10 +1300,10 @@ describe("SSR shell coverage for redesigned routes", () => {
     );
 
     assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/login?next=%2Faccount");
+    assert.equal(response.headers.get("location"), "/access?next=%2Faccount");
   });
 
-  it("keeps default shell routes on the legacy layout", async () => {
+  it("renders not-found routes inside the shared top-nav shell", async () => {
     const response = await app.fetch(
       new Request("https://opndomain.com/nope"),
       buildEnv(new FakeDb()),
@@ -1284,7 +1312,7 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 404);
     const html = await response.text();
-    assertLegacyShell(html);
+    assertTopNavShell(html);
     assert.ok(html.includes("Page not found."));
   });
 });

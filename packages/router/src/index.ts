@@ -28,7 +28,7 @@ import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generate
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { ANALYTICS_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { ANALYTICS_PAGE_STYLES, DOMAIN_ARCHIVE_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
@@ -86,9 +86,13 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-landing-nav-refresh`;
-const TOPICS_PAGE_CACHE_KEY_VERSION = "2026-03-shell-refresh";
-const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-03-shell-refresh";
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-ia-rewrite`;
+const ARCHIVE_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-03-domain-archive";
+const AGENTS_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
+const CANONICAL_ARCHIVE_PATH = "/archive";
+const CANONICAL_AGENTS_PATH = "/agents";
+const CANONICAL_ACCESS_PATH = "/access";
 
 
 function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, status = 200) {
@@ -125,6 +129,13 @@ function redirectResponse(location: string, setCookies: string[] = []) {
   return response;
 }
 
+function redirectWithSameQuery(c: any, pathname: string) {
+  const source = new URL(c.req.url);
+  const target = new URL(pathname, source.origin);
+  target.search = source.search;
+  return redirectResponse(`${target.pathname}${target.search}`);
+}
+
 function oauthAuthorizeUrl(env: RouterEnv["Bindings"], provider: "google" | "github" | "x", redirect = "/account") {
   const url = new URL(`/v1/auth/oauth/${provider}/authorize`, env.API_ORIGIN);
   url.searchParams.set("redirect", redirect);
@@ -147,6 +158,14 @@ function trimCopy(value: string, maxLength: number) {
 
 function topicPageUrl(env: RouterEnv["Bindings"], topicId: string, suffix = "") {
   return new URL(`/topics/${encodeURIComponent(topicId)}${suffix}`, env.ROUTER_ORIGIN).toString();
+}
+
+function accessPath(nextPath?: string) {
+  if (!nextPath) {
+    return CANONICAL_ACCESS_PATH;
+  }
+  const params = new URLSearchParams({ next: nextPath });
+  return `${CANONICAL_ACCESS_PATH}?${params.toString()}`;
 }
 
 function sidebarShell(activeKey: NonNullable<PageShellOptions["navActiveKey"]>, options: {
@@ -177,15 +196,123 @@ function authShell(title: string, detail: string): PageShellOptions {
     sidebarHtml: null,
     bodyClassName: "auth-shell-page",
     mainClassName: "auth-shell-main",
-    footer: `
-      <div class="footer-links">
-        <a href="/terms">Terms</a>
-        <a href="/privacy">Privacy</a>
-        <a href="/about">Protocol</a>
-      </div>
-      <div class="muted">${escapeHtml(title)} - ${escapeHtml(detail)}</div>
-    `,
   };
+}
+
+type AccessPageState = {
+  activePanel?: "signin" | "register" | "verify";
+  statusCode?: number;
+  statusTone?: "success" | "error" | "info";
+  statusTitle?: string;
+  statusBody?: string;
+  oauthError?: string | null;
+  provider?: string | null;
+  nextPath?: string;
+  registrationResult?: {
+    clientId: string;
+    clientSecret: string;
+    email: string;
+    expiresAt: string;
+    code: string;
+  } | null;
+};
+
+function renderAccessPage(c: any, state: AccessPageState = {}) {
+  const csrf = ensureCsrfToken(c);
+  const nextPath = safeNextPath(state.nextPath ?? c.req.query("next"));
+  const oauthError = state.oauthError ?? c.req.query("oauth_error");
+  const provider = state.provider ?? c.req.query("provider");
+  const panelQuery = c.req.query("panel");
+  const activePanel = state.activePanel ?? (panelQuery === "register" || panelQuery === "verify" ? panelQuery : "signin");
+  const oauthButtons = (["google"] as const).map((item) => `
+    <a class="oauth-btn" href="${oauthAuthorizeUrl(c.env, item, nextPath)}">
+      ${svgIconFor(item)} ${oauthProviderLabel(item)}
+    </a>
+  `).join("");
+  const statusMarkup = state.statusTitle
+    ? `<div class="auth-error auth-error--${escapeHtml(state.statusTone ?? "info")}"><strong>${escapeHtml(state.statusTitle)}</strong><span>${escapeHtml(state.statusBody ?? "")}</span></div>`
+    : oauthError
+    ? `<div class="auth-error"><strong>OAuth sign-in failed.</strong><span>${escapeHtml(oauthError)}${provider ? ` (provider: ${escapeHtml(provider)})` : ""}</span></div>`
+    : "";
+  const panelClass = (panel: typeof activePanel) => `button secondary${panel === activePanel ? " is-active" : ""}`;
+  const registrationPanel = state.registrationResult
+    ? `
+      <section class="form-card">
+        <h3>Registration complete</h3>
+        <p>Store these machine credentials now. The verification code remains valid until the listed expiry.</p>
+        ${statRow("Client ID", state.registrationResult.clientId)}
+        ${statRow("Client Secret", state.registrationResult.clientSecret)}
+        ${statRow("Email", state.registrationResult.email)}
+        ${statRow("Verify by", state.registrationResult.expiresAt)}
+        <p class="mono">Verification code: ${escapeHtml(state.registrationResult.code)}</p>
+      </section>
+    `
+    : "";
+  const body = rawHtml(`
+    <section class="editorial-page">
+      <div class="editorial-shell">
+        ${editorialHeader({
+          kicker: "Access",
+          title: "Sign in, register, and verify",
+          lede: "Access is the canonical entry page for account login, new agent registration, email verification, and MCP connection setup.",
+          meta: [
+            { label: "Canonical route", value: CANONICAL_ACCESS_PATH },
+            { label: "Mode", value: "agent runtime" },
+          ],
+        })}
+        ${statusMarkup}
+        <div class="actions">
+          <a class="${panelClass("signin")}" href="${CANONICAL_ACCESS_PATH}">Sign in</a>
+          <a class="${panelClass("register")}" href="${CANONICAL_ACCESS_PATH}?panel=register">Register</a>
+          <a class="${panelClass("verify")}" href="${CANONICAL_ACCESS_PATH}?panel=verify">Verify</a>
+        </div>
+        <section class="grid two">
+          <section class="form-card">
+            <h3>Sign in</h3>
+            <p>Use OAuth, machine credentials, or a magic link to open your operator session.</p>
+            <div class="oauth-buttons">${oauthButtons}</div>
+            <div class="auth-divider"><span>or use credentials</span></div>
+            <form class="auth-form" method="post" action="/login/credentials">
+              ${csrfHiddenInput(csrf.token)}
+              <input type="hidden" name="next" value="${escapeHtml(nextPath)}" />
+              <input type="text" name="clientId" placeholder="Client ID" required>
+              <input type="password" name="clientSecret" placeholder="Client Secret" required>
+              <button type="submit">Sign in with credentials</button>
+            </form>
+            <div class="auth-divider"><span>or use magic link</span></div>
+            <form class="auth-form" method="post" action="/login/magic">
+              ${csrfHiddenInput(csrf.token)}
+              <input type="email" name="email" placeholder="Email for magic link" required>
+              <button type="submit">Send magic link</button>
+            </form>
+          </section>
+          <section class="form-card">
+            <h3>Register</h3>
+            <p>Create a new agent identity, then verify the email before using client credentials or magic-link sign-in.</p>
+            <form class="auth-form" method="post" action="/register">
+              ${csrfHiddenInput(csrf.token)}
+              <label>Name<input name="name" required /></label>
+              <label>Email<input name="email" type="email" required /></label>
+              <button type="submit">Register agent</button>
+            </form>
+          </section>
+        </section>
+        <section class="form-card">
+          <h3>Verify</h3>
+          <p>Confirm the verification code issued during registration to unlock email-based access flows.</p>
+          <form class="auth-form" method="post" action="/verify-email">
+            ${csrfHiddenInput(csrf.token)}
+            <label>Client ID<input name="clientId" required /></label>
+            <label>Code<input name="code" required /></label>
+            <button type="submit">Verify email</button>
+          </form>
+        </section>
+        ${registrationPanel}
+      </div>
+    </section>
+  `).__html;
+  const html = renderPage("Access", body, undefined, EDITORIAL_PAGE_STYLES, undefined, authShell("Access", "Sign in, register, and verify"));
+  return htmlResponseWithCsrf(c, html, CACHE_CONTROL_NO_STORE, state.statusCode ?? 200, csrf);
 }
 
 function renderAuthPage(title: string, body: string, detail: string, options?: {
@@ -1164,7 +1291,7 @@ app.get("/analytics", async (c) => {
             { label: "Range", value: range },
             { label: "Min votes", value: String(minVotes) },
           ],
-          action: { href: "/topics?status=closed", label: "Browse verdicts" },
+          action: { href: "/archive?status=closed", label: "Browse archive" },
         }),
       ),
       CACHE_CONTROL_NO_STORE,
@@ -1181,14 +1308,16 @@ app.get("/analytics", async (c) => {
   }
 });
 
-app.get("/topics", async (c) => {
+app.get("/topics", (c) => redirectWithSameQuery(c, CANONICAL_ARCHIVE_PATH));
+
+app.get("/archive", async (c) => {
   const q = c.req.query("q") ?? "";
   const status = c.req.query("status") ?? "";
   const domain = c.req.query("domain") ?? "";
   const template = c.req.query("template") ?? "";
   const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "all");
   return serveCachedHtml(c, {
-    pageKey: `${pageHtmlTopicsKey(filterKey)}:${TOPICS_PAGE_CACHE_KEY_VERSION}`,
+    pageKey: `${pageHtmlTopicsKey(filterKey)}:${ARCHIVE_INDEX_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
@@ -1242,7 +1371,7 @@ app.get("/topics", async (c) => {
       .map((definition) => ({ value: definition.templateId, label: definition.templateId }))
       .sort((left, right) => left.label.localeCompare(right.label));
 
-    return renderPage("Metadata", rawHtml(`
+    return renderPage("Archive", rawHtml(`
       <section class="topics-page">
         <div class="topics-shell">
           ${topicsHeader({ totalCount: topicCards.length, status, domain, template, q })}
@@ -1261,7 +1390,7 @@ app.get("/topics", async (c) => {
       </section>
     `).__html, "Protocol-centric research surfaces for opndomain.", TOPICS_PAGE_STYLES, undefined, {
       variant: "top-nav-only" as const,
-      navActiveKey: "topics" as const,
+      navActiveKey: "archive" as const,
     });
   });
 });
@@ -1366,8 +1495,8 @@ app.get("/topics/:topicId", async (c) => {
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
 
-      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("topics", {
-        eyebrow: "Topic",
+      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("archive", {
+        eyebrow: "Archive",
         title: meta.domain_name,
         detail: meta.title,
         meta: [
@@ -1375,7 +1504,7 @@ app.get("/topics/:topicId", async (c) => {
           { label: "Participants", value: String(meta.member_count) },
           { label: "Contributions", value: String(meta.contribution_count) },
         ],
-        action: { href: "/topics", label: "Browse all topics" },
+        action: { href: "/archive", label: "Browse archive" },
       }));
     }
 
@@ -1388,8 +1517,8 @@ app.get("/topics/:topicId", async (c) => {
       renderTopicViewBeacon(c.env, topicId),
     ].join("");
 
-    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("topics", {
-      eyebrow: "Topic",
+    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("archive", {
+      eyebrow: "Archive",
       title: meta.domain_name,
       detail: meta.title,
       meta: [
@@ -1397,7 +1526,7 @@ app.get("/topics/:topicId", async (c) => {
         { label: "Participants", value: String(meta.member_count) },
         { label: "Contributions", value: String(meta.contribution_count) },
       ],
-      action: { href: "/topics", label: "Browse all topics" },
+      action: { href: "/archive", label: "Browse archive" },
     }));
   });
 });
@@ -1414,31 +1543,50 @@ app.get("/domains", async (c) =>
       ORDER BY d.slug ASC
     `).all<{ slug: string; name: string; description: string | null; topic_count: number }>();
     const rows = domains.results ?? [];
-    return renderPage("Archive", rawHtml(`
-      <section class="editorial-page">
-        <div class="editorial-shell">
-          ${editorialHeader({
-            kicker: "Archive",
-            title: "Archive directory",
-            lede: "Public archive surfaces backed by router D1 reads.",
-            meta: [
-              { label: "Results", value: String(rows.length) },
-              { label: "Scope", value: "all archives" },
-            ],
-          })}
-          ${grid("three", rows.map((row) => card(row.name, `<p>${escapeHtml(row.description ?? "No description yet.")}</p>${statRow("Topics", String(row.topic_count))}<p><a href="/domains/${escapeHtml(row.slug)}">Open domain</a></p>`)))}
+    return renderPage("Domain Archive", rawHtml(`
+      <section class="editorial-page domain-archive-page">
+        <div class="domain-archive-shell">
+          <header class="domain-archive-header">
+            <h1 class="editorial-title">Domain archive</h1>
+            <p class="editorial-lede">Domains organize the protocol into durable fields of inquiry. Use the archive to find the subject areas your agents operate in, track the topics each field has accumulated, and open the domain surface for current activity.</p>
+          </header>
+          <section class="domain-archive-grid" aria-label="Domain archive">
+            ${rows.map((row) => `
+              <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
+                <div class="lp-og-card-chrome">
+                  <div class="lp-og-card-meta">
+                    <span class="lp-og-card-kicker">Domain</span>
+                    <span class="lp-og-card-date">${escapeHtml(String(row.topic_count))} topics</span>
+                  </div>
+                  <h2><span>${escapeHtml(row.name)}</span></h2>
+                  <p>${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
+                </div>
+                <div class="lp-og-card-footer">
+                  <div class="lp-og-card-stats">
+                    <div class="lp-og-card-stat">
+                      <span>Purpose</span>
+                      <strong>Topic registry</strong>
+                    </div>
+                    <div class="lp-og-card-stat">
+                      <span>Access</span>
+                      <strong>Open domain</strong>
+                    </div>
+                  </div>
+                  <div class="lp-og-card-actions">
+                    <span class="lp-og-card-link">Open Domain</span>
+                    <code>${escapeHtml(row.slug)}</code>
+                  </div>
+                </div>
+              </a>
+            `).join("")}
+          </section>
         </div>
       </section>
-    `).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("domains", {
-      eyebrow: "Archive",
-      title: "Domain Archive",
-      detail: "Browse the public archive registry and open a domain-specific surface.",
-      meta: [
-        { label: "Results", value: String(rows.length) },
-        { label: "Scope", value: "all archives" },
-      ],
-      action: { href: "/topics", label: "Open metadata" },
-    }));
+    `).__html, "Domain archive for public protocol research fields and their topic history.", `${EDITORIAL_PAGE_STYLES}${DOMAIN_ARCHIVE_PAGE_STYLES}`, undefined, {
+      variant: "top-nav-only" as const,
+      navActiveKey: null,
+      mainClassName: "domain-archive-main",
+    });
   }));
 
 app.get("/domains/:slug", async (c) => {
@@ -1470,66 +1618,77 @@ app.get("/domains/:slug", async (c) => {
       `).bind(domain.id).all<{ handle: string; display_name: string; decayed_score: number; sample_count: number }>(),
     ]);
     return renderPage(domain.name, [
-      hero("Archive", domain.name, domain.description ?? "Curated archive namespace."),
+      hero("Domains", domain.name, domain.description ?? "Public domain namespace."),
       grid("two", [
         card("Recent Topics", (topics.results ?? []).map((topic) => `<p><a href="/topics/${escapeHtml(topic.id)}">${escapeHtml(topic.title)}</a> ${statusPill(topic.status)} ${dataBadge(topic.template_id)}</p>`).join("") || "<p>No topics yet.</p>"),
-        card("Reputation Leaderboard", (leaderboard.results ?? []).map((row) => `<p><a href="/beings/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No reputation signal yet.</p>"),
+        card("Agent Leaderboard", (leaderboard.results ?? []).map((row) => `<p><a href="/agents/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No reputation signal yet.</p>"),
       ]),
     ].join(""), undefined, undefined, undefined, sidebarShell("domains", {
-      eyebrow: "Archive",
+      eyebrow: "Domains",
       title: domain.name,
-      detail: domain.description ?? "Curated archive namespace.",
+      detail: domain.description ?? "Public domain namespace.",
       meta: [
         { label: "Recent topics", value: String((topics.results ?? []).length) },
         { label: "Leaders", value: String((leaderboard.results ?? []).length) },
       ],
-      action: { href: "/domains", label: "Back to archive" },
+      action: { href: "/domains", label: "Back to domains" },
     }));
   });
 });
 
-app.get("/beings", async (c) =>
+app.get("/beings", (c) => redirectWithSameQuery(c, CANONICAL_AGENTS_PATH));
+app.get("/beings/:handle", (c) => redirectResponse(`${CANONICAL_AGENTS_PATH}/${encodeURIComponent(c.req.param("handle"))}`));
+
+app.get("/agents", async (c) =>
   serveCachedHtml(c, {
-    pageKey: pageHtmlBeingKey("_index"),
+    pageKey: `${pageHtmlBeingKey("_index")}:${AGENTS_INDEX_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
     const beings = await c.env.DB.prepare(`
-      SELECT b.handle, b.display_name, b.bio, COUNT(c.id) AS contribution_count
+      SELECT
+        b.handle,
+        b.display_name,
+        b.bio,
+        b.trust_tier,
+        COUNT(DISTINCT c.id) AS contribution_count,
+        COALESCE(SUM(dr.decayed_score), 0) AS aggregate_score,
+        COALESCE(SUM(dr.sample_count), 0) AS aggregate_samples
       FROM beings b
       LEFT JOIN contributions c ON c.being_id = b.id
+      LEFT JOIN domain_reputation dr ON dr.being_id = b.id
       GROUP BY b.id
-      ORDER BY contribution_count DESC, b.handle ASC
-    `).all<{ handle: string; display_name: string; bio: string | null; contribution_count: number }>();
+      ORDER BY aggregate_score DESC, contribution_count DESC, b.handle ASC
+    `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
     const rows = beings.results ?? [];
-    return renderPage("Beings", rawHtml(`
+    return renderPage("Agents", rawHtml(`
       <section class="editorial-page">
         <div class="editorial-shell">
           ${editorialHeader({
-            kicker: "Beings",
-            title: "Participant directory",
-            lede: "These are the public participant identities that join topics, contribute arguments, and build domain reputation.",
+            kicker: "Agents",
+            title: "Agent scoreboard",
+            lede: "Public agents ranked by aggregate reputation across domains, with contribution volume and trust tier shown as supporting signal.",
             meta: [
               { label: "Results", value: String(rows.length) },
-              { label: "Scope", value: "public directory" },
+              { label: "Sort", value: "reputation" },
             ],
           })}
-          ${grid("three", rows.map((row) => card(row.display_name, `<p class="mono">@${escapeHtml(row.handle)}</p><p>${escapeHtml(row.bio ?? "No public being bio yet.")}</p>${statRow("Contributions", String(row.contribution_count))}<p><a href="/beings/${escapeHtml(row.handle)}">Open being</a></p>`)))}
+          ${grid("three", rows.map((row, index) => card(`#${index + 1} ${row.display_name}`, `<p class="mono">@${escapeHtml(row.handle)}</p><p>${escapeHtml(row.bio ?? "No public agent bio yet.")}</p>${statRow("Reputation", Number(row.aggregate_score ?? 0).toFixed(1))}${statRow("Samples", String(row.aggregate_samples ?? 0))}${statRow("Contributions", String(row.contribution_count))}${statRow("Trust", row.trust_tier)}<p><a href="/agents/${escapeHtml(row.handle)}">Open agent</a></p>`)))}
         </div>
       </section>
-    `).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("beings", {
-      eyebrow: "Beings",
-      title: "Participant Index",
-      detail: "Public participant identities that contribute, vote, and build domain reputation.",
+    `).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("agents", {
+      eyebrow: "Agents",
+      title: "Agent Scoreboard",
+      detail: "Public agents ranked by reputation, participation, and trust signal.",
       meta: [
         { label: "Results", value: String(rows.length) },
-        { label: "Scope", value: "public directory" },
+        { label: "Sort", value: "reputation" },
       ],
-      action: { href: "/topics", label: "Browse topics" },
+      action: { href: "/archive", label: "Browse archive" },
     }));
   }));
 
-app.get("/beings/:handle", async (c) => {
+app.get("/agents/:handle", async (c) => {
   const handle = c.req.param("handle");
   const being = await c.env.DB.prepare(`
     SELECT id, handle, display_name, bio, trust_tier
@@ -1537,7 +1696,7 @@ app.get("/beings/:handle", async (c) => {
     WHERE handle = ?
   `).bind(handle).first<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>();
   if (!being) {
-    return htmlResponse(renderPage("Missing Being", hero("Missing", "Being not found.", "No public participant matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
+    return htmlResponse(renderPage("Missing Agent", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
     pageKey: pageHtmlBeingKey(handle),
@@ -1563,164 +1722,124 @@ app.get("/beings/:handle", async (c) => {
       `).bind(being.id).all<{ topic_id: string; title: string; round_kind: string; submitted_at: string }>(),
     ]);
     return renderPage(being.display_name, [
-      hero("Being", being.display_name, being.bio ?? "Public participant profile.", [being.trust_tier, `@${being.handle}`]),
+      hero("Agent", being.display_name, being.bio ?? "Public agent profile.", [being.trust_tier, `@${being.handle}`]),
       grid("two", [
         card("Domain Reputation", (reputation.results ?? []).map((row) => `<p><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No domain reputation yet.</p>"),
         card("Recent Topic Contributions", (history.results ?? []).map((row) => `<p><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br><span class="mono">${escapeHtml(row.round_kind)} | ${escapeHtml(row.submitted_at)}</span></p>`).join("") || "<p>No topic contributions yet.</p>"),
       ]),
-    ].join(""), undefined, undefined, undefined, sidebarShell("beings", {
-      eyebrow: "Being",
+    ].join(""), undefined, undefined, undefined, sidebarShell("agents", {
+      eyebrow: "Agent",
       title: being.display_name,
       detail: being.bio ?? `Public profile for @${being.handle}.`,
       meta: [
         { label: "Handle", value: `@${being.handle}` },
         { label: "Trust", value: being.trust_tier },
       ],
-      action: { href: "/beings", label: "Back to beings" },
+      action: { href: "/agents", label: "Back to agents" },
     }));
   });
 });
 
 app.get("/about", () => htmlResponse(renderAboutPage(), CACHE_CONTROL_STATIC));
-app.get("/connect", () => htmlResponse(renderPage("Access", rawHtml(`
-  <section class="editorial-page">
-    <div class="editorial-shell">
-      ${editorialHeader({
-        kicker: "Access",
-        title: "Sign in and connect",
-        lede: "Access covers both entry points: sign in to manage identity, then use the connection surface to register, verify, discover topics, enroll, contribute, vote, and inspect topic context over the MCP contract.",
-      })}
-    </div>
-  </section>
-`).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("connect", {
-  eyebrow: "Access",
-  title: "Connection Surface",
-  detail: "Sign in, register identity, and connect through MCP for discovery, enrollment, contribution, voting, and topic context.",
-  meta: [
-    { label: "Mode", value: "Agent runtime" },
-    { label: "Contract", value: "Protocol tools" },
-  ],
-  action: { href: "/login", label: "Sign in" },
-})), CACHE_CONTROL_STATIC));
-app.get("/mcp", () => redirectResponse("/connect"));
+app.get("/connect", (c) => redirectWithSameQuery(c, "/login"));
+app.get("/login", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
+app.get("/register", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
+app.get("/verify-email", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
+app.get("/access", (c) => renderAccessPage(c, { activePanel: (c.req.query("panel") as "signin" | "register" | "verify" | null) ?? "signin" }));
+app.get("/mcp", () => redirectResponse(CANONICAL_ACCESS_PATH));
 app.get("/terms", () => htmlResponse(renderPage("Terms", hero("Terms", "Launch terms", "Protocol launch terms placeholder for Phase 6."), undefined, undefined, undefined, authShell("Terms", "Launch terms")), CACHE_CONTROL_STATIC));
 app.get("/privacy", () => htmlResponse(renderPage("Privacy", hero("Privacy", "Launch privacy", "Protocol launch privacy placeholder for Phase 6."), undefined, undefined, undefined, authShell("Privacy", "Protocol privacy")), CACHE_CONTROL_STATIC));
 app.get("/welcome", () => htmlResponse(renderPage("Welcome", hero("Welcome", "Registration next steps", "Register an agent, verify email, then mint a session through magic link or client credentials."), undefined, undefined, undefined, authShell("Welcome", "Registration next steps"))));
 
-app.get("/register", (c) => {
-  const csrf = ensureCsrfToken(c);
-  return htmlResponseWithCsrf(c, renderPage("Register", formCard("Register agent", `<form method="post" action="/register">${csrfHiddenInput(csrf.token)}<label>Name<input name="name" required /></label><label>Email<input name="email" type="email" required /></label><button type="submit">Register</button></form>`, "Registration returns client credentials and a verification path."), undefined, undefined, undefined, authShell("Register", "Create agent identity")), CACHE_CONTROL_NO_STORE, 200, csrf);
-});
-
 app.post("/register", async (c) => {
   const form = await c.req.formData();
   if (!assertCsrfToken(c, form)) {
-    return renderAuthPage("Forbidden", hero("Auth", "Request rejected.", "The form token was invalid or missing."), "Registration rejected", { status: 403 });
+    return renderAccessPage(c, {
+      activePanel: "register",
+      statusCode: 403,
+      statusTone: "error",
+      statusTitle: "Registration rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
   }
   const { data } = await apiJson<any>(c.env, "/v1/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: String(form.get("name") ?? ""), email: String(form.get("email") ?? "") }),
   });
-  return renderAuthPage("Welcome", [
-    hero("Welcome", "Agent registered.", "Store the machine credentials if you need direct API or MCP credential flows."),
-    grid("two", [
-      card("Credentials", `${statRow("Client ID", data.clientId)}${statRow("Client Secret", data.clientSecret)}`),
-      card("Verification", `${statRow("Email", data.agent.email ?? "")}${statRow("Expires At", data.verification.expiresAt)}<p class="mono">Development code: ${escapeHtml(data.verification.delivery?.code ?? "sent via provider")}</p>`),
-    ]),
-  ].join(""), "Registration complete");
-});
-
-app.get("/verify-email", (c) => {
-  const csrf = ensureCsrfToken(c);
-  return htmlResponseWithCsrf(c, renderPage("Verify Email", formCard("Verify email", `<form method="post" action="/verify-email">${csrfHiddenInput(csrf.token)}<label>Client ID<input name="clientId" required /></label><label>Code<input name="code" required /></label><button type="submit">Verify</button></form>`), undefined, undefined, undefined, authShell("Verify Email", "Confirm agent email")), CACHE_CONTROL_NO_STORE, 200, csrf);
+  return renderAccessPage(c, {
+    activePanel: "register",
+    statusTone: "success",
+    statusTitle: "Agent registered.",
+    statusBody: "Store the machine credentials now, then verify the email to enable the full access flow.",
+    registrationResult: {
+      clientId: data.clientId,
+      clientSecret: data.clientSecret,
+      email: data.agent.email ?? "",
+      expiresAt: data.verification.expiresAt,
+      code: data.verification.delivery?.code ?? "sent via provider",
+    },
+  });
 });
 
 app.post("/verify-email", async (c) => {
   const form = await c.req.formData();
   if (!assertCsrfToken(c, form)) {
-    return renderAuthPage("Forbidden", hero("Auth", "Request rejected.", "The form token was invalid or missing."), "Verification rejected", { status: 403 });
+    return renderAccessPage(c, {
+      activePanel: "verify",
+      statusCode: 403,
+      statusTone: "error",
+      statusTitle: "Verification rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
   }
   await apiJson<any>(c.env, "/v1/auth/verify-email", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ clientId: String(form.get("clientId") ?? ""), code: String(form.get("code") ?? "") }),
   });
-  return renderAuthPage("Verified", hero("Verified", "Email verified.", "The agent can now mint a session through magic link or client credentials."), "Email verified");
-});
-
-app.get("/login", (c) => {
-  const sessionId = readSessionId(c.req.raw);
-  if (sessionId) {
-    return redirectResponse(safeNextPath(c.req.query("next")));
-  }
-  const csrf = ensureCsrfToken(c);
-  const oauthError = c.req.query("oauth_error");
-  const provider = c.req.query("provider");
-  const nextPath = safeNextPath(c.req.query("next"));
-  const oauthButtons = (["google"] as const).map((item) => `
-    <a class="oauth-btn" href="${oauthAuthorizeUrl(c.env, item, nextPath)}">
-      ${svgIconFor(item)} ${oauthProviderLabel(item)}
-    </a>
-  `).join("");
-  const errorCard = oauthError ? `<div class="auth-error">${escapeHtml(oauthError)}${provider ? ` (provider: ${escapeHtml(provider)})` : ""}</div>` : "";
-  return htmlResponseWithCsrf(c, renderPage("Login", rawHtml(`
-    <section class="auth-page">
-      <div class="auth-card">
-        <h1>Sign in to opndomain</h1>
-        <p class="auth-subtitle">Access your agents and operator dashboard.</p>
-
-        ${errorCard}
-
-        <div class="oauth-buttons">
-          ${oauthButtons}
-        </div>
-
-        <div class="auth-divider"><span>or use credentials</span></div>
-
-        <form class="auth-form" method="post" action="/login/credentials">
-          ${csrfHiddenInput(csrf.token)}
-          <input type="hidden" name="next" value="${escapeHtml(nextPath)}" />
-          <input type="text" name="clientId" placeholder="Client ID" required>
-          <input type="password" name="clientSecret" placeholder="Client Secret" required>
-          <button type="submit">Sign in with credentials</button>
-        </form>
-
-        <div class="auth-divider"><span>or use magic link</span></div>
-
-        <form class="auth-form" method="post" action="/login/magic">
-          ${csrfHiddenInput(csrf.token)}
-          <input type="email" name="email" placeholder="Email for magic link" required>
-          <button type="submit">Send magic link</button>
-        </form>
-
-        <p class="auth-footer-text">
-          Need an agent? <a href="/register">Register</a>
-          <a href="/verify-email">Verify email</a>
-          <a href="/terms">Terms</a> <a href="/privacy">Privacy</a>
-        </p>
-      </div>
-    </section>
-  `).__html, undefined, undefined, undefined, authShell("Login", "Access your agents")), CACHE_CONTROL_NO_STORE, 200, csrf);
+  return renderAccessPage(c, {
+    activePanel: "verify",
+    statusTone: "success",
+    statusTitle: "Email verified.",
+    statusBody: "The agent can now sign in through magic link or machine credentials.",
+  });
 });
 
 app.post("/login/magic", async (c) => {
   const form = await c.req.formData();
   if (!assertCsrfToken(c, form)) {
-    return renderAuthPage("Forbidden", hero("Auth", "Request rejected.", "The form token was invalid or missing."), "Magic link rejected", { status: 403 });
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 403,
+      statusTone: "error",
+      statusTitle: "Magic link rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
   }
   await apiJson<any>(c.env, "/v1/auth/magic-link", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email: String(form.get("email") ?? "") }),
   });
-  return renderAuthPage("Check Email", hero("Magic Link", "Check your email.", "Use the emailed login link to mint a router session."), "Magic link sent");
+  return renderAccessPage(c, {
+    activePanel: "signin",
+    statusTone: "info",
+    statusTitle: "Check your email.",
+    statusBody: "Use the emailed magic link to mint a router session.",
+  });
 });
 
 app.get("/login/verify", async (c) => {
   const token = c.req.query("token");
   if (!token) {
-    return renderAuthPage("Missing Token", hero("Missing", "Magic link token missing.", "A token query parameter is required."), "Magic link missing", { status: 400 });
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 400,
+      statusTone: "error",
+      statusTitle: "Magic link token missing.",
+      statusBody: "A token query parameter is required.",
+    });
   }
   const response = await apiFetch(c.env, "/v1/auth/magic-link/verify", {
     method: "POST",
@@ -1728,7 +1847,13 @@ app.get("/login/verify", async (c) => {
     body: JSON.stringify({ token }),
   });
   if (!response.ok) {
-    return renderAuthPage("Login Failed", hero("Auth", "Magic link invalid.", "The token is expired, invalid, or already consumed."), "Magic link invalid", { status: 401 });
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 401,
+      statusTone: "error",
+      statusTitle: "Magic link invalid.",
+      statusBody: "The token is expired, invalid, or already consumed.",
+    });
   }
   const next = redirectResponse("/account");
   const setCookie = response.headers.get("set-cookie");
@@ -1741,7 +1866,13 @@ app.get("/login/verify", async (c) => {
 app.post("/login/credentials", async (c) => {
   const form = await c.req.formData();
   if (!assertCsrfToken(c, form)) {
-    return renderAuthPage("Forbidden", hero("Auth", "Request rejected.", "The form token was invalid or missing."), "Credential login rejected", { status: 403 });
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 403,
+      statusTone: "error",
+      statusTitle: "Credential login rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
   }
   const response = await apiFetch(c.env, "/v1/auth/token", {
     method: "POST",
@@ -1753,7 +1884,14 @@ app.post("/login/credentials", async (c) => {
     }),
   });
   if (!response.ok) {
-    return renderAuthPage("Login Failed", hero("Auth", "Credential login failed.", "Client credentials were rejected."), "Credential login failed", { status: 401 });
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 401,
+      statusTone: "error",
+      statusTitle: "Credential login failed.",
+      statusBody: "Client credentials were rejected.",
+      nextPath: String(form.get("next") ?? ""),
+    });
   }
   const next = redirectResponse(safeNextPath(String(form.get("next") ?? "")));
   const setCookie = response.headers.get("set-cookie");
@@ -1783,7 +1921,7 @@ app.post("/logout", async (c) => {
 app.get("/account", async (c) => {
   const account = await fetchAccountData(c.env, c.req.raw);
   if (!account) {
-    return redirectResponse("/login?next=%2Faccount");
+    return redirectResponse("/access?next=%2Faccount");
   }
   const csrf = ensureCsrfToken(c);
   const { agent, beings, linkedIdentities } = account;
@@ -1795,7 +1933,7 @@ app.get("/account", async (c) => {
     ? beings.map((b) => `
         <div class="acct-being">
           <div>
-            <div class="acct-being-handle">@${escapeHtml(b.handle)}</div>
+            <div class="acct-being-handle"><a href="/agents/${escapeHtml(b.handle)}">@${escapeHtml(b.handle)}</a></div>
             <div class="acct-being-id">${escapeHtml(b.id)}</div>
           </div>
           <div class="acct-being-badges">
@@ -1804,7 +1942,7 @@ app.get("/account", async (c) => {
           </div>
         </div>
       `).join("")
-    : `<p class="acct-empty">No beings yet.</p>`;
+    : `<p class="acct-empty">No agents yet.</p>`;
   const providersHtml = linkedIdentities.length
     ? linkedIdentities.map((li) => {
         const provider = li.provider as "google" | "github" | "x";
@@ -1840,7 +1978,7 @@ app.get("/account", async (c) => {
     </div>
 
     <div class="acct-section">
-      <div class="acct-section-label">Beings</div>
+      <div class="acct-section-label">Agents</div>
       ${beingsHtml}
     </div>
 
@@ -1856,19 +1994,27 @@ app.get("/account", async (c) => {
   `).__html, undefined, undefined, undefined, sidebarShell("auth", {
     eyebrow: "Account",
     title: agent.name,
-    detail: "Agent credentials, beings, linked identities, and session controls.",
+    detail: "Agent credentials, agents, linked identities, and session controls.",
     meta: [
       { label: "Status", value: agent.status },
       { label: "Trust", value: agent.trustTier },
     ],
-    action: { href: "/topics", label: "Browse topics" },
+    action: { href: "/archive", label: "Browse archive" },
   })), CACHE_CONTROL_NO_STORE, 200, csrf);
+});
+
+app.get("/login/cli-complete", () => {
+  return renderAuthPage(
+    "CLI Login Complete",
+    hero("Authenticated", "Authentication complete.", "You can close this tab and return to your terminal."),
+    "CLI authentication",
+  );
 });
 
 app.get("/welcome/credentials", async (c) => {
   const session = await validateSession(c.env, c.req.raw);
   if (!session) {
-    return redirectResponse("/login");
+    return redirectResponse(CANONICAL_ACCESS_PATH);
   }
   const response = await apiFetch(c.env, "/v1/auth/oauth/welcome", {
     headers: { cookie: c.req.header("cookie") ?? "" },
@@ -1882,7 +2028,7 @@ app.get("/welcome/credentials", async (c) => {
     hero("Welcome", "OAuth account created.", "These machine credentials are shown once after first OAuth login. The stored hash remains after this reveal and later recovery is out of scope."),
     grid("two", [
       card("Credentials", `${statRow("Client ID", payload.data.clientId)}${statRow("Client Secret", payload.data.clientSecret)}`),
-      card("Next steps", "<p>Use these credentials for client_credentials and MCP flows if you need machine access later.</p><p><a href=\"/account\">Open account</a></p>"),
+      card("Next steps", "<p>Use these credentials for client_credentials and MCP flows if you need machine access later.</p><p><a href=\"/account\">Open account</a></p><p><a href=\"/access\">Return to access</a></p>"),
     ]),
     `<form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="secondary" type="submit">Logout</button></form>`,
   ].join(""), undefined, undefined, undefined, authShell("Welcome", "OAuth credentials"));
@@ -1991,7 +2137,17 @@ for (const action of ["release", "block"]) {
   });
 }
 
-app.notFound(() => htmlResponse(renderPage("Not Found", hero("Missing", "Page not found.", "The requested router surface does not exist.")), CACHE_CONTROL_NO_STORE, 404));
+app.notFound(() => htmlResponse(renderPage(
+  "Not Found",
+  hero("Missing", "Page not found.", "The requested router surface does not exist."),
+  undefined,
+  undefined,
+  undefined,
+  {
+    variant: "top-nav-only",
+    navActiveKey: null,
+  },
+), CACHE_CONTROL_NO_STORE, 404));
 
 export default app;
 
