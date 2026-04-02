@@ -159,12 +159,25 @@ async function testDiscoveryMetadata() {
 
   const infoResponse = await app.request("http://mcp.local/.well-known/mcp.json", {}, env);
   assertEqual(infoResponse.status, 200);
-  const info = await infoResponse.json() as { mcpUrl: string; tools: string[]; primaryBootstrapFlow: string[]; participateStatuses: string[] };
+  const info = await infoResponse.json() as {
+    mcpUrl: string;
+    tools: string[];
+    primaryBootstrapFlow: string[];
+    participateStatuses: string[];
+    credentialModel: {
+      clientId: string;
+      agentId: string;
+      note: string;
+    };
+  };
   assertEqual(info.mcpUrl, "https://mcp.opndomain.com/mcp");
   assertDeepEqual(info.primaryBootstrapFlow, ["register", "verify-email", "establish-launch-state"]);
   assertOk(info.tools.includes("recover-launch-state"));
   assertOk(info.participateStatuses.includes("awaiting_magic_link"));
   assertOk(info.participateStatuses.includes("contributed"));
+  assertOk(info.credentialModel.clientId.toLowerCase().includes("operator account identifier"));
+  assertOk(info.credentialModel.agentId.toLowerCase().includes("specific agent record"));
+  assertOk(info.credentialModel.note.toLowerCase().includes("multiple agents"));
 }
 
 async function testHomepageHighlightsParticipate() {
@@ -176,6 +189,9 @@ async function testHomepageHighlightsParticipate() {
   const response = await app.request("http://mcp.local/", {}, env);
   assertEqual(response.status, 200);
   const body = await response.text();
+  assertOk(body.includes("<strong>Credential model:</strong>"));
+  assertOk(body.includes("clientId</code> is the operator account identifier"));
+  assertOk(body.includes("agentId</code> is the specific agent record"));
   assertOk(body.includes("Primary convenience entry point: <code>participate</code>"));
   assertOk(body.includes("Explicit participation flow: <code>"));
   assertOk(body.includes("Participate statuses: <code>"));
@@ -219,6 +235,20 @@ async function testListTopicsWrapsArrayResults() {
   }));
   assertEqual(result.count, 1);
   assertEqual((result.data as Array<{ id: string }>)[0]?.id, "top_started");
+}
+
+async function testGetVerdictReadsPublicEndpoint() {
+  const { env } = buildEnv(({ method, url, headers }) => {
+    if (method === "GET" && url.pathname === "/v1/topics/top_1/verdict") {
+      assertEqual(headers.get("authorization"), null);
+      return jsonResponse({ status: "published", verdict: { topicId: "top_1" } });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+
+  const result = structured(await createToolHandlers(env)["get-verdict"]({ topicId: "top_1" }));
+  assertEqual(result.status, "published");
+  assertEqual((result.verdict as { topicId: string }).topicId, "top_1");
 }
 
 async function testRefreshesExpiredStoredState() {
@@ -761,6 +791,7 @@ async function testStartedTopicContribution() {
     body: "body",
   }));
   assertEqual(result.status, "contributed");
+  assertOk(String((result.nextAction as { message: string }).message).includes("get-verdict"));
   assertOk((result.transcript as unknown as Array<{ id: string }>).some((entry) => entry.id === "cnt_1"));
   assertOk(fetcher.requests.some((request) => request.pathname === "/v1/topics/top_started/contributions"));
 }
@@ -771,6 +802,7 @@ export async function runAllTests() {
   await testHomepageHighlightsParticipate();
   await testJoinableTopicsMerge();
   await testListTopicsWrapsArrayResults();
+  await testGetVerdictReadsPublicEndpoint();
   await testRefreshesExpiredStoredState();
   await testStaleBeingRecovery();
   await testHandleCollisionRetriesOnceWithSuffix();

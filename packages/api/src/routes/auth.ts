@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  EmailLinkRequestSchema,
   MagicLinkRequestSchema,
   MagicLinkVerifySchema,
   OAUTH_NONCE_COOKIE_PREFIX,
@@ -16,16 +17,18 @@ import { buildClearedCookie } from "../lib/cookies.js";
 import { ApiError } from "../lib/errors.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import {
+  createAttachedEmailMagicLink,
   createMagicLink,
   exchangeClientCredentials,
   exchangeRefreshToken,
   getSessionSummary,
   logoutSession,
   registerAgent,
+  rotateClientCredentials,
   verifyMagicLink,
   verifyAgentEmail,
 } from "../services/auth.js";
-import { beginOAuthAuthorize, completeOAuthCallback, consumeOAuthWelcome, listExternalIdentitiesForAgent } from "../services/oauth.js";
+import { beginOAuthAuthorize, completeOAuthCallback, consumeOAuthWelcome, listExternalIdentitiesForAgent, pollCliOAuth } from "../services/oauth.js";
 
 export const authRoutes = new Hono<{ Bindings: ApiEnv }>();
 
@@ -49,6 +52,11 @@ authRoutes.post("/magic-link", async (c) => {
   const body = parseJsonBody(MagicLinkRequestSchema, await c.req.json());
   const ipAddress = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "0.0.0.0";
   return jsonData(c, await createMagicLink(c.env, ipAddress, body.email), 201);
+});
+
+authRoutes.post("/email-link", async (c) => {
+  const body = parseJsonBody(EmailLinkRequestSchema, await c.req.json());
+  return jsonData(c, await createAttachedEmailMagicLink(c.env, c.req.raw, body.email), 201);
 });
 
 authRoutes.post("/magic-link/verify", async (c) => {
@@ -88,14 +96,24 @@ authRoutes.get("/oauth/:provider/authorize", async (c) => {
   const provider = OAuthProviderSchema.parse(c.req.param("provider"));
   const query = OAuthAuthorizeQuerySchema.parse({
     redirect: c.req.query("redirect") ?? undefined,
+    source: c.req.query("source") ?? undefined,
   });
   const result = await beginOAuthAuthorize(
     c.env,
     c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "0.0.0.0",
     provider,
     query.redirect,
+    query.source,
   );
-  c.header("set-cookie", result.nonceCookie, { append: true });
+  if (query.source === "cli") {
+    return jsonData(c, {
+      authorizeUrl: result.location,
+      cliSessionId: result.cliSessionId,
+    });
+  }
+  if (result.nonceCookie) {
+    c.header("set-cookie", result.nonceCookie, { append: true });
+  }
   return c.redirect(result.location, 302);
 });
 
@@ -134,6 +152,18 @@ authRoutes.get("/oauth/:provider/callback", async (c) => {
   }
 });
 
+authRoutes.get("/oauth/cli/poll", async (c) => {
+  const sessionId = c.req.query("sessionId");
+  if (!sessionId || sessionId.length < 16) {
+    return jsonData(c, { status: "invalid", message: "Missing or invalid sessionId." }, 400);
+  }
+  const result = await pollCliOAuth(c.env, sessionId);
+  if (!result) {
+    return jsonData(c, { status: "pending" });
+  }
+  return jsonData(c, result);
+});
+
 authRoutes.get("/oauth/welcome", async (c) => {
   const welcome = await consumeOAuthWelcome(c.env, c.req.raw);
   c.header("set-cookie", welcome.clearedCookie, { append: true });
@@ -147,6 +177,11 @@ authRoutes.post("/logout", async (c) => {
   const result = await logoutSession(c.env, c.req.raw);
   c.header("set-cookie", result.clearedCookie, { append: true });
   return jsonData(c, { ok: true });
+});
+
+authRoutes.post("/credentials/rotate", async (c) => {
+  const rotated = await rotateClientCredentials(c.env, c.req.raw);
+  return jsonData(c, rotated);
 });
 
 authRoutes.get("/session", async (c) => {

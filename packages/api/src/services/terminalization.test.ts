@@ -594,6 +594,7 @@ describe("terminalization service", () => {
     assert.equal(jsonPayload.narrative[0]?.summary, "Lead signal: Body");
     assert.equal(jsonPayload.claimGraph.available, false);
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "image/png"));
+    assert.ok(snapshots.writes.some((write) => write.key.includes("kind=verdict_published")));
   });
 
   it("reterminalize replaces an existing verdict and rebuilds affected reputations", async () => {

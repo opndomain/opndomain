@@ -57,6 +57,23 @@ export const TrustTierSchema = z.enum([
   "trusted",
 ]);
 
+export const AccountClassSchema = z.enum([
+  "unverified_participant",
+  "verified_participant",
+]);
+
+export const EffectiveAccountClassSchema = z.enum([
+  "unverified_participant",
+  "verified_participant",
+  "admin_operator",
+]);
+
+export const TopicSourceSchema = z.enum([
+  "cron_auto",
+  "manual_user",
+  "manual_admin",
+]);
+
 export const TopicStatusSchema = z.enum([
   "open",
   "countdown",
@@ -178,6 +195,10 @@ export const MagicLinkRequestSchema = z.object({
   email: z.string().email(),
 });
 
+export const EmailLinkRequestSchema = z.object({
+  email: z.string().email(),
+});
+
 export const MagicLinkVerifySchema = z.object({
   token: z.string().min(8).max(512),
 });
@@ -186,6 +207,7 @@ export const OAuthProviderSchema = z.enum(["google", "github", "x"]);
 
 export const OAuthAuthorizeQuerySchema = z.object({
   redirect: z.string().min(1).max(512).optional(),
+  source: z.enum(["web", "cli"]).optional(),
 });
 
 export const OAuthCallbackQuerySchema = z.object({
@@ -200,6 +222,7 @@ export const OAuthStatePayloadSchema = z.object({
   nonce: z.string().min(16),
   codeVerifier: z.string().min(32),
   redirect: z.string().min(1).max(512).nullable().optional(),
+  cliSessionId: z.string().min(16).nullable().optional(),
 });
 
 export const OAuthWelcomePayloadSchema = z.object({
@@ -241,6 +264,9 @@ export const AuthAgentIdentitySchema = z.object({
 export const AuthAgentProfileSchema = AuthAgentIdentitySchema.extend({
   email: z.string().email(),
   trustTier: TrustTierSchema,
+  accountClass: AccountClassSchema,
+  isAdmin: z.boolean(),
+  effectiveAccountClass: EffectiveAccountClassSchema,
   status: z.string().min(1),
 });
 
@@ -340,6 +366,12 @@ export const CreateTopicSchema = z.object({
   minTrustTier: TrustTierSchema.default("supervised"),
 });
 
+export const CreateInternalTopicSchema = CreateTopicSchema.omit({
+  minTrustTier: true,
+}).extend({
+  reason: z.string().min(1).max(500).optional(),
+});
+
 export const TopicFormatSummarySchema = z.object({
   label: z.string().min(1),
   joinWindow: z.enum(["pre_start", "rolling"]),
@@ -374,6 +406,7 @@ export const TopicDirectoryListItemSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   status: TopicStatusSchema,
+  topicSource: TopicSourceSchema,
   prompt: z.string().min(1),
   templateId: TopicTemplateIdSchema,
   domainSlug: z.string().min(1),
@@ -545,6 +578,7 @@ export const AdminTopicSummarySchema = z.object({
   domainName: z.string().min(1),
   title: z.string().min(1),
   status: TopicStatusSchema,
+  topicSource: TopicSourceSchema,
   archived: z.boolean(),
   archivedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
   createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
@@ -571,6 +605,158 @@ export const AdminTopicDetailSchema = AdminTopicSummarySchema.extend({
   activeMemberCount: z.number().int().nonnegative(),
   contributionCount: z.number().int().nonnegative(),
   roundCount: z.number().int().nonnegative(),
+});
+
+export const TopicCandidateStatusSchema = z.enum([
+  "approved",
+  "consumed",
+  "failed",
+]);
+
+export const TopicCandidateSchema = z.object({
+  id: z.string().min(1),
+  source: z.string().min(1).max(100),
+  sourceId: z.string().min(1).max(255).nullable().optional(),
+  sourceUrl: z.string().url().nullable().optional(),
+  domainId: z.string().min(1),
+  title: z.string().min(1).max(200),
+  prompt: z.string().min(1).max(4000),
+  templateId: z.string().min(1).max(100),
+  topicFormat: z.string().min(1).max(100).default("scheduled_research"),
+  cadenceFamily: z.string().min(1).max(100),
+  cadenceOverrideMinutes: z.number().int().positive().max(24 * 60).nullable().optional(),
+  minTrustTier: TrustTierSchema.default("supervised"),
+  priorityScore: z.number().finite().default(0),
+  publishedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (!value.sourceId && !value.sourceUrl) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "sourceId or sourceUrl is required.",
+      path: ["sourceId"],
+    });
+  }
+});
+
+export const BatchUpsertTopicCandidatesSchema = z.object({
+  items: z.array(TopicCandidateSchema).min(1).max(100),
+});
+
+export const TopicCandidateQuerySchema = z.object({
+  domainId: z.string().trim().min(1).optional(),
+  status: TopicCandidateStatusSchema.optional(),
+});
+
+export const TopicIdeaContextQuerySchema = z.object({
+  domainId: z.string().trim().min(1),
+});
+
+export const TopicCandidateSummarySchema = z.object({
+  id: z.string().min(1),
+  source: z.string().min(1),
+  sourceId: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+  domainId: z.string().min(1),
+  title: z.string().min(1),
+  topicFormat: z.string().min(1),
+  cadenceFamily: z.string().min(1),
+  cadenceOverrideMinutes: z.number().int().positive().nullable(),
+  minTrustTier: TrustTierSchema,
+  status: TopicCandidateStatusSchema,
+  priorityScore: z.number().finite(),
+  publishedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  promotedTopicId: z.string().min(1).nullable(),
+  promotionError: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const TopicCandidateDetailSchema = TopicCandidateSummarySchema.extend({
+  prompt: z.string().min(1),
+  templateId: z.string().min(1),
+});
+
+export const TopicIdeaContextRecordSchema = z.object({
+  recordKind: z.enum(["topic", "candidate"]),
+  id: z.string().min(1),
+  domainId: z.string().min(1),
+  status: z.string().min(1),
+  title: z.string().min(1),
+  prompt: z.string().min(1),
+});
+
+export const TopicIdeaContextResponseSchema = z.object({
+  items: z.array(TopicIdeaContextRecordSchema),
+});
+
+export const TopicCandidateSourceIdentityDuplicateSchema = z.object({
+  kind: z.literal("source_identity_duplicate"),
+  existingRecordKind: z.literal("candidate"),
+  source: z.string().min(1),
+  sourceId: z.string().nullable(),
+  sourceUrl: z.string().nullable(),
+  domainId: z.string().min(1),
+  existingCandidateId: z.string().min(1),
+  reason: z.literal("source_identity_match"),
+  matchedTitle: z.string().min(1),
+});
+
+export const TopicCandidateIdeaDuplicateCandidateSchema = z.object({
+  kind: z.literal("idea_duplicate_candidate"),
+  existingRecordKind: z.literal("candidate"),
+  domainId: z.string().min(1),
+  existingCandidateId: z.string().min(1),
+  reason: z.enum([
+    "exact_title_match",
+    "title_similarity",
+    "title_prompt_similarity",
+    "comparison_family_match",
+  ]),
+  matchedTitle: z.string().min(1),
+});
+
+export const TopicCandidateIdeaDuplicateTopicSchema = z.object({
+  kind: z.literal("idea_duplicate_topic"),
+  existingRecordKind: z.literal("topic"),
+  domainId: z.string().min(1),
+  existingTopicId: z.string().min(1),
+  reason: z.enum([
+    "exact_title_match",
+    "title_similarity",
+    "title_prompt_similarity",
+    "comparison_family_match",
+  ]),
+  matchedTitle: z.string().min(1),
+});
+
+export const TopicCandidateDuplicateSchema = z.discriminatedUnion("kind", [
+  TopicCandidateSourceIdentityDuplicateSchema,
+  TopicCandidateIdeaDuplicateCandidateSchema,
+  TopicCandidateIdeaDuplicateTopicSchema,
+]);
+
+export const BatchUpsertTopicCandidatesResponseSchema = z.object({
+  createdCount: z.number().int().nonnegative(),
+  updatedCount: z.number().int().nonnegative(),
+  duplicates: z.array(TopicCandidateDuplicateSchema),
+});
+
+export const TopicCandidateInventoryItemSchema = z.object({
+  domainId: z.string().min(1),
+  domainSlug: z.string().min(1),
+  approvedCount: z.number().int().nonnegative(),
+});
+
+export const TopicCandidateInventoryResponseSchema = z.object({
+  items: z.array(TopicCandidateInventoryItemSchema),
+});
+
+export const TopicCandidateCleanupRequestSchema = z.object({
+  maxAgeDays: z.number().int().min(1).max(365).default(7),
+});
+
+export const TopicCandidateCleanupResponseSchema = z.object({
+  deleted: z.number().int().nonnegative(),
 });
 
 export const TopicContextCurrentRoundConfigSchema = z.object({
@@ -735,6 +921,12 @@ export const VerdictPresentationSchema = z.object({
   }),
 });
 
+export const VerdictFetchResponseSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("published"), verdict: VerdictPresentationSchema }),
+  z.object({ status: z.literal("pending"), topicStatus: TopicStatusSchema, artifactStatus: ArtifactStatusSchema.nullable() }),
+  z.object({ status: z.literal("unavailable") }),
+]);
+
 export const PresentationRepairResponseSchema = z.object({
   topicId: z.string().min(1),
   artifact: TopicArtifactMetadataSchema,
@@ -769,6 +961,9 @@ export const MagicLinkContractSchema = z.object({
 });
 
 export type TrustTier = z.infer<typeof TrustTierSchema>;
+export type AccountClass = z.infer<typeof AccountClassSchema>;
+export type EffectiveAccountClass = z.infer<typeof EffectiveAccountClassSchema>;
+export type TopicSource = z.infer<typeof TopicSourceSchema>;
 export type TopicStatus = z.infer<typeof TopicStatusSchema>;
 export type RoundStatus = z.infer<typeof RoundStatusSchema>;
 export type ContributionVisibility = z.infer<typeof ContributionVisibilitySchema>;
@@ -799,6 +994,20 @@ export type AdminDomainSummary = z.infer<typeof AdminDomainSummarySchema>;
 export type AdminDomainDetail = z.infer<typeof AdminDomainDetailSchema>;
 export type AdminTopicSummary = z.infer<typeof AdminTopicSummarySchema>;
 export type AdminTopicDetail = z.infer<typeof AdminTopicDetailSchema>;
+export type TopicCandidateStatus = z.infer<typeof TopicCandidateStatusSchema>;
+export type TopicCandidate = z.infer<typeof TopicCandidateSchema>;
+export type TopicCandidateQuery = z.infer<typeof TopicCandidateQuerySchema>;
+export type TopicIdeaContextQuery = z.infer<typeof TopicIdeaContextQuerySchema>;
+export type TopicCandidateSummary = z.infer<typeof TopicCandidateSummarySchema>;
+export type TopicCandidateDetail = z.infer<typeof TopicCandidateDetailSchema>;
+export type TopicIdeaContextRecord = z.infer<typeof TopicIdeaContextRecordSchema>;
+export type TopicIdeaContextResponse = z.infer<typeof TopicIdeaContextResponseSchema>;
+export type TopicCandidateDuplicate = z.infer<typeof TopicCandidateDuplicateSchema>;
+export type BatchUpsertTopicCandidatesResponse = z.infer<typeof BatchUpsertTopicCandidatesResponseSchema>;
+export type TopicCandidateInventoryItem = z.infer<typeof TopicCandidateInventoryItemSchema>;
+export type TopicCandidateInventoryResponse = z.infer<typeof TopicCandidateInventoryResponseSchema>;
+export type TopicCandidateCleanupRequest = z.infer<typeof TopicCandidateCleanupRequestSchema>;
+export type TopicCandidateCleanupResponse = z.infer<typeof TopicCandidateCleanupResponseSchema>;
 export type TopicFormatSummary = z.infer<typeof TopicFormatSummarySchema>;
 export type TopicContextCurrentRoundConfig = z.infer<typeof TopicContextCurrentRoundConfigSchema>;
 export type TopicContextVoteTarget = z.infer<typeof TopicContextVoteTargetSchema>;
@@ -821,3 +1030,4 @@ export type VerdictClaimNode = z.infer<typeof VerdictClaimNodeSchema>;
 export type VerdictClaimEdge = z.infer<typeof VerdictClaimEdgeSchema>;
 export type VerdictScoreBreakdown = z.infer<typeof VerdictScoreBreakdownSchema>;
 export type VerdictPresentation = z.infer<typeof VerdictPresentationSchema>;
+export type VerdictFetchResponse = z.infer<typeof VerdictFetchResponseSchema>;

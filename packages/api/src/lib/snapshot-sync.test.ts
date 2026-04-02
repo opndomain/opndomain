@@ -77,7 +77,7 @@ class FakeDb {
 }
 
 describe("snapshot sync", () => {
-  it("writes transcript first, state second, curated third with Phase 4 scores and verdict metadata", async () => {
+  it("writes transcript, state, manifest, and curated artifacts with Phase 4 scores and verdict metadata", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket("SNAPSHOTS");
     const curated = new FakeBucket("PUBLIC_ARTIFACTS");
@@ -192,6 +192,7 @@ describe("snapshot sync", () => {
 
     assert.equal(snapshots.writes[0]?.key, "topics/top_1/transcript.json");
     assert.equal(snapshots.writes[1]?.key, "topics/top_1/state.json");
+    assert.equal(snapshots.writes[2]?.key, "exports/v1/topic=top_1/change_sequence=4/manifest.json");
     assert.equal(curated.writes[0]?.key, "curated/open.json");
     assert.equal(snapshots.writes[0]?.options?.httpMetadata?.cacheControl, "public, s-maxage=0, max-age=30");
     assert.equal(snapshots.writes[1]?.options?.httpMetadata?.cacheControl, "public, s-maxage=0, max-age=10");
@@ -221,6 +222,12 @@ describe("snapshot sync", () => {
     assert.equal(statePayload.changeSequence, 4);
     assert.equal(statePayload.verdict.summary, "Phase 4 verdict summary");
     assert.equal(statePayload.verdict.confidence, "moderate");
+
+    const manifestPayload = JSON.parse(snapshots.writes[2]?.body ?? "{}");
+    assert.equal(manifestPayload.kind, "topic_snapshot_export");
+    assert.equal(manifestPayload.sourceReason, "test");
+    assert.equal(manifestPayload.transcript.key, "topics/top_1/transcript.json");
+    assert.equal(manifestPayload.state.key, "topics/top_1/state.json");
 
     const curatedPayload = JSON.parse(curated.writes[0]?.body ?? "{}");
     assert.deepEqual(

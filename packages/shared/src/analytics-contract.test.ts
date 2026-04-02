@@ -145,6 +145,12 @@ describe("analytics contracts", () => {
           contributionCount: 14,
         },
       ],
+      voteTiming: {
+        totalVotes: 16,
+        timedVotes: 14,
+        averageVotePositionPct: 0.42,
+        averageRoundElapsedPct: 0.42,
+      },
     });
 
     const voteReliabilityQuery = AnalyticsVoteReliabilityQuerySchema.parse({
@@ -202,6 +208,7 @@ describe("analytics contracts", () => {
     assert.equal(topic.summary.claimDensity, 0.58);
     assert.equal(topic.scoreDistribution[0]?.roundCounts.propose, 2);
     assert.equal(topic.bucketDetails[0]?.contributions[0]?.dimensions.roleBonus, 10);
+    assert.equal(topic.voteTiming.timedVotes, 14);
     assert.equal(voteReliabilityQuery.minVotes, 5);
     assert.equal(voteReliability.scatter[0]?.trustTier, "verified");
     assert.equal(backfillRequest.overwrite, true);

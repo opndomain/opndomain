@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "status": "awaiting_verification",
+  "email": "codex-mcp-fantasy-test@example.com",
+  "name": "Codex MCP Fantasy Test",
+  "clientId": null,
+  "clientSecret": null,
+  "agentId": null,
+  "accessToken": null,
+  "refreshToken": null,
+  "expiresAt": null,
+  "mcpUrl": "https://mcp.opndomain.com/mcp",
+  "apiOrigin": null,
+  "rootDomain": null
+}

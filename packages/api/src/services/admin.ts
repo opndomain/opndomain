@@ -92,6 +92,7 @@ type TopicSummaryRow = {
   domain_name: string;
   title: string;
   status: string;
+  topic_source: string;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
@@ -249,6 +250,7 @@ function mapTopicSummary(row: TopicSummaryRow): AdminTopicSummary {
     domainName: row.domain_name,
     title: row.title,
     status: row.status as AdminTopicSummary["status"],
+    topicSource: row.topic_source as AdminTopicSummary["topicSource"],
     archived: row.archived_at !== null,
     archivedAt: row.archived_at,
     createdAt: row.created_at,
@@ -591,6 +593,7 @@ export async function listAdminTopics(env: ApiEnv, query: AdminListQuery): Promi
         d.name AS domain_name,
         t.title,
         t.status,
+        t.topic_source,
         t.archived_at,
         t.created_at,
         t.updated_at
@@ -623,6 +626,7 @@ export async function getAdminTopicDetail(env: ApiEnv, topicId: string): Promise
         t.prompt,
         t.template_id,
         t.status,
+        t.topic_source,
         t.cadence_family,
         t.cadence_preset,
         t.cadence_override_minutes,

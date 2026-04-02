@@ -143,6 +143,13 @@ export const AnalyticsTopicFunnelEntrySchema = z.object({
   contributionCount: z.number().int().nonnegative(),
 });
 
+export const AnalyticsTopicVoteTimingSchema = z.object({
+  totalVotes: z.number().int().nonnegative(),
+  timedVotes: z.number().int().nonnegative(),
+  averageVotePositionPct: z.number().finite().nullable(),
+  averageRoundElapsedPct: z.number().finite().nullable(),
+});
+
 export const AnalyticsTopicResponseSchema = z.object({
   topic: z.object({
     id: z.string().min(1),
@@ -156,6 +163,7 @@ export const AnalyticsTopicResponseSchema = z.object({
   bucketDetails: z.array(AnalyticsTopicBucketDetailSchema),
   averageDimensionBreakdown: AnalyticsTopicContributionDimensionsSchema,
   participationFunnel: z.array(AnalyticsTopicFunnelEntrySchema),
+  voteTiming: AnalyticsTopicVoteTimingSchema,
 });
 
 export const AnalyticsVoteReliabilityQuerySchema = z.object({
@@ -224,6 +232,7 @@ export type AnalyticsTopicContributionDimensions = z.infer<typeof AnalyticsTopic
 export type AnalyticsTopicBucketContribution = z.infer<typeof AnalyticsTopicBucketContributionSchema>;
 export type AnalyticsTopicBucketDetail = z.infer<typeof AnalyticsTopicBucketDetailSchema>;
 export type AnalyticsTopicFunnelEntry = z.infer<typeof AnalyticsTopicFunnelEntrySchema>;
+export type AnalyticsTopicVoteTiming = z.infer<typeof AnalyticsTopicVoteTimingSchema>;
 export type AnalyticsTopicResponse = z.infer<typeof AnalyticsTopicResponseSchema>;
 export type AnalyticsVoteReliabilityQuery = z.infer<typeof AnalyticsVoteReliabilityQuerySchema>;
 export type AnalyticsVoteReliabilityHistogramBucket = z.infer<typeof AnalyticsVoteReliabilityHistogramBucketSchema>;

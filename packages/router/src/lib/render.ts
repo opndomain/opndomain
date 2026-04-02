@@ -343,7 +343,7 @@ function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "doma
     params.set("template", options.template);
   }
   const query = params.toString();
-  return query ? `/topics?${query}` : "/topics";
+  return query ? `/archive?${query}` : "/archive";
 }
 
 function topicCardStat(label: string, value: string | RawHtml) {
@@ -360,14 +360,14 @@ export function topicsHeader(options: TopicsHeaderOptions) {
 
   return `
     <section class="topics-header">
-      <span class="topics-kicker">Metadata</span>
+      <span class="topics-kicker">Archive</span>
       <div>
-        <h1 class="topics-title">Metadata index</h1>
-        <p class="topics-lede">Search public topic text by keyword, then refine by domain, template, status, participant count, rounds, and recency.</p>
+        <h1 class="topics-title">Archive index</h1>
+        <p class="topics-lede">Search public archive topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.</p>
       </div>
       <div class="topics-active-filters">
         <span class="topics-active-filter"><strong>Results</strong><span>${esc(String(options.totalCount))}</span></span>
-        ${activeFilters || `<span class="topics-active-filter"><strong>Scope</strong><span>all topics</span></span>`}
+        ${activeFilters || `<span class="topics-active-filter"><strong>Scope</strong><span>all archive topics</span></span>`}
       </div>
     </section>
   `;
@@ -402,7 +402,7 @@ export function editorialHeader(options: EditorialHeaderOptions) {
   `;
 }
 
-type PublicSidebarKey = "domains" | "topics" | "analytics" | "beings" | "connect" | "about" | "auth";
+type PublicSidebarKey = "domains" | "archive" | "analytics" | "agents" | "access" | "about" | "auth";
 
 type PublicSidebarOptions = {
   activeKey: PublicSidebarKey;
@@ -441,7 +441,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
   return `
     <section class="topics-filterbar">
       <div class="topics-filter-shell">
-        <form class="topics-search-form" method="get" action="/topics">
+        <form class="topics-search-form" method="get" action="/archive">
           <div class="topics-search-field">
             <label for="topics-query">Keyword Search</label>
             <input id="topics-query" name="q" type="search" value="${esc(options.q)}" placeholder="Search topic titles, prompts, and domains">
@@ -451,7 +451,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
           ${options.template ? `<input type="hidden" name="template" value="${esc(options.template)}">` : ""}
           <div class="topics-filter-actions">
             <button type="submit">Search</button>
-            ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear all</a>` : ""}
+            ${hasActiveFilters ? `<a class="topics-filter-clear" href="/archive">Clear all</a>` : ""}
           </div>
         </form>
         <div class="topics-filter-status">
@@ -462,7 +462,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
             <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
           </div>
         </div>
-        <form class="topics-filter-form" method="get" action="/topics">
+        <form class="topics-filter-form" method="get" action="/archive">
           ${options.q ? `<input type="hidden" name="q" value="${esc(options.q)}">` : ""}
           ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
           <div class="topics-filter-grid">
@@ -520,7 +520,7 @@ export function topicsEmpty() {
     <section class="topics-empty">
       <h2>No topics matched those filters.</h2>
       <p>Try clearing one or more filters to broaden the directory, or return to the full index to review all available research surfaces.</p>
-      <a class="button secondary" href="/topics">View all topics</a>
+      <a class="button secondary" href="/archive">View all archive topics</a>
     </section>
   `;
 }

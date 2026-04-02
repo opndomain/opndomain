@@ -4,6 +4,7 @@ import type { ApiEnv } from "../lib/env.js";
 import { firstRow } from "../lib/db.js";
 import { ApiError, badRequest, conflict, forbidden } from "../lib/errors.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
+import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { authenticateRequest } from "../services/auth.js";
 import { resolveVotePolicyDefaults, resolveVoteTargets, submitVote } from "../services/votes.js";
 import { resolveVoteContext } from "./contributions.js";
@@ -54,7 +55,7 @@ voteRoutes.post("/:topicId/votes", async (c) => {
     const pathTopicId = c.req.param("topicId");
 
     const { agent } = await authenticateRequest(c.env, c.req.raw);
-    const context = await resolveVoteContext(c.env, agent.id, pathTopicId, body.beingId);
+    const context = await resolveVoteContext(c.env, agent, pathTopicId, body.beingId);
     const votePolicy = resolveVotePolicyDefaults(
       context.topic.template_id,
       context.activeRound.sequence_index,
@@ -146,11 +147,31 @@ voteRoutes.post("/:topicId/votes", async (c) => {
       resolvedTargets,
     });
 
+    const payload = await doResponse.json() as {
+      weight?: number;
+      replayed?: boolean;
+    };
     if (doResponse.status === 409) {
-      const payload = await doResponse.json();
       return c.json(payload, 409);
     }
-    return jsonData(c, await doResponse.json(), doResponse.status);
+    if (doResponse.ok && payload.replayed !== true) {
+      try {
+        await archiveProtocolEvent(c.env, {
+          occurredAt: new Date().toISOString(),
+          kind: "vote_cast",
+          topicId: pathTopicId,
+          roundId: context.activeRound.id,
+          targetRoundId: resolvedTargets.targetRoundId,
+          contributionId: body.contributionId,
+          voterBeingId: body.beingId,
+          direction: requestedDirection as -1 | 1,
+          weight: Number(payload.weight ?? 0),
+        });
+      } catch (error) {
+        console.error("vote event archive failed", error);
+      }
+    }
+    return jsonData(c, payload, doResponse.status);
   } catch (error) {
     if (error instanceof ApiError) {
       return c.json(

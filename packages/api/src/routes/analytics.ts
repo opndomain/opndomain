@@ -14,6 +14,7 @@ import {
 import type { ApiEnv } from "../lib/env.js";
 import { ApiError } from "../lib/errors.js";
 import { jsonData } from "../lib/http.js";
+import { authenticateRequest } from "../services/auth.js";
 import {
   getAnalyticsDomains,
   getAnalyticsLeaderboard,
@@ -47,6 +48,14 @@ function parseQuery<T>(schema: SafeParseSchema<T>, request: Request): T {
   return parseSchema(schema, raw, "Query parameters failed validation.");
 }
 
+async function withAuthenticatedReadAccess(
+  c: { env: ApiEnv; req: { raw: Request } },
+  action: () => Promise<Response>,
+) {
+  await authenticateRequest(c.env, c.req.raw);
+  return action();
+}
+
 analyticsRoutes.get("/overview", async (c) => {
   const query = parseQuery(AnalyticsOverviewQuerySchema, c.req.raw);
   const payload = AnalyticsOverviewResponseSchema.parse(await getAnalyticsOverview(c.env, query));
@@ -60,27 +69,33 @@ analyticsRoutes.get("/domains", async (c) => {
 });
 
 analyticsRoutes.get("/leaderboard/:domainId", async (c) => {
-  const params = parseSchema(
-    AnalyticsLeaderboardParamsSchema,
-    { domainId: c.req.param("domainId") },
-    "Route parameters failed validation.",
-  );
-  const payload = AnalyticsLeaderboardResponseSchema.parse(await getAnalyticsLeaderboard(c.env, params));
-  return jsonData(c, payload);
+  return withAuthenticatedReadAccess(c, async () => {
+    const params = parseSchema(
+      AnalyticsLeaderboardParamsSchema,
+      { domainId: c.req.param("domainId") },
+      "Route parameters failed validation.",
+    );
+    const payload = AnalyticsLeaderboardResponseSchema.parse(await getAnalyticsLeaderboard(c.env, params));
+    return jsonData(c, payload);
+  });
 });
 
 analyticsRoutes.get("/topic/:topicId", async (c) => {
-  const params = parseSchema(
-    AnalyticsTopicParamsSchema,
-    { topicId: c.req.param("topicId") },
-    "Route parameters failed validation.",
-  );
-  const payload = AnalyticsTopicResponseSchema.parse(await getAnalyticsTopic(c.env, params.topicId));
-  return jsonData(c, payload);
+  return withAuthenticatedReadAccess(c, async () => {
+    const params = parseSchema(
+      AnalyticsTopicParamsSchema,
+      { topicId: c.req.param("topicId") },
+      "Route parameters failed validation.",
+    );
+    const payload = AnalyticsTopicResponseSchema.parse(await getAnalyticsTopic(c.env, params.topicId));
+    return jsonData(c, payload);
+  });
 });
 
 analyticsRoutes.get("/vote-reliability", async (c) => {
-  const query = parseQuery(AnalyticsVoteReliabilityQuerySchema, c.req.raw);
-  const payload = AnalyticsVoteReliabilityResponseSchema.parse(await getAnalyticsVoteReliability(c.env, query));
-  return jsonData(c, payload);
+  return withAuthenticatedReadAccess(c, async () => {
+    const query = parseQuery(AnalyticsVoteReliabilityQuerySchema, c.req.raw);
+    const payload = AnalyticsVoteReliabilityResponseSchema.parse(await getAnalyticsVoteReliability(c.env, query));
+    return jsonData(c, payload);
+  });
 });

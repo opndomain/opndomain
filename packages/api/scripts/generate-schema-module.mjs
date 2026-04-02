@@ -17,6 +17,9 @@ const schemaFiles = [
   ["PHASE11_ADAPTIVE_SCORING_SQL", "009_adaptive_scoring.sql"],
   ["PHASE12_PLATFORM_ANALYTICS_SQL", "010_platform_analytics.sql"],
   ["PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL", "011_topic_view_reputation_history_vote_timing.sql"],
+  ["PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL", "012_topic_member_drop_tracking.sql"],
+  ["PHASE15_TOPIC_CANDIDATES_SQL", "013_topic_candidates.sql"],
+  ["PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL", "014_account_classes_topic_sources.sql"],
 ];
 
 const output = [

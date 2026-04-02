@@ -3,7 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
 import { TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
 import { ApiError } from "../lib/errors.js";
-import { createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, updateTopic } from "./topics.js";
+import { createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, recordTopicView, updateTopic } from "./topics.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -89,11 +89,22 @@ const agent = {
   name: "Agent",
   email: "agent@example.com",
   emailVerifiedAt: "2026-03-25T00:00:00.000Z",
+  accountClass: "verified_participant",
+  isAdmin: false,
+  effectiveAccountClass: "verified_participant",
   trustTier: "verified",
   status: "active",
   createdAt: "2026-03-25T00:00:00.000Z",
   updatedAt: "2026-03-25T00:00:00.000Z",
-};
+} as const;
+
+const unverifiedAgent = {
+  ...agent,
+  emailVerifiedAt: null,
+  accountClass: "unverified_participant",
+  effectiveAccountClass: "unverified_participant",
+  trustTier: "unverified",
+} as const;
 
 function buildEnv(db: FakeDb) {
   return {
@@ -105,7 +116,7 @@ function buildEnv(db: FakeDb) {
   } as never;
 }
 
-function queueJoinPrereqs(db: FakeDb, status: string) {
+function queueJoinPrereqs(db: FakeDb, status: string, trustTier = "verified") {
   const topicRow = {
     id: "top_1",
     domain_id: "dom_1",
@@ -113,6 +124,7 @@ function queueJoinPrereqs(db: FakeDb, status: string) {
     prompt: "Prompt",
     template_id: "debate",
     topic_format: "scheduled_research",
+    topic_source: "manual_user",
     status,
     cadence_family: "quorum",
     cadence_preset: "3h",
@@ -135,7 +147,7 @@ function queueJoinPrereqs(db: FakeDb, status: string) {
     {
       id: "bng_1",
       agent_id: "agt_1",
-      trust_tier: "verified",
+      trust_tier: trustTier,
       status: "active",
       can_join_topics: 1,
     },
@@ -169,6 +181,16 @@ describe("joinTopic lifecycle enforcement", () => {
     const topic = await joinTopic(buildEnv(db), agent, "top_1", "bng_1");
 
     assert.equal(topic?.status, "countdown");
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT OR REPLACE INTO topic_members")));
+  });
+
+  it("allows unverified beings to join even when the topic trust floor is higher", async () => {
+    const db = new FakeDb();
+    queueJoinPrereqs(db, "open", "unverified");
+
+    const topic = await joinTopic(buildEnv(db), agent, "top_1", "bng_1");
+
+    assert.equal(topic?.status, "open");
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT OR REPLACE INTO topic_members")));
   });
 
@@ -208,6 +230,7 @@ describe("updateTopic schedule rewrites", () => {
         prompt: "Prompt",
         template_id: "debate_v2",
         topic_format: "scheduled_research",
+        topic_source: "manual_user",
         status: "open",
         cadence_family: "scheduled",
         cadence_preset: null,
@@ -232,6 +255,7 @@ describe("updateTopic schedule rewrites", () => {
         prompt: "Prompt",
         template_id: "debate_v2",
         topic_format: "scheduled_research",
+        topic_source: "manual_user",
         status: "open",
         cadence_family: "scheduled",
         cadence_preset: null,
@@ -331,6 +355,7 @@ describe("updateTopic schedule rewrites", () => {
       prompt: "Prompt",
       template_id: "debate_v2",
       topic_format: "scheduled_research",
+      topic_source: "manual_user",
       status: "open",
       cadence_family: "scheduled",
       cadence_preset: null,
@@ -397,6 +422,7 @@ describe("createTopic round config persistence", () => {
         prompt: "Prompt",
         template_id: "debate_v2",
         topic_format: "scheduled_research",
+        topic_source: "manual_user",
         status: "open",
         cadence_family: "scheduled",
         cadence_preset: null,
@@ -534,10 +560,11 @@ describe("createTopic round config persistence", () => {
         id: "top_created_2",
         domain_id: "dom_1",
         title: "Topic",
-        prompt: "Prompt",
-        template_id: "chaos",
-        topic_format: "rolling_research",
-        status: "open",
+      prompt: "Prompt",
+      template_id: "chaos",
+      topic_format: "rolling_research",
+      topic_source: "manual_user",
+      status: "open",
         cadence_family: "rolling",
         cadence_preset: null,
         cadence_override_minutes: null,
@@ -593,6 +620,7 @@ describe("topic read contracts", () => {
         id: "top_open",
         title: "Open topic",
         status: "open",
+        topic_source: "manual_user",
         prompt: "Prompt",
         template_id: "research",
         domain_slug: "ai-safety",
@@ -607,6 +635,7 @@ describe("topic read contracts", () => {
         id: "top_started",
         title: "Started topic",
         status: "started",
+        topic_source: "manual_user",
         prompt: "Prompt",
         template_id: "research",
         domain_slug: "energy",
@@ -621,6 +650,7 @@ describe("topic read contracts", () => {
         id: "top_closed",
         title: "Closed topic",
         status: "closed",
+        topic_source: "manual_user",
         prompt: "Prompt",
         template_id: "debate_v2",
         domain_slug: "policy",
@@ -741,6 +771,42 @@ describe("topic read contracts", () => {
     assert.equal(topic.topicFormat, "scheduled_research");
   });
 
+  it("increments view_count only through the explicit topic view beacon path", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "quorum",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    await recordTopicView(buildEnv(db), "top_1");
+
+    const viewUpdate = db.executedRuns.find((entry) => entry.sql.includes("SET view_count = COALESCE(view_count, 0) + 1"));
+    assert.ok(viewUpdate);
+    assert.deepEqual(viewUpdate?.bindings, ["top_1"]);
+  });
+
   it("returns populated domain metadata for topic context", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM topics t", [{
@@ -779,6 +845,42 @@ describe("topic read contracts", () => {
     assert.equal(topic.domainSlug, "ai-safety");
     assert.equal(topic.domainName, "AI Safety");
     assert.equal(topic.topicFormat, "scheduled_research");
+  });
+
+  it("rejects topic context for unverified accounts on manual topics", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      topic_source: "manual_user",
+      status: "started",
+      cadence_family: "quorum",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    await expectForbidden(
+      getTopicContext(buildEnv(db), unverifiedAgent as never, "top_1"),
+      "This account class cannot access that topic source.",
+    );
   });
 
   it("adds vote metadata and eligible targets when an owned being is supplied", async () => {
@@ -974,6 +1076,43 @@ describe("topic transcript reads", () => {
     assert.equal(transcript.rounds[0]?.contributions.length, 1);
     assert.equal(transcript.rounds[0]?.contributions[0]?.id, "cnt_1");
     assert.equal(typeof transcript.page.nextCursor, "string");
+  });
+
+  it("rejects transcript reads for unverified accounts on manual topics", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      topic_source: "manual_admin",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      change_sequence: 2,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    await expectForbidden(
+      getTopicTranscript(buildEnv(db), unverifiedAgent as never, "top_1", { limit: 1 }),
+      "This account class cannot access that topic source.",
+    );
   });
 
   it("returns delta transcript rows from a since sequence", async () => {

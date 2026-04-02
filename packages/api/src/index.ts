@@ -6,6 +6,7 @@ import {
   PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
   REPUTATION_DECAY_CRON,
   ROUND_AUTO_ADVANCE_SWEEP_CRON,
+  TOPIC_CANDIDATE_PROMOTION_CRON,
 } from "@opndomain/shared";
 import { parseApiEnv } from "./lib/env.js";
 import { TopicStateDurableObject } from "./lib/do/topic-state.js";
@@ -30,6 +31,7 @@ import {
 } from "./services/presentation.js";
 import { decayStaleReputations, rollupDomainDailyCounts } from "./services/reputation.js";
 import { rollupPlatformDailyCounts } from "./services/analytics.js";
+import { promoteTopicCandidates } from "./services/topic-candidates.js";
 
 type ApiWorkerEnv = {
   Bindings: ReturnType<typeof parseApiEnv>;
@@ -117,6 +119,9 @@ export default {
               await queueSnapshotRetry(env, topicId, "lifecycle_sweep");
             }
           }
+        }
+        if (controller.cron === TOPIC_CANDIDATE_PROMOTION_CRON) {
+          await promoteTopicCandidates(env, { cron: controller.cron, now });
         }
         if (controller.cron === PHASE5_MAINTENANCE_STUB_CRON) {
           await env.PUBLIC_CACHE.put("cron/phase5-maintenance-stub", now.toISOString());

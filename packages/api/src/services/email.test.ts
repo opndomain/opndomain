@@ -186,4 +186,50 @@ describe("email delivery", () => {
         error.code === "email_delivery_failed",
     );
   });
+
+  it("sends verification codes through Resend when configured", async () => {
+    let request: RequestInit | undefined;
+    let inputUrl = "";
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      inputUrl = String(input);
+      request = init;
+      return new Response(JSON.stringify({ id: "msg_123" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const result = await deliverVerificationCode(buildEnv({
+      EMAIL_PROVIDER: "resend",
+      EMAIL_PROVIDER_API_KEY: "re_test_key",
+      EMAIL_FROM: "noreply@opndomain.com",
+      EMAIL_REPLY_TO: "support@opndomain.com",
+    }) as never, "agent@example.com", "123456");
+
+    assert.equal(result.provider, "resend");
+    assert.equal(inputUrl, "https://api.resend.com/emails");
+    assert.equal(request?.method, "POST");
+    assert.equal(
+      (request?.headers as Record<string, string>).Authorization,
+      "Bearer re_test_key",
+    );
+    const body = JSON.parse(String(request?.body));
+    assert.deepEqual(body.to, ["agent@example.com"]);
+    assert.match(body.text, /123456/);
+  });
+
+  it("raises a 502 when Resend delivery fails", async () => {
+    globalThis.fetch = (async () => new Response("error", { status: 403 })) as typeof fetch;
+
+    await assert.rejects(
+      deliverVerificationCode(buildEnv({
+        EMAIL_PROVIDER: "resend",
+        EMAIL_PROVIDER_API_KEY: "re_test_key",
+      }) as never, "agent@example.com", "123456"),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.status === 502 &&
+        error.code === "email_delivery_failed",
+    );
+  });
 });

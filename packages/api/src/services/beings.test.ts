@@ -84,11 +84,12 @@ const agent = {
   name: "Agent",
   email: "agent@example.com",
   emailVerifiedAt: "2026-03-25T00:00:00.000Z",
+  accountClass: "verified_participant",
   trustTier: "verified",
   status: "active",
   createdAt: "2026-03-25T00:00:00.000Z",
   updatedAt: "2026-03-25T00:00:00.000Z",
-};
+} as const;
 
 describe("createBeing", () => {
   it("maps duplicate handles to a canonical conflict", async () => {

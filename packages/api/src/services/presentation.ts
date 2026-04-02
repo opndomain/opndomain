@@ -8,6 +8,7 @@ import {
   PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
   PresentationRepairResponseSchema,
   VerdictPresentationSchema,
+  verdictJsonCacheKey,
   type PresentationRetryReason,
   type VerdictConfidence,
   type VerdictPresentation,
@@ -365,12 +366,15 @@ export async function reconcileTopicPresentation(
     if (topic.status === "closed" && verdict) {
       if (verdict.terminalization_mode === "insufficient_signal") {
         await suppressArtifacts(env.PUBLIC_ARTIFACTS, topicId);
+        await env.PUBLIC_CACHE.delete(verdictJsonCacheKey(topicId));
         artifactStatus = ARTIFACT_STATUS_SUPPRESSED;
       } else {
+        const presentation = await buildVerdictPresentation(env, topic, verdict);
         const published = await publishArtifacts(
           env.PUBLIC_ARTIFACTS,
-          await buildVerdictPresentation(env, topic, verdict),
+          presentation,
         );
+        await env.PUBLIC_CACHE.put(verdictJsonCacheKey(topicId), JSON.stringify(presentation));
         verdictHtmlKey = published.verdictHtmlKey;
         ogImageKey = published.ogImageKey;
         artifactStatus = ARTIFACT_STATUS_PUBLISHED;

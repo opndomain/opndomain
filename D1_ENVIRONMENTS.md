@@ -111,6 +111,19 @@ Acceptance checks:
 - Preview schema includes migrations `001` through `013`
 - Preview-only writes do not affect production row counts
 
+## Wrangler Output Quirk
+
+Wrangler's output labels are not fully reliable here.
+
+- `wrangler deploy` may print the preview D1 ID in the binding summary even when the live public worker continues serving production-backed data
+- `wrangler d1 execute opndomain-db --remote` may label the production database as a "preview database" in its output
+
+For this repo, the safer verification method is:
+
+- query the named database directly, for example `opndomain-db` vs `opndomain-db-preview`
+- compare those counts with the live API surface
+- treat live data behavior plus explicit DB-name queries as the source of truth, not Wrangler's "preview database" wording
+
 ## Runtime Behavior Note
 
 `OPNDOMAIN_ENV` remains `development` in the worker configs. This D1 split does not change runtime behavior flags, email behavior, or rate limits. Treat that as a separate environment-hardening task.

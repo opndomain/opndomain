@@ -20,6 +20,9 @@ function testSchemaContracts() {
   const phase11Sql = readFileSync(new URL("../src/db/009_adaptive_scoring.sql", import.meta.url), "utf8");
   const phase12Sql = readFileSync(new URL("../src/db/010_platform_analytics.sql", import.meta.url), "utf8");
   const phase13Sql = readFileSync(new URL("../src/db/011_topic_view_reputation_history_vote_timing.sql", import.meta.url), "utf8");
+  const phase14Sql = readFileSync(new URL("../src/db/012_topic_member_drop_tracking.sql", import.meta.url), "utf8");
+  const phase15Sql = readFileSync(new URL("../src/db/013_topic_candidates.sql", import.meta.url), "utf8");
+  const phase16Sql = readFileSync(new URL("../src/db/014_account_classes_topic_sources.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -34,9 +37,14 @@ function testSchemaContracts() {
       "009_adaptive_scoring",
       "010_platform_analytics",
       "011_topic_view_reputation_history_vote_timing",
+      "012_topic_member_drop_tracking",
+      "013_topic_candidates",
+      "014_account_classes_topic_sources",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
+  assert.match(launchCoreSql, /account_class TEXT NOT NULL DEFAULT 'unverified_participant'/);
+  assert.match(launchCoreSql, /topic_source TEXT NOT NULL DEFAULT 'manual_user'/);
   assert.match(launchCoreSql, /countdown_started_at TEXT/);
   assert.match(launchCoreSql, /stalled_at TEXT/);
   assert.match(launchCoreSql, /revoked_at TEXT/);
@@ -73,6 +81,14 @@ function testSchemaContracts() {
   assert.match(phase13Sql, /CREATE TABLE IF NOT EXISTS domain_reputation_history/);
   assert.match(phase13Sql, /ALTER TABLE votes ADD COLUMN vote_position_pct REAL/);
   assert.match(phase13Sql, /ALTER TABLE votes ADD COLUMN round_elapsed_pct REAL/);
+  assert.match(phase14Sql, /ALTER TABLE topic_members ADD COLUMN dropped_at TEXT/);
+  assert.match(phase14Sql, /ALTER TABLE beings ADD COLUMN drop_count INTEGER NOT NULL DEFAULT 0/);
+  assert.match(phase15Sql, /CREATE TABLE IF NOT EXISTS topic_candidates/);
+  assert.match(phase15Sql, /status IN \('approved', 'consumed', 'failed'\)/);
+  assert.match(phase15Sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_id/);
+  assert.match(phase16Sql, /ALTER TABLE agents ADD COLUMN account_class TEXT NOT NULL DEFAULT 'unverified_participant'/);
+  assert.match(phase16Sql, /ALTER TABLE topics ADD COLUMN topic_source TEXT NOT NULL DEFAULT 'manual_user'/);
+  assert.match(phase16Sql, /WHEN 'cron_auto' THEN 'unverified'/);
 }
 
 function testBaseEnvParsing() {
@@ -253,6 +269,14 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/011_topic_view_reputation_history_vote_timing.sql", import.meta.url)),
     join(targetDir, "011_topic_view_reputation_history_vote_timing.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/012_topic_member_drop_tracking.sql", import.meta.url)),
+    join(targetDir, "012_topic_member_drop_tracking.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/013_topic_candidates.sql", import.meta.url)),
+    join(targetDir, "013_topic_candidates.sql"),
   );
 }
 

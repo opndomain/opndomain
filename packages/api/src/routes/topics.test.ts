@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
+import { topicVerdictPresentationArtifactKey, verdictJsonCacheKey } from "@opndomain/shared";
 import { createApiApp } from "../index.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
@@ -29,12 +30,14 @@ class FakePreparedStatement {
   }
 
   async run() {
+    this.db.runs.push({ sql: this.sql, bindings: this.bindings });
     return { success: true };
   }
 }
 
 class FakeDb {
   readonly allCalls: Array<{ sql: string; bindings: unknown[] }> = [];
+  readonly runs: Array<{ sql: string; bindings: unknown[] }> = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -76,11 +79,47 @@ class FakeDb {
   }
 }
 
-function buildEnv(db: FakeDb) {
+class FakeKv {
+  readonly values = new Map<string, string>();
+
+  async get(key: string, type?: "text" | "json") {
+    const value = this.values.get(key) ?? null;
+    if (value === null) {
+      return null;
+    }
+    return type === "json" ? JSON.parse(value) : value;
+  }
+
+  async put(key: string, value: string) {
+    this.values.set(key, value);
+  }
+
+  async delete(key: string) {
+    this.values.delete(key);
+  }
+}
+
+class FakeR2Bucket {
+  readonly objects = new Map<string, string>();
+
+  async get(key: string) {
+    const value = this.objects.get(key);
+    if (value === undefined) {
+      return null;
+    }
+    return {
+      async json() {
+        return JSON.parse(value);
+      },
+    };
+  }
+}
+
+function buildEnv(db: FakeDb, options?: { cache?: FakeKv; artifacts?: FakeR2Bucket }) {
   return {
     DB: db as never,
-    PUBLIC_CACHE: {} as never,
-    PUBLIC_ARTIFACTS: {} as never,
+    PUBLIC_CACHE: (options?.cache ?? new FakeKv()) as never,
+    PUBLIC_ARTIFACTS: (options?.artifacts ?? new FakeR2Bucket()) as never,
     SNAPSHOTS: {} as never,
     TOPIC_STATE_DO: {} as never,
     SESSION_COOKIE_NAME: "opn_session",
@@ -88,6 +127,8 @@ function buildEnv(db: FakeDb) {
     JWT_ISSUER: "https://api.opndomain.com",
     JWT_PUBLIC_KEY_PEM: publicKey,
     JWT_PRIVATE_KEY_PEM: privateKey,
+    ADMIN_ALLOWED_EMAILS_SET: new Set<string>(),
+    ADMIN_ALLOWED_CLIENT_IDS_SET: new Set<string>(),
     ENABLE_TRANSCRIPT_GUARDRAILS: true,
     ENABLE_SEMANTIC_SCORING: false,
   } as never;
@@ -100,6 +141,7 @@ describe("topic routes", () => {
       id: "top_1",
       title: "Topic",
       status: "started",
+      topic_source: "manual_user",
       prompt: "Prompt",
       template_id: "debate_v2",
       domain_slug: "ai-safety",
@@ -133,6 +175,7 @@ describe("topic routes", () => {
       id: "top_open",
       title: "Open topic",
       status: "open",
+      topic_source: "manual_user",
       prompt: "Prompt",
       template_id: "research",
       domain_slug: "ai-safety",
@@ -206,6 +249,45 @@ describe("topic routes", () => {
     assert.equal(db.allCalls.length, 0);
   });
 
+  it("records a topic view only on the explicit beacon endpoint", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/views", { method: "POST" }),
+      buildEnv(db),
+      {} as never,
+    );
+
+    assert.equal(response.status, 204);
+    assert.ok(db.runs.some((entry) => entry.sql.includes("SET view_count = COALESCE(view_count, 0) + 1")));
+  });
+
   it("requires authentication for transcript reads", async () => {
     const db = new FakeDb();
 
@@ -249,6 +331,7 @@ describe("topic routes", () => {
         name: "Agent",
         email: "agent@example.com",
         email_verified_at: "2026-03-25T00:00:00.000Z",
+        account_class: "verified_participant",
         trust_tier: "verified",
         status: "active",
         created_at: "2026-03-25T00:00:00.000Z",
@@ -260,6 +343,7 @@ describe("topic routes", () => {
         name: "Agent",
         email: "agent@example.com",
         email_verified_at: "2026-03-25T00:00:00.000Z",
+        account_class: "verified_participant",
         trust_tier: "verified",
         status: "active",
         created_at: "2026-03-25T00:00:00.000Z",
@@ -276,6 +360,7 @@ describe("topic routes", () => {
         prompt: "Prompt",
         template_id: "debate_v2",
         topic_format: "scheduled_research",
+        topic_source: "manual_user",
         status: "started",
         cadence_family: "scheduled",
         cadence_preset: null,
@@ -303,6 +388,7 @@ describe("topic routes", () => {
         prompt: "Prompt",
         template_id: "debate_v2",
         topic_format: "scheduled_research",
+        topic_source: "manual_user",
         status: "started",
         cadence_family: "scheduled",
         cadence_preset: null,
@@ -416,5 +502,114 @@ describe("topic routes", () => {
     assert.equal(first.status, 200);
     assert.equal(second.status, 400);
     assert.equal(secondPayload.code, "invalid_transcript_cursor");
+  });
+
+  it("returns a published verdict from KV cache", async () => {
+    const db = new FakeDb();
+    const cache = new FakeKv();
+    await cache.put(verdictJsonCacheKey("top_1"), JSON.stringify({
+      topicId: "top_1",
+      title: "Topic",
+      domain: "ai-safety",
+      publishedAt: "2026-03-25T00:00:00.000Z",
+      status: "published",
+      headline: { label: "Verdict", text: "Result", stance: "mixed" },
+      summary: "Result",
+      editorialBody: null,
+      confidence: { label: "moderate", score: 0.68, explanation: "Explanation" },
+      scoreBreakdown: {
+        completedRounds: 3,
+        totalRounds: 3,
+        participantCount: 4,
+        contributionCount: 12,
+        terminalizationMode: "full_template",
+      },
+      narrative: [],
+      highlights: [],
+      claimGraph: { available: false, nodes: [], edges: [], fallbackNote: "Unavailable" },
+    }));
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/verdict"),
+      buildEnv(db, { cache }),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { status: string; verdict: { topicId: string } } };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.status, "published");
+    assert.equal(payload.data.verdict.topicId, "top_1");
+  });
+
+  it("returns pending verdict status for active topics", async () => {
+    const db = new FakeDb();
+    db.queueFirst("SELECT t.status, ta.artifact_status", [{ status: "started", artifact_status: null }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/verdict"),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { status: string; topicStatus: string; artifactStatus: null } };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.status, "pending");
+    assert.equal(payload.data.topicStatus, "started");
+    assert.equal(payload.data.artifactStatus, null);
+  });
+
+  it("returns 404 for missing verdict topics", async () => {
+    const db = new FakeDb();
+    db.queueFirst("SELECT t.status, ta.artifact_status", [null]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/missing/verdict"),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { code: string };
+
+    assert.equal(response.status, 404);
+    assert.equal(payload.code, "not_found");
+  });
+
+  it("backfills KV from R2 when a published verdict cache entry is missing", async () => {
+    const db = new FakeDb();
+    const cache = new FakeKv();
+    const artifacts = new FakeR2Bucket();
+    db.queueFirst("SELECT t.status, ta.artifact_status", [{ status: "closed", artifact_status: "published" }]);
+    artifacts.objects.set(topicVerdictPresentationArtifactKey("top_1"), JSON.stringify({
+      topicId: "top_1",
+      title: "Topic",
+      domain: "ai-safety",
+      publishedAt: "2026-03-25T00:00:00.000Z",
+      status: "published",
+      headline: { label: "Verdict", text: "Result", stance: "mixed" },
+      summary: "Result",
+      editorialBody: null,
+      confidence: { label: "moderate", score: 0.68, explanation: "Explanation" },
+      scoreBreakdown: {
+        completedRounds: 3,
+        totalRounds: 3,
+        participantCount: 4,
+        contributionCount: 12,
+        terminalizationMode: "full_template",
+      },
+      narrative: [],
+      highlights: [],
+      claimGraph: { available: false, nodes: [], edges: [], fallbackNote: "Unavailable" },
+    }));
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/verdict"),
+      buildEnv(db, { cache, artifacts }),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { status: string; verdict: { topicId: string } } };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.status, "published");
+    assert.equal(payload.data.verdict.topicId, "top_1");
+    assert.ok(cache.values.has(verdictJsonCacheKey("top_1")));
   });
 });

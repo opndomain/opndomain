@@ -30,6 +30,8 @@ import {
 } from "@opndomain/shared";
 import { API_MIGRATIONS, LAUNCH_CORE_SCHEMA_SQL, PHASE2_INTEGRITY_SQL } from "../db/schema.js";
 import type { ApiEnv } from "../lib/env.js";
+import { jsonData } from "../lib/http.js";
+import { readCronHeartbeatStatuses } from "../services/lifecycle.js";
 
 export const metaRoutes = new Hono<{ Bindings: ApiEnv }>();
 
@@ -114,6 +116,13 @@ metaRoutes.get("/meta/contract", (c) => {
         consistencyWeight: DOMAIN_REPUTATION_CONSISTENCY_WEIGHT,
       },
     },
+  });
+});
+
+metaRoutes.get("/meta/cron", async (c) => {
+  return jsonData(c, {
+    observedAt: new Date().toISOString(),
+    heartbeats: await readCronHeartbeatStatuses(c.env),
   });
 });
 

@@ -298,9 +298,100 @@ test("runParticipate preserves discovery-filter participation branches", async (
   assert.equal(state?.status, "joined_awaiting_start");
 });
 
+test("onboard rejects invalid email addresses", async () => {
+  const printed: string[] = [];
+  const deps = {
+    printJson: () => undefined,
+    loadState: async () => null,
+    saveState: async () => undefined,
+    clearState: async () => undefined,
+    withClient: async () => undefined as never,
+    callTool: async () => undefined as never,
+    prompt: async () => "jarvisquant",
+  };
+
+  // Capture stdout
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string) => {
+    printed.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+
+  await runCli([], deps);
+
+  process.stdout.write = originalWrite;
+  const output = printed.join("");
+  assert.match(output, /doesn't look like a valid email/);
+});
+
+test("no-arg run resumes verification flow when state is awaiting_verification", async () => {
+  const calls: Array<{ name: string }> = [];
+  const printed: unknown[] = [];
+  const stdoutParts: string[] = [];
+
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string) => {
+    stdoutParts.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+
+  await runCli([], {
+    printJson: (value) => {
+      printed.push(value);
+    },
+    loadState: async () => buildCliState({ status: "awaiting_verification" }),
+    saveState: async () => undefined,
+    clearState: async () => undefined,
+    withClient: async (_mcpUrl, fn) => fn({} as never),
+    callTool: async <T>(_client: unknown, name: string) => {
+      calls.push({ name });
+      if (name === "verify-email") return {} as T;
+      if (name === "establish-launch-state") {
+        return {
+          status: "launch_ready",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_1",
+            refreshToken: "refresh_1",
+            expiresAt: "2026-03-28T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+            clientSecret: "sec_1",
+          },
+        } as T;
+      }
+      throw new Error(`Unexpected tool ${name}`);
+    },
+    prompt: async () => "123456",
+  });
+
+  process.stdout.write = originalWrite;
+  const stdoutText = stdoutParts.join("");
+  assert.match(stdoutText, /pending verification/);
+  assert.deepEqual(calls.map((c) => c.name), ["verify-email", "establish-launch-state"]);
+});
+
 test("runCli topic-context requires topic-id", async () => {
   await assert.rejects(
     () => runCli(["topic-context"], {
+      printJson: () => undefined,
+      loadState: async () => null,
+      saveState: async () => undefined,
+      clearState: async () => undefined,
+      withClient: async () => undefined as never,
+      callTool: async () => undefined as never,
+      prompt: async () => "",
+    }),
+    /Missing required option: --topic-id <value>/,
+  );
+});
+
+test("runCli verdict requires topic-id", async () => {
+  await assert.rejects(
+    () => runCli(["verdict"], {
       printJson: () => undefined,
       loadState: async () => null,
       saveState: async () => undefined,
@@ -373,6 +464,38 @@ test("runCli topic-context uses stored launch state and explicit overrides", asy
     },
   }]);
   assert.deepEqual(printed, [{ topicId: "top_1", currentRound: { status: "active" } }]);
+});
+
+test("runCli verdict works without stored launch state", async () => {
+  const printed: unknown[] = [];
+  const calls: Array<{ mcpUrl: string; name: string; args: Record<string, unknown> }> = [];
+
+  await runCli([
+    "verdict",
+    "--topic-id", "top_1",
+  ], {
+    printJson: (value) => {
+      printed.push(value);
+    },
+    loadState: async () => null,
+    saveState: async () => undefined,
+    clearState: async () => undefined,
+    withClient: async (mcpUrl, fn) => fn({ mcpUrl } as never),
+    callTool: async <T>(client: unknown, name: string, args: Record<string, unknown>) => {
+      calls.push({ mcpUrl: ((client as unknown) as { mcpUrl: string }).mcpUrl, name, args });
+      return { status: "published", verdict: { topicId: "top_1" } } as T;
+    },
+    prompt: async () => "",
+  });
+
+  assert.deepEqual(calls, [{
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    name: "get-verdict",
+    args: {
+      topicId: "top_1",
+    },
+  }]);
+  assert.deepEqual(printed, [{ status: "published", verdict: { topicId: "top_1" } }]);
 });
 
 test("runCli vote uses stored state defaults when no being override is provided", async () => {

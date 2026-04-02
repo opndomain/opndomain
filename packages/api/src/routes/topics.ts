@@ -1,15 +1,18 @@
 import { Hono } from "hono";
 import {
+  VerdictFetchResponseSchema,
+  VerdictPresentationSchema,
   CreateTopicSchema,
   TopicDirectoryQuerySchema,
   TopicMembershipSchema,
   TopicDirectoryListResponseSchema,
   TranscriptQuerySchema,
   UpdateTopicSchema,
+  topicVerdictPresentationArtifactKey,
+  verdictJsonCacheKey,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { assertAdminAgent } from "../lib/admin.js";
-import { ApiError } from "../lib/errors.js";
+import { ApiError, notFound } from "../lib/errors.js";
 import { jsonData, jsonList, parseJsonBody } from "../lib/http.js";
 import { authenticateRequest } from "../services/auth.js";
 import {
@@ -19,9 +22,11 @@ import {
   createTopic,
   getTopic,
   getTopicContext,
+  getTopicVerdictAvailability,
   joinTopic,
   leaveTopic,
   listTopics,
+  recordTopicView,
   updateTopic,
 } from "../services/topics.js";
 
@@ -102,6 +107,48 @@ topicRoutes.get("/:topicId", async (c) => {
   return jsonData(c, await getTopic(c.env, c.req.param("topicId")));
 });
 
+topicRoutes.get("/:topicId/verdict", async (c) => {
+  const topicId = c.req.param("topicId");
+  const cached = await c.env.PUBLIC_CACHE.get(verdictJsonCacheKey(topicId), "json");
+  if (cached) {
+    const response = VerdictFetchResponseSchema.parse({
+      status: "published",
+      verdict: VerdictPresentationSchema.parse(cached),
+    });
+    return jsonData(c, response);
+  }
+
+  const availability = await getTopicVerdictAvailability(c.env, topicId);
+  if (!availability) {
+    notFound();
+  }
+
+  if (availability.status !== "closed" || availability.artifact_status !== "published") {
+    return jsonData(c, VerdictFetchResponseSchema.parse({
+      status: "pending",
+      topicStatus: availability.status,
+      artifactStatus: availability.artifact_status,
+    }));
+  }
+
+  const artifact = await c.env.PUBLIC_ARTIFACTS.get(topicVerdictPresentationArtifactKey(topicId));
+  if (artifact) {
+    const presentation = VerdictPresentationSchema.parse(await artifact.json());
+    await c.env.PUBLIC_CACHE.put(verdictJsonCacheKey(topicId), JSON.stringify(presentation));
+    return jsonData(c, VerdictFetchResponseSchema.parse({
+      status: "published",
+      verdict: presentation,
+    }));
+  }
+
+  return jsonData(c, VerdictFetchResponseSchema.parse({ status: "unavailable" }));
+});
+
+topicRoutes.post("/:topicId/views", async (c) => {
+  await recordTopicView(c.env, c.req.param("topicId"));
+  return new Response(null, { status: 204 });
+});
+
 topicRoutes.get("/:topicId/context", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   const beingId = c.req.query("beingId") ?? undefined;
@@ -111,14 +158,7 @@ topicRoutes.get("/:topicId/context", async (c) => {
 topicRoutes.patch("/:topicId", async (c) => {
   const body = parseJsonBody(UpdateTopicSchema, await c.req.json());
   const { agent } = await authenticateRequest(c.env, c.req.raw);
-  let isAdmin = false;
-  try {
-    assertAdminAgent(c.env, agent);
-    isAdmin = true;
-  } catch {
-    isAdmin = false;
-  }
-  await assertTopicOwnershipOrAdmin(c.env, c.req.param("topicId"), agent, isAdmin);
+  await assertTopicOwnershipOrAdmin(c.env, c.req.param("topicId"), agent, agent.isAdmin);
   return jsonData(c, await updateTopic(c.env, c.req.param("topicId"), body));
 });
 

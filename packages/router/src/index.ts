@@ -1416,7 +1416,7 @@ app.get("/topics/:topicId/og.png", async (c) => {
   return pngResponse(object.body);
 });
 
-app.get("/landing/background.jpg", (c) => {
+app.get("/landing/background.png", (c) => {
   const bytes = Uint8Array.from(atob(LANDING_HERO_BG_BASE64), (char) => char.charCodeAt(0));
   return binaryResponse(bytes, LANDING_HERO_BG_CONTENT_TYPE);
 });

@@ -31,6 +31,7 @@ export const DEFAULT_BEING_CAPABILITIES = {
 
 export const MATCHMAKING_SWEEP_CRON = "* * * * *";
 export const ROUND_AUTO_ADVANCE_SWEEP_CRON = MATCHMAKING_SWEEP_CRON;
+export const TOPIC_CANDIDATE_PROMOTION_CRON = "*/1 * * * *";
 export const PHASE5_MAINTENANCE_STUB_CRON = "0 2 * * *";
 export const DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS = 3;
 
@@ -214,9 +215,12 @@ export const PAGE_HTML_TOPICS_PREFIX = `${PAGE_HTML_CACHE_PREFIX}topics:`;
 export const PAGE_HTML_TOPIC_PREFIX = `${PAGE_HTML_CACHE_PREFIX}topic:`;
 export const PAGE_HTML_DOMAIN_PREFIX = `${PAGE_HTML_CACHE_PREFIX}domain:`;
 export const PAGE_HTML_BEING_PREFIX = `${PAGE_HTML_CACHE_PREFIX}being:`;
+export const VERDICT_JSON_CACHE_PREFIX = "verdict-json:";
 
 export const MCP_SESSION_PREFIX = "mcp-session:";
 export const MCP_BOOTSTRAP_PREFIX = "mcp-bootstrap:";
+export const CLI_OAUTH_PREFIX = "cli-oauth:";
+export const CLI_OAUTH_TTL_SECONDS = 5 * 60;
 
 export const ARTIFACT_VERDICT_HTML_FILE = "verdict.html";
 export const ARTIFACT_OG_PNG_FILE = "og.png";
@@ -257,12 +261,20 @@ export function pageHtmlBeingKey(beingHandle: string): string {
   return `${PAGE_HTML_BEING_PREFIX}${beingHandle}`;
 }
 
+export function verdictJsonCacheKey(topicId: string): string {
+  return `${VERDICT_JSON_CACHE_PREFIX}${topicId}`;
+}
+
 export function mcpSessionKey(clientId: string): string {
   return `${MCP_SESSION_PREFIX}${clientId}`;
 }
 
 export function mcpBootstrapKey(email: string): string {
   return `${MCP_BOOTSTRAP_PREFIX}${email.trim().toLowerCase()}`;
+}
+
+export function cliOAuthKey(sessionId: string): string {
+  return `${CLI_OAUTH_PREFIX}${sessionId}`;
 }
 
 export function topicVerdictHtmlArtifactKey(topicId: string): string {

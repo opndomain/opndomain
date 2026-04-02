@@ -11,6 +11,7 @@ import {
 import type { ApiEnv } from "./env.js";
 import { allRows, firstRow, runStatement } from "./db.js";
 import { isTranscriptVisibleContribution } from "./visibility.js";
+import { writeTopicSnapshotExportManifest } from "./ops-archive.js";
 
 type TopicSnapshotRow = {
   id: string;
@@ -303,6 +304,23 @@ export async function syncTopicSnapshots(
       httpMetadata: { contentType: "application/json", cacheControl: CACHE_CONTROL_STATE },
     },
   );
+
+  await writeTopicSnapshotExportManifest(env, {
+    manifestVersion: 1,
+    kind: "topic_snapshot_export",
+    generatedAt: new Date().toISOString(),
+    topicId: topic.id,
+    changeSequence: Number(topic.change_sequence ?? 0),
+    sourceReason: reason,
+    transcript: {
+      key: transcriptKey,
+      contentType: "application/json",
+    },
+    state: {
+      key: stateKey,
+      contentType: "application/json",
+    },
+  });
 
   await writeCuratedOpenSnapshot(env);
 

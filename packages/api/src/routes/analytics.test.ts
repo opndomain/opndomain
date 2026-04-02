@@ -105,6 +105,34 @@ function queueAuthenticatedAdmin(db: FakeDb, requestCount = 1) {
   );
 }
 
+function queueAuthenticatedSession(db: FakeDb, requestCount = 1) {
+  db.queueFirst(
+    "FROM sessions",
+    Array.from({ length: requestCount }, () => ({
+      id: "ses_1",
+      agent_id: "agt_1",
+      scope: "web_session",
+      access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z",
+      revoked_at: null,
+    })),
+  );
+  db.queueFirst(
+    "FROM agents",
+    Array.from({ length: requestCount }, () => ({
+      id: "agt_1",
+      client_id: "cli_1",
+      name: "Analyst",
+      email: "analyst@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z",
+      trust_tier: "supervised",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    })),
+  );
+}
+
 function buildEnv(db: FakeDb, overrides: Record<string, unknown> = {}) {
   return {
     DB: db as never,
@@ -268,6 +296,7 @@ describe("analytics routes", () => {
 
   it("returns leaderboard analytics that match the shared schema", async () => {
     const db = new FakeDb();
+    queueAuthenticatedSession(db);
     db.queueFirst("SELECT id, slug, name FROM domains WHERE id = ?", [{
       id: "dom_1",
       slug: "energy",
@@ -285,7 +314,9 @@ describe("analytics routes", () => {
     }]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/analytics/leaderboard/dom_1"),
+      new Request("https://api.opndomain.com/v1/analytics/leaderboard/dom_1", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
       buildEnv(db),
       { waitUntil() {} } as never,
     );
@@ -299,10 +330,13 @@ describe("analytics routes", () => {
 
   it("returns not_found for an unknown leaderboard domain id", async () => {
     const db = new FakeDb();
+    queueAuthenticatedSession(db);
     db.queueFirst("SELECT id, slug, name FROM domains WHERE id = ?", [null]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/analytics/leaderboard/dom_missing"),
+      new Request("https://api.opndomain.com/v1/analytics/leaderboard/dom_missing", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
       buildEnv(db),
       { waitUntil() {} } as never,
     );
@@ -314,6 +348,7 @@ describe("analytics routes", () => {
 
   it("returns topic analytics with zero claim density when no claims exist", async () => {
     const db = new FakeDb();
+    queueAuthenticatedSession(db);
     db.queueFirst("FROM topics\n      WHERE id = ?", [{
       id: "top_1",
       domain_id: "dom_1",
@@ -355,9 +390,17 @@ describe("analytics routes", () => {
       participant_count: 2,
       contribution_count: 4,
     }]);
+    db.queueFirst("COUNT(*) AS total_votes", [{
+      total_votes: 3,
+      timed_votes: 2,
+      average_vote_position_pct: 0.35,
+      average_round_elapsed_pct: 0.35,
+    }]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/analytics/topic/top_1"),
+      new Request("https://api.opndomain.com/v1/analytics/topic/top_1", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
       buildEnv(db),
       { waitUntil() {} } as never,
     );
@@ -371,14 +414,19 @@ describe("analytics routes", () => {
     assert.equal(parsed.scoreDistribution[1]?.roundCounts.propose, 4);
     assert.equal(parsed.bucketDetails[0]?.contributions[0]?.contributionId, "ctr_1");
     assert.equal(parsed.averageDimensionBreakdown.substance, 72);
+    assert.equal(parsed.voteTiming.timedVotes, 2);
+    assert.equal(parsed.voteTiming.averageVotePositionPct, 0.35);
   });
 
   it("returns not_found for an unknown topic id", async () => {
     const db = new FakeDb();
+    queueAuthenticatedSession(db);
     db.queueFirst("FROM topics\n      WHERE id = ?", [null]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/analytics/topic/top_missing"),
+      new Request("https://api.opndomain.com/v1/analytics/topic/top_missing", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
       buildEnv(db),
       { waitUntil() {} } as never,
     );
@@ -390,6 +438,7 @@ describe("analytics routes", () => {
 
   it("returns vote reliability analytics that match the shared schema", async () => {
     const db = new FakeDb();
+    queueAuthenticatedSession(db);
     db.queueAll("FROM vote_reliability vr", [{
       being_id: "bng_1",
       handle: "grid-analyst",
@@ -400,7 +449,9 @@ describe("analytics routes", () => {
     }]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=5"),
+      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=5", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
       buildEnv(db),
       { waitUntil() {} } as never,
     );
@@ -415,9 +466,12 @@ describe("analytics routes", () => {
 
   it("rejects invalid vote reliability query parameters", async () => {
     const db = new FakeDb();
+    queueAuthenticatedSession(db);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=0"),
+      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=0", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
       buildEnv(db),
       { waitUntil() {} } as never,
     );
@@ -425,6 +479,32 @@ describe("analytics routes", () => {
     assert.equal(response.status, 400);
     const payload = await response.json() as { code: string };
     assert.equal(payload.code, "invalid_request");
+  });
+
+  it("requires authentication for detailed analytics routes while leaving overview public", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM platform_daily_rollups", []);
+
+    const overviewResponse = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/analytics/overview"),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(overviewResponse.status, 200);
+
+    const topicResponse = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/analytics/topic/top_1"),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(topicResponse.status, 401);
+
+    const reliabilityResponse = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/analytics/vote-reliability?minVotes=5"),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(reliabilityResponse.status, 401);
   });
 
   it("accepts admin-authenticated platform rollup backfill requests", async () => {

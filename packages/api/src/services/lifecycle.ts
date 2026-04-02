@@ -1,15 +1,20 @@
 import {
   CADENCE_PRESETS,
+  DAILY_ROLLUP_CRON,
   DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
   MATCHMAKING_SWEEP_CRON,
+  PHASE5_MAINTENANCE_STUB_CRON,
   QUALITY_GATED_MIN_SCORE_FLOOR,
+  REPUTATION_DECAY_CRON,
   ROUND_AUTO_ADVANCE_SWEEP_CRON,
   ROUND_VISIBILITY_SEALED,
+  TOPIC_CANDIDATE_PROMOTION_CRON,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
+import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
@@ -31,6 +36,7 @@ type ActiveRoundRow = {
   topic_id: string;
   domain_id: string;
   sequence_index: number;
+  round_kind: string;
   status: string;
   starts_at: string | null;
   ends_at: string | null;
@@ -43,6 +49,7 @@ type RoundPlanRow = {
   id: string;
   topic_id: string;
   sequence_index: number;
+  round_kind: string;
   status: string;
   starts_at: string | null;
   ends_at: string | null;
@@ -62,6 +69,28 @@ type ContributionEvalRow = {
 type ActiveMemberRow = {
   being_id: string;
 };
+
+type CronHeartbeatStatus = {
+  cron: string;
+  lastRun: string | null;
+  ageSeconds: number | null;
+};
+
+type LifecycleMutationRecord = {
+  cron: string;
+  executedAt: string;
+  mutatedTopicIds: string[];
+};
+
+const CRON_HEARTBEAT_PREFIX = "cron/last-run/";
+const CRON_LIFECYCLE_MUTATION_PREFIX = "cron/lifecycle-mutations/";
+const CRON_OBSERVED_SCHEDULES = [
+  MATCHMAKING_SWEEP_CRON,
+  TOPIC_CANDIDATE_PROMOTION_CRON,
+  PHASE5_MAINTENANCE_STUB_CRON,
+  REPUTATION_DECAY_CRON,
+  DAILY_ROLLUP_CRON,
+] as const;
 
 function parseConfig(configJson: string): Record<string, unknown> {
   return JSON.parse(configJson) as Record<string, unknown>;
@@ -106,28 +135,46 @@ async function countActiveParticipants(env: ApiEnv, topicId: string): Promise<nu
 
 async function activateRound(
   env: ApiEnv,
-  round: Pick<RoundPlanRow, "id" | "topic_id" | "config_json" | "starts_at" | "ends_at">,
+  round: Pick<RoundPlanRow, "id" | "topic_id" | "sequence_index" | "round_kind" | "config_json" | "starts_at" | "ends_at"> & { domain_id: string },
   now: Date,
 ): Promise<boolean> {
-  if (!env.ENABLE_ELASTIC_ROUNDS) {
-    return runCas(
+  const opened = !env.ENABLE_ELASTIC_ROUNDS
+    ? await runCas(
       env.DB.prepare(`UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ? AND status = 'pending'`).bind(nowIso(now), round.id),
-    );
-  }
+    )
+    : await (async () => {
+      const durationMs = resolveRoundDurationMs(round);
+      const startsAt = nowIso(now);
+      const endsAt = new Date(now.getTime() + durationMs).toISOString();
+      const config = parseConfig(round.config_json);
+      const revealAt =
+        String(config.visibility ?? ROUND_VISIBILITY_SEALED) === ROUND_VISIBILITY_SEALED
+          ? endsAt
+          : startsAt;
+      return runCas(
+        env.DB
+          .prepare(`UPDATE rounds SET status = 'active', starts_at = ?, ends_at = ?, reveal_at = ? WHERE id = ? AND status = 'pending'`)
+          .bind(startsAt, endsAt, revealAt, round.id),
+      );
+    })();
 
-  const durationMs = resolveRoundDurationMs(round);
-  const startsAt = nowIso(now);
-  const endsAt = new Date(now.getTime() + durationMs).toISOString();
-  const config = parseConfig(round.config_json);
-  const revealAt =
-    String(config.visibility ?? ROUND_VISIBILITY_SEALED) === ROUND_VISIBILITY_SEALED
-      ? endsAt
-      : startsAt;
-  return runCas(
-    env.DB
-      .prepare(`UPDATE rounds SET status = 'active', starts_at = ?, ends_at = ?, reveal_at = ? WHERE id = ? AND status = 'pending'`)
-      .bind(startsAt, endsAt, revealAt, round.id),
-  );
+  if (opened) {
+    try {
+      const eventRoundKind = round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown");
+      await archiveProtocolEvent(env, {
+        occurredAt: nowIso(now),
+        kind: "round_opened",
+        topicId: round.topic_id,
+        domainId: round.domain_id,
+        roundId: round.id,
+        roundIndex: round.sequence_index,
+        roundKind: eventRoundKind,
+      });
+    } catch (error) {
+      console.error("round opened event archive failed", error);
+    }
+  }
+  return opened;
 }
 
 async function runCas(statement: D1PreparedStatement): Promise<boolean> {
@@ -197,7 +244,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
           const firstRound = await firstRow<RoundPlanRow>(
             env.DB,
             `
-              SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+              SELECT r.id, r.topic_id, r.sequence_index, r.round_kind, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
               FROM rounds r
               INNER JOIN round_configs rc ON rc.round_id = r.id
               WHERE r.topic_id = ? AND r.sequence_index = 0
@@ -206,7 +253,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
             topic.id,
           );
           if (firstRound) {
-            await activateRound(env, firstRound, now);
+            await activateRound(env, { ...firstRound, domain_id: topic.domain_id }, now);
           }
           const successorTopicId = await createRollingTopicSuccessor(env, topic.id);
           await invalidateTopicPublicSurfaces(env, {
@@ -260,7 +307,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
           const firstRound = await firstRow<RoundPlanRow>(
             env.DB,
             `
-              SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+              SELECT r.id, r.topic_id, r.sequence_index, r.round_kind, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
               FROM rounds r
               INNER JOIN round_configs rc ON rc.round_id = r.id
               WHERE r.topic_id = ? AND r.sequence_index = 0
@@ -269,7 +316,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
             topic.id,
           );
           if (firstRound) {
-            await activateRound(env, firstRound, now);
+            await activateRound(env, { ...firstRound, domain_id: topic.domain_id }, now);
           }
           await invalidateTopicPublicSurfaces(env, {
             topicId: topic.id,
@@ -330,7 +377,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
         const firstRound = await firstRow<RoundPlanRow>(
           env.DB,
           `
-            SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+            SELECT r.id, r.topic_id, r.sequence_index, r.round_kind, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
             FROM rounds r
             INNER JOIN round_configs rc ON rc.round_id = r.id
             WHERE r.topic_id = ? AND r.sequence_index = 0
@@ -339,7 +386,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
           topic.id,
         );
         if (firstRound) {
-          await activateRound(env, firstRound, now);
+          await activateRound(env, { ...firstRound, domain_id: topic.domain_id }, now);
         }
         await invalidateTopicPublicSurfaces(env, {
           topicId: topic.id,
@@ -483,6 +530,20 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   if (!completed) {
     return false;
   }
+  try {
+    const eventRoundKind = round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown");
+    await archiveProtocolEvent(env, {
+      occurredAt: nowIso(now),
+      kind: "round_closed",
+      topicId: round.topic_id,
+      domainId: round.domain_id,
+      roundId: round.id,
+      roundIndex: round.sequence_index,
+      roundKind: eventRoundKind,
+    });
+  } catch (error) {
+    console.error("round closed event archive failed", error);
+  }
 
   const activeMembers = await allRows<ActiveMemberRow>(
     env.DB,
@@ -526,7 +587,7 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   const rounds = await allRows<RoundPlanRow>(
     env.DB,
     `
-      SELECT r.id, r.topic_id, r.sequence_index, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
+      SELECT r.id, r.topic_id, r.sequence_index, r.round_kind, r.status, r.starts_at, r.ends_at, r.reveal_at, rc.config_json
       FROM rounds r
       INNER JOIN round_configs rc ON rc.round_id = r.id
       WHERE r.topic_id = ?
@@ -540,7 +601,7 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
     if (!env.ENABLE_ELASTIC_ROUNDS) {
       await rewritePendingRoundTimings(env, rounds, nextRound.sequence_index, now);
     }
-    const activated = await activateRound(env, nextRound, now);
+    const activated = await activateRound(env, { ...nextRound, domain_id: round.domain_id }, now);
     if (activated) {
       const activeParticipantCount = await countActiveParticipants(env, round.topic_id);
       await runCas(
@@ -576,6 +637,7 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
         r.topic_id,
         t.domain_id,
         r.sequence_index,
+        r.round_kind,
         r.status,
         r.starts_at,
         r.ends_at,
@@ -638,9 +700,72 @@ export async function sweepTopicLifecycle(env: ApiEnv, options?: { cron?: string
     }
   }
 
-  return { cron, executedAt: nowIso(now), mutatedTopicIds: Array.from(mutatedTopicIds) };
+  const result = { cron, executedAt: nowIso(now), mutatedTopicIds: Array.from(mutatedTopicIds) };
+  await recordLifecycleMutation(env, result);
+  return result;
 }
 
 export async function recordCronHeartbeat(env: ApiEnv, cron: string, now: Date): Promise<void> {
-  await env.PUBLIC_CACHE.put(`cron/last-run/${cron}`, nowIso(now));
+  await env.PUBLIC_CACHE.put(`${CRON_HEARTBEAT_PREFIX}${cron}`, nowIso(now));
+}
+
+export async function recordLifecycleMutation(env: ApiEnv, record: LifecycleMutationRecord): Promise<void> {
+  if (record.mutatedTopicIds.length === 0) {
+    return;
+  }
+  await env.PUBLIC_CACHE.put(
+    `${CRON_LIFECYCLE_MUTATION_PREFIX}${record.executedAt}__${record.cron}`,
+    JSON.stringify(record),
+  );
+}
+
+export async function readCronHeartbeatStatuses(env: ApiEnv, now = new Date()): Promise<CronHeartbeatStatus[]> {
+  const statuses = await Promise.all(
+    CRON_OBSERVED_SCHEDULES.map(async (cron) => {
+      const lastRun = await env.PUBLIC_CACHE.get(`${CRON_HEARTBEAT_PREFIX}${cron}`);
+      const lastRunMs = lastRun ? new Date(lastRun).getTime() : Number.NaN;
+      return {
+        cron,
+        lastRun,
+        ageSeconds: Number.isFinite(lastRunMs) ? Math.max(0, Math.floor((now.getTime() - lastRunMs) / 1000)) : null,
+      };
+    }),
+  );
+  return statuses;
+}
+
+export async function listRecentLifecycleMutations(env: ApiEnv, limit = 10): Promise<LifecycleMutationRecord[]> {
+  const listing = await env.PUBLIC_CACHE.list({ prefix: CRON_LIFECYCLE_MUTATION_PREFIX });
+  const keys = listing.keys
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left))
+    .slice(0, limit);
+
+  const records = await Promise.all(
+    keys.map(async (key) => {
+      const payload = await env.PUBLIC_CACHE.get(key);
+      if (!payload) {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(payload) as Partial<LifecycleMutationRecord>;
+        if (
+          typeof parsed.cron !== "string" ||
+          typeof parsed.executedAt !== "string" ||
+          !Array.isArray(parsed.mutatedTopicIds)
+        ) {
+          return null;
+        }
+        return {
+          cron: parsed.cron,
+          executedAt: parsed.executedAt,
+          mutatedTopicIds: parsed.mutatedTopicIds.map((topicId) => String(topicId)),
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return records.filter((record): record is LifecycleMutationRecord => Boolean(record));
 }

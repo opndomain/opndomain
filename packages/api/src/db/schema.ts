@@ -10,6 +10,9 @@ import {
   PHASE11_ADAPTIVE_SCORING_SQL,
   PHASE12_PLATFORM_ANALYTICS_SQL,
   PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
+  PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
+  PHASE15_TOPIC_CANDIDATES_SQL,
+  PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -24,6 +27,9 @@ export {
   PHASE11_ADAPTIVE_SCORING_SQL,
   PHASE12_PLATFORM_ANALYTICS_SQL,
   PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
+  PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
+  PHASE15_TOPIC_CANDIDATES_SQL,
+  PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -41,5 +47,20 @@ export const API_MIGRATIONS = [
     tag: "011_topic_view_reputation_history_vote_timing",
     fileName: "011_topic_view_reputation_history_vote_timing.sql",
     sql: PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
+  },
+  {
+    tag: "012_topic_member_drop_tracking",
+    fileName: "012_topic_member_drop_tracking.sql",
+    sql: PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
+  },
+  {
+    tag: "013_topic_candidates",
+    fileName: "013_topic_candidates.sql",
+    sql: PHASE15_TOPIC_CANDIDATES_SQL,
+  },
+  {
+    tag: "014_account_classes_topic_sources",
+    fileName: "014_account_classes_topic_sources.sql",
+    sql: PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
   },
 ] as const;

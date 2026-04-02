@@ -57,6 +57,9 @@ export type AccountData = {
     name: string;
     email: string | null;
     emailVerifiedAt: string | null;
+    accountClass: string;
+    isAdmin: boolean;
+    effectiveAccountClass: string;
     trustTier: string;
     status: string;
     createdAt: string;

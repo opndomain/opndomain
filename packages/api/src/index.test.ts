@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { MATCHMAKING_SWEEP_CRON } from "@opndomain/shared";
+import { MATCHMAKING_SWEEP_CRON, TOPIC_CANDIDATE_PROMOTION_CRON } from "@opndomain/shared";
 import { parseApiEnv } from "./lib/env.js";
 import worker from "./index.js";
 
@@ -301,9 +301,183 @@ describe("scheduled worker", () => {
     assert.ok(db.runs.some((entry) => entry.sql.includes("DELETE FROM magic_links")));
     assert.equal(cache.values.get("cron/phase5-maintenance-stub"), "2026-03-26T02:00:00.000Z");
   });
+
+  it("runs topic candidate promotion on the dedicated promotion cron", async () => {
+    const log: string[] = [];
+    const db = new FakeDb(log);
+    const cache = new FakeCache(log);
+    db.queueAll("SELECT d.id", [{ id: "dom_1" }]);
+    db.queueFirst("FROM topic_candidates", [{
+      id: "tcand_1",
+      source: "arxiv",
+      source_id: "1234.5678",
+      source_url: "https://arxiv.org/abs/1234.5678",
+      domain_id: "dom_1",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      cadence_family: "scheduled",
+      cadence_override_minutes: 60,
+      min_trust_tier: "supervised",
+      status: "approved",
+      priority_score: 10,
+      published_at: null,
+      promoted_topic_id: null,
+      promotion_error: null,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM domains", [{
+      id: "dom_1",
+      slug: "energy",
+      name: "Energy",
+      description: null,
+      status: "active",
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM topics t\n      INNER JOIN domains d ON d.id = t.domain_id", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "energy",
+      domain_name: "Energy",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "open",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: 60,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: "2026-03-31T00:30:00.000Z",
+      join_until: "2026-03-31T00:15:00.000Z",
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      change_sequence: 0,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", []);
+
+    const waits: Promise<unknown>[] = [];
+    await worker.scheduled(
+      { cron: TOPIC_CANDIDATE_PROMOTION_CRON, scheduledTime: new Date("2026-03-31T00:00:00.000Z").getTime() } as ScheduledController,
+      {
+        DB: db as never,
+        PUBLIC_CACHE: cache as never,
+        SNAPSHOTS: new FakeBucket(log) as never,
+        PUBLIC_ARTIFACTS: new FakeBucket(log) as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
+      } as never,
+      {
+        waitUntil(promise: Promise<unknown>) {
+          waits.push(promise);
+        },
+      } as ExecutionContext,
+    );
+    await Promise.all(waits);
+
+    assert.ok(log.includes("db.batch"));
+    assert.equal(cache.values.get(`cron/last-run/${TOPIC_CANDIDATE_PROMOTION_CRON}`), "2026-03-31T00:00:00.000Z");
+  });
 });
 
 describe("worker fetch env parsing", () => {
+  it("exposes public cron heartbeat metadata through /meta/cron", async () => {
+    const log: string[] = [];
+    const cache = new FakeCache(log);
+    cache.values.set("cron/last-run/* * * * *", "2026-03-25T00:00:00.000Z");
+    cache.values.set("cron/last-run/*/1 * * * *", "2026-03-25T00:00:30.000Z");
+    cache.values.set("cron/last-run/0 2 * * *", "2026-03-25T02:00:00.000Z");
+    cache.values.set("cron/last-run/0 3 * * *", "2026-03-25T03:00:00.000Z");
+    cache.values.set("cron/last-run/0 4 * * *", "2026-03-25T04:00:00.000Z");
+
+    const response = await worker.fetch(
+      new Request("https://api.opndomain.com/meta/cron"),
+      {
+        DB: new FakeDb(log) as never,
+        PUBLIC_CACHE: cache as never,
+        SNAPSHOTS: new FakeBucket(log) as never,
+        PUBLIC_ARTIFACTS: new FakeBucket(log) as never,
+        TOPIC_STATE_DO: new FakeTopicStateNamespace({}) as never,
+        OPNDOMAIN_ENV: "development",
+        ROOT_DOMAIN: "opndomain.com",
+        ROUTER_HOST: "opndomain.com",
+        API_HOST: "api.opndomain.com",
+        MCP_HOST: "mcp.opndomain.com",
+        ROUTER_ORIGIN: "https://opndomain.com",
+        API_ORIGIN: "https://api.opndomain.com",
+        MCP_ORIGIN: "https://mcp.opndomain.com",
+        JWT_ISSUER: "https://api.opndomain.com",
+        JWT_AUDIENCE: "https://api.opndomain.com",
+        SESSION_COOKIE_NAME: "opn_session",
+        SESSION_COOKIE_DOMAIN: ".opndomain.com",
+        ACCESS_TOKEN_TTL_SECONDS: 3600,
+        REFRESH_TOKEN_TTL_SECONDS: 2592000,
+        WEB_SESSION_TTL_SECONDS: 604800,
+        REGISTRATION_RATE_LIMIT_PER_HOUR: 5,
+        TOKEN_RATE_LIMIT_PER_HOUR: 30,
+        EMAIL_VERIFICATION_MAX_ATTEMPTS: 5,
+        EMAIL_VERIFICATION_TTL_MINUTES: 15,
+        MAGIC_LINK_TTL_MINUTES: 15,
+        OAUTH_STATE_TTL_SECONDS: 600,
+        OAUTH_WELCOME_TTL_SECONDS: 600,
+        ADMIN_ALLOWED_EMAILS: "admin@example.com",
+        ADMIN_ALLOWED_CLIENT_IDS: "",
+        ENABLE_SEMANTIC_SCORING: false,
+        ENABLE_TRANSCRIPT_GUARDRAILS: true,
+        CURATED_OPEN_KEY: "curated/open.json",
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        ARTIFACTS_PREFIX: "artifacts",
+        ADMIN_BASE_PATH: "/admin",
+        LOG_LEVEL: "debug",
+        EMAIL_PROVIDER: "stub",
+        EMAIL_FROM: "noreply@opndomain.com",
+        EMAIL_REPLY_TO: "noreply@opndomain.com",
+        EMAIL_PROVIDER_API_KEY: "",
+        AWS_SES_ACCESS_KEY_ID: "",
+        AWS_SES_SECRET_ACCESS_KEY: "",
+        AWS_SES_REGION: "us-east-2",
+        AWS_SES_SESSION_TOKEN: "",
+        EMAIL_VERIFICATION_BASE_URL: "https://api.opndomain.com",
+        GOOGLE_OAUTH_CLIENT_ID: "",
+        GOOGLE_OAUTH_CLIENT_SECRET: "",
+        GITHUB_OAUTH_CLIENT_ID: "",
+        GITHUB_OAUTH_CLIENT_SECRET: "",
+        X_OAUTH_CLIENT_ID: "",
+        X_OAUTH_CLIENT_SECRET: "",
+        JWT_PRIVATE_KEY_PEM: "",
+        JWT_PUBLIC_KEY_PEM: "",
+      } as never,
+      {
+        waitUntil() {},
+        passThroughOnException() {},
+        props: {},
+      } as unknown as ExecutionContext,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as {
+      data: {
+        heartbeats: Array<{ cron: string; lastRun: string | null }>;
+      };
+    };
+    assert.deepEqual(
+      payload.data.heartbeats.map((entry) => entry.cron),
+      ["* * * * *", "*/1 * * * *", "0 2 * * *", "0 3 * * *", "0 4 * * *"],
+    );
+    assert.equal(payload.data.heartbeats[0]?.lastRun, "2026-03-25T00:00:00.000Z");
+  });
+
   it("parses admin allowlist sets before routing requests", async () => {
     const log: string[] = [];
     const db = new FakeDb(log);

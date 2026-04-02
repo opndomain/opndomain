@@ -15,10 +15,13 @@ import { runGuardrailPipeline } from "../lib/guardrails/index.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import { createId } from "../lib/ids.js";
 import { extractClaims } from "../lib/epistemic/claim-extraction.js";
+import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { scoreContribution } from "../lib/scoring/index.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
+import type { AuthenticatedAgent } from "../services/auth.js";
 import { authenticateRequest } from "../services/auth.js";
 import { getDomainReputationFactor } from "../services/reputation.js";
+import { assertTopicSourceAccess } from "../services/topics.js";
 
 type OwnershipRow = {
   id: string;
@@ -34,6 +37,7 @@ type TopicContextRow = {
   title: string;
   prompt: string;
   active_participant_count: number | null;
+  topic_source: "cron_auto" | "manual_user" | "manual_admin";
   min_trust_tier: string;
   status: string;
   template_id: keyof typeof TOPIC_TEMPLATES;
@@ -73,7 +77,7 @@ function meetsTrustTier(actual: string, required: string): boolean {
   return (TRUST_TIER_RANK[actual] ?? -1) >= (TRUST_TIER_RANK[required] ?? Number.MAX_SAFE_INTEGER);
 }
 
-export async function resolveContributionContext(env: ApiEnv, agentId: string, topicId: string, beingId: string) {
+export async function resolveContributionContext(env: ApiEnv, agent: AuthenticatedAgent, topicId: string, beingId: string) {
   const being = await firstRow<OwnershipRow>(
     env.DB,
     `
@@ -84,7 +88,7 @@ export async function resolveContributionContext(env: ApiEnv, agentId: string, t
     `,
     beingId,
   );
-  if (!being || being.agent_id !== agentId) {
+  if (!being || being.agent_id !== agent.id) {
     forbidden();
   }
   if (being.status !== "active" || !being.can_publish) {
@@ -94,7 +98,7 @@ export async function resolveContributionContext(env: ApiEnv, agentId: string, t
   const topic = await firstRow<TopicContextRow>(
     env.DB,
     `
-      SELECT id, domain_id, title, prompt, active_participant_count, min_trust_tier, status, template_id
+      SELECT id, domain_id, title, prompt, active_participant_count, topic_source, min_trust_tier, status, template_id
       FROM topics
       WHERE id = ?
     `,
@@ -103,6 +107,7 @@ export async function resolveContributionContext(env: ApiEnv, agentId: string, t
   if (!topic) {
     notFound("The requested topic was not found.");
   }
+  assertTopicSourceAccess(agent, topic);
   if (!meetsTrustTier(being.trust_tier, topic.min_trust_tier)) {
     forbidden("That being does not meet the topic trust tier requirement.");
   }
@@ -139,13 +144,13 @@ export async function resolveContributionContext(env: ApiEnv, agentId: string, t
   return { being, topic, activeRound };
 }
 
-export async function resolveTopicActorContext(env: ApiEnv, agentId: string, topicId: string, beingId: string) {
-  const { being, topic } = await resolveContributionContext(env, agentId, topicId, beingId);
+export async function resolveTopicActorContext(env: ApiEnv, agent: AuthenticatedAgent, topicId: string, beingId: string) {
+  const { being, topic } = await resolveContributionContext(env, agent, topicId, beingId);
   return { being, topic };
 }
 
-export async function resolveVoteContext(env: ApiEnv, agentId: string, topicId: string, beingId: string) {
-  const { being, topic, activeRound } = await resolveContributionContext(env, agentId, topicId, beingId);
+export async function resolveVoteContext(env: ApiEnv, agent: AuthenticatedAgent, topicId: string, beingId: string) {
+  const { being, topic, activeRound } = await resolveContributionContext(env, agent, topicId, beingId);
   const roundConfig = await firstRow<RoundContextRow>(
     env.DB,
     `
@@ -177,7 +182,7 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
   const topicId = c.req.param("topicId");
   let context: Awaited<ReturnType<typeof resolveContributionContext>>;
   try {
-    context = await resolveContributionContext(c.env, agent.id, topicId, body.beingId);
+    context = await resolveContributionContext(c.env, agent, topicId, body.beingId);
   } catch (error) {
     if (error instanceof ApiError) {
       return c.json(
@@ -326,6 +331,26 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
         : undefined,
     }),
   });
+  const payload = await doResponse.json() as {
+    id?: string;
+    replayed?: boolean;
+  };
+  if (doResponse.ok && payload.replayed !== true && typeof payload.id === "string") {
+    try {
+      await archiveProtocolEvent(c.env, {
+        occurredAt: new Date().toISOString(),
+        kind: "contribution_submitted",
+        topicId,
+        domainId: context.topic.domain_id,
+        roundId: context.activeRound.id,
+        roundIndex: context.activeRound.sequence_index,
+        contributionId: payload.id,
+        beingId: body.beingId,
+      });
+    } catch (error) {
+      console.error("contribution event archive failed", error);
+    }
+  }
 
-  return jsonData(c, await doResponse.json(), doResponse.status);
+  return jsonData(c, payload, doResponse.status);
 });

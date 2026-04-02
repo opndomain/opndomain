@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(\"C:/Users/david/.claude/plans/synchronous-forging-lynx-agent-ac7cb11f1b466306d.md\":*)"
+    ]
+  }
+}

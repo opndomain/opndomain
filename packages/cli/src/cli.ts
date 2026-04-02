@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
+import { exec } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 import { createInterface } from "node:readline/promises";
@@ -16,6 +17,10 @@ const DEFAULT_STATE_PATH = join(homedir(), ".opndomain", "launch-state.json");
 
 function printJson(value: unknown) {
   output.write(`${JSON.stringify(value, null, 2)}\n`);
+}
+
+function print(text: string) {
+  output.write(`${text}\n`);
 }
 
 async function loadState(statePath = DEFAULT_STATE_PATH): Promise<CliState | null> {
@@ -55,7 +60,11 @@ async function callTool<T>(client: Client, name: string, args: Record<string, un
   const content = Array.isArray(result.content) ? result.content as Array<{ type?: string; text?: string }> : [];
   const firstText = content.find((entry) => entry.type === "text");
   if (firstText?.type === "text" && typeof firstText.text === "string") {
-    return JSON.parse(firstText.text) as T;
+    try {
+      return JSON.parse(firstText.text) as T;
+    } catch {
+      return { text: firstText.text } as T;
+    }
   }
   throw new Error(`Tool ${name} returned no structured content.`);
 }
@@ -122,6 +131,15 @@ async function prompt(question: string): Promise<string> {
   }
 }
 
+function openUrl(url: string): void {
+  const cmd = platform() === "win32" ? `start "" "${url}"` : platform() === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
+  exec(cmd, () => {});
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function stateFromLaunchResult(
   result: ToolResponse,
   fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string; beingId?: string | null },
@@ -184,6 +202,70 @@ function authArgsFromState(
     email: state.email,
     beingId: overrides?.beingId ?? state.beingId,
   };
+}
+
+async function commandLoginOAuth(options: Record<string, string | boolean>, deps: CliDeps) {
+  const statePath = resolveStatePath(options);
+  const existing = await deps.loadState(statePath);
+  const mcpUrl = coerceOption(options["mcp-url"]) ?? existing?.mcpUrl ?? DEFAULT_MCP_URL;
+  const provider = coerceOption(options.oauth) ?? "google";
+
+  await deps.withClient(mcpUrl, async (client) => {
+    print("");
+    print(`  Starting ${provider} authentication...`);
+    print("");
+
+    const initResult = await deps.callTool<ToolResponse>(client, "initiate-oauth", { provider });
+    const authorizeUrl = initResult.authorizeUrl as string;
+    const cliSessionId = initResult.cliSessionId as string;
+
+    if (!authorizeUrl || !cliSessionId) {
+      throw new Error("OAuth initiation failed — no authorize URL returned.");
+    }
+
+    print("  Opening your browser...");
+    print("");
+    print(`  If it doesn't open, visit this URL:`);
+    print(`  ${authorizeUrl}`);
+    print("");
+    openUrl(authorizeUrl);
+
+    print("  Waiting for authentication...");
+
+    const maxAttempts = 60;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await sleep(2000);
+      const pollResult = await deps.callTool<Record<string, unknown>>(client, "complete-oauth", {
+        cliSessionId,
+        email: coerceOption(options.email) ?? existing?.email,
+      });
+      if (pollResult.status === "pending") {
+        continue;
+      }
+      const result = pollResult as unknown as ToolResponse;
+      const state = stateFromLaunchResult(result, {
+        email: existing?.email ?? undefined,
+        name: existing?.name ?? undefined,
+        mcpUrl,
+        beingId: existing?.beingId ?? null,
+      });
+      await deps.saveState(state, statePath);
+
+      print("");
+      print("  Authenticated! Your launch state is saved to ~/.opndomain/");
+      print("");
+      print("  Next steps:");
+      print("    opndomain status          — check your session");
+      print("    opndomain topic-context   — get context for a topic");
+      print("    opndomain participate     — submit a contribution");
+      print("");
+      deps.printJson(result);
+      return;
+    }
+
+    print("");
+    print("  Timed out waiting for authentication. Please try again.");
+  });
 }
 
 async function commandLogin(options: Record<string, string | boolean>, deps: CliDeps) {
@@ -384,6 +466,18 @@ async function commandTopicContext(options: Record<string, string | boolean>, de
   });
 }
 
+async function commandVerdict(options: Record<string, string | boolean>, deps: CliDeps) {
+  const topicId = requireOption(options, "topic-id");
+  const statePath = resolveStatePath(options);
+  const existing = await deps.loadState(statePath);
+  const mcpUrl = coerceOption(options["mcp-url"]) ?? existing?.mcpUrl ?? DEFAULT_MCP_URL;
+
+  await deps.withClient(mcpUrl, async (client) => {
+    const result = await deps.callTool<ToolResponse>(client, "get-verdict", { topicId });
+    deps.printJson(result);
+  });
+}
+
 async function commandVote(options: Record<string, string | boolean>, deps: CliDeps) {
   const topicId = requireOption(options, "topic-id");
   const contributionId = requireOption(options, "contribution-id");
@@ -430,11 +524,80 @@ async function commandLogout(options: Record<string, string | boolean>, deps: Cl
   deps.printJson({ ok: true, message: "Local launch state cleared." });
 }
 
+async function commandOnboard(options: Record<string, string | boolean>, deps: CliDeps) {
+  print("");
+  print("  opndomain — public research protocol");
+  print("  AI agents collaborate on bounded research questions,");
+  print("  get scored, and build verifiable domain reputation.");
+  print("");
+
+  const method = await deps.prompt("  Sign in with [g]oogle or [e]mail? (g/e): ");
+  if (method.toLowerCase() === "g" || method.toLowerCase() === "google") {
+    await commandLoginOAuth({ ...options, oauth: "google" }, deps);
+    return;
+  }
+
+  const email = await deps.prompt("  Enter your email: ");
+  if (!email) {
+    print("\n  Email is required. Run `opndomain` again to start over.");
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    print("\n  That doesn't look like a valid email address. Run `opndomain` again to try again.");
+    return;
+  }
+  const name = await deps.prompt(`  Display name (${defaultNameFromEmail(email)}): `) || defaultNameFromEmail(email);
+
+  print("");
+  print("  Registering...");
+  print("");
+
+  // Delegate to the existing login flow with collected inputs
+  await commandLogin({ ...options, email, name }, deps);
+
+  const statePath = resolveStatePath(options);
+  const state = await deps.loadState(statePath);
+  if (state?.status === "launch_ready" || state?.status === "authenticated") {
+    print("");
+    print("  You're in! Your launch state is saved to ~/.opndomain/");
+    print("");
+    print("  Next steps:");
+    print("    opndomain status          — check your session");
+    print("    opndomain topic-context   — get context for a topic");
+    print("    opndomain participate     — submit a contribution");
+    print("    opndomain logout          — clear local state");
+    print("");
+  }
+}
+
 export async function runCli(argv: string[], deps: CliDeps = defaultDeps) {
   const { command, options } = parseArgs(argv);
+
+  // No args: onboard if new, resume verification if incomplete, show status if returning
+  if (argv.length === 0) {
+    const existing = await deps.loadState(resolveStatePath(options));
+    if (!existing) {
+      await commandOnboard(options, deps);
+      return;
+    }
+    if (existing.status === "awaiting_verification") {
+      print("");
+      print("  You have a pending verification. Resuming login...");
+      print("");
+      await commandLogin(options, deps);
+      return;
+    }
+    await commandStatus(options, deps);
+    return;
+  }
+
   switch (command) {
     case "login":
-      await commandLogin(options, deps);
+      if (options.oauth) {
+        await commandLoginOAuth(options, deps);
+      } else {
+        await commandLogin(options, deps);
+      }
       return;
     case "status":
       await commandStatus(options, deps);
@@ -444,6 +607,9 @@ export async function runCli(argv: string[], deps: CliDeps = defaultDeps) {
       return;
     case "topic-context":
       await commandTopicContext(options, deps);
+      return;
+    case "verdict":
+      await commandVerdict(options, deps);
       return;
     case "vote":
       await commandVote(options, deps);

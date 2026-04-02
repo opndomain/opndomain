@@ -109,6 +109,8 @@ type TestEnv = {
   JWT_ISSUER: string;
   JWT_PUBLIC_KEY_PEM: string;
   JWT_PRIVATE_KEY_PEM: string;
+  ADMIN_ALLOWED_EMAILS_SET: Set<string>;
+  ADMIN_ALLOWED_CLIENT_IDS_SET: Set<string>;
   API_ORIGIN: string;
   ROUTER_ORIGIN: string;
   OAUTH_CALLBACK_BASE_URL: string;
@@ -151,6 +153,8 @@ function buildEnv(db: FakeDb): TestEnv {
     JWT_ISSUER: "https://api.opndomain.com",
     JWT_PUBLIC_KEY_PEM: publicKey,
     JWT_PRIVATE_KEY_PEM: privateKey,
+    ADMIN_ALLOWED_EMAILS_SET: new Set<string>(),
+    ADMIN_ALLOWED_CLIENT_IDS_SET: new Set<string>(),
     API_ORIGIN: "https://api.opndomain.com",
     ROUTER_ORIGIN: "https://opndomain.com",
     OAUTH_CALLBACK_BASE_URL: "https://api.opndomain.com",
@@ -174,6 +178,7 @@ function queueAgentLookup(db: FakeDb, agentId = "agt_1") {
       name: "Agent",
       email: "agent@example.com",
       email_verified_at: "2026-03-25T00:00:00.000Z",
+      account_class: "verified_participant",
       trust_tier: "verified",
       status: "active",
       created_at: "2026-03-25T00:00:00.000Z",
@@ -289,10 +294,11 @@ describe("authenticateRequest bearer hardening", () => {
         id: "agt_1",
         client_id: "cli_1",
         client_secret_hash: await sha256(clientSecret),
-        name: "Agent",
-        email: "agent@example.com",
-        email_verified_at: "2026-03-25T00:00:00.000Z",
-        trust_tier: "verified",
+      name: "Agent",
+      email: "agent@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z",
+      account_class: "verified_participant",
+      trust_tier: "verified",
         status: "active",
         created_at: "2026-03-25T00:00:00.000Z",
         updated_at: "2026-03-25T00:00:00.000Z",
@@ -377,6 +383,9 @@ describe("registration and email verification contracts", () => {
 
     const parsed = RegisterAgentResponseSchema.parse(result);
     assert.equal(parsed.agent.email, "agent@example.com");
+    assert.equal(parsed.agent.accountClass, "unverified_participant");
+    assert.equal(parsed.agent.isAdmin, false);
+    assert.equal(parsed.agent.effectiveAccountClass, "unverified_participant");
     assert.equal(parsed.agent.trustTier, "unverified");
     assert.equal(parsed.agent.status, "active");
     assert.match(parsed.clientId, /^cli_/);
@@ -401,6 +410,9 @@ describe("registration and email verification contracts", () => {
     assert.match(parsed.agent.id, /^agt_/);
     assert.equal(parsed.agent.clientId, parsed.clientId);
     assert.equal(parsed.agent.email, "agent@example.com");
+    assert.equal(parsed.agent.accountClass, "unverified_participant");
+    assert.equal(parsed.agent.isAdmin, false);
+    assert.equal(parsed.agent.effectiveAccountClass, "unverified_participant");
     assert.equal(parsed.agent.trustTier, "unverified");
     assert.equal(parsed.agent.status, "active");
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
@@ -417,6 +429,7 @@ describe("registration and email verification contracts", () => {
         name: "Agent",
         email: "agent@example.com",
         email_verified_at: null,
+        account_class: "unverified_participant",
         trust_tier: "unverified",
         status: "active",
         created_at: "2026-03-25T00:00:00.000Z",
@@ -428,6 +441,7 @@ describe("registration and email verification contracts", () => {
         name: "Agent",
         email: "agent@example.com",
         email_verified_at: "2026-03-25T00:15:00.000Z",
+        account_class: "verified_participant",
         trust_tier: "supervised",
         status: "active",
         created_at: "2026-03-25T00:00:00.000Z",
@@ -451,6 +465,9 @@ describe("registration and email verification contracts", () => {
 
     const parsed = VerifyEmailResponseSchema.parse(result);
     assert.equal(parsed.email, "agent@example.com");
+    assert.equal(parsed.accountClass, "verified_participant");
+    assert.equal(parsed.isAdmin, false);
+    assert.equal(parsed.effectiveAccountClass, "verified_participant");
     assert.equal(parsed.trustTier, "supervised");
     assert.equal(parsed.status, "active");
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE email_verifications SET consumed_at")));
@@ -469,6 +486,7 @@ describe("magic-link auth", () => {
       name: "Agent",
       email: "agent@example.com",
       email_verified_at: "2026-03-25T00:00:00.000Z",
+      account_class: "verified_participant",
       trust_tier: "verified",
       status: "active",
       created_at: "2026-03-25T00:00:00.000Z",
@@ -481,6 +499,32 @@ describe("magic-link auth", () => {
     assert.equal(parsed.agent.clientId, "cli_1");
     assert.equal(parsed.agent.email, "agent@example.com");
     assert.match(parsed.delivery.loginUrl, /\/login\/verify\?token=/);
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO magic_links")));
+  });
+
+  it("creates a new unverified agent when the email has not been seen before", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    db.queueFirst("WHERE id = ?", [{
+      id: "agt_1",
+      client_id: "cli_1",
+      name: "New Person",
+      email: "new.person@example.com",
+      email_verified_at: null,
+      account_class: "unverified_participant",
+      trust_tier: "unverified",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const result = await createMagicLink(env as never, "127.0.0.1", "new.person@example.com");
+    const parsed = MagicLinkResponseSchema.parse(result);
+
+    assert.match(parsed.agent.clientId, /^cli_/);
+    assert.equal(parsed.agent.email, "new.person@example.com");
+    assert.match(parsed.delivery.loginUrl, /\/login\/verify\?token=/);
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO magic_links")));
   });
 
@@ -513,6 +557,60 @@ describe("magic-link auth", () => {
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE magic_links") && entry.sql.includes("consumed_at IS NULL")));
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO sessions")));
   });
+
+  it("verifies a new email-signup magic link and upgrades the account trust tier", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const token = "token_signup";
+    db.queueFirst("FROM magic_links", [{
+      id: "mlk_1",
+      agent_id: "agt_1",
+      token_hash: await sha256(token),
+      expires_at: "3026-03-25T00:00:00.000Z",
+      consumed_at: null,
+    }]);
+    db.queueFirst("WHERE id = ?", [{
+      id: "agt_1",
+      client_id: "cli_1",
+      name: "New Person",
+      email: "new.person@example.com",
+      email_verified_at: null,
+      account_class: "unverified_participant",
+      trust_tier: "unverified",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }, {
+      id: "agt_1",
+      client_id: "cli_1",
+      name: "New Person",
+      email: "new.person@example.com",
+      email_verified_at: "2026-03-25T00:05:00.000Z",
+      account_class: "verified_participant",
+      trust_tier: "supervised",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:05:00.000Z",
+    }]);
+
+    const result = await verifyMagicLink(env as never, token);
+    const parsed = MagicLinkVerifyResponseSchema.parse({
+      tokenType: "Bearer",
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
+      sessionId: result.sessionId,
+      agent: result.agent,
+    });
+
+    assert.equal(parsed.agent.email, "new.person@example.com");
+    assert.ok(
+      db.executedRuns.some((entry) =>
+        entry.sql.includes("UPDATE agents SET email_verified_at = COALESCE(email_verified_at, ?), account_class = 'verified_participant', trust_tier = 'supervised'"),
+      ),
+    );
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE beings SET trust_tier = 'supervised'")));
+  });
 });
 
 describe("oauth auth", () => {
@@ -527,7 +625,7 @@ describe("oauth auth", () => {
       completeOAuthCallback(
         env as never,
         new Request("https://api.opndomain.com/v1/auth/oauth/google/callback", {
-          headers: { cookie: authorize.nonceCookie },
+          headers: { cookie: authorize.nonceCookie! },
         }),
         "127.0.0.1",
         "google",
@@ -572,7 +670,7 @@ describe("oauth auth", () => {
     const authorize = await beginOAuthAuthorize(env as never, "127.0.0.1", "google", "/account");
     const url = new URL(authorize.location);
     const state = url.searchParams.get("state") ?? "";
-    const cookieValue = authorize.nonceCookie.match(/^[^=]+=([^;]+)/)?.[1] ?? "";
+    const cookieValue = authorize.nonceCookie!.match(/^[^=]+=([^;]+)/)?.[1] ?? "";
 
     await expectUnauthorized(
       completeOAuthCallback(
@@ -647,7 +745,7 @@ describe("oauth auth", () => {
       const result = await completeOAuthCallback(
         env as never,
         new Request("https://api.opndomain.com/v1/auth/oauth/google/callback", {
-          headers: { cookie: authorize.nonceCookie },
+          headers: { cookie: authorize.nonceCookie! },
         }),
         "127.0.0.1",
         "google",
@@ -691,15 +789,15 @@ describe("oauth auth", () => {
       const result = await completeOAuthCallback(
         env as never,
         new Request("https://api.opndomain.com/v1/auth/oauth/x/callback", {
-          headers: { cookie: authorize.nonceCookie },
+          headers: { cookie: authorize.nonceCookie! },
         }),
         "127.0.0.1",
         "x",
         { code: "code_1", state },
       );
 
-      assert.equal(result.location, "https://opndomain.com/welcome/credentials");
-      assert.ok(result.setCookies.some((value) => value.includes("opn_oauth_welcome=")));
+      assert.equal(result.location, "https://opndomain.com/account");
+      assert.ok(!result.setCookies.some((value) => value.includes("opn_oauth_welcome=")));
       assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
       assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO external_identities")));
     } finally {

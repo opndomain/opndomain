@@ -17,7 +17,8 @@ type AnalyticsPageData = {
   overview: AnalyticsOverviewResponse;
   topics: AnalyticsTopicOption[];
   topicData: AnalyticsTopicResponse | null;
-  reliability: AnalyticsVoteReliabilityResponse;
+  reliability: AnalyticsVoteReliabilityResponse | null;
+  canViewDetailedAnalytics: boolean;
   range: AnalyticsRange;
   topicId: string | null;
   minVotes: number;
@@ -66,13 +67,20 @@ export function analyticsRangeWindow(range: AnalyticsRange, now = new Date()): {
 
 export function renderAnalyticsPage(data: AnalyticsPageData): string {
   const selectedTopic = data.topics.find((topic) => topic.id === data.topicId) ?? null;
-  const scoringEmptyState = !data.topicId || !selectedTopic || !data.topicData
+  const scoringEmptyState = !data.canViewDetailedAnalytics
+    ? `<div class="analytics-empty"><p>Sign in to view topic-level scoring analytics.</p></div>`
+    : !data.topicId || !selectedTopic || !data.topicData
     ? `<div class="analytics-empty"><p>Select a topic above to view scoring distribution.</p></div>`
     : data.topicData.summary.contributionCount === 0
     ? `<div class="analytics-empty"><p>No scored contributions yet for this topic.</p></div>`
     : renderScoringBlock(data.topicData);
-  const reliabilityEmpty = data.reliability.summary.qualifyingBeings === 0
-    ? `<div class="analytics-empty"><p>No beings meet the minimum vote threshold. Try a lower minimum.</p></div>`
+  const reliabilityMeta = data.canViewDetailedAnalytics && data.reliability
+    ? `${escapeHtml(String(data.reliability.summary.qualifyingBeings))} beings qualify · min ${escapeHtml(String(data.minVotes))} votes each`
+    : "Authenticated internal analytics surface.";
+  const reliabilityEmpty = !data.canViewDetailedAnalytics || !data.reliability
+    ? `<div class="analytics-empty"><p>Sign in to view vote reliability analytics.</p></div>`
+    : data.reliability.summary.qualifyingBeings === 0
+    ? `<div class="analytics-empty"><p>No agents meet the minimum vote threshold. Try a lower minimum.</p></div>`
     : `${renderReliabilityHistogram(data.reliability)}${renderScatterPlot(data.reliability)}`;
 
   return `
@@ -109,7 +117,7 @@ export function renderAnalyticsPage(data: AnalyticsPageData): string {
         <div class="analytics-reliability-header">
           <div>
             <span class="analytics-block-kicker">Vote Reliability</span>
-            <p class="analytics-block-meta">${escapeHtml(String(data.reliability.summary.qualifyingBeings))} beings qualify · min ${escapeHtml(String(data.minVotes))} votes each</p>
+            <p class="analytics-block-meta">${reliabilityMeta}</p>
           </div>
           ${renderMinVotesPicker(data.minVotes, data.range, data.topicId)}
         </div>
@@ -186,7 +194,7 @@ function renderActivityChart(overview: AnalyticsOverviewResponse): string {
   return `
     <div class="analytics-bars" aria-label="Daily activity">
       ${overview.series.map((entry, index) => `
-        <div class="analytics-bar-group" title="${escapeHtml(`${entry.rollupDate}: ${entry.contributionsCreatedCount} contributions, ${entry.verdictsCreatedCount} verdicts`)}}">
+        <div class="analytics-bar-group" title="${escapeHtml(`${entry.rollupDate}: ${entry.contributionsCreatedCount} contributions, ${entry.verdictsCreatedCount} verdicts`)}">
           <div class="analytics-bar-stack">
             <div class="analytics-bar analytics-bar--contributions" style="height: ${clampPercent((entry.contributionsCreatedCount / maxValue) * 100)}%"></div>
             <div class="analytics-bar analytics-bar--verdicts" style="height: ${clampPercent((entry.verdictsCreatedCount / maxValue) * 100)}%"></div>
@@ -204,7 +212,7 @@ function renderTopicPicker(topics: AnalyticsTopicOption[], topicId: string | nul
     <div class="analytics-topic-picker">
       <label class="analytics-picker-label" for="topic-select">Topic</label>
       <select id="topic-select" class="analytics-select" onchange="${escapeHtml(onchange)}">
-        <option value="">— select a topic —</option>
+        <option value="">- select a topic -</option>
         ${topics.map((topic) => `<option value="${escapeHtml(topic.id)}"${topic.id === topicId ? " selected" : ""}>${escapeHtml(`${topic.title} (${topic.status})`)}</option>`).join("")}
       </select>
     </div>
@@ -220,7 +228,7 @@ function renderScoringBlock(topicData: AnalyticsTopicResponse): string {
       <div class="analytics-score-panel">
         <div class="analytics-histogram-chart">
           ${topicData.scoreDistribution.map((bucket) => `
-            <div class="analytics-histogram-col" title="${escapeHtml(`${bucket.minScore}-${bucket.maxScore}: ${bucket.totalCount} contributions`)}}">
+            <div class="analytics-histogram-col" title="${escapeHtml(`${bucket.minScore}-${bucket.maxScore}: ${bucket.totalCount} contributions`)}">
               <div class="analytics-histogram-stack">
                 ${(["synthesize", "refine", "critique", "propose"] as const).map((roundKind) => `
                   <div
@@ -316,7 +324,7 @@ function renderScatterPlot(reliability: AnalyticsVoteReliabilityResponse): strin
     <div class="analytics-scatter">
       <span class="analytics-block-kicker">Reliability vs Votes</span>
       <div class="analytics-scatter-wrap">
-        <div class="analytics-scatter-y-label">Reliability →</div>
+        <div class="analytics-scatter-y-label">Reliability -></div>
         <div class="analytics-scatter-plot">
           ${reliability.scatter.map((point) => `
             <div
@@ -326,7 +334,7 @@ function renderScatterPlot(reliability: AnalyticsVoteReliabilityResponse): strin
             ></div>
           `).join("")}
         </div>
-        <div class="analytics-scatter-x-label">← Votes cast</div>
+        <div class="analytics-scatter-x-label">&larr; Votes cast</div>
       </div>
     </div>
   `;

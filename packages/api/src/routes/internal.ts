@@ -3,9 +3,14 @@ import {
   AnalyticsBackfillRequestSchema,
   AnalyticsBackfillResponseSchema,
   AdminListQuerySchema,
+  BatchUpsertTopicCandidatesSchema,
+  CreateInternalTopicSchema,
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
   ReterminalizeTopicRequestSchema,
+  TopicCandidateCleanupRequestSchema,
+  TopicCandidateQuerySchema,
+  TopicIdeaContextQuerySchema,
   TopicAdminReasonSchema,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
@@ -17,6 +22,20 @@ import { jsonData, parseJsonBody } from "../lib/http.js";
 import { listPendingSnapshotRetries } from "../lib/snapshot-sync.js";
 import { authenticateRequest } from "../services/auth.js";
 import {
+  listRecentLifecycleMutations,
+  readCronHeartbeatStatuses,
+  sweepTopicLifecycle,
+} from "../services/lifecycle.js";
+import {
+  batchUpsertTopicCandidates,
+  cleanupExpiredCandidates,
+  getTopicCandidate,
+  getTopicCandidateInventory,
+  getTopicIdeaContext,
+  listTopicCandidates,
+} from "../services/topic-candidates.js";
+import { createInternalTopic } from "../services/topics.js";
+import {
   getAdminAgentDetail,
   getAdminBeingDetail,
   getAdminDomainDetail,
@@ -27,7 +46,6 @@ import {
   listAdminTopics,
 } from "../services/admin.js";
 import { backfillPlatformDailyRollups as backfillPlatformDailyRollupsService } from "../services/analytics.js";
-import { sweepTopicLifecycle } from "../services/lifecycle.js";
 import { reconcileTopicPresentation } from "../services/presentation.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "../services/terminalization.js";
 import { recomputeContributionFinalScore } from "../services/votes.js";
@@ -190,6 +208,29 @@ function parseAdminListQuery(request: Request) {
   return result.data;
 }
 
+function parseTopicCandidateQuery(request: Request) {
+  const url = new URL(request.url);
+  const result = TopicCandidateQuerySchema.safeParse({
+    domainId: url.searchParams.get("domainId") ?? undefined,
+    status: url.searchParams.get("status") ?? undefined,
+  });
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
+  }
+  return result.data;
+}
+
+function parseTopicIdeaContextQuery(request: Request) {
+  const url = new URL(request.url);
+  const result = TopicIdeaContextQuerySchema.safeParse({
+    domainId: url.searchParams.get("domainId") ?? undefined,
+  });
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
+  }
+  return result.data;
+}
+
 async function repairTopicScores(env: ApiEnv, topicId: string) {
   const rows = await allRows<{ id: string }>(
     env.DB,
@@ -213,6 +254,54 @@ internalRoutes.post("/topics/sweep", async (c) => {
   assertAdminAgent(c.env, agent);
   const result = await sweepTopicLifecycle(c.env);
   return jsonData(c, result);
+});
+
+internalRoutes.post("/topics", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(CreateInternalTopicSchema, await c.req.json());
+  return jsonData(c, await createInternalTopic(c.env, agent, body), 201);
+});
+
+internalRoutes.get("/cron", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, {
+    observedAt: new Date().toISOString(),
+    heartbeats: await readCronHeartbeatStatuses(c.env),
+    recentLifecycleMutations: await listRecentLifecycleMutations(c.env),
+  }));
+});
+
+internalRoutes.post("/topic-candidates", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(BatchUpsertTopicCandidatesSchema, await c.req.json());
+  return jsonData(c, await batchUpsertTopicCandidates(c.env, body.items));
+});
+
+internalRoutes.get("/topic-candidates", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listTopicCandidates(c.env, parseTopicCandidateQuery(c.req.raw))));
+});
+
+internalRoutes.get("/topic-candidates/inventory", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, { items: await getTopicCandidateInventory(c.env) }));
+});
+
+internalRoutes.get("/topic-candidates/idea-context", async (c) => {
+  return withAdminReadAccess(c, async () => {
+    const query = parseTopicIdeaContextQuery(c.req.raw);
+    return jsonData(c, { items: await getTopicIdeaContext(c.env, query.domainId) });
+  });
+});
+
+internalRoutes.get("/topic-candidates/:candidateId", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getTopicCandidate(c.env, c.req.param("candidateId"))));
+});
+
+internalRoutes.post("/topic-candidates/cleanup", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(TopicCandidateCleanupRequestSchema, await c.req.json());
+  return jsonData(c, await cleanupExpiredCandidates(c.env, body.maxAgeDays));
 });
 
 internalRoutes.post("/analytics/platform-rollups/backfill", async (c) => {
@@ -523,7 +612,7 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
 internalRoutes.get("/health", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   assertAdminAgent(c.env, agent);
-  const [snapshotPending, presentationPending, topicStatusDistribution, scaleTelemetry] = await Promise.all([
+  const [snapshotPending, presentationPending, topicStatusDistribution, scaleTelemetry, cronHeartbeats, recentLifecycleMutations] = await Promise.all([
     listPendingSnapshotRetries(c.env),
     c.env.PUBLIC_CACHE.list({ prefix: "presentation-pending:" }),
     allRows<{ status: string; count: number }>(
@@ -531,12 +620,16 @@ internalRoutes.get("/health", async (c) => {
       `SELECT status, COUNT(*) AS count FROM topics GROUP BY status ORDER BY status ASC`,
     ),
     readScaleTelemetry(c.env),
+    readCronHeartbeatStatuses(c.env),
+    listRecentLifecycleMutations(c.env),
   ]);
   return jsonData(c, {
     snapshotPendingTopics: snapshotPending,
     snapshotPendingCount: snapshotPending.length,
     presentationPendingTopics: presentationPending.keys.map((entry) => entry.name.replace(/^presentation-pending:/, "")),
     presentationPendingCount: presentationPending.keys.length,
+    cronHeartbeats,
+    recentLifecycleMutations,
     topicStatusDistribution: topicStatusDistribution.map((row) => ({
       status: row.status,
       count: Number(row.count ?? 0),

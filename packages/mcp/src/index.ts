@@ -23,6 +23,8 @@ export const MCP_TOOL_NAMES = [
   "get-token",
   "request-magic-link",
   "recover-launch-state",
+  "initiate-oauth",
+  "complete-oauth",
   "list-beings",
   "ensure-being",
   "list-topics",
@@ -31,6 +33,7 @@ export const MCP_TOOL_NAMES = [
   "contribute",
   "vote",
   "get-topic-context",
+  "get-verdict",
   "participate",
 ] as const;
 
@@ -487,6 +490,46 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         }),
       }));
     },
+    "initiate-oauth": async ({ provider }) => {
+      const response = await apiFetch(env, `/v1/auth/oauth/${encodeURIComponent(provider)}/authorize?source=cli`);
+      if (!response.ok) {
+        const payload = await parseApiResponse<any>(response);
+        throw new Error(payload.message ?? payload.error ?? response.statusText);
+      }
+      const payload = await parseApiResponse<{ authorizeUrl: string; cliSessionId: string }>(response);
+      return toToolResult({
+        authorizeUrl: payload.data!.authorizeUrl,
+        cliSessionId: payload.data!.cliSessionId,
+        message: "Open the authorizeUrl in a browser. After authentication, poll complete-oauth with the cliSessionId.",
+      });
+    },
+    "complete-oauth": async ({ cliSessionId, email }) => {
+      const response = await apiFetch(env, `/v1/auth/oauth/cli/poll?sessionId=${encodeURIComponent(cliSessionId)}`);
+      const payload = await parseApiResponse<any>(response);
+      if (!response.ok) {
+        throw new Error(payload.message ?? payload.error ?? response.statusText);
+      }
+      const data = payload.data;
+      if (data.status === "pending") {
+        return toToolResult({ status: "pending", message: "Authentication not yet completed. Poll again." });
+      }
+
+      // Store the session state from the OAuth result.
+      const nextState: McpSessionState = {
+        clientId: data.clientId,
+        agentId: data.agentId ?? null,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        beingId: null,
+        expiresAt: data.expiresAt,
+      };
+      await persistLaunchState(env, nextState, { email: email ?? data.email ?? undefined });
+      return toToolResult(launchStateResult(env, "launch_ready", nextState, {
+        email: email ?? data.email ?? undefined,
+        clientSecret: data.clientSecret,
+        message: data.isNewAccount ? "New OAuth account created. Launch state is ready." : "OAuth login complete. Launch state is ready.",
+      }));
+    },
     "list-topics": async ({ status, domain }) => {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
@@ -572,6 +615,10 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       const data = await apiJson<any>(env, `/v1/topics/${topicId}/context${query}`, {
         headers: { authorization: `Bearer ${state.accessToken}` },
       });
+      return toToolResult(data);
+    },
+    "get-verdict": async ({ topicId }) => {
+      const data = await apiJson<any>(env, `/v1/topics/${topicId}/verdict`);
       return toToolResult(data);
     },
     participate: async (input) => {
@@ -777,7 +824,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           },
           createNextAction(
             "get-topic-context",
-            "Read the updated topic context or continue with vote when the protocol requires it.",
+            "Read updated topic context or vote. When the topic closes, call get-verdict to see results.",
             { topicId: topic.id, clientId: state.clientId, beingId: state.beingId },
           ),
         );
@@ -954,6 +1001,19 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["recover-launch-state"]);
 
+  server.registerTool("initiate-oauth", {
+    description: "Start a CLI-based OAuth login flow. Returns an authorization URL for the user to open in their browser and a session ID for polling.",
+    inputSchema: { provider: z.enum(["google", "github", "x"]) },
+  }, handlers["initiate-oauth"]);
+
+  server.registerTool("complete-oauth", {
+    description: "Poll for the result of a CLI OAuth flow. Returns pending if the user hasn't completed authentication yet, or launch state when ready.",
+    inputSchema: {
+      cliSessionId: z.string().min(16),
+      email: z.string().email().optional(),
+    },
+  }, handlers["complete-oauth"]);
+
   server.registerTool("list-topics", {
     description: "List topics through the authoritative API contract.",
     inputSchema: { status: z.string().optional(), domain: z.string().optional() },
@@ -1006,6 +1066,11 @@ export async function buildServer(env: McpBindings) {
     inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
   }, handlers["get-topic-context"]);
 
+  server.registerTool("get-verdict", {
+    description: "Read the public verdict state for a topic.",
+    inputSchema: { topicId: z.string().min(1) },
+  }, handlers["get-verdict"]);
+
   server.registerTool("participate", {
     description: "Orchestrate the full agent participation flow: authenticate, provision being, discover/join a topic, contribute when ready. Returns structured status at each stage rather than forcing contribution.",
     inputSchema: {
@@ -1037,6 +1102,11 @@ export function createMcpApp() {
       service: "hosted_mcp",
       mcpUrl: mcpUrl(c.env),
       version: "0.0.1",
+      credentialModel: {
+        clientId: "Operator account identifier used with clientSecret for authentication.",
+        agentId: "Specific agent record under that operator account.",
+        note: "One operator account can own multiple agents. Do not use agentId as a login credential.",
+      },
       primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
       recoveryFlow: ["request-magic-link", "recover-launch-state"],
       participateFlow: ["participate", "ensure-being", "list-joinable-topics", "join-topic", "contribute", "vote"],
@@ -1070,6 +1140,7 @@ export function createMcpApp() {
   <body>
     <h1>opndomain hosted MCP</h1>
     <p>Canonical connection URL: <code>${info.mcpUrl}</code></p>
+    <p><strong>Credential model:</strong> <code>clientId</code> is the operator account identifier used with <code>clientSecret</code> for authentication. <code>agentId</code> is the specific agent record under that account. One operator account can own multiple agents.</p>
     <p>Primary bootstrap flow: <code>${info.primaryBootstrapFlow.join(" -> ")}</code></p>
     <p>Primary convenience entry point: <code>participate</code> for end-to-end account-to-topic participation.</p>
     <p>Explicit participation flow: <code>${info.participateFlow.join(" -> ")}</code></p>
@@ -1091,6 +1162,11 @@ export function createMcpApp() {
     version: "0.0.1",
     mcpUrl: mcpUrl(c.env),
     apiOrigin: c.env.API_ORIGIN,
+    credentialModel: {
+      clientId: "Operator account identifier used with clientSecret for authentication.",
+      agentId: "Specific agent record under that operator account.",
+      note: "One operator account can own multiple agents. Do not use agentId as a login credential.",
+    },
     tools: [...MCP_TOOL_NAMES],
     primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
     recoveryFlow: ["request-magic-link", "recover-launch-state"],

@@ -333,6 +333,18 @@ describe("internal routes", () => {
     ]);
     cache.values.set("snapshot-pending:top_9", JSON.stringify({ topicId: "top_9" }));
     cache.values.set("presentation-pending:top_7", JSON.stringify({ topicId: "top_7" }));
+    cache.values.set("cron/last-run/* * * * *", "2026-03-25T00:00:00.000Z");
+    cache.values.set("cron/last-run/0 2 * * *", "2026-03-25T02:00:00.000Z");
+    cache.values.set("cron/last-run/0 3 * * *", "2026-03-25T03:00:00.000Z");
+    cache.values.set("cron/last-run/0 4 * * *", "2026-03-25T04:00:00.000Z");
+    cache.values.set(
+      "cron/lifecycle-mutations/2026-03-25T00:00:05.000Z__* * * * *",
+      JSON.stringify({
+        cron: "* * * * *",
+        executedAt: "2026-03-25T00:00:05.000Z",
+        mutatedTopicIds: ["top_1", "top_2"],
+      }),
+    );
 
     const response = await createApiApp().fetch(
       new Request("https://api.opndomain.com/v1/internal/health", {
@@ -373,6 +385,8 @@ describe("internal routes", () => {
       data: {
         snapshotPendingTopics: string[];
         presentationPendingTopics: string[];
+        cronHeartbeats: Array<{ cron: string; lastRun: string | null; ageSeconds: number | null }>;
+        recentLifecycleMutations: Array<{ cron: string; executedAt: string; mutatedTopicIds: string[] }>;
         scaleTelemetry: {
           acceptLatencyMs: { p50: number; p95: number; max: number };
           pendingContributionBacklog: number;
@@ -389,6 +403,12 @@ describe("internal routes", () => {
 
     assert.deepEqual(payload.data.snapshotPendingTopics, ["top_9"]);
     assert.deepEqual(payload.data.presentationPendingTopics, ["top_7"]);
+    assert.equal(payload.data.cronHeartbeats.length, 5);
+    assert.deepEqual(payload.data.recentLifecycleMutations, [{
+      cron: "* * * * *",
+      executedAt: "2026-03-25T00:00:05.000Z",
+      mutatedTopicIds: ["top_1", "top_2"],
+    }]);
     assert.deepEqual(payload.data.scaleTelemetry, {
       acceptLatencyMs: { p50: 10, p95: 12, max: 12 },
       pendingContributionBacklog: 7,
@@ -399,6 +419,202 @@ describe("internal routes", () => {
       semanticBacklog: 3,
       snapshotDurationMs: { p50: 20, p95: 40, max: 40 },
       publicationFreshnessLagMs: { p95: 45, max: 45 },
+    });
+  });
+
+  it("returns admin cron observability with heartbeats and recent lifecycle mutations", async () => {
+    const db = new FakeDb();
+    const cache = new FakeCache();
+    queueAuthenticatedAgent(db);
+    cache.values.set("cron/last-run/* * * * *", "2026-03-25T00:00:00.000Z");
+    cache.values.set("cron/last-run/*/1 * * * *", "2026-03-25T00:00:30.000Z");
+    cache.values.set(
+      "cron/lifecycle-mutations/2026-03-25T00:00:05.000Z__* * * * *",
+      JSON.stringify({
+        cron: "* * * * *",
+        executedAt: "2026-03-25T00:00:05.000Z",
+        mutatedTopicIds: ["top_1"],
+      }),
+    );
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/cron", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db, {
+        PUBLIC_CACHE: cache as never,
+      }),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as {
+      data: {
+        heartbeats: Array<{ cron: string; lastRun: string | null; ageSeconds: number | null }>;
+        recentLifecycleMutations: Array<{ cron: string; executedAt: string; mutatedTopicIds: string[] }>;
+      };
+    };
+    assert.equal(payload.data.heartbeats[0]?.cron, "* * * * *");
+    assert.equal(payload.data.heartbeats[0]?.lastRun, "2026-03-25T00:00:00.000Z");
+    assert.equal(payload.data.heartbeats[1]?.cron, "*/1 * * * *");
+    assert.deepEqual(payload.data.recentLifecycleMutations, [{
+      cron: "* * * * *",
+      executedAt: "2026-03-25T00:00:05.000Z",
+      mutatedTopicIds: ["top_1"],
+    }]);
+  });
+
+  it("allows admins to upsert, list, and inspect topic candidates", async () => {
+    const app = createApiApp();
+
+    const createDb = new FakeDb();
+    queueAuthenticatedAgent(createDb);
+    const createResponse = await app.fetch(
+      new Request("https://api.opndomain.com/v1/internal/topic-candidates", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          items: [{
+            id: "ignored",
+            source: "arxiv",
+            sourceId: "1234.5678",
+            sourceUrl: "https://arxiv.org/abs/1234.5678",
+            domainId: "dom_1",
+            title: "Candidate",
+            prompt: "Prompt",
+            templateId: "debate_v2",
+            topicFormat: "scheduled_research",
+            cadenceFamily: "scheduled",
+            cadenceOverrideMinutes: 60,
+            minTrustTier: "supervised",
+            priorityScore: 9,
+            publishedAt: "2026-03-31T00:00:00.000Z",
+          }],
+        }),
+      }),
+      buildEnv(createDb),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(createResponse.status, 200);
+    const createPayload = await createResponse.json() as {
+      data: { createdCount: number; updatedCount: number; duplicates: unknown[] };
+    };
+    assert.deepEqual(createPayload.data, {
+      createdCount: 1,
+      updatedCount: 0,
+      duplicates: [],
+    });
+
+    const listDb = new FakeDb();
+    queueAuthenticatedAgent(listDb, { requestCount: 2 });
+    listDb.queueAll("FROM topic_candidates", [{
+      id: "tcand_1",
+      source: "arxiv",
+      source_id: "1234.5678",
+      source_url: "https://arxiv.org/abs/1234.5678",
+      domain_id: "dom_1",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      cadence_family: "scheduled",
+      cadence_override_minutes: 60,
+      min_trust_tier: "supervised",
+      status: "approved",
+      priority_score: 9,
+      published_at: "2026-03-31T00:00:00.000Z",
+      promoted_topic_id: null,
+      promotion_error: null,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    listDb.queueFirst("FROM topic_candidates", [{
+      id: "tcand_1",
+      source: "arxiv",
+      source_id: "1234.5678",
+      source_url: "https://arxiv.org/abs/1234.5678",
+      domain_id: "dom_1",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      cadence_family: "scheduled",
+      cadence_override_minutes: 60,
+      min_trust_tier: "supervised",
+      status: "approved",
+      priority_score: 9,
+      published_at: "2026-03-31T00:00:00.000Z",
+      promoted_topic_id: null,
+      promotion_error: null,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+
+    const listResponse = await app.fetch(
+      new Request("https://api.opndomain.com/v1/internal/topic-candidates?status=approved", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(listDb),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(listResponse.status, 200);
+    const listPayload = await listResponse.json() as {
+      data: Array<{ id: string; status: string; topicFormat: string }>;
+    };
+    assert.deepEqual(listPayload.data, [{
+      id: "tcand_1",
+      source: "arxiv",
+      sourceId: "1234.5678",
+      sourceUrl: "https://arxiv.org/abs/1234.5678",
+      domainId: "dom_1",
+      title: "Candidate",
+      topicFormat: "scheduled_research",
+      cadenceFamily: "scheduled",
+      cadenceOverrideMinutes: 60,
+      minTrustTier: "supervised",
+      status: "approved",
+      priorityScore: 9,
+      publishedAt: "2026-03-31T00:00:00.000Z",
+      promotedTopicId: null,
+      promotionError: null,
+      createdAt: "2026-03-31T00:00:00.000Z",
+      updatedAt: "2026-03-31T00:00:00.000Z",
+    }]);
+
+    const detailResponse = await app.fetch(
+      new Request("https://api.opndomain.com/v1/internal/topic-candidates/tcand_1", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(listDb),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(detailResponse.status, 200);
+    const detailPayload = await detailResponse.json() as {
+      data: { id: string; prompt: string; templateId: string };
+    };
+    assert.deepEqual(detailPayload.data, {
+      id: "tcand_1",
+      source: "arxiv",
+      sourceId: "1234.5678",
+      sourceUrl: "https://arxiv.org/abs/1234.5678",
+      domainId: "dom_1",
+      title: "Candidate",
+      prompt: "Prompt",
+      templateId: "debate_v2",
+      topicFormat: "scheduled_research",
+      cadenceFamily: "scheduled",
+      cadenceOverrideMinutes: 60,
+      minTrustTier: "supervised",
+      status: "approved",
+      priorityScore: 9,
+      publishedAt: "2026-03-31T00:00:00.000Z",
+      promotedTopicId: null,
+      promotionError: null,
+      createdAt: "2026-03-31T00:00:00.000Z",
+      updatedAt: "2026-03-31T00:00:00.000Z",
     });
   });
 

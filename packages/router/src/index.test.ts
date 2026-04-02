@@ -870,6 +870,12 @@ describe("GET /analytics", () => {
             { roundId: "rnd_1", roundIndex: 0, roundKind: "propose", participantCount: 6, contributionCount: 6 },
             { roundId: "rnd_2", roundIndex: 1, roundKind: "critique", participantCount: 5, contributionCount: 5 },
           ],
+          voteTiming: {
+            totalVotes: 22,
+            timedVotes: 20,
+            averageVotePositionPct: 0.41,
+            averageRoundElapsedPct: 0.41,
+          },
         },
       });
     }
@@ -911,10 +917,13 @@ describe("GET /analytics", () => {
   it("renders the analytics page with engagement, scoring, and reliability blocks", async () => {
     const db = new FakeDb();
     const api = new FakeApiService();
+    queueAccountApi(api);
     queueAnalyticsApi(api);
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/analytics?range=all&topicId=topic_1&minVotes=5"),
+      new Request("https://opndomain.com/analytics?range=all&topicId=topic_1&minVotes=5", {
+        headers: { cookie: "opn_session=abc123" },
+      }),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -933,6 +942,7 @@ describe("GET /analytics", () => {
   it("renders empty states for no activity, invalid topic selection, and no qualifying beings", async () => {
     const db = new FakeDb();
     const api = new FakeApiService();
+    queueAccountApi(api);
     queueAnalyticsApi(api, {
       topicData: null,
       reliability: {
@@ -960,7 +970,9 @@ describe("GET /analytics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/analytics?range=all&topicId=missing&minVotes=25"),
+      new Request("https://opndomain.com/analytics?range=all&topicId=missing&minVotes=25", {
+        headers: { cookie: "opn_session=abc123" },
+      }),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -972,21 +984,10 @@ describe("GET /analytics", () => {
     assert.ok(html.includes("No agents meet the minimum vote threshold. Try a lower minimum."));
   });
 
-  it("returns 502 when required analytics data cannot be loaded", async () => {
+  it("returns 502 when public analytics data cannot be loaded", async () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     api.set("/v1/topics?status=closed", { data: [] });
-    api.set("/v1/analytics/vote-reliability?minVotes=5", {
-      data: {
-        minVotes: 5,
-        histogram: [],
-        scatter: [],
-        summary: {
-          qualifyingBeings: 0,
-          maxVotesCount: 0,
-        },
-      },
-    });
 
     const response = await app.fetch(
       new Request("https://opndomain.com/analytics?range=all"),
@@ -997,6 +998,24 @@ describe("GET /analytics", () => {
     assert.equal(response.status, 502);
     const html = await response.text();
     assert.ok(html.includes("Analytics unavailable."));
+  });
+
+  it("keeps public summary analytics available when detailed analytics are auth-gated", async () => {
+    const db = new FakeDb();
+    const api = new FakeApiService();
+    queueAnalyticsApi(api);
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/analytics?range=all&topicId=topic_1&minVotes=5"),
+      buildEnv(db, undefined, undefined, api),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.ok(html.includes("Platform Activity"));
+    assert.ok(html.includes("Sign in to view topic-level scoring analytics."));
+    assert.ok(html.includes("Sign in to view vote reliability analytics."));
   });
 });
 
@@ -1026,8 +1045,11 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Public research protocol for AI agents"), "landing page should use the new hero headline");
-    assert.ok(html.includes("Open Access"), "landing page should expose the primary access action");
+    assert.ok(html.includes("Thousands of agents,"), "landing page should use the new hero headline");
+    assert.ok(html.includes("<em>one answer</em>"), "landing page should emphasize the hero phrase");
+    assert.ok(html.includes("Opndomain synthesizes answers through public, structured, inspectable inference."), "landing page should render the hero support line");
+    assert.ok(html.includes("Quick Connect"), "landing page should expose the primary access action");
+    assert.ok(html.includes('href="/mcp"'), "landing page should point primary access actions to the MCP surface");
     assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
     assert.ok(html.includes("Archive"), "landing page should render the archive nav label");
     assert.ok(html.includes("Domains"), "landing page should render the domains nav label");
@@ -1067,7 +1089,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(!html.includes("Scope"));
   });
 
-  it("renders the domain detail page inside the sidebar shell", async () => {
+  it("renders the domain detail page in the top-nav shell without the sidebar", async () => {
     const db = new FakeDb();
     db.queueResult("SELECT id, slug, name, description FROM domains WHERE slug = ?", [
       { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards." },
@@ -1087,7 +1109,8 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assertSidebarShell(html, "/domains");
+    assertTopNavShell(html);
+    assert.ok(!html.includes('class="page-sidebar"'));
     assert.ok(html.includes("Should audits be mandatory?"));
     assert.ok(html.includes("Agent Alpha"));
   });
@@ -1167,7 +1190,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(accessResponse.status, 200);
     const accessHtml = await accessResponse.text();
     assertTopNavShell(accessHtml);
-    assert.ok(accessHtml.includes("Sign in, register, and verify"));
+    assert.ok(accessHtml.includes("Use Google or email to open your operator session."));
 
     const connectResponse = await app.fetch(
       new Request("https://opndomain.com/connect"),
@@ -1195,7 +1218,8 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(accessResponse.status, 200);
     const accessHtml = await accessResponse.text();
     assertTopNavShell(accessHtml);
-    assert.ok(accessHtml.includes('action="/login/credentials"'));
+    assert.ok(accessHtml.includes('action="/login/magic"'));
+    assert.ok(accessHtml.includes("Continue with Google"));
 
     const loginRedirect = await app.fetch(
       new Request("https://opndomain.com/login"),
@@ -1277,6 +1301,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assertSidebarShell(accountHtml);
     assert.ok(accountHtml.includes("Agent credentials, agents, linked identities, and session controls."));
     assert.ok(accountHtml.includes("Agent Alpha"));
+    assert.ok(accountHtml.includes("Rotate machine secret"));
 
     const welcomeResponse = await app.fetch(
       new Request("https://opndomain.com/welcome/credentials", {
@@ -1285,11 +1310,73 @@ describe("SSR shell coverage for redesigned routes", () => {
       buildEnv(new FakeDb(), undefined, undefined, api),
       ctx(),
     );
-    assert.equal(welcomeResponse.status, 200);
-    const welcomeHtml = await welcomeResponse.text();
-    assertTopNavShell(welcomeHtml);
-    assert.ok(welcomeHtml.includes("OAuth account created."));
-    assert.ok(welcomeHtml.includes("client_123"));
+    assert.equal(welcomeResponse.status, 302);
+    assert.equal(welcomeResponse.headers.get("location"), "/account");
+  });
+
+  it("supports email linking and machine secret rotation from the account page", async () => {
+    const api = new FakeApiService();
+    api.set("/v1/auth/session", {
+      data: {
+        agent: { email: "agent@example.com", clientId: "client_123" },
+        beings: [{ id: "being_1", handle: "agent-alpha" }],
+      },
+    });
+    api.set("/v1/auth/session/account", {
+      data: {
+        agent: {
+          id: "agent_1",
+          clientId: "client_123",
+          name: "Agent Alpha",
+          email: "agent@example.com",
+          emailVerifiedAt: null,
+          trustTier: "unverified",
+          status: "active",
+          createdAt: "2026-03-01T00:00:00.000Z",
+        },
+        beings: [
+          { id: "being_1", handle: "agent-alpha", trustTier: "unverified", status: "active" },
+        ],
+        linkedIdentities: [],
+      },
+    });
+    api.set("/v1/auth/email-link", { data: { ok: true } });
+    api.set("/v1/auth/credentials/rotate", { data: { clientId: "client_123", clientSecret: "secret_456" } });
+
+    const emailLinkResponse = await app.fetch(
+      new Request("https://opndomain.com/account/email-link", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          cookie: "opn_session=abc123; opn_csrf=csrf123",
+        },
+        body: "csrfToken=csrf123&email=agent%40example.com",
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, api),
+      ctx(),
+    );
+    assert.equal(emailLinkResponse.status, 200);
+    const emailLinkHtml = await emailLinkResponse.text();
+    assertSidebarShell(emailLinkHtml);
+    assert.ok(emailLinkHtml.includes("Verification link sent."));
+
+    const rotateResponse = await app.fetch(
+      new Request("https://opndomain.com/account/credentials/rotate", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          cookie: "opn_session=abc123; opn_csrf=csrf123",
+        },
+        body: "csrfToken=csrf123",
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, api),
+      ctx(),
+    );
+    assert.equal(rotateResponse.status, 200);
+    const rotateHtml = await rotateResponse.text();
+    assertSidebarShell(rotateHtml);
+    assert.ok(rotateHtml.includes("Machine secret rotated."));
+    assert.ok(rotateHtml.includes("secret_456"));
   });
 
   it("redirects unauthenticated account requests to access", async () => {

@@ -13,6 +13,9 @@ import {
   PHASE11_ADAPTIVE_SCORING_SQL,
   PHASE12_PLATFORM_ANALYTICS_SQL,
   PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL,
+  PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
+  PHASE15_TOPIC_CANDIDATES_SQL,
+  PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -29,12 +32,17 @@ describe("schema migrations", () => {
       "009_adaptive_scoring",
       "010_platform_analytics",
       "011_topic_view_reputation_history_vote_timing",
+      "012_topic_member_drop_tracking",
+      "013_topic_candidates",
+      "014_account_classes_topic_sources",
     ]);
   });
 
   it("keeps foreign keys and lifecycle columns in the canonical core schema", () => {
     assert.match(LAUNCH_CORE_SCHEMA_SQL, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
     assert.match(LAUNCH_CORE_SCHEMA_SQL, /CREATE TABLE IF NOT EXISTS topics/);
+    assert.match(LAUNCH_CORE_SCHEMA_SQL, /account_class TEXT NOT NULL DEFAULT 'unverified_participant'/);
+    assert.match(LAUNCH_CORE_SCHEMA_SQL, /topic_source TEXT NOT NULL DEFAULT 'manual_user'/);
     assert.match(LAUNCH_CORE_SCHEMA_SQL, /countdown_started_at TEXT/);
     assert.match(LAUNCH_CORE_SCHEMA_SQL, /stalled_at TEXT/);
     assert.match(LAUNCH_CORE_SCHEMA_SQL, /revoked_at TEXT/);
@@ -128,5 +136,35 @@ describe("schema migrations", () => {
     assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /CREATE INDEX IF NOT EXISTS idx_domain_reputation_history_domain_being_recorded/);
     assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /ALTER TABLE votes ADD COLUMN vote_position_pct REAL;/);
     assert.match(PHASE13_TOPIC_VIEW_REPUTATION_HISTORY_VOTE_TIMING_SQL, /ALTER TABLE votes ADD COLUMN round_elapsed_pct REAL;/);
+  });
+
+  it("adds topic member drop tracking in phase 14", () => {
+    assert.match(PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL, /ALTER TABLE topic_members ADD COLUMN dropped_at TEXT;/);
+    assert.match(PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL, /ALTER TABLE topic_members ADD COLUMN drop_reason TEXT;/);
+    assert.match(PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL, /ALTER TABLE beings ADD COLUMN drop_count INTEGER NOT NULL DEFAULT 0;/);
+  });
+
+  it("adds topic candidate supply storage in phase 15", () => {
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE TABLE IF NOT EXISTS topic_candidates/);
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /status IN \('approved', 'consumed', 'failed'\)/);
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CHECK \(source_id IS NOT NULL OR source_url IS NOT NULL\)/);
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE INDEX IF NOT EXISTS idx_topic_candidates_promotable/);
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_id/);
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_url/);
+    assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE TRIGGER IF NOT EXISTS trg_topic_candidates_updated_at/);
+  });
+
+  it("adds persisted account classes and topic sources in phase 16", () => {
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /ALTER TABLE agents ADD COLUMN account_class TEXT NOT NULL DEFAULT 'unverified_participant';/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /WHEN email_verified_at IS NULL THEN 'unverified_participant'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /ELSE 'verified_participant'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /ALTER TABLE topics ADD COLUMN topic_source TEXT NOT NULL DEFAULT 'manual_user';/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /FROM admin_audit_log aal/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /THEN 'manual_admin'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /WHEN min_trust_tier = 'unverified' THEN 'cron_auto'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /ELSE 'manual_user'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /WHEN 'cron_auto' THEN 'unverified'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /WHEN 'manual_user' THEN 'supervised'/);
+    assert.match(PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL, /WHEN 'manual_admin' THEN 'supervised'/);
   });
 });

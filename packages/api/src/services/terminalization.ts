@@ -17,6 +17,7 @@ import {
   updateDomainReputation,
 } from "./reputation.js";
 import { recomputeContributionFinalScore } from "./votes.js";
+import { archiveProtocolEvent } from "../lib/ops-archive.js";
 
 type TopicContextRow = {
   id: string;
@@ -262,7 +263,8 @@ async function writeVerdict(
   summary: string,
   reasoning: Record<string, unknown>,
   replaceExisting: boolean,
-) {
+): Promise<string> {
+  const verdictId = createId("vrd");
   if (replaceExisting) {
     await env.DB
       .prepare(
@@ -277,9 +279,9 @@ async function writeVerdict(
             reasoning_json = excluded.reasoning_json
         `,
       )
-      .bind(createId("vrd"), topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning))
+      .bind(verdictId, topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning))
       .run();
-    return;
+    return verdictId;
   }
   await env.DB
     .prepare(
@@ -289,8 +291,9 @@ async function writeVerdict(
         ) VALUES (?, ?, ?, ?, ?, ?)
       `,
     )
-    .bind(createId("vrd"), topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning))
+    .bind(verdictId, topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning))
     .run();
+  return verdictId;
 }
 
 async function buildEpistemicVerdictReasoning(
@@ -458,7 +461,7 @@ export async function runTerminalizationSequence(
     }
   }
 
-  await writeVerdict(
+  const verdictId = await writeVerdict(
     env,
     topicId,
     confidence,
@@ -477,6 +480,21 @@ export async function runTerminalizationSequence(
     },
     Boolean(options?.reterminalize),
   );
+  if (!options?.reterminalize) {
+    try {
+      await archiveProtocolEvent(env, {
+        occurredAt: new Date().toISOString(),
+        kind: "verdict_published",
+        topicId,
+        domainId: topic.domain_id,
+        verdictId,
+        confidence,
+        terminalizationMode,
+      });
+    } catch (error) {
+      console.error("verdict event archive failed", error);
+    }
+  }
 
   await reconcileTopicPresentation(env, topicId, PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN);
 

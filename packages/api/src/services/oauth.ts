@@ -1,4 +1,5 @@
 import {
+  CLI_OAUTH_TTL_SECONDS,
   ExternalIdentityProfileSchema,
   OAUTH_NONCE_COOKIE_PREFIX,
   OAUTH_STATE_SCOPE,
@@ -7,6 +8,7 @@ import {
   OAuthProviderSchema,
   OAuthStatePayloadSchema,
   OAuthWelcomePayloadSchema,
+  cliOAuthKey,
   z,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
@@ -134,23 +136,6 @@ async function signedStateToken(
     exp: issuedAt + env.OAUTH_STATE_TTL_SECONDS,
     iat: issuedAt,
     jti: createId("ost"),
-    ...payload,
-  });
-}
-
-async function signedWelcomeToken(
-  env: ApiEnv,
-  payload: z.infer<typeof OAuthWelcomePayloadSchema>,
-) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  return signJwt(env, {
-    iss: env.JWT_ISSUER,
-    aud: env.JWT_AUDIENCE,
-    sub: payload.agentId,
-    scope: OAUTH_WELCOME_SCOPE,
-    exp: issuedAt + env.OAUTH_WELCOME_TTL_SECONDS,
-    iat: issuedAt,
-    jti: createId("owl"),
     ...payload,
   });
 }
@@ -389,10 +374,15 @@ async function verifiedState(
     nonce: payload.nonce,
     codeVerifier: payload.codeVerifier,
     redirect: payload.redirect ?? null,
+    cliSessionId: payload.cliSessionId ?? null,
   });
-  const cookieNonce = readCookieValue(request.headers.get("cookie"), oauthNonceCookieName(provider));
-  if (!cookieNonce || cookieNonce !== state.nonce) {
-    unauthorized("OAuth state is invalid.");
+  // CLI-initiated flows skip the nonce cookie check — the signed state JWT
+  // is sufficient since the CLI generated the session and controls polling.
+  if (!state.cliSessionId) {
+    const cookieNonce = readCookieValue(request.headers.get("cookie"), oauthNonceCookieName(provider));
+    if (!cookieNonce || cookieNonce !== state.nonce) {
+      unauthorized("OAuth state is invalid.");
+    }
   }
   return state;
 }
@@ -413,17 +403,20 @@ export async function beginOAuthAuthorize(
   ipAddress: string,
   provider: OAuthProvider,
   redirect: string | null | undefined,
+  source?: "web" | "cli",
 ) {
   await enforceHourlyRateLimit(env.PUBLIC_CACHE, `rate-limit:oauth:authorize:${provider}:${ipAddress}`, env.TOKEN_RATE_LIMIT_PER_HOUR);
 
   const config = providerConfig(env, provider);
   const nonce = createSecret();
   const codeVerifier = createSecret(48);
+  const cliSessionId = source === "cli" ? createSecret(24) : null;
   const state = await signedStateToken(env, provider, {
     provider,
     nonce,
     codeVerifier,
     redirect: normalizeRedirect(redirect),
+    cliSessionId,
   });
   const authorizeUrl = new URL(config.authorizeUrl);
   authorizeUrl.searchParams.set("client_id", config.clientId);
@@ -438,8 +431,17 @@ export async function beginOAuthAuthorize(
     authorizeUrl.searchParams.set("include_granted_scopes", "true");
   }
 
+  if (source === "cli") {
+    return {
+      location: authorizeUrl.toString(),
+      cliSessionId,
+      nonceCookie: null,
+    };
+  }
+
   return {
     location: authorizeUrl.toString(),
+    cliSessionId: null,
     nonceCookie: buildScopedCookie(env, oauthNonceCookieName(provider), nonce, env.OAUTH_STATE_TTL_SECONDS),
   };
 }
@@ -475,20 +477,44 @@ export async function completeOAuthCallback(
   const profile = await providerProfile(provider, accessToken);
   const provisioned = await resolveOAuthAgent(env, profile);
   const session = await createSessionTokens(env, provisioned.agent);
+
+  // CLI-initiated flow: store result in KV for polling, redirect to completion page.
+  if (state.cliSessionId) {
+    const cliResult: CliOAuthResult = {
+      status: "ready",
+      agentId: provisioned.agent.id,
+      clientId: provisioned.agent.clientId,
+      email: profile.email,
+      name: profile.displayName,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      expiresAt: new Date(Date.now() + env.ACCESS_TOKEN_TTL_SECONDS * 1000).toISOString(),
+      ...(provisioned.kind === "new" ? {
+        clientSecret: provisioned.clientSecret,
+        isNewAccount: true,
+      } : {
+        isNewAccount: false,
+      }),
+    };
+    await env.PUBLIC_CACHE.put(
+      cliOAuthKey(state.cliSessionId),
+      JSON.stringify(cliResult),
+      { expirationTtl: CLI_OAUTH_TTL_SECONDS },
+    );
+    return {
+      location: callbackSuccessUrl(env, "/login/cli-complete"),
+      setCookies: [] as string[],
+    };
+  }
+
   const setCookies = [
     buildClearedCookie(env, oauthNonceCookieName(provider)),
     session.cookie,
   ];
 
   if (provisioned.kind === "new") {
-    const welcomeToken = await signedWelcomeToken(env, {
-      agentId: provisioned.agent.id,
-      clientId: provisioned.clientId,
-      clientSecret: provisioned.clientSecret,
-    });
-    setCookies.push(buildScopedCookie(env, OAUTH_WELCOME_COOKIE_NAME, welcomeToken, env.OAUTH_WELCOME_TTL_SECONDS));
     return {
-      location: callbackSuccessUrl(env, "/welcome/credentials"),
+      location: callbackSuccessUrl(env, state.redirect ?? "/account"),
       setCookies,
     };
   }
@@ -522,6 +548,32 @@ export async function consumeOAuthWelcome(env: ApiEnv, request: Request) {
     clientSecret: welcome.clientSecret,
     clearedCookie: buildClearedCookie(env, OAUTH_WELCOME_COOKIE_NAME),
   };
+}
+
+export type CliOAuthResult = {
+  status: "ready";
+  agentId: string;
+  clientId: string;
+  email: string | null;
+  name: string;
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: string;
+  clientSecret?: string;
+  isNewAccount: boolean;
+};
+
+export async function pollCliOAuth(
+  env: ApiEnv,
+  sessionId: string,
+): Promise<CliOAuthResult | null> {
+  const raw = await env.PUBLIC_CACHE.get(cliOAuthKey(sessionId));
+  if (!raw) {
+    return null;
+  }
+  // Consume the result — it's single-use.
+  await env.PUBLIC_CACHE.delete(cliOAuthKey(sessionId));
+  return JSON.parse(raw) as CliOAuthResult;
 }
 
 export async function listExternalIdentitiesForAgent(env: ApiEnv, agentId: string) {

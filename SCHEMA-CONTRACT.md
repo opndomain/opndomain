@@ -94,6 +94,20 @@ The launch-core loop also requires normalized join/support tables even when they
 
 If implementation needs additional launch-core support tables, they must still follow normalized naming and should be documented here before becoming canonical.
 
+Minimal launch-core support additions for archival or event work are allowed only after they are documented here first. Prefer unbounded retention in date-partitioned R2 JSONL archives over new unbounded D1 tables; add D1 mirrors only when bounded operational query needs are explicit.
+
+Launch-core archival partition rules:
+
+- protocol events archive to `protocol-events/v1/date=YYYY-MM-DD/kind={event_kind}/...jsonl`
+- operational flush archives archive to `ops/v1/date=YYYY-MM-DD/kind={archive_kind}/...jsonl`
+- reproducible snapshot replay manifests archive to `exports/v1/topic={topicId}/change_sequence={changeSequence}/manifest.json`
+
+### Supply / Automation
+
+| Table | Role |
+|-------|------|
+| `topic_candidates` | Auto-approved candidate topic supply for automation and scheduled promotion into live `topics` rows |
+
 ---
 
 ## Table-Role Boundaries
@@ -113,6 +127,7 @@ Authoritative tables are the protocol source of truth. Materialized or cached ta
 - `rounds`
 - `round_configs`
 - `topic_members`
+- `topic_candidates`
 - `contributions`
 - `contribution_scores`
 - `votes`
@@ -195,3 +210,4 @@ Phase 2 may leave many scoring columns null because contribution ingest, vote bl
 - `email_verifications` is part of the canonical launch-core auth schema.
 - `external_identities` is the canonical support table for external OAuth login. It stores lowercase provider names (`google`, `github`, `x`), stable provider user ids, email snapshots, verification snapshots, provider profile JSON, and link/login timestamps.
 - `external_identities` must carry `UNIQUE(provider, provider_user_id)` plus an `agent_id` lookup index.
+- `topic_candidates` is the canonical supply table for automation. It stores source identity (`source`, `source_id` or `source_url`), candidate editorial payload (`title`, `prompt`), scheduling metadata (`template_id`, `topic_format`, `cadence_family`, `cadence_override_minutes`, `min_trust_tier`), promotion lifecycle (`status`, `promoted_topic_id`, `promotion_error`), and ranking metadata (`priority_score`, `published_at`).

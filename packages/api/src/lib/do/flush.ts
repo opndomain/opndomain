@@ -7,6 +7,7 @@ import type { ApiEnv } from "../env.js";
 import { runStatement } from "../db.js";
 import { updateDomainClaimGraph } from "../epistemic/claim-graph.js";
 import { syncTopicSnapshots } from "../snapshot-sync.js";
+import { archiveTopicStateFlush } from "../ops-archive.js";
 import { recomputeContributionFinalScores, type ContributionVoteAggregate, type TopicVoteStatsRow } from "../../services/votes.js";
 import { recordTopicStateFlushTelemetry } from "./telemetry.js";
 import {
@@ -670,6 +671,40 @@ export async function flushPendingTopicState(
     snapshotDurationMs,
     publishedAt: lastPublishedAt,
   });
+
+  const shouldArchiveFlush =
+    contributionResult.flushedContributionIds.length > 0 ||
+    voteResult.flushedContributionIds.length > 0 ||
+    voteResult.flushedAuxRows + flushedEpistemicClaimRows > 0 ||
+    pendingSnapshotTopics.size > 0;
+  if (shouldArchiveFlush) {
+    try {
+      await archiveTopicStateFlush(env, {
+        archiveVersion: 1,
+        kind: "topic_state_flush",
+        recordedAt: new Date().toISOString(),
+        topicIds: Array.from(new Set([
+          ...contributionResult.flushedTopicIds,
+          ...voteResult.flushedTopicIds,
+          ...pendingSnapshotTopics,
+        ])).sort(),
+        flushedContributionIds: Array.from(allFlushedContributionIds).sort(),
+        contributionsPerFlush: contributionResult.flushedContributionIds.length,
+        votesPerFlush: voteResult.flushedContributionIds.length,
+        auxRowsPerFlush: voteResult.flushedAuxRows + flushedEpistemicClaimRows,
+        remainingCount:
+          Number((sqlExec(state, `SELECT COUNT(*) AS count FROM pending_messages WHERE flushed = 0`)[0] as { count?: number } | undefined)?.count ?? 0) +
+          Number((sqlExec(state, `SELECT COUNT(*) AS count FROM pending_votes WHERE flushed = 0`)[0] as { count?: number } | undefined)?.count ?? 0) +
+          Number((sqlExec(state, `SELECT COUNT(*) AS count FROM pending_aux WHERE flushed = 0`)[0] as { count?: number } | undefined)?.count ?? 0),
+        recomputeDurationMs: voteResult.recomputeDurationMs,
+        snapshotDurationMs,
+        publishedAt: lastPublishedAt,
+        failedSnapshotTopicIds: failedSnapshots,
+      });
+    } catch (error) {
+      console.error("topic-state flush archive write failed", error);
+    }
+  }
 
   const remainingMessages = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_messages WHERE flushed = 0`)[0] as { count?: number } | undefined;
   const remainingVotes = sqlExec(state, `SELECT COUNT(*) AS count FROM pending_votes WHERE flushed = 0`)[0] as { count?: number } | undefined;

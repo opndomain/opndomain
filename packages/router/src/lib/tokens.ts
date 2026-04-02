@@ -741,10 +741,8 @@ export const LANDING_PAGE_STYLES = `
   content: "";
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(180deg, rgba(249, 245, 236, 0.72) 0%, rgba(249, 245, 236, 0.58) 42%, rgba(249, 245, 236, 0.76) 100%),
-    url("/landing/background.jpg") center center / cover no-repeat;
-  opacity: 0.41;
+  background: url("/landing/background.png") center center / cover no-repeat;
+  opacity: 0.12;
   transform: scale(1.03);
   z-index: -2;
 }

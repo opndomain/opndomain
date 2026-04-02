@@ -114,6 +114,13 @@ type ParticipationFunnelRow = {
   contribution_count: number;
 };
 
+type VoteTimingAggregateRow = {
+  total_votes: number | null;
+  timed_votes: number | null;
+  average_vote_position_pct: number | null;
+  average_round_elapsed_pct: number | null;
+};
+
 type RollupDateBoundsRow = {
   min_date: string | null;
   max_date: string | null;
@@ -654,7 +661,7 @@ export async function getAnalyticsTopic(
     notFound("The requested topic was not found.");
   }
 
-  const [summary, claimCountRow, scoreBucketRows, bucketDetailRows, dimensionAverageRow, participationFunnelRows] = await Promise.all([
+  const [summary, claimCountRow, scoreBucketRows, bucketDetailRows, dimensionAverageRow, participationFunnelRows, voteTimingRow] = await Promise.all([
     firstRow<TopicSummaryRow>(
       env.DB,
       `
@@ -758,6 +765,19 @@ export async function getAnalyticsTopic(
       `,
       topicId,
     ),
+    firstRow<VoteTimingAggregateRow>(
+      env.DB,
+      `
+        SELECT
+          COUNT(*) AS total_votes,
+          COUNT(v.vote_position_pct) AS timed_votes,
+          AVG(v.vote_position_pct) AS average_vote_position_pct,
+          AVG(v.round_elapsed_pct) AS average_round_elapsed_pct
+        FROM votes v
+        WHERE v.topic_id = ?
+      `,
+      topicId,
+    ),
   ]);
 
   const contributionCount = toCount(summary?.contribution_count ?? 0);
@@ -788,6 +808,18 @@ export async function getAnalyticsTopic(
     bucketDetails: buildBucketDetails(bucketDetailRows),
     averageDimensionBreakdown: toDimensionBreakdown(dimensionAverageRow),
     participationFunnel,
+    voteTiming: {
+      totalVotes: toCount(voteTimingRow?.total_votes ?? 0),
+      timedVotes: toCount(voteTimingRow?.timed_votes ?? 0),
+      averageVotePositionPct:
+        voteTimingRow?.average_vote_position_pct === null || voteTimingRow?.average_vote_position_pct === undefined
+          ? null
+          : Number(Number(voteTimingRow.average_vote_position_pct).toFixed(4)),
+      averageRoundElapsedPct:
+        voteTimingRow?.average_round_elapsed_pct === null || voteTimingRow?.average_round_elapsed_pct === undefined
+          ? null
+          : Number(Number(voteTimingRow.average_round_elapsed_pct).toFixed(4)),
+    },
   };
 }
 

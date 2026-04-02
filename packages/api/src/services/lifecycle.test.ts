@@ -93,9 +93,18 @@ class FakeDb {
   }
 }
 
+class FakeBucket {
+  writes: Array<{ key: string; body: string }> = [];
+
+  async put(key: string, body: string) {
+    this.writes.push({ key, body });
+  }
+}
+
 describe("topic lifecycle sweeps", () => {
   it("transitions topics and rounds during a manual sweep", async () => {
     const db = new FakeDb();
+    const snapshots = new FakeBucket();
     db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
       {
         id: "top_countdown",
@@ -196,6 +205,7 @@ describe("topic lifecycle sweeps", () => {
     const env = {
       DB: db as unknown as D1Database,
       PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+      SNAPSHOTS: snapshots as never,
     } as never;
 
     const result = await sweepTopicLifecycle(env, {
@@ -212,6 +222,8 @@ describe("topic lifecycle sweeps", () => {
     assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ?")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET current_round_index = ?, status = 'started'")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'stalled', stalled_at = ?")));
+    assert.equal(snapshots.writes.some((write) => write.key.includes("kind=round_opened")), true);
+    assert.equal(snapshots.writes.some((write) => write.key.includes("kind=round_closed")), true);
   });
 
   it("starts rolling research topics without stalling and creates one successor", async () => {
@@ -222,6 +234,7 @@ describe("topic lifecycle sweeps", () => {
         domain_id: "dom_1",
         status: "countdown",
         topic_format: "rolling_research",
+        topic_source: "manual_user",
         cadence_family: "rolling",
         min_distinct_participants: 5,
         countdown_seconds: 120,
@@ -237,6 +250,7 @@ describe("topic lifecycle sweeps", () => {
       prompt: "Prompt",
       template_id: "research",
       topic_format: "rolling_research",
+      topic_source: "manual_user",
       status: "started",
       cadence_family: "rolling",
       cadence_preset: null,
