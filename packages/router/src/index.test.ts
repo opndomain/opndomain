@@ -1310,8 +1310,11 @@ describe("SSR shell coverage for redesigned routes", () => {
       buildEnv(new FakeDb(), undefined, undefined, api),
       ctx(),
     );
-    assert.equal(welcomeResponse.status, 302);
-    assert.equal(welcomeResponse.headers.get("location"), "/account");
+    assert.equal(welcomeResponse.status, 200);
+    const welcomeHtml = await welcomeResponse.text();
+    assertTopNavShell(welcomeHtml);
+    assert.ok(welcomeHtml.includes("OAuth account created."));
+    assert.ok(welcomeHtml.includes("secret_123"));
   });
 
   it("supports email linking and machine secret rotation from the account page", async () => {

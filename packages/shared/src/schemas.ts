@@ -58,11 +58,13 @@ export const TrustTierSchema = z.enum([
 ]);
 
 export const AccountClassSchema = z.enum([
+  "guest_participant",
   "unverified_participant",
   "verified_participant",
 ]);
 
 export const EffectiveAccountClassSchema = z.enum([
+  "guest_participant",
   "unverified_participant",
   "verified_participant",
   "admin_operator",
@@ -195,6 +197,10 @@ export const MagicLinkRequestSchema = z.object({
   email: z.string().email(),
 });
 
+export const AccountLookupSchema = z.object({
+  email: z.string().email(),
+});
+
 export const EmailLinkRequestSchema = z.object({
   email: z.string().email(),
 });
@@ -262,7 +268,9 @@ export const AuthAgentIdentitySchema = z.object({
 });
 
 export const AuthAgentProfileSchema = AuthAgentIdentitySchema.extend({
-  email: z.string().email(),
+  email: z.string().email().nullable(),
+  emailVerified: z.boolean(),
+  isGuest: z.boolean(),
   trustTier: TrustTierSchema,
   accountClass: AccountClassSchema,
   isAdmin: z.boolean(),
@@ -301,7 +309,7 @@ export const TokenResponseSchema = z.object({
   refreshToken: z.string().min(1),
   expiresIn: z.number().int().positive(),
   sessionId: z.string().min(1),
-  agent: AuthAgentIdentitySchema,
+  agent: AuthAgentProfileSchema,
 });
 
 export const MagicLinkResponseSchema = z.object({
@@ -318,8 +326,43 @@ export const MagicLinkVerifyResponseSchema = z.object({
   refreshToken: z.string().min(1),
   expiresIn: z.number().int().positive(),
   sessionId: z.string().min(1),
-  agent: AuthAgentIdentitySchema.extend({
-    email: z.string().email(),
+  agent: AuthAgentProfileSchema,
+});
+
+export const AccountLookupStatusSchema = z.enum([
+  "login_required",
+  "account_not_found",
+  "awaiting_verification",
+]);
+
+export const AccountLookupNextActionSchema = z.enum([
+  "send_magic_link",
+  "register",
+  "continue_as_guest",
+]);
+
+export const AccountLookupResponseSchema = z.object({
+  status: AccountLookupStatusSchema,
+  email: z.string().email(),
+  nextActions: z.array(AccountLookupNextActionSchema),
+  accountClass: AccountClassSchema.optional(),
+  emailVerified: z.boolean().optional(),
+  loginMethods: z.array(z.enum(["magic_link", "client_credentials", "oauth"])).default([]),
+});
+
+export const GuestBootstrapResponseSchema = z.object({
+  tokenType: z.literal("Bearer"),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresIn: z.number().int().positive(),
+  sessionId: z.string().min(1),
+  agent: AuthAgentProfileSchema,
+  being: z.object({
+    id: z.string().min(1),
+    handle: z.string().min(1),
+    displayName: z.string().min(1),
+    trustTier: TrustTierSchema,
+    status: z.string().min(1),
   }),
 });
 
@@ -982,6 +1025,10 @@ export type VerifyEmailResponse = z.infer<typeof VerifyEmailResponseSchema>;
 export type TokenResponse = z.infer<typeof TokenResponseSchema>;
 export type MagicLinkResponse = z.infer<typeof MagicLinkResponseSchema>;
 export type MagicLinkVerifyResponse = z.infer<typeof MagicLinkVerifyResponseSchema>;
+export type AccountLookupStatus = z.infer<typeof AccountLookupStatusSchema>;
+export type AccountLookupNextAction = z.infer<typeof AccountLookupNextActionSchema>;
+export type AccountLookupResponse = z.infer<typeof AccountLookupResponseSchema>;
+export type GuestBootstrapResponse = z.infer<typeof GuestBootstrapResponseSchema>;
 export type AdminArchivedFilter = z.infer<typeof AdminArchivedFilterSchema>;
 export type AdminListQuery = z.infer<typeof AdminListQuerySchema>;
 export type AdminListMeta = z.infer<typeof AdminListMetaSchema>;

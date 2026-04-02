@@ -208,12 +208,23 @@ type AccessPageState = {
   oauthError?: string | null;
   provider?: string | null;
   nextPath?: string;
+  lookupEmail?: string | null;
   registrationResult?: {
     clientId: string;
     clientSecret: string;
     email: string;
     expiresAt: string;
     code: string;
+  } | null;
+};
+
+type AccountPageState = {
+  statusTone?: "success" | "error" | "info";
+  statusTitle?: string;
+  statusBody?: string;
+  rotatedCredentials?: {
+    clientId: string;
+    clientSecret: string;
   } | null;
 };
 
@@ -235,6 +246,7 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
     ? `<div class="auth-error"><strong>OAuth sign-in failed.</strong><span>${escapeHtml(oauthError)}${provider ? ` (provider: ${escapeHtml(provider)})` : ""}</span></div>`
     : "";
   const panelClass = (panel: typeof activePanel) => `button secondary${panel === activePanel ? " is-active" : ""}`;
+  const lookupEmail = state.lookupEmail ?? null;
   const registrationPanel = state.registrationResult
     ? `
       <section class="form-card">
@@ -245,6 +257,26 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
         ${statRow("Email", state.registrationResult.email)}
         ${statRow("Verify by", state.registrationResult.expiresAt)}
         <p class="mono">Verification code: ${escapeHtml(state.registrationResult.code)}</p>
+      </section>
+    `
+    : "";
+  const guestChoicePanel = lookupEmail
+    ? `
+      <section class="form-card">
+        <h3>No account found</h3>
+        <p>That email is not registered yet. Create a verified account for manual topics, or continue as a guest for autonomous cron_auto topics only.</p>
+        <div class="grid two">
+          <form class="auth-form" method="post" action="/register">
+            ${csrfHiddenInput(csrf.token)}
+            <label>Name<input name="name" required /></label>
+            <label>Email<input name="email" type="email" value="${escapeHtml(lookupEmail)}" required /></label>
+            <button type="submit">Create account</button>
+          </form>
+          <form class="auth-form" method="post" action="/login/guest">
+            ${csrfHiddenInput(csrf.token)}
+            <button type="submit">Continue as guest</button>
+          </form>
+        </div>
       </section>
     `
     : "";
@@ -269,7 +301,8 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
         <section class="grid two">
           <section class="form-card">
             <h3>Sign in</h3>
-            <p>Use OAuth, machine credentials, or a magic link to open your operator session.</p>
+            <p>Use Google or email to open your operator session.</p>
+            <p>Start with your email. Existing accounts go to login. Unknown emails branch to account creation or guest access.</p>
             <div class="oauth-buttons">${oauthButtons}</div>
             <div class="auth-divider"><span>or use credentials</span></div>
             <form class="auth-form" method="post" action="/login/credentials">
@@ -279,11 +312,11 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
               <input type="password" name="clientSecret" placeholder="Client Secret" required>
               <button type="submit">Sign in with credentials</button>
             </form>
-            <div class="auth-divider"><span>or use magic link</span></div>
+            <div class="auth-divider"><span>or continue with email</span></div>
             <form class="auth-form" method="post" action="/login/magic">
               ${csrfHiddenInput(csrf.token)}
               <input type="email" name="email" placeholder="Email for magic link" required>
-              <button type="submit">Send magic link</button>
+              <button type="submit">Continue with email</button>
             </form>
           </section>
           <section class="form-card">
@@ -297,6 +330,7 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
             </form>
           </section>
         </section>
+        ${guestChoicePanel}
         <section class="form-card">
           <h3>Verify</h3>
           <p>Confirm the verification code issued during registration to unlock email-based access flows.</p>
@@ -333,6 +367,116 @@ function renderAuthPage(title: string, body: string, detail: string, options?: {
     options?.cacheControl ?? CACHE_CONTROL_NO_STORE,
     options?.status ?? 200,
   );
+}
+
+function renderAccountPage(c: any, account: Awaited<ReturnType<typeof fetchAccountData>>, state: AccountPageState = {}) {
+  const csrf = ensureCsrfToken(c);
+  const { agent, beings, linkedIdentities } = account;
+  const initial = (agent.name || agent.email || "?")[0].toUpperCase();
+  const emailBadge = agent.emailVerifiedAt
+    ? `<span class="acct-badge verified">email verified</span>`
+    : `<span class="acct-badge unverified">email unverified</span>`;
+  const statusMarkup = state.statusTitle
+    ? `<div class="auth-error auth-error--${escapeHtml(state.statusTone ?? "info")}"><strong>${escapeHtml(state.statusTitle)}</strong><span>${escapeHtml(state.statusBody ?? "")}</span></div>`
+    : "";
+  const rotatedMarkup = state.rotatedCredentials
+    ? `
+      <div class="acct-section">
+        <div class="acct-section-label">Rotated credentials</div>
+        <div class="acct-cred"><strong>Client ID</strong><code>${escapeHtml(state.rotatedCredentials.clientId)}</code></div>
+        <div class="acct-cred"><strong>Client Secret</strong><code>${escapeHtml(state.rotatedCredentials.clientSecret)}</code></div>
+      </div>
+    `
+    : "";
+  const beingsHtml = beings.length
+    ? beings.map((b) => `
+        <div class="acct-being">
+          <div>
+            <div class="acct-being-handle"><a href="/agents/${escapeHtml(b.handle)}">@${escapeHtml(b.handle)}</a></div>
+            <div class="acct-being-id">${escapeHtml(b.id)}</div>
+          </div>
+          <div class="acct-being-badges">
+            <span class="acct-badge trust">${escapeHtml(b.trustTier)}</span>
+            <span class="acct-badge status">${escapeHtml(b.status)}</span>
+          </div>
+        </div>
+      `).join("")
+    : `<p class="acct-empty">No agents yet.</p>`;
+  const providersHtml = linkedIdentities.length
+    ? linkedIdentities.map((li) => {
+        const provider = li.provider as "google" | "github" | "x";
+        return `
+          <div class="acct-provider">
+            ${svgIconFor(provider)}
+            <span class="acct-provider-name">${escapeHtml(providerDisplayName(li.provider))}</span>
+            ${li.emailSnapshot ? `<span class="acct-provider-meta">${escapeHtml(li.emailSnapshot)}</span>` : ""}
+            <span class="acct-provider-meta">linked ${escapeHtml(formatDate(li.linkedAt))}</span>
+          </div>
+        `;
+      }).join("")
+    : `<p class="acct-empty">No linked accounts.</p>`;
+
+  return htmlResponseWithCsrf(c, renderPage("Account", rawHtml(`
+    <div class="acct-header">
+      <div class="acct-avatar">${escapeHtml(initial)}</div>
+      <div class="acct-identity">
+        <h1 class="acct-name">${escapeHtml(agent.name)}</h1>
+        <p class="acct-email">${escapeHtml(agent.email ?? "No email")}</p>
+        <div class="acct-badges">
+          <span class="acct-badge trust">${escapeHtml(agent.trustTier)}</span>
+          <span class="acct-badge status">${escapeHtml(agent.status)}</span>
+          ${emailBadge}
+        </div>
+      </div>
+    </div>
+
+    ${statusMarkup}
+
+    <div class="acct-section">
+      <div class="acct-section-label">Credentials</div>
+      <div class="acct-cred"><strong>Client ID</strong><code>${escapeHtml(agent.clientId)}</code></div>
+      <div class="acct-cred"><strong>Agent ID</strong><code>${escapeHtml(agent.id)}</code></div>
+      <form method="post" action="/account/credentials/rotate">
+        ${csrfHiddenInput(csrf.token)}
+        <button class="secondary" type="submit">Rotate machine secret</button>
+      </form>
+    </div>
+
+    ${rotatedMarkup}
+
+    <div class="acct-section">
+      <div class="acct-section-label">Email</div>
+      <form method="post" action="/account/email-link" class="auth-form">
+        ${csrfHiddenInput(csrf.token)}
+        <input type="email" name="email" value="${escapeHtml(agent.email ?? "")}" placeholder="Email for verification link" required />
+        <button type="submit">Send verification link</button>
+      </form>
+    </div>
+
+    <div class="acct-section">
+      <div class="acct-section-label">Agents</div>
+      ${beingsHtml}
+    </div>
+
+    <div class="acct-section">
+      <div class="acct-section-label">Linked accounts</div>
+      ${providersHtml}
+    </div>
+
+    <div class="acct-footer">
+      <span class="acct-meta">Member since ${escapeHtml(formatDate(agent.createdAt))}</span>
+      <form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="secondary" type="submit">Sign out</button></form>
+    </div>
+  `).__html, undefined, undefined, undefined, sidebarShell("auth", {
+    eyebrow: "Account",
+    title: agent.name,
+    detail: "Agent credentials, agents, linked identities, and session controls.",
+    meta: [
+      { label: "Status", value: agent.status },
+      { label: "Trust", value: agent.trustTier },
+    ],
+    action: { href: "/archive", label: "Browse archive" },
+  })), CACHE_CONTROL_NO_STORE, 200, csrf);
 }
 
 function buildTopicShareDescription(meta: TopicPageMeta, verdictSummary?: string | null, verdictConfidence?: string | null): string {
@@ -1240,6 +1384,7 @@ app.get("/", async (c) =>
   }));
 
 app.get("/analytics", async (c) => {
+  const session = await validateSession(c.env, c.req.raw);
   const range = normalizeAnalyticsRange(c.req.query("range"));
   const rawTopicId = c.req.query("topicId")?.trim() ?? "";
   const topicId = rawTopicId || null;
@@ -1276,6 +1421,7 @@ app.get("/analytics", async (c) => {
           topics,
           topicData,
           reliability,
+          canViewDetailedAnalytics: Boolean(session),
           range,
           topicId,
           minVotes,
@@ -1623,16 +1769,10 @@ app.get("/domains/:slug", async (c) => {
         card("Recent Topics", (topics.results ?? []).map((topic) => `<p><a href="/topics/${escapeHtml(topic.id)}">${escapeHtml(topic.title)}</a> ${statusPill(topic.status)} ${dataBadge(topic.template_id)}</p>`).join("") || "<p>No topics yet.</p>"),
         card("Agent Leaderboard", (leaderboard.results ?? []).map((row) => `<p><a href="/agents/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No reputation signal yet.</p>"),
       ]),
-    ].join(""), undefined, undefined, undefined, sidebarShell("domains", {
-      eyebrow: "Domains",
-      title: domain.name,
-      detail: domain.description ?? "Public domain namespace.",
-      meta: [
-        { label: "Recent topics", value: String((topics.results ?? []).length) },
-        { label: "Leaders", value: String((leaderboard.results ?? []).length) },
-      ],
-      action: { href: "/domains", label: "Back to domains" },
-    }));
+    ].join(""), undefined, undefined, undefined, {
+      variant: "top-nav-only",
+      navActiveKey: "domains",
+    });
   });
 });
 
@@ -1817,17 +1957,67 @@ app.post("/login/magic", async (c) => {
       statusBody: "The form token was invalid or missing.",
     });
   }
+  const email = String(form.get("email") ?? "");
+  const { data: lookup } = await apiJson<any>(c.env, "/v1/auth/account-lookup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (lookup.status === "account_not_found") {
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusTone: "info",
+      statusTitle: "Choose your path.",
+      statusBody: "No existing account matched that email. Create an account or continue as a guest.",
+      lookupEmail: email,
+    });
+  }
   await apiJson<any>(c.env, "/v1/auth/magic-link", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: String(form.get("email") ?? "") }),
+    body: JSON.stringify({ email }),
   });
   return renderAccessPage(c, {
     activePanel: "signin",
     statusTone: "info",
     statusTitle: "Check your email.",
-    statusBody: "Use the emailed magic link to mint a router session.",
+    statusBody: lookup.status === "awaiting_verification"
+      ? "Use the emailed magic link to verify and sign in to the existing account."
+      : "Use the emailed magic link to mint a router session.",
   });
+});
+
+app.post("/login/guest", async (c) => {
+  const form = await c.req.formData();
+  if (!assertCsrfToken(c, form)) {
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 403,
+      statusTone: "error",
+      statusTitle: "Guest launch rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
+  }
+  const response = await apiFetch(c.env, "/v1/auth/guest", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    return renderAccessPage(c, {
+      activePanel: "signin",
+      statusCode: 500,
+      statusTone: "error",
+      statusTitle: "Guest launch failed.",
+      statusBody: "The guest session could not be provisioned.",
+    });
+  }
+  const next = redirectResponse("/account");
+  const setCookie = response.headers.get("set-cookie");
+  if (setCookie) {
+    next.headers.append("set-cookie", setCookie);
+  }
+  return next;
 });
 
 app.get("/login/verify", async (c) => {
@@ -1923,84 +2113,80 @@ app.get("/account", async (c) => {
   if (!account) {
     return redirectResponse("/access?next=%2Faccount");
   }
-  const csrf = ensureCsrfToken(c);
-  const { agent, beings, linkedIdentities } = account;
-  const initial = (agent.name || agent.email || "?")[0].toUpperCase();
-  const emailBadge = agent.emailVerifiedAt
-    ? `<span class="acct-badge verified">email verified</span>`
-    : `<span class="acct-badge unverified">email unverified</span>`;
-  const beingsHtml = beings.length
-    ? beings.map((b) => `
-        <div class="acct-being">
-          <div>
-            <div class="acct-being-handle"><a href="/agents/${escapeHtml(b.handle)}">@${escapeHtml(b.handle)}</a></div>
-            <div class="acct-being-id">${escapeHtml(b.id)}</div>
-          </div>
-          <div class="acct-being-badges">
-            <span class="acct-badge trust">${escapeHtml(b.trustTier)}</span>
-            <span class="acct-badge status">${escapeHtml(b.status)}</span>
-          </div>
-        </div>
-      `).join("")
-    : `<p class="acct-empty">No agents yet.</p>`;
-  const providersHtml = linkedIdentities.length
-    ? linkedIdentities.map((li) => {
-        const provider = li.provider as "google" | "github" | "x";
-        return `
-          <div class="acct-provider">
-            ${svgIconFor(provider)}
-            <span class="acct-provider-name">${escapeHtml(providerDisplayName(li.provider))}</span>
-            ${li.emailSnapshot ? `<span class="acct-provider-meta">${escapeHtml(li.emailSnapshot)}</span>` : ""}
-            <span class="acct-provider-meta">linked ${escapeHtml(formatDate(li.linkedAt))}</span>
-          </div>
-        `;
-      }).join("")
-    : `<p class="acct-empty">No linked accounts.</p>`;
+  return renderAccountPage(c, account);
+});
 
-  return htmlResponseWithCsrf(c, renderPage("Account", rawHtml(`
-    <div class="acct-header">
-      <div class="acct-avatar">${escapeHtml(initial)}</div>
-      <div class="acct-identity">
-        <h1 class="acct-name">${escapeHtml(agent.name)}</h1>
-        <p class="acct-email">${escapeHtml(agent.email ?? "No email")}</p>
-        <div class="acct-badges">
-          <span class="acct-badge trust">${escapeHtml(agent.trustTier)}</span>
-          <span class="acct-badge status">${escapeHtml(agent.status)}</span>
-          ${emailBadge}
-        </div>
-      </div>
-    </div>
+app.post("/account/email-link", async (c) => {
+  const account = await fetchAccountData(c.env, c.req.raw);
+  if (!account) {
+    return redirectResponse("/access?next=%2Faccount");
+  }
+  const form = await c.req.formData();
+  if (!assertCsrfToken(c, form)) {
+    return renderAccountPage(c, account, {
+      statusTone: "error",
+      statusTitle: "Email link rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
+  }
+  try {
+    await apiJson(c.env, "/v1/auth/email-link", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: c.req.header("cookie") ?? "",
+      },
+      body: JSON.stringify({ email: String(form.get("email") ?? "") }),
+    });
+    return renderAccountPage(c, account, {
+      statusTone: "success",
+      statusTitle: "Verification link sent.",
+      statusBody: "Use the emailed magic link to attach and verify that address.",
+    });
+  } catch (error) {
+    return renderAccountPage(c, account, {
+      statusTone: "error",
+      statusTitle: "Email link failed.",
+      statusBody: error instanceof Error ? error.message : "The email link could not be issued.",
+    });
+  }
+});
 
-    <div class="acct-section">
-      <div class="acct-section-label">Credentials</div>
-      <div class="acct-cred"><strong>Client ID</strong><code>${escapeHtml(agent.clientId)}</code></div>
-      <div class="acct-cred"><strong>Agent ID</strong><code>${escapeHtml(agent.id)}</code></div>
-    </div>
-
-    <div class="acct-section">
-      <div class="acct-section-label">Agents</div>
-      ${beingsHtml}
-    </div>
-
-    <div class="acct-section">
-      <div class="acct-section-label">Linked accounts</div>
-      ${providersHtml}
-    </div>
-
-    <div class="acct-footer">
-      <span class="acct-meta">Member since ${escapeHtml(formatDate(agent.createdAt))}</span>
-      <form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="secondary" type="submit">Sign out</button></form>
-    </div>
-  `).__html, undefined, undefined, undefined, sidebarShell("auth", {
-    eyebrow: "Account",
-    title: agent.name,
-    detail: "Agent credentials, agents, linked identities, and session controls.",
-    meta: [
-      { label: "Status", value: agent.status },
-      { label: "Trust", value: agent.trustTier },
-    ],
-    action: { href: "/archive", label: "Browse archive" },
-  })), CACHE_CONTROL_NO_STORE, 200, csrf);
+app.post("/account/credentials/rotate", async (c) => {
+  const account = await fetchAccountData(c.env, c.req.raw);
+  if (!account) {
+    return redirectResponse("/access?next=%2Faccount");
+  }
+  const form = await c.req.formData();
+  if (!assertCsrfToken(c, form)) {
+    return renderAccountPage(c, account, {
+      statusTone: "error",
+      statusTitle: "Rotation rejected.",
+      statusBody: "The form token was invalid or missing.",
+    });
+  }
+  try {
+    const { data } = await apiJson<{ clientId: string; clientSecret: string }>(c.env, "/v1/auth/credentials/rotate", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: c.req.header("cookie") ?? "",
+      },
+      body: JSON.stringify({}),
+    });
+    return renderAccountPage(c, account, {
+      statusTone: "success",
+      statusTitle: "Machine secret rotated.",
+      statusBody: "Store the new machine secret now. It is only shown once.",
+      rotatedCredentials: data,
+    });
+  } catch (error) {
+    return renderAccountPage(c, account, {
+      statusTone: "error",
+      statusTitle: "Rotation failed.",
+      statusBody: error instanceof Error ? error.message : "The machine secret could not be rotated.",
+    });
+  }
 });
 
 app.get("/login/cli-complete", () => {

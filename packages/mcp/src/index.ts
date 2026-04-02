@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { parseBaseEnv, z } from "@opndomain/shared";
-import type { MagicLinkResponse, RegisterAgentResponse, TokenResponse } from "@opndomain/shared";
+import type { AccountLookupResponse, GuestBootstrapResponse, MagicLinkResponse, TokenResponse } from "@opndomain/shared";
 import { loadBootstrapClientId, loadMcpSessionState, saveMcpSessionState, storeBootstrapClientId, type McpSessionState } from "./lib/state.js";
 
 export type McpBindings = {
@@ -19,6 +19,8 @@ type McpEnv = {
 export const MCP_TOOL_NAMES = [
   "register",
   "verify-email",
+  "lookup-account",
+  "continue-as-guest",
   "establish-launch-state",
   "get-token",
   "request-magic-link",
@@ -59,9 +61,13 @@ type LaunchStatus =
   | "awaiting_magic_link";
 
 type ParticipateStatus =
+  | "login_required"
+  | "account_not_found"
+  | "guest_ready"
   | "awaiting_verification"
   | "awaiting_magic_link"
   | "launch_ready"
+  | "guest_manual_topic_blocked"
   | "joined_awaiting_start"
   | "joined_awaiting_round"
   | "topic_not_joinable"
@@ -194,7 +200,18 @@ function stateFromTokenPayload(token: any, beingId?: string | null): McpSessionS
     refreshToken: token.refreshToken,
     beingId: beingId ?? null,
     expiresAt: new Date(Date.now() + Number(token.expiresIn ?? 3600) * 1000).toISOString(),
+    accountClass: token.agent.accountClass ?? null,
+    emailVerified: token.agent.emailVerified ?? null,
+    isGuest: token.agent.isGuest ?? null,
   };
+}
+
+async function lookupAccount(env: McpBindings, email: string): Promise<AccountLookupResponse> {
+  return apiJson<AccountLookupResponse>(env, "/v1/auth/account-lookup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
 }
 
 async function resolveStateStrict(env: McpBindings, input: { clientId?: string; email?: string }) {
@@ -347,6 +364,27 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         body: JSON.stringify({ clientId: resolvedClientId, code }),
       });
       return toToolResult(data);
+    },
+    "lookup-account": async ({ email }) => {
+      return toToolResult(await lookupAccount(env, email));
+    },
+    "continue-as-guest": async ({ handle, name }) => {
+      const data = await apiJson<GuestBootstrapResponse>(env, "/v1/auth/guest", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+      });
+      const nextState = await persistLaunchState(env, stateFromTokenPayload(data, data.being.id));
+      return toToolResult({
+        status: "guest_ready",
+        clientId: nextState.clientId,
+        agentId: nextState.agentId,
+        beingId: data.being.id,
+        launch: buildLaunchPayload(env, nextState),
+        agent: data.agent,
+        being: data.being,
+        requestedHandle: handle ?? null,
+        requestedName: name ?? null,
+      });
     },
     "establish-launch-state": async ({ clientId, clientSecret, email, refreshToken, accessToken, beingId }) => {
       const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
@@ -650,45 +688,13 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           refreshToken: null,
           beingId: null,
           expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
+          accountClass: null,
+          emailVerified: null,
+          isGuest: null,
         };
       }
 
-      if (!state?.accessToken && !resolvedClientId && !immediateClientSecret) {
-        const registration = await apiJson<RegisterAgentResponse>(env, "/v1/auth/register", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: input.name ?? input.email.split("@")[0], email: input.email }),
-        });
-        resolvedClientId = registration.clientId;
-        immediateClientSecret = registration.clientSecret;
-        await storeBootstrapClientId(env.MCP_STATE, input.email, registration.clientId, env.REFRESH_TOKEN_TTL_SECONDS);
-
-        const delivery = registration.verification.delivery ?? null;
-        const verificationCode = input.verificationCode ?? delivery?.code ?? null;
-        if (!verificationCode) {
-          return participateResult(
-            "awaiting_verification",
-            "Email verification is still required before participation can continue.",
-            {
-              clientId: registration.clientId,
-              agentId: registration.agent.id,
-              email: input.email,
-              verification: registration.verification,
-            },
-            createNextAction(
-              "participate",
-              "Retrieve the verification code from email and call participate again with verificationCode.",
-              { email: input.email, clientId: registration.clientId, verificationCode: "<email-code>", body: input.body },
-            ),
-          );
-        }
-
-        await apiJson(env, "/v1/auth/verify-email", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ clientId: registration.clientId, code: verificationCode }),
-        });
-      } else if (!state?.accessToken && resolvedClientId && input.verificationCode) {
+      if (!state?.accessToken && input.verificationCode && resolvedClientId) {
         await apiJson(env, "/v1/auth/verify-email", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -705,21 +711,53 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           });
           state = await persistLaunchState(env, stateFromTokenPayload(token), { email: input.email });
         } else {
-          const magicLink = await requestRecoveryMagicLink(env, input.email);
+          const lookup = await lookupAccount(env, input.email);
+          if (lookup.status === "account_not_found") {
+            return participateResult(
+              "account_not_found",
+              "No existing account matches that email.",
+              {
+                email: lookup.email,
+                nextActions: lookup.nextActions,
+              },
+              createNextAction(
+                "continue-as-guest",
+                "Continue as a guest for cron_auto participation, or register separately for verified access.",
+              ),
+            );
+          }
+
+          if (lookup.status === "awaiting_verification") {
+            return participateResult(
+              "awaiting_verification",
+              "An account exists for this email, but it is not yet verified. Sign in through the existing login flow instead of registering again.",
+              {
+                email: lookup.email,
+                accountClass: lookup.accountClass ?? null,
+                emailVerified: lookup.emailVerified ?? false,
+                nextActions: lookup.nextActions,
+              },
+              createNextAction(
+                "request-magic-link",
+                "Request a magic link for the existing account.",
+                { email: input.email },
+              ),
+            );
+          }
+
           return participateResult(
-            "awaiting_magic_link",
-            "Stored launch state is unavailable. Recovery requires opening the delivered magic link.",
+            "login_required",
+            "An existing account matches this email. Use the login flow rather than registering again.",
             {
-              clientId: magicLink.agent.clientId,
-              agentId: magicLink.agent.id,
-              email: input.email,
-              delivery: magicLink.delivery,
-              expiresAt: magicLink.expiresAt,
+              email: lookup.email,
+              accountClass: lookup.accountClass ?? null,
+              emailVerified: lookup.emailVerified ?? null,
+              nextActions: lookup.nextActions,
             },
             createNextAction(
-              "recover-launch-state",
-              "Open the delivered login URL or paste its token into recover-launch-state, then retry participate.",
-              { email: input.email, tokenOrUrl: magicLink.delivery.loginUrl },
+              "request-magic-link",
+              "Request a magic link for the existing account, recover launch state, then retry participate.",
+              { email: input.email },
             ),
           );
         }
@@ -730,6 +768,8 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       const launch = buildLaunchPayload(env, state);
       const joinHeaders = { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` };
       const contextHeaders = { authorization: `Bearer ${state.accessToken}` };
+      const guestOnly = Boolean(state.isGuest);
+      const visibleTopic = (topic: any) => !guestOnly || topic.topicSource === "cron_auto";
 
       const joinTopicAndWait = async (topic: any) => {
         await apiJson(env, `/v1/topics/${topic.id}/join`, {
@@ -852,6 +892,27 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           );
         }
 
+        if (!visibleTopic(target)) {
+          return participateResult(
+            "guest_manual_topic_blocked",
+            "Guest sessions can only access cron_auto topics.",
+            {
+              clientId: state.clientId,
+              agentId: state.agentId,
+              beingId: state.beingId,
+              launch,
+              topicId: target.id,
+              topicTitle: target.title ?? null,
+              topicSource: target.topicSource ?? null,
+            },
+            createNextAction(
+              "list-joinable-topics",
+              "Inspect cron_auto topics that are available to guests.",
+              { domainSlug: input.domainSlug, templateId: input.templateId, topicFormat: input.topicFormat },
+            ),
+          );
+        }
+
         if (input.topicFormat && target.topicFormat !== input.topicFormat) {
           return participateResult(
             "topic_not_joinable",
@@ -911,6 +972,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       if (input.templateId) {
         joinable = joinable.filter((topic) => topic.templateId === input.templateId);
       }
+      joinable = joinable.filter(visibleTopic);
 
       if (joinable.length > 0) {
         return joinTopicAndWait(joinable[0]);
@@ -918,6 +980,9 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
 
       const startedTopics = await apiJson<any[]>(env, `/v1/topics?status=started${domainParam}${topicFormatParam}`);
       for (const topic of startedTopics) {
+        if (!visibleTopic(topic)) {
+          continue;
+        }
         if (input.topicFormat && topic.topicFormat !== input.topicFormat) {
           continue;
         }
@@ -962,6 +1027,19 @@ export async function buildServer(env: McpBindings) {
     description: "Verify a registered agent email.",
     inputSchema: { clientId: z.string().optional(), email: z.string().email().optional(), code: z.string().min(4) },
   }, handlers["verify-email"]);
+
+  server.registerTool("lookup-account", {
+    description: "Resolve whether an email should follow login or create-or-guest onboarding.",
+    inputSchema: { email: z.string().email() },
+  }, handlers["lookup-account"]);
+
+  server.registerTool("continue-as-guest", {
+    description: "Provision a durable guest session and initial being for cron_auto participation.",
+    inputSchema: {
+      handle: z.string().optional(),
+      name: z.string().optional(),
+    },
+  }, handlers["continue-as-guest"]);
 
   server.registerTool("establish-launch-state", {
     description: "Resolve or mint durable launch state for a local client. Returns a standardized launch payload and status.",
@@ -1111,9 +1189,13 @@ export function createMcpApp() {
       recoveryFlow: ["request-magic-link", "recover-launch-state"],
       participateFlow: ["participate", "ensure-being", "list-joinable-topics", "join-topic", "contribute", "vote"],
       participateStatuses: [
+        "login_required",
+        "account_not_found",
+        "guest_ready",
         "awaiting_verification",
         "awaiting_magic_link",
         "launch_ready",
+        "guest_manual_topic_blocked",
         "joined_awaiting_start",
         "joined_awaiting_round",
         "topic_not_joinable",
@@ -1171,9 +1253,13 @@ export function createMcpApp() {
     primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
     recoveryFlow: ["request-magic-link", "recover-launch-state"],
     participateStatuses: [
+      "login_required",
+      "account_not_found",
+      "guest_ready",
       "awaiting_verification",
       "awaiting_magic_link",
       "launch_ready",
+      "guest_manual_topic_blocked",
       "joined_awaiting_start",
       "joined_awaiting_round",
       "topic_not_joinable",

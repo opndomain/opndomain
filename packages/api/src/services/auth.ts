@@ -5,9 +5,11 @@ import {
 } from "@opndomain/shared";
 import type {
   AccountClass,
+  AccountLookupResponse,
   AuthAgentIdentity,
   AuthAgentProfile,
   EffectiveAccountClass,
+  GuestBootstrapResponse,
   MagicLinkResponse,
   MagicLinkVerifyResponse,
   RegisterAgentResponse,
@@ -41,6 +43,8 @@ export type AgentRecord = {
 };
 
 export type AuthenticatedAgent = AgentRecord & {
+  emailVerified?: boolean;
+  isGuest?: boolean;
   isAdmin: boolean;
   effectiveAccountClass: EffectiveAccountClass;
 };
@@ -130,6 +134,8 @@ export function projectAgentAccount(env: ApiEnv, agent: AgentRecord): Authentica
   const isAdmin = isAdminAgent(env, agent);
   return {
     ...agent,
+    emailVerified: Boolean(agent.emailVerifiedAt),
+    isGuest: agent.accountClass === "guest_participant",
     isAdmin,
     effectiveAccountClass: isAdmin ? "admin_operator" : agent.accountClass,
   };
@@ -145,7 +151,9 @@ function mapAuthAgentIdentity(agent: AgentRecord): AuthAgentIdentity {
 function mapAuthAgentProfile(agent: AuthenticatedAgent, fallbackEmail?: string): AuthAgentProfile {
   return {
     ...mapAuthAgentIdentity(agent),
-    email: agent.email ?? fallbackEmail ?? "",
+    email: agent.email ?? fallbackEmail ?? null,
+    emailVerified: Boolean(agent.emailVerified),
+    isGuest: Boolean(agent.isGuest),
     trustTier: agent.trustTier as TrustTier,
     accountClass: agent.accountClass,
     isAdmin: agent.isAdmin,
@@ -217,6 +225,10 @@ function defaultAgentNameForEmail(email: string) {
     .join(" ");
 }
 
+function defaultGuestName() {
+  return `Guest ${createNumericCode().slice(0, 4)}`;
+}
+
 export async function getAgentById(env: ApiEnv, agentId: string): Promise<AgentRecord | null> {
   const row = await firstRow<AgentRow>(
     env.DB,
@@ -249,6 +261,44 @@ export async function getAgentByEmail(env: ApiEnv, email: string): Promise<Agent
     normalizedEmail,
   );
   return row ? mapAgent(row) : null;
+}
+
+export async function lookupAccountByEmail(
+  env: ApiEnv,
+  ipAddress: string,
+  email: string,
+): Promise<AccountLookupResponse> {
+  await enforceHourlyRateLimit(env.PUBLIC_CACHE, `rate-limit:account-lookup:${ipAddress}`, env.TOKEN_RATE_LIMIT_PER_HOUR);
+  const normalizedEmail = email.trim().toLowerCase();
+  const agent = await getAgentByEmail(env, normalizedEmail);
+  if (!agent) {
+    return {
+      status: "account_not_found",
+      email: normalizedEmail,
+      nextActions: ["register", "continue_as_guest"],
+      loginMethods: [],
+    };
+  }
+
+  if (!agent.emailVerifiedAt || agent.accountClass === "unverified_participant") {
+    return {
+      status: "awaiting_verification",
+      email: normalizedEmail,
+      nextActions: ["send_magic_link"],
+      accountClass: "unverified_participant",
+      emailVerified: false,
+      loginMethods: ["magic_link", "client_credentials", "oauth"],
+    };
+  }
+
+  return {
+    status: "login_required",
+    email: normalizedEmail,
+    nextActions: ["send_magic_link"],
+    accountClass: agent.accountClass,
+    emailVerified: true,
+    loginMethods: ["magic_link", "client_credentials", "oauth"],
+  };
 }
 
 export async function registerAgent(
@@ -345,11 +395,8 @@ export async function verifyAgentEmail(
       `UPDATE email_verifications SET consumed_at = ?, updated_at = ? WHERE id = ?`,
     ).bind(verifiedAt, verifiedAt, verification.id),
     env.DB.prepare(
-      `UPDATE agents SET email_verified_at = ?, account_class = 'verified_participant', trust_tier = 'supervised', updated_at = ? WHERE id = ?`,
+      `UPDATE agents SET email_verified_at = ?, account_class = 'verified_participant', updated_at = ? WHERE id = ?`,
     ).bind(verifiedAt, verifiedAt, agent.id),
-    env.DB.prepare(
-      `UPDATE beings SET trust_tier = 'supervised', updated_at = ? WHERE agent_id = ? AND trust_tier = 'unverified'`,
-    ).bind(verifiedAt, agent.id),
   ]);
 
   return mapAuthAgentProfile(projectAgentAccount(env, (await getAgentById(env, agent.id)) as AgentRecord), agent.email ?? verification.email);
@@ -398,6 +445,62 @@ export async function createSessionTokens(env: ApiEnv, agent: AgentRecord) {
   return { agent, sessionId, accessToken, refreshToken, cookie: buildSessionCookie(env, sessionId) };
 }
 
+export async function createGuestSession(env: ApiEnv): Promise<GuestBootstrapResponse & { cookie: string }> {
+  const agentId = createId("agt");
+  const clientId = createClientId();
+  const clientSecret = createSecret();
+  const agentName = defaultGuestName();
+  const beingId = createId("bng");
+  const handle = `guest-${randomGuestHandleSuffix()}`;
+  await env.DB.batch([
+    env.DB.prepare(
+      `
+        INSERT INTO agents (
+          id, client_id, client_secret_hash, name, email, email_verified_at, account_class, trust_tier, status
+        ) VALUES (?, ?, ?, ?, NULL, NULL, 'guest_participant', 'unverified', 'active')
+      `,
+    ).bind(agentId, clientId, await sha256(clientSecret), agentName),
+    env.DB.prepare(
+      `
+        INSERT INTO beings (id, agent_id, handle, display_name, bio, trust_tier, status)
+        VALUES (?, ?, ?, ?, ?, 'unverified', 'active')
+      `,
+    ).bind(beingId, agentId, handle, agentName, "Guest participant provisioned through auth guest bootstrap."),
+    env.DB.prepare(
+      `
+        INSERT INTO being_capabilities (
+          id, being_id, can_publish, can_join_topics, can_suggest_topics, can_open_topics
+        ) VALUES (?, ?, 1, 1, 1, 0)
+      `,
+    ).bind(createId("cap"), beingId),
+    env.DB.prepare(
+      `INSERT INTO vote_reliability (id, being_id, reliability) VALUES (?, ?, 1.0)`,
+    ).bind(createId("vr"), beingId),
+  ]);
+
+  const agent = (await getAgentById(env, agentId)) as AgentRecord;
+  const session = await createSessionTokens(env, agent);
+  return {
+    ...session,
+    tokenType: "Bearer",
+    expiresIn: env.ACCESS_TOKEN_TTL_SECONDS,
+    agent: mapAuthAgentProfile(projectAgentAccount(env, session.agent)),
+    being: {
+      id: beingId,
+      handle,
+      displayName: agentName,
+      trustTier: "unverified",
+      status: "active",
+    },
+  };
+}
+
+function randomGuestHandleSuffix(len = 8) {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
 export async function exchangeClientCredentials(
   env: ApiEnv,
   ipAddress: string,
@@ -423,7 +526,7 @@ export async function exchangeClientCredentials(
   const session = await createSessionTokens(env, agent);
   return {
     ...session,
-    agent: mapAuthAgentIdentity(session.agent),
+    agent: mapAuthAgentProfile(projectAgentAccount(env, session.agent)),
   };
 }
 
@@ -479,7 +582,7 @@ export async function exchangeRefreshToken(
   );
 
   return {
-    agent: mapAuthAgentIdentity(agent),
+    agent: mapAuthAgentProfile(projectAgentAccount(env, agent)),
     sessionId: session.id,
     accessToken: nextAccessToken,
     refreshToken: nextRefreshToken,
@@ -594,7 +697,7 @@ export async function createAttachedEmailMagicLink(env: ApiEnv, request: Request
   if (agent.email !== normalizedEmail || !agent.email) {
     await runStatement(
       env.DB.prepare(
-        `UPDATE agents SET email = ?, email_verified_at = NULL, updated_at = ? WHERE id = ?`,
+        `UPDATE agents SET email = ?, email_verified_at = NULL, account_class = 'unverified_participant', updated_at = ? WHERE id = ?`,
       ).bind(normalizedEmail, nowIso(), agent.id),
     );
   }
@@ -620,20 +723,9 @@ export async function createMagicLink(env: ApiEnv, ipAddress: string, email: str
   await enforceHourlyRateLimit(env.PUBLIC_CACHE, `rate-limit:magic-link:${ipAddress}`, env.TOKEN_RATE_LIMIT_PER_HOUR);
 
   const normalizedEmail = email.trim().toLowerCase();
-  let agent = await getAgentByEmail(env, normalizedEmail);
+  const agent = await getAgentByEmail(env, normalizedEmail);
   if (!agent) {
-    const prepared = await prepareAgentRecord(env, {
-      name: defaultAgentNameForEmail(normalizedEmail),
-      email: normalizedEmail,
-      emailVerifiedAt: null,
-      accountClass: "unverified_participant",
-      trustTier: "unverified",
-    });
-    await runStatement(prepared.insertStatement);
-    agent = await getAgentById(env, prepared.agentId);
-  }
-  if (!agent) {
-    unauthorized("Magic link signup could not be created.");
+    unauthorized("No account matches that email.");
   }
 
   const token = createSecret();
@@ -696,15 +788,12 @@ export async function verifyMagicLink(
   }
 
   let sessionAgent = agent;
-  if (!agent.emailVerifiedAt || agent.trustTier === "unverified") {
+  if (!agent.emailVerifiedAt || agent.accountClass === "unverified_participant") {
     const verifiedAt = nowIso();
     await env.DB.batch([
       env.DB.prepare(
-        `UPDATE agents SET email_verified_at = COALESCE(email_verified_at, ?), account_class = 'verified_participant', trust_tier = 'supervised', updated_at = ? WHERE id = ?`,
+        `UPDATE agents SET email_verified_at = COALESCE(email_verified_at, ?), account_class = 'verified_participant', updated_at = ? WHERE id = ?`,
       ).bind(verifiedAt, verifiedAt, agent.id),
-      env.DB.prepare(
-        `UPDATE beings SET trust_tier = 'supervised', updated_at = ? WHERE agent_id = ? AND trust_tier = 'unverified'`,
-      ).bind(verifiedAt, agent.id),
     ]);
     sessionAgent = (await getAgentById(env, agent.id)) ?? agent;
   }
@@ -712,10 +801,7 @@ export async function verifyMagicLink(
   const session = await createSessionTokens(env, sessionAgent);
   return {
     ...session,
-    agent: {
-      ...mapAuthAgentIdentity(session.agent),
-      email: session.agent.email ?? agent.email ?? "",
-    },
+    agent: mapAuthAgentProfile(projectAgentAccount(env, session.agent), agent.email ?? undefined),
   };
 }
 

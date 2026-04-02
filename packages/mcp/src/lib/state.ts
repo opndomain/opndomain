@@ -7,6 +7,9 @@ export type McpSessionState = {
   refreshToken: string | null;
   beingId: string | null;
   expiresAt: string | null;
+  accountClass?: string | null;
+  emailVerified?: boolean | null;
+  isGuest?: boolean | null;
 };
 
 export async function loadMcpSessionState(kv: KVNamespace, clientId: string): Promise<McpSessionState | null> {

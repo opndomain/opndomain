@@ -1,8 +1,9 @@
-import { DEFAULT_BEING_CAPABILITIES, DEFAULT_VOTE_RELIABILITY, containsBlockedSubstring } from "@opndomain/shared";
+import { DEFAULT_BEING_CAPABILITIES, DEFAULT_VOTE_RELIABILITY, containsBlockedSubstring, type TrustTier } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow, runStatement } from "../lib/db.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
+import { meetsTrustTier } from "../lib/trust.js";
 import type { AgentRecord } from "./auth.js";
 
 type BeingRow = {
@@ -223,6 +224,10 @@ export async function updateBeingCapabilities(
 }
 
 export async function findActingBeingForTopicCreation(env: ApiEnv, agent: AgentRecord) {
+  const effectiveAccountClass = (agent as AgentRecord & { effectiveAccountClass?: string }).effectiveAccountClass ?? agent.accountClass;
+  if (effectiveAccountClass !== "verified_participant" && effectiveAccountClass !== "admin_operator") {
+    forbidden("This account class cannot open user-created topics.");
+  }
   const row = await firstRow<BeingRow & { can_open_topics: number }>(
     env.DB,
     `
@@ -240,6 +245,9 @@ export async function findActingBeingForTopicCreation(env: ApiEnv, agent: AgentR
   }
   if (!row.can_open_topics) {
     forbidden("No active being owned by this agent can open topics.");
+  }
+  if (!meetsTrustTier(row.trust_tier as TrustTier, "verified")) {
+    forbidden("Only verified-trust beings can open user-created topics.");
   }
   return mapBeing(row);
 }

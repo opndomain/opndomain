@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  AccountLookupSchema,
   EmailLinkRequestSchema,
   MagicLinkRequestSchema,
   MagicLinkVerifySchema,
@@ -17,11 +18,13 @@ import { buildClearedCookie } from "../lib/cookies.js";
 import { ApiError } from "../lib/errors.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import {
+  createGuestSession,
   createAttachedEmailMagicLink,
   createMagicLink,
   exchangeClientCredentials,
   exchangeRefreshToken,
   getSessionSummary,
+  lookupAccountByEmail,
   logoutSession,
   registerAgent,
   rotateClientCredentials,
@@ -52,6 +55,26 @@ authRoutes.post("/magic-link", async (c) => {
   const body = parseJsonBody(MagicLinkRequestSchema, await c.req.json());
   const ipAddress = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "0.0.0.0";
   return jsonData(c, await createMagicLink(c.env, ipAddress, body.email), 201);
+});
+
+authRoutes.post("/account-lookup", async (c) => {
+  const body = parseJsonBody(AccountLookupSchema, await c.req.json());
+  const ipAddress = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? "0.0.0.0";
+  return jsonData(c, await lookupAccountByEmail(c.env, ipAddress, body.email));
+});
+
+authRoutes.post("/guest", async (c) => {
+  const guest = await createGuestSession(c.env);
+  c.header("set-cookie", guest.cookie, { append: true });
+  return jsonData(c, {
+    tokenType: "Bearer",
+    accessToken: guest.accessToken,
+    refreshToken: guest.refreshToken,
+    expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+    sessionId: guest.sessionId,
+    agent: guest.agent,
+    being: guest.being,
+  }, 201);
 });
 
 authRoutes.post("/email-link", async (c) => {

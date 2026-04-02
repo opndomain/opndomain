@@ -13,9 +13,11 @@ import { ApiError } from "../lib/errors.js";
 import { signJwt } from "../lib/jwt.js";
 import {
   authenticateRequest,
+  createGuestSession,
   createMagicLink,
   exchangeClientCredentials,
   logoutSession,
+  lookupAccountByEmail,
   registerAgent,
   verifyAgentEmail,
   verifyMagicLink,
@@ -384,6 +386,8 @@ describe("registration and email verification contracts", () => {
     const parsed = RegisterAgentResponseSchema.parse(result);
     assert.equal(parsed.agent.email, "agent@example.com");
     assert.equal(parsed.agent.accountClass, "unverified_participant");
+    assert.equal(parsed.agent.emailVerified, false);
+    assert.equal(parsed.agent.isGuest, false);
     assert.equal(parsed.agent.isAdmin, false);
     assert.equal(parsed.agent.effectiveAccountClass, "unverified_participant");
     assert.equal(parsed.agent.trustTier, "unverified");
@@ -411,6 +415,8 @@ describe("registration and email verification contracts", () => {
     assert.equal(parsed.agent.clientId, parsed.clientId);
     assert.equal(parsed.agent.email, "agent@example.com");
     assert.equal(parsed.agent.accountClass, "unverified_participant");
+    assert.equal(parsed.agent.emailVerified, false);
+    assert.equal(parsed.agent.isGuest, false);
     assert.equal(parsed.agent.isAdmin, false);
     assert.equal(parsed.agent.effectiveAccountClass, "unverified_participant");
     assert.equal(parsed.agent.trustTier, "unverified");
@@ -465,6 +471,8 @@ describe("registration and email verification contracts", () => {
 
     const parsed = VerifyEmailResponseSchema.parse(result);
     assert.equal(parsed.email, "agent@example.com");
+    assert.equal(parsed.emailVerified, true);
+    assert.equal(parsed.isGuest, false);
     assert.equal(parsed.accountClass, "verified_participant");
     assert.equal(parsed.isAdmin, false);
     assert.equal(parsed.effectiveAccountClass, "verified_participant");
@@ -502,30 +510,13 @@ describe("magic-link auth", () => {
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO magic_links")));
   });
 
-  it("creates a new unverified agent when the email has not been seen before", async () => {
+  it("rejects magic-link creation when the email has not been seen before", async () => {
     const db = new FakeDb();
     const env = buildEnv(db);
-    db.queueFirst("WHERE id = ?", [{
-      id: "agt_1",
-      client_id: "cli_1",
-      name: "New Person",
-      email: "new.person@example.com",
-      email_verified_at: null,
-      account_class: "unverified_participant",
-      trust_tier: "unverified",
-      status: "active",
-      created_at: "2026-03-25T00:00:00.000Z",
-      updated_at: "2026-03-25T00:00:00.000Z",
-    }]);
-
-    const result = await createMagicLink(env as never, "127.0.0.1", "new.person@example.com");
-    const parsed = MagicLinkResponseSchema.parse(result);
-
-    assert.match(parsed.agent.clientId, /^cli_/);
-    assert.equal(parsed.agent.email, "new.person@example.com");
-    assert.match(parsed.delivery.loginUrl, /\/login\/verify\?token=/);
-    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
-    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO magic_links")));
+    await assert.rejects(
+      () => createMagicLink(env as never, "127.0.0.1", "new.person@example.com"),
+      (error: unknown) => error instanceof ApiError && error.status === 401,
+    );
   });
 
   it("verifies a magic link and mints a session", async () => {
@@ -558,7 +549,7 @@ describe("magic-link auth", () => {
     assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO sessions")));
   });
 
-  it("verifies a new email-signup magic link and upgrades the account trust tier", async () => {
+  it("verifies a new email-signup magic link and upgrades the account class without mutating trust", async () => {
     const db = new FakeDb();
     const env = buildEnv(db);
     const token = "token_signup";
@@ -604,12 +595,50 @@ describe("magic-link auth", () => {
     });
 
     assert.equal(parsed.agent.email, "new.person@example.com");
+    assert.equal(parsed.agent.emailVerified, true);
     assert.ok(
       db.executedRuns.some((entry) =>
-        entry.sql.includes("UPDATE agents SET email_verified_at = COALESCE(email_verified_at, ?), account_class = 'verified_participant', trust_tier = 'supervised'"),
+        entry.sql.includes("UPDATE agents SET email_verified_at = COALESCE(email_verified_at, ?), account_class = 'verified_participant'"),
       ),
     );
-    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("UPDATE beings SET trust_tier = 'supervised'")));
+    assert.ok(!db.executedRuns.some((entry) => entry.sql.includes("UPDATE beings SET trust_tier = 'supervised'")));
+  });
+});
+
+describe("account lookup and guest bootstrap", () => {
+  it("returns account_not_found for unknown emails", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const result = await lookupAccountByEmail(env as never, "127.0.0.1", "missing@example.com");
+    assert.equal(result.status, "account_not_found");
+    assert.deepEqual(result.nextActions, ["register", "continue_as_guest"]);
+  });
+
+  it("creates a durable guest session with a guest account class", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    db.queueFirst("WHERE id = ?", [{
+      id: "agt_guest",
+      client_id: "cli_guest",
+      client_secret_hash: "hash",
+      name: "Guest 1234",
+      email: null,
+      email_verified_at: null,
+      account_class: "guest_participant",
+      trust_tier: "unverified",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const result = await createGuestSession(env as never);
+    assert.equal(result.agent.accountClass, "guest_participant");
+    assert.equal(result.agent.isGuest, true);
+    assert.equal(result.agent.email, null);
+    assert.equal(result.being.trustTier, "unverified");
+    assert.match(result.cookie, /opn_session=/);
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO agents")));
+    assert.ok(db.executedRuns.some((entry) => entry.sql.includes("INSERT INTO beings")));
   });
 });
 
