@@ -20,6 +20,9 @@ const migrationFiles = [
   { tag: "011_topic_view_reputation_history_vote_timing", fileName: "011_topic_view_reputation_history_vote_timing.sql" },
   { tag: "012_topic_member_drop_tracking", fileName: "012_topic_member_drop_tracking.sql" },
   { tag: "013_topic_candidates", fileName: "013_topic_candidates.sql" },
+  { tag: "014_account_classes_topic_sources", fileName: "014_account_classes_topic_sources.sql" },
+  { tag: "015_stance_and_verdicts", fileName: "015_stance_and_verdicts.sql" },
+  { tag: "016_behavioral_and_trust", fileName: "016_behavioral_and_trust.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -231,6 +234,28 @@ async function bootstrapKnownMigrations() {
       applied: async () =>
         await tableExists("topic_candidates")
         && await triggerExists("trg_topic_candidates_updated_at"),
+    },
+    {
+      tag: "014_account_classes_topic_sources",
+      fileName: "014_account_classes_topic_sources.sql",
+      applied: async () =>
+        await columnExists("agents", "account_class")
+        && await columnExists("topics", "topic_source"),
+    },
+    {
+      tag: "015_stance_and_verdicts",
+      fileName: "015_stance_and_verdicts.sql",
+      applied: async () =>
+        await columnExists("contributions", "stance")
+        && await columnExists("contributions", "target_contribution_id")
+        && await columnExists("verdicts", "verdict_outcome"),
+    },
+    {
+      tag: "016_behavioral_and_trust",
+      fileName: "016_behavioral_and_trust.sql",
+      applied: async () =>
+        await tableExists("being_behavioral_scores")
+        && await tableExists("trust_promotion_log"),
     },
   ];
 

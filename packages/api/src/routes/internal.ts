@@ -543,7 +543,9 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
       terminalization_mode: string;
       summary: string;
       reasoning_json: string | null;
-    }>(c.env.DB, `SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?`, topicId);
+      verdict_outcome: string | null;
+      positions_json: string | null;
+    }>(c.env.DB, `SELECT confidence, terminalization_mode, summary, reasoning_json, verdict_outcome, positions_json FROM verdicts WHERE topic_id = ?`, topicId);
 
     const artifact = await firstRow<{
       transcript_snapshot_key: string | null;
@@ -594,6 +596,8 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
             terminalizationMode: verdict.terminalization_mode,
             summary: verdict.summary,
             reasoning: verdict.reasoning_json ? JSON.parse(verdict.reasoning_json) : null,
+            verdictOutcome: verdict.verdict_outcome ?? null,
+            positions: verdict.positions_json ? JSON.parse(verdict.positions_json) : null,
           }
         : null,
       artifact: artifact

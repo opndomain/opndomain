@@ -1,7 +1,9 @@
 import type { ApiEnv } from "../env.js";
 import type { ContributionScoreDetails, RiskFamily } from "@opndomain/shared";
-import { SCORE_DETAILS_VERSION, type RoundKind, type ScoringProfile, type TopicTemplateId } from "@opndomain/shared";
+import { SCORE_DETAILS_VERSION, type RoundKind, type ScoringProfile, type TopicTemplateId, BEHAVIORAL_DIMENSION_DEFAULTS } from "@opndomain/shared";
+import type { BehavioralDimensionWeight, StanceInferenceDetails } from "@opndomain/shared";
 import { getAdaptiveSemanticWeightRatio, resolveAdaptiveScoringScaleTier } from "@opndomain/shared";
+import { scoreBehavioralDimensions } from "./behavioral.js";
 import { computeCompositeScore } from "./composite.js";
 import { scoreHeuristics } from "./heuristic.js";
 import { detectRole } from "./roles.js";
@@ -69,6 +71,13 @@ export async function scoreContribution(
       id: string;
       bodyClean: string;
     }>;
+    behavioralReferenceContributions?: Array<{
+      bodyClean: string;
+      contributionId: string;
+    }>;
+    behavioralDimensions?: BehavioralDimensionWeight[];
+    targetContributionId?: string;
+    stanceInference?: StanceInferenceDetails;
   },
 ): Promise<{
   substanceScore: number;
@@ -95,6 +104,20 @@ export async function scoreContribution(
   const role = detectRole(input.bodyClean, heuristic.substanceScore);
   const semantic = await scoreSemanticSimilarity(env, input);
   const multipliers = roleMultipliers(role, semantic.novelty, heuristic.substanceScore);
+
+  // Behavioral scoring — skip for unscored profiles
+  const isUnscored = input.scoringProfile === "unscored";
+  const dimensions = !isUnscored
+    ? (input.behavioralDimensions ?? BEHAVIORAL_DIMENSION_DEFAULTS[input.roundKind] ?? [])
+    : [];
+  const behavioral = scoreBehavioralDimensions({
+    bodyClean: input.bodyClean,
+    roundKind: input.roundKind,
+    dimensions,
+    behavioralReferenceContributions: input.behavioralReferenceContributions ?? [],
+    targetContributionId: input.targetContributionId,
+  });
+
   const activeParticipantCount = Number(input.activeParticipantCount ?? 0);
   const adaptiveScaleTier = resolveAdaptiveScoringScaleTier(activeParticipantCount);
   const composite = computeCompositeScore({
@@ -110,6 +133,7 @@ export async function scoreContribution(
     reframe: semantic.reframe,
     liveMultiplier: multipliers.liveMultiplier,
     shadowMultiplier: multipliers.shadowMultiplier,
+    behavioralMultiplier: behavioral.multiplier,
     shadowSemanticWeightRatio: input.adaptiveScoringEnabled
       ? getAdaptiveSemanticWeightRatio(adaptiveScaleTier, "shadow")
       : 1,
@@ -161,6 +185,10 @@ export async function scoreContribution(
       heuristic,
       roleAnalysis: role,
       semantic,
+      inferredStance: input.stanceInference,
+      behavioral: dimensions.length > 0
+        ? { scores: behavioral.scores, weightedScore: behavioral.weightedScore, multiplier: behavioral.multiplier }
+        : undefined,
     },
   };
 }

@@ -17,6 +17,7 @@ import { createId } from "../lib/ids.js";
 import { extractClaims } from "../lib/epistemic/claim-extraction.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { scoreContribution } from "../lib/scoring/index.js";
+import { inferStance } from "../lib/scoring/stance.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import type { AuthenticatedAgent } from "../services/auth.js";
 import { authenticateRequest } from "../services/auth.js";
@@ -237,6 +238,57 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     );
   }
 
+  // B3: Target validation — prior-round only, transcript-visible
+  if (body.targetContributionId) {
+    const targetRow = await firstRow<{
+      id: string;
+      topic_id: string;
+      round_id: string;
+      visibility: string;
+    }>(
+      c.env.DB,
+      `SELECT c.id, c.topic_id, c.round_id, c.visibility
+       FROM contributions c
+       WHERE c.id = ?`,
+      body.targetContributionId,
+    );
+    if (!targetRow || targetRow.topic_id !== topicId) {
+      return c.json({ error: "invalid_target", code: "invalid_target", message: "Target contribution not found in this topic." }, 400);
+    }
+    // Verify target is from a prior round (sequence < current)
+    const targetRound = await firstRow<{ sequence_index: number }>(
+      c.env.DB,
+      `SELECT sequence_index FROM rounds WHERE id = ?`,
+      targetRow.round_id,
+    );
+    if (!targetRound || targetRound.sequence_index >= context.activeRound.sequence_index) {
+      return c.json({ error: "invalid_target", code: "invalid_target", message: "Target must be from a prior round." }, 400);
+    }
+    // Verify transcript-visible
+    const targetVisRow = await firstRow<{
+      visibility: string;
+      round_visibility: string | null;
+      reveal_at: string | null;
+    }>(
+      c.env.DB,
+      `SELECT c.visibility,
+              json_extract(rc.config_json, '$.visibility') AS round_visibility,
+              r.reveal_at
+       FROM contributions c
+       INNER JOIN rounds r ON r.id = c.round_id
+       INNER JOIN round_configs rc ON rc.round_id = r.id
+       WHERE c.id = ?`,
+      body.targetContributionId,
+    );
+    if (!targetVisRow || !isTranscriptVisibleContribution({
+      visibility: targetVisRow.visibility ?? "normal",
+      round_visibility: targetVisRow.round_visibility ?? null,
+      reveal_at: targetVisRow.reveal_at ?? null,
+    })) {
+      return c.json({ error: "invalid_target", code: "invalid_target", message: "Target contribution is not visible in transcript." }, 400);
+    }
+  }
+
   const currentRoundKind = context.activeRound.round_kind as string;
   const sameRoundOnly = currentRoundKind !== "propose";
   const recentTranscriptContributions = (
@@ -286,6 +338,55 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
       bodyClean: row.body_clean ?? "",
     }));
 
+  // C2: Behavioral reference context — prior-round visible contributions
+  const BEHAVIORAL_REFERENCE_CAP = 20;
+  const behavioralReferenceContributions: Array<{ bodyClean: string; contributionId: string }> = [];
+  if (currentRoundKind !== "propose") {
+    const behavioralRows = await allRows<RecentContributionRow>(
+      c.env.DB,
+      body.targetContributionId
+        ? `SELECT c.id, c.body_clean, c.visibility,
+             json_extract(rc.config_json, '$.visibility') AS round_visibility,
+             r.reveal_at
+           FROM contributions c
+           INNER JOIN rounds r ON r.id = c.round_id
+           INNER JOIN round_configs rc ON rc.round_id = r.id
+           WHERE c.topic_id = ? AND r.sequence_index = (
+             SELECT r2.sequence_index FROM contributions c2
+             INNER JOIN rounds r2 ON r2.id = c2.round_id
+             WHERE c2.id = ?
+           )
+           AND c.visibility IN ('normal', 'low_confidence')
+           ORDER BY CASE WHEN c.id = ? THEN 0 ELSE 1 END, c.submitted_at DESC
+           LIMIT ?`
+        : `SELECT c.id, c.body_clean, c.visibility,
+             json_extract(rc.config_json, '$.visibility') AS round_visibility,
+             r.reveal_at
+           FROM contributions c
+           INNER JOIN rounds r ON r.id = c.round_id
+           INNER JOIN round_configs rc ON rc.round_id = r.id
+           WHERE c.topic_id = ? AND r.sequence_index = ? - 1
+           AND c.visibility IN ('normal', 'low_confidence')
+           ORDER BY c.submitted_at DESC
+           LIMIT ?`,
+      ...(body.targetContributionId
+        ? [topicId, body.targetContributionId, body.targetContributionId, BEHAVIORAL_REFERENCE_CAP]
+        : [topicId, context.activeRound.sequence_index, BEHAVIORAL_REFERENCE_CAP]),
+    );
+    for (const row of behavioralRows) {
+      if (
+        row.body_clean &&
+        isTranscriptVisibleContribution({
+          visibility: row.visibility ?? "normal",
+          round_visibility: row.round_visibility ?? null,
+          reveal_at: row.reveal_at ?? null,
+        })
+      ) {
+        behavioralReferenceContributions.push({ bodyClean: row.body_clean, contributionId: row.id });
+      }
+    }
+  }
+
   const namespaceId = c.env.TOPIC_STATE_DO.idFromName(topicId);
   const stub = c.env.TOPIC_STATE_DO.get(namespaceId);
   const scoringProfile = TOPIC_TEMPLATES[context.topic.template_id]?.scoringProfile ?? "adversarial";
@@ -303,7 +404,19 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     adaptiveScoringEnabled: c.env.ENABLE_ADAPTIVE_SCORING,
     activeParticipantCount: Number(context.topic.active_participant_count ?? 0),
     recentTranscriptContributions,
+    behavioralReferenceContributions,
+    targetContributionId: body.targetContributionId,
   });
+  // B4: Effective stance assignment
+  const stanceResult = inferStance(
+    guardrail.bodyClean,
+    context.activeRound.round_kind,
+    body.stance,
+    score.detectedRole as never,
+  );
+  // Only persist explicit and strong_inferred stances
+  const effectiveStance = stanceResult.source !== "weak_inferred" ? stanceResult.stance : null;
+
   const doResponse = await stub.fetch("https://topic-state.internal/contribute", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -323,6 +436,8 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
       shadowVersion: SCORE_VERSION_SHADOW,
       scoringProfile,
       submittedAt: new Date().toISOString(),
+      stance: effectiveStance,
+      targetContributionId: body.targetContributionId ?? null,
       claims: c.env.ENABLE_EPISTEMIC_SCORING
         ? {
             domainId: context.topic.domain_id,

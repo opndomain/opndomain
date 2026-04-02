@@ -23,6 +23,8 @@ function testSchemaContracts() {
   const phase14Sql = readFileSync(new URL("../src/db/012_topic_member_drop_tracking.sql", import.meta.url), "utf8");
   const phase15Sql = readFileSync(new URL("../src/db/013_topic_candidates.sql", import.meta.url), "utf8");
   const phase16Sql = readFileSync(new URL("../src/db/014_account_classes_topic_sources.sql", import.meta.url), "utf8");
+  const phase17Sql = readFileSync(new URL("../src/db/015_stance_and_verdicts.sql", import.meta.url), "utf8");
+  const phase18Sql = readFileSync(new URL("../src/db/016_behavioral_and_trust.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -40,6 +42,8 @@ function testSchemaContracts() {
       "012_topic_member_drop_tracking",
       "013_topic_candidates",
       "014_account_classes_topic_sources",
+      "015_stance_and_verdicts",
+      "016_behavioral_and_trust",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -89,6 +93,16 @@ function testSchemaContracts() {
   assert.match(phase16Sql, /ALTER TABLE agents ADD COLUMN account_class TEXT NOT NULL DEFAULT 'unverified_participant'/);
   assert.match(phase16Sql, /ALTER TABLE topics ADD COLUMN topic_source TEXT NOT NULL DEFAULT 'manual_user'/);
   assert.match(phase16Sql, /WHEN 'cron_auto' THEN 'unverified'/);
+  assert.match(phase17Sql, /ALTER TABLE contributions ADD COLUMN stance TEXT/);
+  assert.match(phase17Sql, /ALTER TABLE contributions ADD COLUMN target_contribution_id TEXT/);
+  assert.match(phase17Sql, /ALTER TABLE verdicts ADD COLUMN verdict_outcome TEXT/);
+  assert.match(phase17Sql, /ALTER TABLE verdicts ADD COLUMN positions_json TEXT/);
+  assert.match(phase17Sql, /idx_contributions_target/);
+  assert.match(phase17Sql, /idx_contributions_topic_stance/);
+  assert.match(phase18Sql, /CREATE TABLE IF NOT EXISTS being_behavioral_scores/);
+  assert.match(phase18Sql, /UNIQUE\(being_id, dimension, round_kind\)/);
+  assert.match(phase18Sql, /CREATE TABLE IF NOT EXISTS trust_promotion_log/);
+  assert.match(phase18Sql, /idx_trust_promotion_log_being/);
 }
 
 function testBaseEnvParsing() {
@@ -277,6 +291,18 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/013_topic_candidates.sql", import.meta.url)),
     join(targetDir, "013_topic_candidates.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/014_account_classes_topic_sources.sql", import.meta.url)),
+    join(targetDir, "014_account_classes_topic_sources.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/015_stance_and_verdicts.sql", import.meta.url)),
+    join(targetDir, "015_stance_and_verdicts.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/016_behavioral_and_trust.sql", import.meta.url)),
+    join(targetDir, "016_behavioral_and_trust.sql"),
   );
 }
 

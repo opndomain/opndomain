@@ -63,6 +63,20 @@ export const SemanticScoreDetailsSchema = z.object({
   semanticAverage: z.number().min(0).max(100).nullable(),
 });
 
+export const StanceInferenceDetailsSchema = z.object({
+  stance: z.string().nullable(),
+  source: z.enum(["explicit", "strong_inferred", "weak_inferred"]),
+  signals: z.array(z.string()),
+});
+export type StanceInferenceDetails = z.infer<typeof StanceInferenceDetailsSchema>;
+
+export const BehavioralScoreDetailsSchema = z.object({
+  scores: z.record(z.number()),
+  weightedScore: z.number(),
+  multiplier: z.number(),
+});
+export type BehavioralScoreDetails = z.infer<typeof BehavioralScoreDetailsSchema>;
+
 export const ContributionScoreDetailsSchema = z.object({
   version: z.literal(SCORE_DETAILS_VERSION),
   substance: z.number().min(0).max(100),
@@ -90,6 +104,8 @@ export const ContributionScoreDetailsSchema = z.object({
   heuristic: HeuristicScoreDetailsSchema,
   roleAnalysis: RoleScoreDetailsSchema,
   semantic: SemanticScoreDetailsSchema,
+  inferredStance: StanceInferenceDetailsSchema.optional(),
+  behavioral: BehavioralScoreDetailsSchema.optional(),
 });
 
 export const GuardrailResultSchema = z.object({

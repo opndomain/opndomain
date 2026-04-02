@@ -369,7 +369,7 @@ function renderAuthPage(title: string, body: string, detail: string, options?: {
   );
 }
 
-function renderAccountPage(c: any, account: Awaited<ReturnType<typeof fetchAccountData>>, state: AccountPageState = {}) {
+function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeof fetchAccountData>>>, state: AccountPageState = {}) {
   const csrf = ensureCsrfToken(c);
   const { agent, beings, linkedIdentities } = account;
   const initial = (agent.name || agent.email || "?")[0].toUpperCase();
@@ -560,6 +560,14 @@ type TopicPageViewModel = {
   verdictNarrative: TopicVerdictPresentation["narrative"] | null;
   verdictHighlights: TopicVerdictPresentation["highlights"] | null;
   verdictClaimGraph: TopicVerdictPresentation["claimGraph"] | null;
+  synthesisOutcome: string | null;
+  positions: Array<{
+    label: string;
+    contributionIds: string[];
+    aggregateScore: number;
+    stanceCounts: { support: number; oppose: number; neutral: number };
+    strength: number;
+  }> | null;
 };
 
 function titleCaseLabel(value: string | null | undefined, fallback: string) {
@@ -717,6 +725,8 @@ function buildTopicPageViewModel(
       verdictNarrative: verdictPresentation.narrative,
       verdictHighlights: verdictPresentation.highlights,
       verdictClaimGraph: verdictPresentation.claimGraph,
+      synthesisOutcome: verdictPresentation.synthesisOutcome ?? null,
+      positions: verdictPresentation.positions ?? null,
     };
   }
 
@@ -752,6 +762,8 @@ function buildTopicPageViewModel(
       verdictNarrative: null,
       verdictHighlights: null,
       verdictClaimGraph: null,
+      synthesisOutcome: null,
+      positions: null,
     };
   }
 
@@ -783,6 +795,8 @@ function buildTopicPageViewModel(
     verdictNarrative: null,
     verdictHighlights: null,
     verdictClaimGraph: null,
+    synthesisOutcome: null,
+    positions: null,
   };
 }
 
@@ -1093,6 +1107,39 @@ function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel
             </div>
             <h4 class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</h4>
             <p class="topic-highlight-reason">${escapeHtml(highlight.reason)}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderPositionsSection(
+  synthesisOutcome: string | null,
+  positions: NonNullable<TopicPageViewModel["positions"]>,
+) {
+  const outcomeLabel = synthesisOutcome
+    ? titleCaseLabel(synthesisOutcome, "Synthesis")
+    : "Synthesis";
+  return `
+    <section class="topic-positions">
+      <div class="topic-positions-head">
+        <div class="topic-positions-kicker">Positions</div>
+        <h3>${escapeHtml(outcomeLabel)}</h3>
+      </div>
+      <div class="topic-positions-list">
+        ${positions.map((pos) => `
+          <article class="topic-position-card">
+            <div class="topic-position-label">${escapeHtml(pos.label)}</div>
+            <div class="topic-position-meta">
+              <span class="topic-position-strength">${pos.strength}% strength</span>
+              <span class="topic-position-contributions">${pos.contributionIds.length} contributions</span>
+            </div>
+            <div class="topic-position-stances">
+              <span class="stance-support">${pos.stanceCounts.support} support</span>
+              <span class="stance-oppose">${pos.stanceCounts.oppose} oppose</span>
+              <span class="stance-neutral">${pos.stanceCounts.neutral} neutral</span>
+            </div>
           </article>
         `).join("")}
       </div>
@@ -1634,6 +1681,7 @@ app.get("/topics/:topicId", async (c) => {
         ].join("")}</section>`,
         hasEditorialSections ? renderTopicScoreStorySection(viewModel) : "",
         viewModel.verdictHighlights ? renderTopicHighlightsSection(viewModel.verdictHighlights) : "",
+        viewModel.positions ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions) : "",
         viewModel.verdictNarrative ? renderTopicNarrativeSection(viewModel.verdictNarrative) : "",
         renderTopicTranscriptSection(viewModel),
         viewModel.verdictClaimGraph ? verdictClaimGraphSection(viewModel.verdictClaimGraph) : "",

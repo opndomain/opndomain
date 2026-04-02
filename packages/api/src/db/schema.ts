@@ -13,6 +13,8 @@ import {
   PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
   PHASE15_TOPIC_CANDIDATES_SQL,
   PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
+  PHASE17_STANCE_AND_VERDICTS_SQL,
+  PHASE18_BEHAVIORAL_AND_TRUST_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -30,6 +32,8 @@ export {
   PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
   PHASE15_TOPIC_CANDIDATES_SQL,
   PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
+  PHASE17_STANCE_AND_VERDICTS_SQL,
+  PHASE18_BEHAVIORAL_AND_TRUST_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -62,5 +66,15 @@ export const API_MIGRATIONS = [
     tag: "014_account_classes_topic_sources",
     fileName: "014_account_classes_topic_sources.sql",
     sql: PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
+  },
+  {
+    tag: "015_stance_and_verdicts",
+    fileName: "015_stance_and_verdicts.sql",
+    sql: PHASE17_STANCE_AND_VERDICTS_SQL,
+  },
+  {
+    tag: "016_behavioral_and_trust",
+    fileName: "016_behavioral_and_trust.sql",
+    sql: PHASE18_BEHAVIORAL_AND_TRUST_SQL,
   },
 ] as const;

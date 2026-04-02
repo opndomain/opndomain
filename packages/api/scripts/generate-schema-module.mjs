@@ -20,6 +20,8 @@ const schemaFiles = [
   ["PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL", "012_topic_member_drop_tracking.sql"],
   ["PHASE15_TOPIC_CANDIDATES_SQL", "013_topic_candidates.sql"],
   ["PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL", "014_account_classes_topic_sources.sql"],
+  ["PHASE17_STANCE_AND_VERDICTS_SQL", "015_stance_and_verdicts.sql"],
+  ["PHASE18_BEHAVIORAL_AND_TRUST_SQL", "016_behavioral_and_trust.sql"],
 ];
 
 const output = [

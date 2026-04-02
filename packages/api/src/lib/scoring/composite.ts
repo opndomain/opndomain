@@ -57,6 +57,7 @@ export function computeCompositeScore(input: {
   reframe: number | null;
   liveMultiplier: number;
   shadowMultiplier: number;
+  behavioralMultiplier?: number;
   weightedVoteScore?: number | null;
   voteCount?: number;
   distinctVoterCount?: number;
@@ -112,8 +113,9 @@ export function computeCompositeScore(input: {
       input.roleBonus * WITHOUT_SEMANTICS_FALLBACK_WEIGHTS.shadow.role;
   }
 
-  const initialScore = clamp(liveBase * alignment * input.liveMultiplier * reputationBoost, 0, 100);
-  const shadowInitialScore = clamp(shadowBase * alignment * input.shadowMultiplier * reputationBoost, 0, 100);
+  const bm = input.behavioralMultiplier ?? 1.0;
+  const initialScore = clamp(liveBase * alignment * bm * input.liveMultiplier * reputationBoost, 0, 100);
+  const shadowInitialScore = clamp(shadowBase * alignment * bm * input.shadowMultiplier * reputationBoost, 0, 100);
   const weightedVoteScore = input.weightedVoteScore ?? 50;
   const voteCount = input.voteCount ?? 0;
   const distinctVoterCount = input.distinctVoterCount ?? 0;

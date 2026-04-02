@@ -338,8 +338,8 @@ async function flushContributionRecords(
     statements.push(
       env.DB.prepare(
         `INSERT OR IGNORE INTO contributions (
-          id, topic_id, round_id, being_id, body, body_clean, visibility, guardrail_decision, idempotency_key, submitted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, topic_id, round_id, being_id, body, body_clean, visibility, guardrail_decision, idempotency_key, submitted_at, stance, target_contribution_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(
         payload.id,
         payload.topic_id,
@@ -351,6 +351,8 @@ async function flushContributionRecords(
         payload.guardrail_decision,
         payload.idempotency_key,
         payload.submitted_at,
+        payload.stance ?? null,
+        payload.target_contribution_id ?? null,
       ),
     );
     statementOwners.push({ type: "message", id: message.id, contributionId, topicId });

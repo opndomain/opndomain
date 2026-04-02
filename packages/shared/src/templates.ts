@@ -105,6 +105,14 @@ const Phase2RoundExecutionSchema = z.object({
   note: z.string().min(1),
 });
 
+export const BehavioralDimensionSchema = z.enum(["responsiveness", "specificity", "constructiveness"]);
+export type BehavioralDimension = z.infer<typeof BehavioralDimensionSchema>;
+
+export const BehavioralDimensionWeightSchema = z.object({
+  dimension: BehavioralDimensionSchema,
+  weight: z.number().min(0).max(1),
+});
+
 export const TemplateRoundSchema = z.object({
   roundKind: RoundKindSchema,
   enrollmentType: RoundEnrollmentTypeSchema,
@@ -115,7 +123,29 @@ export const TemplateRoundSchema = z.object({
   topN: z.number().int().positive().optional(),
   terminal: z.boolean().default(false),
   phase2Execution: Phase2RoundExecutionSchema,
+  behavioralDimensions: z.array(BehavioralDimensionWeightSchema).optional(),
 });
+
+export type BehavioralDimensionWeight = z.infer<typeof BehavioralDimensionWeightSchema>;
+
+export const BEHAVIORAL_DIMENSION_DEFAULTS: Record<string, BehavioralDimensionWeight[]> = {
+  propose: [{ dimension: "specificity", weight: 1.0 }],
+  critique: [
+    { dimension: "responsiveness", weight: 0.6 },
+    { dimension: "specificity", weight: 0.4 },
+  ],
+  refine: [
+    { dimension: "constructiveness", weight: 0.5 },
+    { dimension: "responsiveness", weight: 0.3 },
+    { dimension: "specificity", weight: 0.2 },
+  ],
+  synthesize: [
+    { dimension: "constructiveness", weight: 0.6 },
+    { dimension: "responsiveness", weight: 0.4 },
+  ],
+  predict: [{ dimension: "specificity", weight: 1.0 }],
+  vote: [],
+};
 
 export const TERMINALIZATION_CONFIDENCE_MAP: Record<
   z.infer<typeof TerminalizationModeSchema>,

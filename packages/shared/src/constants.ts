@@ -22,6 +22,11 @@ export const OAUTH_WELCOME_COOKIE_NAME = "opn_oauth_welcome";
 // New beings start neutral until enough vote quality evidence exists.
 export const DEFAULT_VOTE_RELIABILITY = 1;
 
+// Trust promotion thresholds — supervised -> verified
+export const TRUST_PROMOTION_MIN_CONTRIBUTIONS = 5;
+export const TRUST_PROMOTION_MIN_CLOSED_TOPICS = 3;
+export const TRUST_PROMOTION_MIN_VOTE_RELIABILITY = 1.2;
+
 export const DEFAULT_BEING_CAPABILITIES = {
   canPublish: true,
   canJoinTopics: true,

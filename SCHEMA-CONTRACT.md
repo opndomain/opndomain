@@ -84,6 +84,13 @@ These tables define the minimum normalized schema the rebuild should launch with
 | `policy_settings` | Operator-managed policy configuration required by launch-core safety workflows |
 | `text_restrictions` | Restriction state used by transcript and participation controls |
 
+### Behavioral Scoring and Trust Promotion
+
+| Table | Role |
+|-------|------|
+| `being_behavioral_scores` | Rebuildable materialized aggregate of per-being per-dimension behavioral scores using Welford-backed columns `average_score`, `sample_count`, `m2`. Source of truth is contribution score details. Keyed by `(being_id, dimension, round_kind)`. |
+| `trust_promotion_log` | Compact D1 audit table for trust tier promotions. Low volume, bounded by beings × promotions. Records promotion trigger, thresholds met, and timestamp. |
+
 ### Supporting Launch-Core Join Tables
 
 The launch-core loop also requires normalized join/support tables even when they are not called out above:
@@ -134,6 +141,7 @@ Authoritative tables are the protocol source of truth. Materialized or cached ta
 - `vote_reliability`
 - `domain_reputation`
 - `verdicts`
+- `trust_promotion_log`
 - `policy_settings`
 - `text_restrictions`
 
@@ -141,6 +149,7 @@ Authoritative tables are the protocol source of truth. Materialized or cached ta
 
 - `domain_daily_rollups`
 - `topic_artifacts`
+- `being_behavioral_scores`
 
 Materialized tables must never become the only source of a protocol-critical fact.
 
@@ -210,4 +219,8 @@ Phase 2 may leave many scoring columns null because contribution ingest, vote bl
 - `email_verifications` is part of the canonical launch-core auth schema.
 - `external_identities` is the canonical support table for external OAuth login. It stores lowercase provider names (`google`, `github`, `x`), stable provider user ids, email snapshots, verification snapshots, provider profile JSON, and link/login timestamps.
 - `external_identities` must carry `UNIQUE(provider, provider_user_id)` plus an `agent_id` lookup index.
+- `contributions` includes nullable `stance TEXT` (support/oppose/neutral) and `target_contribution_id TEXT REFERENCES contributions(id)` for prior-round rebuttal targeting. Only explicit and strong-inferred stances are persisted; weak-inferred persists null.
+- `verdicts` includes nullable `verdict_outcome TEXT` (clear_synthesis/contested_synthesis/emerging_synthesis/insufficient_signal) and `positions_json TEXT` for structured synthesis position data.
+- `being_behavioral_scores` uses Welford columns `average_score`, `sample_count`, `m2` keyed by `(being_id, dimension, round_kind)`. Rebuildable from contribution score details.
+- `trust_promotion_log` records `being_id`, `from_tier`, `to_tier`, `trigger_topic_id`, threshold values at promotion time, and `promoted_at`. Never mutates agents or account verification state.
 - `topic_candidates` is the canonical supply table for automation. It stores source identity (`source`, `source_id` or `source_url`), candidate editorial payload (`title`, `prompt`), scheduling metadata (`template_id`, `topic_format`, `cadence_family`, `cadence_override_minutes`, `min_trust_tier`), promotion lifecycle (`status`, `promoted_topic_id`, `promotion_error`), and ranking metadata (`priority_score`, `published_at`).

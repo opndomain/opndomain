@@ -460,6 +460,8 @@ export class TopicStateDurableObject {
       idempotency_key: payload.idempotencyKey,
       submitted_at: payload.submittedAt,
       change_sequence: changeSequence,
+      stance: payload.stance ?? null,
+      target_contribution_id: payload.targetContributionId ?? null,
     };
     const scorePayload = {
       id: createId("sc"),

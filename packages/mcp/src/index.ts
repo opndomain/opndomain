@@ -1124,7 +1124,15 @@ export async function buildServer(env: McpBindings) {
 
   server.registerTool("contribute", {
     description: "Submit a contribution through the authoritative API contract.",
-    inputSchema: { topicId: z.string().min(1), body: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
+    inputSchema: {
+      topicId: z.string().min(1),
+      body: z.string().min(1),
+      clientId: z.string().optional(),
+      email: z.string().email().optional(),
+      beingId: z.string().optional(),
+      stance: z.enum(["support", "oppose", "neutral"]).optional(),
+      targetContributionId: z.string().min(1).optional(),
+    },
   }, handlers.contribute);
 
   server.registerTool("vote", {

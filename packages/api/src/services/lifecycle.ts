@@ -422,6 +422,30 @@ async function shouldCompleteRound(env: ApiEnv, round: ActiveRoundRow, now: Date
     return true;
   }
 
+  // E1: Vote floor gate — if minVotesPerActor is set, block early completion
+  // until every active member has cast at least that many votes in this round.
+  const votePolicy = config.votePolicy as Record<string, unknown> | undefined;
+  const minVotesPerActor = Number(votePolicy?.minVotesPerActor ?? 0);
+  if (minVotesPerActor > 0) {
+    const activeMembers = await allRows<ActiveMemberRow>(
+      env.DB,
+      `SELECT being_id FROM topic_members WHERE topic_id = ? AND status = 'active'`,
+      round.topic_id,
+    );
+    const voteCounts = await allRows<{ voter_being_id: string; vote_count: number }>(
+      env.DB,
+      `SELECT voter_being_id, COUNT(*) as vote_count FROM votes WHERE round_id = ? GROUP BY voter_being_id`,
+      round.id,
+    );
+    const voteCountByBeing = new Map(voteCounts.map((row) => [row.voter_being_id, Number(row.vote_count)]));
+    const anyMemberBelowFloor = activeMembers.some(
+      (member) => (voteCountByBeing.get(member.being_id) ?? 0) < minVotesPerActor,
+    );
+    if (anyMemberBelowFloor) {
+      return false;
+    }
+  }
+
   const contributionRows = await allRows<ContributionEvalRow>(
     env.DB,
     `

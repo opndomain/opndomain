@@ -18,6 +18,8 @@ import {
 } from "./reputation.js";
 import { recomputeContributionFinalScore } from "./votes.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
+import { evaluateTrustForTopicParticipants } from "./trust-promotion.js";
+import { analyzePositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
 
 type TopicContextRow = {
   id: string;
@@ -44,6 +46,8 @@ type ContributionRow = {
   shadow_final_score: number | null;
   body_clean: string | null;
   visibility: string;
+  stance: string | null;
+  target_contribution_id: string | null;
 };
 
 type VerdictRow = {
@@ -243,7 +247,9 @@ async function loadTopicContributions(env: ApiEnv, topicId: string): Promise<Con
         cs.final_score,
         cs.shadow_final_score,
         c.body_clean,
-        c.visibility
+        c.visibility,
+        c.stance,
+        c.target_contribution_id
       FROM contributions c
       INNER JOIN rounds r ON r.id = c.round_id
       INNER JOIN beings b ON b.id = c.being_id
@@ -263,6 +269,8 @@ async function writeVerdict(
   summary: string,
   reasoning: Record<string, unknown>,
   replaceExisting: boolean,
+  verdictOutcome?: string | null,
+  positionsJson?: string | null,
 ): Promise<string> {
   const verdictId = createId("vrd");
   if (replaceExisting) {
@@ -270,16 +278,18 @@ async function writeVerdict(
       .prepare(
         `
           INSERT INTO verdicts (
-            id, topic_id, confidence, terminalization_mode, summary, reasoning_json
-          ) VALUES (?, ?, ?, ?, ?, ?)
+            id, topic_id, confidence, terminalization_mode, summary, reasoning_json, verdict_outcome, positions_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(topic_id) DO UPDATE SET
             confidence = excluded.confidence,
             terminalization_mode = excluded.terminalization_mode,
             summary = excluded.summary,
-            reasoning_json = excluded.reasoning_json
+            reasoning_json = excluded.reasoning_json,
+            verdict_outcome = excluded.verdict_outcome,
+            positions_json = excluded.positions_json
         `,
       )
-      .bind(verdictId, topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning))
+      .bind(verdictId, topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning), verdictOutcome ?? null, positionsJson ?? null)
       .run();
     return verdictId;
   }
@@ -287,11 +297,11 @@ async function writeVerdict(
     .prepare(
       `
         INSERT INTO verdicts (
-          id, topic_id, confidence, terminalization_mode, summary, reasoning_json
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          id, topic_id, confidence, terminalization_mode, summary, reasoning_json, verdict_outcome, positions_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
     )
-    .bind(verdictId, topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning))
+    .bind(verdictId, topicId, confidence, terminalizationMode, summary, JSON.stringify(reasoning), verdictOutcome ?? null, positionsJson ?? null)
     .run();
   return verdictId;
 }
@@ -461,6 +471,10 @@ export async function runTerminalizationSequence(
     }
   }
 
+  // D2: Structured synthesis — position analysis
+  const positions = analyzePositions(refreshedContributions);
+  const verdictOutcome = synthesizeOutcome(positions, verdictPresentation.participantCount);
+
   const verdictId = await writeVerdict(
     env,
     topicId,
@@ -479,6 +493,8 @@ export async function runTerminalizationSequence(
       ...(epistemicReasoning ? { epistemic: epistemicReasoning } : {}),
     },
     Boolean(options?.reterminalize),
+    verdictOutcome,
+    positions.length > 0 ? JSON.stringify(positions) : null,
   );
   if (!options?.reterminalize) {
     try {
@@ -494,6 +510,13 @@ export async function runTerminalizationSequence(
     } catch (error) {
       console.error("verdict event archive failed", error);
     }
+  }
+
+  // Trust promotion — evaluate all participants after verdict write
+  try {
+    await evaluateTrustForTopicParticipants(env, topicId);
+  } catch (error) {
+    console.error(`trust promotion after terminalization failed for topic ${topicId}`, error);
   }
 
   await reconcileTopicPresentation(env, topicId, PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN);

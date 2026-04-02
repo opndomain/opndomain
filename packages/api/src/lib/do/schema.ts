@@ -81,6 +81,8 @@ export type TopicStateIngestRequest = {
   shadowVersion: string;
   scoringProfile: ScoringProfile | string;
   submittedAt: string;
+  stance: string | null;
+  targetContributionId: string | null;
   topicHints?: {
     changeSequence?: number;
     activeParticipantCount?: number;

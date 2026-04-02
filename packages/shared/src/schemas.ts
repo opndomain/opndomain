@@ -485,10 +485,15 @@ export const RoundConfigSchema = z.object({
   }),
 });
 
+export const ContributionStanceSchema = z.enum(["support", "oppose", "neutral"]);
+export type ContributionStance = z.infer<typeof ContributionStanceSchema>;
+
 export const ContributionSubmissionSchema = z.object({
   beingId: z.string().min(1),
   body: z.string().min(1).max(6000),
   idempotencyKey: z.string().min(8).max(120),
+  stance: ContributionStanceSchema.optional(),
+  targetContributionId: z.string().min(1).optional(),
 });
 
 export const VoteSubmissionSchema = z.object({
@@ -498,10 +503,35 @@ export const VoteSubmissionSchema = z.object({
   idempotencyKey: z.string().min(8).max(120),
 });
 
+export const VerdictOutcomeSchema = z.enum([
+  "clear_synthesis",
+  "contested_synthesis",
+  "emerging_synthesis",
+  "insufficient_signal",
+]);
+export type VerdictOutcome = z.infer<typeof VerdictOutcomeSchema>;
+
+export const VerdictPositionSchema = z.object({
+  label: z.string().min(1),
+  contributionIds: z.array(z.string().min(1)),
+  aggregateScore: z.number(),
+  stanceCounts: z.object({
+    support: z.number().int().nonnegative(),
+    oppose: z.number().int().nonnegative(),
+    neutral: z.number().int().nonnegative(),
+  }),
+  strength: z.number().min(0).max(100),
+});
+export type VerdictPosition = z.infer<typeof VerdictPositionSchema>;
+
+export const VerdictPositionsSchema = z.array(VerdictPositionSchema);
+
 export const VerdictSchema = z.object({
   topicId: z.string().min(1),
   confidence: VerdictConfidenceSchema,
   summary: z.string().min(1),
+  synthesisOutcome: VerdictOutcomeSchema.optional(),
+  positions: VerdictPositionsSchema.optional(),
 });
 
 export const ReconcilePresentationRequestSchema = z.object({
@@ -962,6 +992,8 @@ export const VerdictPresentationSchema = z.object({
     edges: z.array(VerdictClaimEdgeSchema),
     fallbackNote: z.string().min(1).nullable().optional(),
   }),
+  synthesisOutcome: VerdictOutcomeSchema.optional(),
+  positions: VerdictPositionsSchema.optional(),
 });
 
 export const VerdictFetchResponseSchema = z.discriminatedUnion("status", [

@@ -35,6 +35,8 @@ type VerdictPresentationRow = {
   terminalization_mode: string;
   summary: string;
   reasoning_json: string | null;
+  verdict_outcome: string | null;
+  positions_json: string | null;
 };
 
 type ArtifactRow = {
@@ -301,6 +303,8 @@ async function buildVerdictPresentation(
     narrative,
     highlights,
     claimGraph,
+    synthesisOutcome: verdict.verdict_outcome ?? undefined,
+    positions: verdict.positions_json ? JSON.parse(verdict.positions_json) : undefined,
   });
 }
 
@@ -347,7 +351,7 @@ export async function reconcileTopicPresentation(
     const verdict = topic.status === "closed"
       ? await firstRow<VerdictPresentationRow>(
           env.DB,
-          `SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?`,
+          `SELECT confidence, terminalization_mode, summary, reasoning_json, verdict_outcome, positions_json FROM verdicts WHERE topic_id = ?`,
           topicId,
         )
       : null;
