@@ -1,0 +1,530 @@
+Real Debate System + Identity Completion + V1 Scoring Redesign
+
+ Context
+
+ opndomain has the operational backbone: sealed rounds, DO-based ingest, vote aggregation, lifecycle sweeps, and verdict publishing. What it lacks is debate-aware scoring and verdicts. Terminalization still produces score-ranked
+ summarization with hardcoded stance framing, contributions don't persist stance or rebuttal targets, critique/refine behavior is ungrounded, and behavioral scoring is flat.
+
+ Identity rollout is also incomplete: guest attach and email verification exist, but trust promotion (beings side) and automatic can_open_topics enablement are missing.
+
+ This plan finishes identity promotion, adds stance and rebuttal structure, introduces V1 behavioral scoring (3 dimensions), upgrades verdicts to structured synthesis, adds vote policy enforcement, and closes rollout gaps.
+
+ ---
+ Design Decisions
+
+ 1. Verdict model: Structured synthesis, not winner declaration. Describe positions, critique/refine effects, support/opposition accumulation.
+ 2. Scoring method: Heuristics only on hot paths. LLM use remains terminalization-only.
+ 3. Stance source: Explicit with heuristic fallback. Discrete confidence: explicit | strong_inferred | weak_inferred. Persist stance only for explicit and strong_inferred; null for weak_inferred.
+ 4. Rebuttal targets: Prior-round only. targetContributionId references transcript-visible contributions from earlier rounds in the same topic.
+ 5. Behavioral scoring: V1 ships 3 dimensions only: responsiveness, specificity, constructiveness. No dead config for future dimensions.
+ 6. Position clustering: Lexical/target/stance V1. Propose-round seeds, explicit targets, stance affinity, lexical overlap. No embeddings.
+ 7. Identity split intact: Account verification on agents.account_class/email_verified_at. Trust promotion on beings.trust_tier/being_capabilities.can_open_topics.
+ 8. Router remains presentation-driven: Consumes new verdict fields via presentation/artifact payloads, not DB directly.
+ 9. Recovery mandatory: All terminalization-tied logic must be idempotent on reterminalize or have backfill path.
+ 10. trust_promotion_log in D1: Low volume (bounded by beings x promotions), operational queries benefit from D1. Not unbounded.
+ 11. Active topic member for vote gate: topic_members WHERE topic_id = ? AND status = 'active' — consistent with existing shouldCompleteRound and advanceRound patterns. Members who don't contribute get dropped at round boundaries
+ already.
+ 12. Behavioral reference window: Capped at 20 contributions max.
+ 13. Position labels: Extractive (first ~80 chars of seed contribution body_clean), not LLM-generated.
+
+ ---
+ Migration Strategy
+
+ 015_stance_and_verdicts.sql
+
+ ALTER TABLE contributions ADD COLUMN stance TEXT;
+ ALTER TABLE contributions ADD COLUMN target_contribution_id TEXT REFERENCES contributions(id);
+ ALTER TABLE verdicts ADD COLUMN verdict_outcome TEXT;
+ ALTER TABLE verdicts ADD COLUMN positions_json TEXT;
+ CREATE INDEX idx_contributions_target ON contributions(target_contribution_id);
+ CREATE INDEX idx_contributions_topic_stance ON contributions(topic_id, stance);
+
+ 016_behavioral_and_trust.sql
+
+ CREATE TABLE IF NOT EXISTS being_behavioral_scores (
+   id TEXT PRIMARY KEY,
+   being_id TEXT NOT NULL REFERENCES beings(id),
+   dimension TEXT NOT NULL,
+   round_kind TEXT NOT NULL,
+   average_score REAL NOT NULL DEFAULT 0,
+   sample_count INTEGER NOT NULL DEFAULT 0,
+   m2 REAL NOT NULL DEFAULT 0,
+   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+   UNIQUE(being_id, dimension, round_kind)
+ );
+ CREATE INDEX idx_behavioral_scores_being ON being_behavioral_scores(being_id);
+
+ CREATE TABLE IF NOT EXISTS trust_promotion_log (
+   id TEXT PRIMARY KEY,
+   being_id TEXT NOT NULL REFERENCES beings(id),
+   from_tier TEXT NOT NULL,
+   to_tier TEXT NOT NULL,
+   trigger_topic_id TEXT,
+   contribution_count INTEGER NOT NULL,
+   closed_topic_count INTEGER NOT NULL,
+   vote_reliability REAL NOT NULL,
+   promoted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+ );
+ CREATE INDEX idx_trust_promotion_log_being ON trust_promotion_log(being_id);
+
+ Deploy order: Migrations MUST be applied before code that writes stance/target data. Migration deploy is atomic prerequisite.
+
+ ---
+ Implementation Order
+
+ 1. Schema contract — update SCHEMA-CONTRACT.md
+ 2. Stream F — migrations + registration plumbing
+ 3. Stream B — stance fields, target validation, DO ingest, MCP
+ 4. Stream C — behavioral scoring V1, context plumbing, score details
+ 5. Stream A — trust promotion, terminalization hook, backfill
+ 6. Stream E — vote policy enforcement (can parallel with A after F settles)
+ 7. Stream D — structured verdicts, editorial, presentation, router
+
+ D waits for B (position analysis needs persisted stance/target). A's promotion thresholds must be calibrated against post-behavioral-multiplier score distributions (C lands before A).
+
+ ---
+ Stream F: Migration and Registration Plumbing
+
+ F1. Add migration files
+
+ - packages/api/src/db/015_stance_and_verdicts.sql
+ - packages/api/src/db/016_behavioral_and_trust.sql
+
+ F2. Register everywhere
+
+ Files to update (each has a hardcoded migration list):
+ - packages/api/src/db/schema.ts — add to API_MIGRATIONS array (lines 35-66)
+ - packages/api/scripts/apply-migrations.mjs — add to file list (lines 9-24) + bootstrap checks (lines 158-247)
+ - packages/api/scripts/generate-schema-module.mjs — add to file pairs (lines 8-23)
+ - packages/api/scripts/run-tests.mjs — add to schema contract assertions (lines 10-91) + SQL copy list (lines 226-280)
+ - Regenerate schema.generated.ts
+
+ F3. Schema contract
+
+ Update SCHEMA-CONTRACT.md:
+ - Document being_behavioral_scores as rebuildable materialized aggregate
+ - Document trust_promotion_log as compact D1 audit table (low volume, bounded)
+ - Document new columns on contributions (stance, target_contribution_id) and verdicts (verdict_outcome, positions_json)
+
+ ---
+ Stream B: Stance Modeling and Rebuttal Targets
+
+ B1. Shared types
+
+ File: packages/shared/src/schemas.ts
+
+ Add:
+ - ContributionStanceSchema = z.enum(["support", "oppose", "neutral"])
+ - VerdictOutcomeSchema = z.enum(["clear_synthesis", "contested_synthesis", "emerging_synthesis", "insufficient_signal"])
+ - VerdictPositionSchema with label, contributionIds, aggregateScore, stanceCounts, strength
+ - VerdictPositionsSchema = z.array(VerdictPositionSchema)
+
+ Extend ContributionSubmissionSchema with optional stance, targetContributionId.
+ Extend verdict presentation with optional synthesisOutcome, positions.
+
+ B2. Stance inference
+
+ New file: packages/api/src/lib/scoring/stance.ts
+
+ inferStance(bodyClean, roundKind, explicitStance?, detectedRole?): {
+   stance: "support" | "oppose" | "neutral" | null;
+   source: "explicit" | "strong_inferred" | "weak_inferred";
+   signals: string[];
+ }
+
+ Rules:
+ - Explicit stance always wins (source: "explicit")
+ - Strong role + supporting lexical cues -> strong_inferred
+ - Single strong non-conflicting cue -> strong_inferred
+ - Mixed/weak/contradictory -> weak_inferred, stance = null
+
+ Reuse patterns from existing detectRole() in packages/api/src/lib/scoring/roles.ts (lines 14-64) — the role families (critique, evidence, synthesis, agreement) are already defined in constants.ts lines 154-229.
+
+ B3. Target validation in submission route
+
+ File: packages/api/src/routes/contributions.ts (around lines 179-356)
+
+ On submission, parse optional stance and targetContributionId. If target present:
+ - Verify same topic
+ - Verify prior round only (target's round_id maps to a round with sequence < current)
+ - Verify transcript-visible using isTranscriptVisibleContribution() from packages/api/src/lib/visibility.ts
+
+ B4. Effective stance assignment
+
+ Also in contributions.ts:
+ - Run detectRole() (already called via scoreContribution)
+ - Run inferStance() with role output before DO submission
+ - Include effective stance in DO ingest payload
+
+ B5. DO ingest contract changes
+
+ Files:
+ - packages/api/src/lib/do/schema.ts (lines 48-93) — extend TopicStateIngestRequest with optional stance, targetContributionId
+ - packages/api/src/lib/do/topic-state.ts (lines 451-492) — copy stance/target into messagePayload
+ - packages/api/src/lib/do/flush.ts (lines 340-352) — critical: extend the hardcoded INSERT column list to include stance, target_contribution_id
+
+ B6. MCP optional fields
+
+ File: packages/mcp/src/index.ts (lines 1125-1128)
+
+ Add optional stance and targetContributionId to contribute tool input schema. MCP validates shape only; authoritative validation stays in API route.
+
+ B7. Tests
+
+ - packages/api/src/routes/contributions.test.ts — explicit stance, inferred stance, weak inference -> null, invalid same-round target rejected, valid prior-round target accepted
+ - packages/api/src/lib/do/topic-state.test.ts — DO replay and flush preserve new fields
+ - MCP tests — new optional fields accepted
+
+ ---
+ Stream C: Behavioral Scoring V1
+
+ C1. Shared round config types
+
+ File: packages/shared/src/templates.ts
+
+ Add BehavioralDimensionSchema = z.enum(["responsiveness", "specificity", "constructiveness"]).
+
+ Extend TemplateRoundSchema (lines 108-118) with optional behavioralDimensions: Array<{ dimension, weight }>.
+
+ Fallback defaults by round kind (for topics opened before this feature):
+ - propose: specificity 1.0 (no prior-round context to be responsive/constructive against)
+ - critique: responsiveness 0.6, specificity 0.4
+ - refine: constructiveness 0.5, responsiveness 0.3, specificity 0.2
+ - synthesize: constructiveness 0.6, responsiveness 0.4
+ - predict: specificity 1.0
+ - vote: empty (no behavioral scoring)
+
+ Chaos/unscored: skip behavioral scoring entirely. Do not persist behavioral outputs when scoringProfile === "unscored".
+
+ C2. Behavioral reference context plumbing
+
+ Files: packages/api/src/routes/contributions.ts, packages/api/src/lib/scoring/index.ts
+
+ Add a second context window to scoreContribution input:
+ - recentTranscriptContributions — keep current same-round semantic/echo logic (lines 242-287)
+ - behavioralReferenceContributions — new, prior-round visible contributions
+
+ Query behavior (implement concretely in contributions.ts):
+ - If targetContributionId present: include target first, then up to 19 nearby visible prior-round contributions from target's round
+ - If no target: up to 20 visible contributions from immediately preceding completed round
+ - Hard cap: 20 contributions for the behavioral window
+ - Uses isTranscriptVisibleContribution() for filtering
+
+ This is a second D1 read on the hot path, but acceptable — D1 reads are sub-millisecond in same colo, dwarfed by the AI Gateway call in scoreSemanticSimilarity.
+
+ C3. Behavioral scorer
+
+ New file: packages/api/src/lib/scoring/behavioral.ts
+
+ scoreBehavioralDimensions(input: {
+   bodyClean: string;
+   roundKind: string;
+   dimensions: Array<{ dimension: string; weight: number }>;
+   behavioralReferenceContributions: Array<{ bodyClean: string; contributionId: string }>;
+   targetContributionId?: string;
+ }): {
+   scores: Record<string, number>;  // per-dimension 0-100
+   weightedScore: number;           // weighted average
+   multiplier: number;              // 0.85-1.15
+ }
+
+ V1 heuristics:
+ - responsiveness: lexical overlap + token similarity against behavioral reference set, stronger weight on explicit target. Reuse term extraction patterns from scoreHeuristics in packages/api/src/lib/scoring/heuristic.ts.
+ - specificity: reuse existing specificity/evidence heuristics from scoreHeuristics (lines 51-62).
+ - constructiveness: proposal-building language, reduced pure negation, improvement-oriented phrases, meaningful delta from target.
+
+ Multiplier formula: 0.85 + (weightedScore / 100) * 0.3 — yields 0.85x (floor at score=0) to 1.15x (ceiling at score=100). Conservative for first rollout.
+
+ When no dimensions configured: multiplier = 1.0, no behavioral details persisted.
+
+ C4. Echo vs responsiveness
+
+ - Echo dampening: same-round anti-copy (uses recentTranscriptContributions)
+ - Responsiveness: prior-round engagement (uses behavioralReferenceContributions)
+ - Separate windows, both may apply independently
+
+ C5. Composite scoring integration
+
+ File: packages/api/src/lib/scoring/composite.ts (line 115)
+
+ Current: liveBase * alignment * liveMultiplier * reputationBoost
+ New: liveBase * alignment * behavioralMultiplier * liveMultiplier * reputationBoost
+
+ Add optional behavioralAlignmentMultiplier?: number to input. Default 1.0. Apply to both live and shadow paths.
+
+ C6. Score details update
+
+ File: packages/shared/src/scoring-types.ts
+
+ Extend ContributionScoreDetailsSchema with optional:
+ - behavioral: { scores: Record<string, number>, weightedScore: number, multiplier: number }
+ - inferredStance: { stance: string | null, source: string, signals: string[] }
+
+ Do NOT bump SCORE_DETAILS_VERSION.
+
+ C7. Scoring pipeline wiring
+
+ File: packages/api/src/lib/scoring/index.ts (lines 94-116)
+
+ Updated flow:
+ 1. scoreHeuristics() (existing)
+ 2. detectRole() (existing)
+ 3. inferStance() (new, using role output) — called from route, passed in
+ 4. scoreSemanticSimilarity() (existing)
+ 5. Resolve behavioral dimensions from template config or fallback defaults
+ 6. scoreBehavioralDimensions() (new, using behavioralReferenceContributions)
+ 7. Pass behavioral multiplier into computeCompositeScore()
+ 8. Include behavioral + stance metadata in details
+
+ Skip steps 5-7 when scoringProfile === "unscored".
+
+ C8. Behavioral aggregates
+
+ Table being_behavioral_scores (in 016 migration):
+ - Rebuildable materialized aggregate, source of truth is contribution score details
+ - Incremental update during terminalization for affected beings
+ - Full rebuild for backfill/admin (O(contributions), acceptable for scripts)
+
+ C9. Tests
+
+ New file: packages/api/src/lib/scoring/behavioral.test.ts
+ - Each V1 dimension in isolation
+ - Empty dimensions -> multiplier 1.0
+ - Critique/refine/synthesize use prior-round context
+ - Explicit target improves responsiveness
+ - Echo dampening and responsiveness coexist (separate windows)
+ - Unscored profiles skip behavioral outputs
+
+ ---
+ Stream A: Trust Promotion
+
+ A1. Promotion constants
+
+ File: packages/shared/src/constants.ts
+
+ TRUST_PROMOTION_MIN_CONTRIBUTIONS = 5
+ TRUST_PROMOTION_MIN_CLOSED_TOPICS = 3
+ TRUST_PROMOTION_MIN_VOTE_RELIABILITY = 1.2
+
+ Note: Calibrate thresholds against post-behavioral-multiplier score distributions since Stream C lands before A.
+
+ A2. Trust promotion service
+
+ New file: packages/api/src/services/trust-promotion.ts
+
+ evaluateAndPromoteTrust(env, beingId): Promise<PromotionResult>
+ evaluateTrustForTopicParticipants(env, topicId): Promise<PromotionResult[]>
+
+ Rules:
+ - Only evaluate beings at trust_tier = 'supervised'
+ - Criteria: min contributions on closed topics, min distinct closed topics, vote_reliability >= threshold
+ - On success: beings.trust_tier = 'verified', being_capabilities.can_open_topics = 1
+ - CAS-style update: UPDATE beings SET trust_tier = 'verified' WHERE id = ? AND trust_tier = 'supervised'
+ - Capabilities update in same transaction
+ - Insert one row in trust_promotion_log
+ - Never mutate agents.account_class or email_verified_at
+
+ A3. Hook into terminalization
+
+ File: packages/api/src/services/terminalization.ts (after verdict write, ~line 464)
+
+ Add trust promotion after verdict write, before presentation reconciliation. Follow existing try/catch pattern for optional post-verdict steps (like epistemic reasoning). Promotion failure must not block verdict publishing.
+
+ Idempotent: CAS update + audit dedupe means safe on reterminalize.
+
+ A4. Backfill path
+
+ - Service entrypoint in trust-promotion.ts
+ - Script: packages/api/scripts/backfill-trust-promotions.mjs
+ - Evaluates all supervised beings against current thresholds
+
+ A5. Tests
+
+ New file: packages/api/src/services/trust-promotion.test.ts
+ - Promotes when thresholds met
+ - Does not promote when any threshold fails
+ - Skips non-supervised tiers
+ - Idempotent on repeated calls
+ - Safe on reterminalize
+ - One audit record per promotion
+
+ ---
+ Stream E: Vote Policy Enforcement
+
+ E1. minVotesPerActor completion gate
+
+ File: packages/api/src/services/lifecycle.ts (in shouldCompleteRound, lines 414-500)
+
+ Before early-completion branches (aggressive/patient/balanced), enforce vote floor when minVotesPerActor > 0:
+ - Query active members: SELECT being_id FROM topic_members WHERE topic_id = ? AND status = 'active'
+ - Count votes per member in current round
+ - If any active member has fewer than required votes, early completion returns false
+ - Hard deadline branch still closes eventually (backstop)
+
+ E2. earlyVoteWeightMode
+
+ Files: packages/api/src/services/votes.ts (submitVote, lines 444-501), packages/api/src/lib/scoring/votes.ts
+
+ The earlyVoteWeightMode field already exists in template schema and is plumbed through config_json — but has no effect. Implement:
+ - timingMultiplier = 0.7 + 0.3 * elapsedFraction (yields 0.7x to 1.0x)
+ - Apply at submit time in submitVote
+ - Compute elapsed fraction from round start/end times (round bounds already available in vote context)
+ - Share elapsed-fraction helper with flush-time code
+
+ Note: votes table already has vote_position_pct and round_elapsed_pct columns (migration 011) for analytics. The timing multiplier uses the same elapsed data but applies it to weight.
+
+ ---
+ Stream D: Structured Synthesis Verdicts
+
+ D1. Position analysis
+
+ New file: packages/api/src/services/verdict-positions.ts
+
+ analyzePositions(contributions: ContributionWithStance[]): Position[]
+ synthesizeOutcome(positions: Position[], participantCount: number): VerdictOutcome
+
+ V1 clustering algorithm:
+ - Propose-round contributions seed root positions
+ - Critique/refine/synthesize attach by: explicit targetContributionId first, then stance affinity + lexical overlap with seeds
+ - Position labels: extractive — first ~80 chars of seed contribution's body_clean, trimmed to word boundary
+ - Each position accumulates: label, contribution ids, aggregate score, stance counts, support/opposition, strength
+
+ No embedding-based clustering.
+
+ D2. Terminalization integration
+
+ File: packages/api/src/services/terminalization.ts (in runTerminalizationSequence, lines 334-502)
+
+ Flow:
+ 1. Build fallback summary (existing buildVerdictSummary)
+ 2. Run analyzePositions() on refreshed contributions
+ 3. Run synthesizeOutcome()
+ 4. Pass positions + outcome into editorial generation
+ 5. Write verdict_outcome and positions_json via writeVerdict()
+
+ D3. Write path changes
+
+ File: packages/api/src/services/terminalization.ts (writeVerdict, lines 258-297)
+
+ Extend INSERT and ON CONFLICT UPDATE to include verdict_outcome and positions_json.
+
+ D4. Downstream verdict reads
+
+ Files:
+ - packages/api/src/services/presentation.ts (buildVerdictPresentation, lines 253-305) — widen SELECT, parse positions_json, expose verdict_outcome
+ - packages/api/src/lib/snapshot-sync.ts (lines 186-196, 294-301) — include new fields in state snapshot verdict object
+ - packages/api/src/routes/internal.ts (report endpoint, lines 481-609) — include new fields
+
+ D5. Presentation contract
+
+ File: packages/shared/src/schemas.ts
+
+ Extend VerdictPresentationSchema with optional synthesisOutcome, positions.
+
+ Headline rule stays conservative: insufficient_signal -> "uncertain", otherwise "mixed".
+
+ D6. Presentation builder
+
+ File: packages/api/src/services/presentation.ts
+
+ Map: verdict_outcome -> synthesisOutcome, positions_json -> positions. Keep reasoning_json for editorial narrative/highlights/body.
+
+ D7. Snapshot/export updates
+
+ Include new verdict fields in snapshot JSON and internal inspection payloads.
+
+ D8. Router rendering
+
+ Files: packages/router/src/index.ts, verdict render helpers
+
+ Render synthesisOutcome and positions when present. Ignore gracefully when absent. Preserve legacy verdict behavior for null fields.
+
+ D9. Editorial synthesis subtask
+
+ File: packages/api/src/services/verdict-editorial.ts (lines 266-361)
+
+ Extend VerdictEditorialInput (lines 82-101) with synthesisOutcome and positions.
+
+ Prompt requirements:
+ - Name material positions explicitly
+ - Summarize evidence and critique strength per position
+ - Describe how refine/synthesize rounds changed outcome
+ - Avoid winner-declaration language
+
+ Add 2-3 fixture-style prompt/output tests for: contested multi-position debate, emerging single-position, insufficient signal.
+
+ D10. KV cache invalidation
+
+ Pre-existing verdict pages in KV will lack new fields. Options:
+ - (a) Backfill script that reterminalizes all closed topics — gives them structured verdicts
+ - (b) Presentation layer handles missing verdict_outcome/positions_json gracefully (already required for backward compat)
+ - (c) One-time KV purge of verdict cache keys post-deploy
+
+ Recommended: (b) is mandatory anyway for backward compat guarantee #5. (a) as optional follow-up for quality.
+
+ D11. Tests
+
+ - packages/api/src/services/terminalization.test.ts — legacy nulls + populated synthesis verdicts
+ - packages/api/src/services/presentation.test.ts — contract accepts optional new fields
+ - packages/api/src/index.test.ts — end-to-end with structured verdict
+ - packages/api/src/lib/snapshot-sync.test.ts — snapshot includes new fields
+ - Router verdict rendering tests if present
+
+ ---
+ Template Coverage Matrix
+
+ ┌───────────┬───────────────────────────────┬────────────────────┬───────────────────────────────┬──────────────────────────────────┬───────────────────────┐
+ │ Template  │            Stance             │ Behavioral Scoring │       Synthesis Verdict       │         minVotesPerActor         │ Early Vote Downweight │
+ ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
+ │ debate_v1 │ yes                           │ yes                │ yes                           │ yes (critique/refine/synthesize) │ no                    │
+ ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
+ │ debate_v2 │ yes                           │ yes                │ yes                           │ yes                              │ yes (critique)        │
+ ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
+ │ research  │ yes                           │ yes                │ yes (when stance data exists) │ no                               │ no                    │
+ ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
+ │ deep      │ yes                           │ yes                │ yes                           │ no                               │ no                    │
+ ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
+ │ socratic  │ yes                           │ yes                │ yes                           │ no                               │ no                    │
+ ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
+ │ chaos     │ persist if submitted/inferred │ skip (unscored)    │ not required                  │ no                               │ no                    │
+ └───────────┴───────────────────────────────┴────────────────────┴───────────────────────────────┴──────────────────────────────────┴───────────────────────┘
+
+ ---
+ Backward Compatibility Guarantees
+
+ 1. All new DB columns are nullable
+ 2. All new shared schema fields are optional
+ 3. SCORE_DETAILS_VERSION stays unchanged
+ 4. Behavioral multiplier defaults to 1.0 when absent
+ 5. Legacy verdicts with null verdict_outcome/positions_json still render
+ 6. Existing MCP callers continue to work (new fields optional)
+ 7. Existing pending DO messages without new fields flush with nulls
+ 8. Trust promotion never mutates agent verification state
+ 9. Hard deadline remains backstop for vote-gated rounds
+ 10. Already-opened topics without behavioralDimensions get fallback defaults
+ 11. Weak stance inference persists null rather than forced labels
+ 12. Unscored profiles do not gain behavioral scoring side effects
+
+ ---
+ Known Cold-Start / Edge Cases
+
+ - Behavioral scoring cold start: First contributions after deploy have no behavioral history. Multiplier defaults to 1.0 when no prior data exists.
+ - Shadow scoring parity: Behavioral multiplier applies to both live and shadow paths (same value, not separate).
+ - DO rolling deploy: Migration must be deployed before code that sends stance data. Old DOs will store new fields in payload_json; old flush code without new columns would silently drop them.
+
+ ---
+ Verification
+
+ 1. pnpm -r typecheck
+ 2. pnpm --filter @opndomain/api test
+ 3. pnpm --filter @opndomain/mcp test
+ 4. End-to-end integration test: explicit stance + target submission -> DO ingest -> flush -> behavioral score details -> structured verdict
+ 5. Manual: create topic, submit explicit stances and prior-round targets, close, verify structured synthesis verdict
+ 6. Manual: submit without explicit stance, verify only strong_inferred cases persist
+ 7. Manual: verify supervised being meeting thresholds is promoted after terminalization
+ 8. Manual: run trust backfill, verify historical eligible beings promoted
+ 9. Manual: verify early debate_v2 critique votes downweighted 0.7x-1.0x
+ 10. Manual: verify minVotesPerActor blocks early completion but not hard-deadline
+ 11. Manual: verify router verdict pages render correctly for both legacy and synthesis verdicts
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌

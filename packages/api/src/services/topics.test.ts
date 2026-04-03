@@ -1000,6 +1000,245 @@ describe("topic read contracts", () => {
     assert.equal(topic.domainSlug, "ai-safety");
     assert.equal(topic.members[0]?.ownedByCurrentAgent, true);
   });
+
+  it("returns ownVoteStatus and votingObligation with correct fulfilled state", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "quality_gated",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 1,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [
+      {
+        id: "rnd_0",
+        topic_id: "top_1",
+        sequence_index: 0,
+        round_kind: "propose",
+        status: "completed",
+        starts_at: null,
+        ends_at: null,
+        reveal_at: "2026-03-25T00:30:00.000Z",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z",
+      },
+      {
+        id: "rnd_1",
+        topic_id: "top_1",
+        sequence_index: 1,
+        round_kind: "critique",
+        status: "active",
+        starts_at: null,
+        ends_at: null,
+        reveal_at: null,
+        created_at: "2026-03-25T01:00:00.000Z",
+        updated_at: "2026-03-25T01:00:00.000Z",
+      },
+    ]);
+    db.queueAll("FROM topic_members", [{
+      being_id: "bng_1",
+      handle: "alpha",
+      display_name: "Alpha",
+      role: "participant",
+      status: "active",
+    }]);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "critique",
+        sequenceIndex: 1,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: true,
+        voteTargetPolicy: "prior_round",
+        minVotesPerActor: 1,
+        maxVotesPerActor: 1,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: {
+          completionMode: "deadline_only",
+          enrollmentMode: "topic_members_only",
+          note: "test",
+        },
+      }),
+    }]);
+    // ownContributionStatus — empty (not contributed yet)
+    // ownVoteRows — one vote cast
+    db.queueAll("FROM votes\n            WHERE round_id = ? AND voter_being_id = ?", [
+      { id: "vot_1", contribution_id: "cnt_2", direction: 1, created_at: "2026-03-25T01:10:00.000Z" },
+    ]);
+    // vote targets resolution
+    db.queueFirst("WHERE topic_id = ? AND sequence_index = ?", [{
+      id: "rnd_0",
+      sequence_index: 0,
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id\n      INNER JOIN round_configs rc ON rc.round_id = r.id", [{
+      id: "cnt_2",
+      round_id: "rnd_0",
+      sequence_index: 0,
+      being_id: "bng_2",
+      visibility: "normal",
+      round_visibility: "open",
+      reveal_at: "2026-03-25T00:30:00.000Z",
+    }]);
+    db.queueAll("FROM contributions c\n              INNER JOIN beings b ON b.id = c.being_id", [{
+      contribution_id: "cnt_2",
+      being_id: "bng_2",
+      being_handle: "bravo",
+    }]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1", "bng_1");
+
+    assert.ok(topic.ownVoteStatus, "expected ownVoteStatus");
+    assert.equal(topic.ownVoteStatus.length, 1);
+    assert.equal(topic.ownVoteStatus[0].voteId, "vot_1");
+    assert.equal(topic.ownVoteStatus[0].contributionId, "cnt_2");
+    assert.equal(topic.ownVoteStatus[0].direction, 1);
+
+    assert.ok(topic.votingObligation, "expected votingObligation");
+    assert.equal(topic.votingObligation.required, true);
+    assert.equal(topic.votingObligation.minVotesPerActor, 1);
+    assert.equal(topic.votingObligation.votesCast, 1);
+    assert.equal(topic.votingObligation.fulfilled, true);
+    assert.equal(topic.votingObligation.dropWarning, null);
+  });
+
+  it("returns unfulfilled votingObligation when no votes cast", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "quality_gated",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 1,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [
+      {
+        id: "rnd_0",
+        topic_id: "top_1",
+        sequence_index: 0,
+        round_kind: "propose",
+        status: "completed",
+        starts_at: null,
+        ends_at: null,
+        reveal_at: "2026-03-25T00:30:00.000Z",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z",
+      },
+      {
+        id: "rnd_1",
+        topic_id: "top_1",
+        sequence_index: 1,
+        round_kind: "critique",
+        status: "active",
+        starts_at: null,
+        ends_at: null,
+        reveal_at: null,
+        created_at: "2026-03-25T01:00:00.000Z",
+        updated_at: "2026-03-25T01:00:00.000Z",
+      },
+    ]);
+    db.queueAll("FROM topic_members", [{
+      being_id: "bng_1",
+      handle: "alpha",
+      display_name: "Alpha",
+      role: "participant",
+      status: "active",
+    }]);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "critique",
+        sequenceIndex: 1,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: true,
+        voteTargetPolicy: "prior_round",
+        minVotesPerActor: 1,
+        maxVotesPerActor: 1,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: {
+          completionMode: "deadline_only",
+          enrollmentMode: "topic_members_only",
+          note: "test",
+        },
+      }),
+    }]);
+    // ownVoteRows — no votes cast
+    db.queueAll("FROM votes\n            WHERE round_id = ? AND voter_being_id = ?", []);
+    // vote targets resolution
+    db.queueFirst("WHERE topic_id = ? AND sequence_index = ?", [{
+      id: "rnd_0",
+      sequence_index: 0,
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id\n      INNER JOIN round_configs rc ON rc.round_id = r.id", [{
+      id: "cnt_2",
+      round_id: "rnd_0",
+      sequence_index: 0,
+      being_id: "bng_2",
+      visibility: "normal",
+      round_visibility: "open",
+      reveal_at: "2026-03-25T00:30:00.000Z",
+    }]);
+    db.queueAll("FROM contributions c\n              INNER JOIN beings b ON b.id = c.being_id", [{
+      contribution_id: "cnt_2",
+      being_id: "bng_2",
+      being_handle: "bravo",
+    }]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1", "bng_1");
+
+    assert.ok(topic.votingObligation, "expected votingObligation");
+    assert.equal(topic.votingObligation.required, true);
+    assert.equal(topic.votingObligation.votesCast, 0);
+    assert.equal(topic.votingObligation.fulfilled, false);
+    assert.equal(topic.votingObligation.dropWarning, "You will be dropped if you do not vote before the round deadline.");
+    assert.deepEqual(topic.ownVoteStatus, []);
+  });
 });
 
 describe("topic transcript reads", () => {

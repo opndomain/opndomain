@@ -635,3 +635,254 @@ test("runParticipate preserves stored beingId when launch refresh omits it", asy
   assert.equal(result.status, "contributed");
   assert.equal(state?.beingId, "bng_state");
 });
+
+test("runParticipate binds beingHandle on first run with explicit handle", async () => {
+  let state: CliState | null = buildCliState({ beingHandle: undefined });
+
+  const result = await runParticipate({
+    configPath: "participate.json",
+    configDir: ".",
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    operator: {
+      email: "agent@example.com",
+      name: "Agent",
+      handle: "agent-alpha",
+    },
+    contribution: {
+      bodyPath: "body.md",
+      body: "Contribution body",
+    },
+    output: {
+      format: "json",
+    },
+  }, {
+    loadState: async () => state,
+    saveState: async (nextState) => {
+      state = nextState;
+    },
+    callTool: async <T>(name: string) => {
+      if (name === "establish-launch-state") {
+        return {
+          status: "launch_ready",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_1",
+            refreshToken: "refresh_1",
+            expiresAt: "2026-03-28T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      if (name === "participate") {
+        return {
+          status: "contributed",
+          beingId: "bng_alpha",
+          beingHandle: "agent-alpha",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_2",
+            refreshToken: "refresh_2",
+            expiresAt: "2026-03-29T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      throw new Error(`Unexpected tool ${name}`);
+    },
+  });
+
+  assert.equal(result.status, "contributed");
+  assert.equal(state?.beingHandle, "agent-alpha");
+  assert.equal(state?.beingId, "bng_alpha");
+});
+
+test("runParticipate succeeds when same handle reruns on bound state", async () => {
+  let state: CliState | null = buildCliState({ beingHandle: "agent-alpha", beingId: "bng_alpha" });
+
+  const result = await runParticipate({
+    configPath: "participate.json",
+    configDir: ".",
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    operator: {
+      email: "agent@example.com",
+      name: "Agent",
+      handle: "agent-alpha",
+    },
+    contribution: {
+      bodyPath: "body.md",
+      body: "Contribution body",
+    },
+    output: {
+      format: "json",
+    },
+  }, {
+    loadState: async () => state,
+    saveState: async (nextState) => {
+      state = nextState;
+    },
+    callTool: async <T>(name: string) => {
+      if (name === "establish-launch-state") {
+        return {
+          status: "launch_ready",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_1",
+            refreshToken: "refresh_1",
+            expiresAt: "2026-03-28T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      if (name === "participate") {
+        return {
+          status: "contributed",
+          beingId: "bng_alpha",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_2",
+            refreshToken: "refresh_2",
+            expiresAt: "2026-03-29T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      throw new Error(`Unexpected tool ${name}`);
+    },
+  });
+
+  assert.equal(result.status, "contributed");
+  assert.equal(state?.beingHandle, "agent-alpha");
+});
+
+test("runParticipate errors when different handle targets bound state file", async () => {
+  const state: CliState = buildCliState({ beingHandle: "agent-alpha", beingId: "bng_alpha" });
+
+  await assert.rejects(
+    () => runParticipate({
+      configPath: "participate.json",
+      configDir: ".",
+      mcpUrl: "https://mcp.opndomain.com/mcp",
+      operator: {
+        email: "agent@example.com",
+        name: "Agent",
+        handle: "agent-beta",
+      },
+      contribution: {
+        bodyPath: "body.md",
+        body: "Contribution body",
+      },
+      output: {
+        format: "json",
+      },
+    }, {
+      loadState: async () => state,
+      saveState: async () => undefined,
+      callTool: async <T>(name: string) => {
+        if (name === "establish-launch-state") {
+          return {
+            status: "launch_ready",
+            clientId: "cli_1",
+            launch: {
+              clientId: "cli_1",
+              agentId: "agt_1",
+              accessToken: "access_1",
+              refreshToken: "refresh_1",
+              expiresAt: "2026-03-28T00:15:00.000Z",
+              mcpUrl: "https://mcp.opndomain.com/mcp",
+              apiOrigin: "https://api.opndomain.com",
+              rootDomain: "opndomain.com",
+            },
+          } as T;
+        }
+        throw new Error(`Unexpected tool ${name}`);
+      },
+    }),
+    /bound to being handle "agent-alpha".*config requests "agent-beta"/,
+  );
+});
+
+test("runParticipate works with legacy state files missing beingHandle", async () => {
+  // Legacy state has beingId but no beingHandle
+  let state: CliState | null = buildCliState();
+  delete (state as any).beingHandle;
+
+  const result = await runParticipate({
+    configPath: "participate.json",
+    configDir: ".",
+    mcpUrl: "https://mcp.opndomain.com/mcp",
+    operator: {
+      email: "agent@example.com",
+      name: "Agent",
+      handle: "agent-alpha",
+    },
+    contribution: {
+      bodyPath: "body.md",
+      body: "Contribution body",
+    },
+    output: {
+      format: "json",
+    },
+  }, {
+    loadState: async () => state,
+    saveState: async (nextState) => {
+      state = nextState;
+    },
+    callTool: async <T>(name: string) => {
+      if (name === "establish-launch-state") {
+        return {
+          status: "launch_ready",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_1",
+            refreshToken: "refresh_1",
+            expiresAt: "2026-03-28T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      if (name === "participate") {
+        return {
+          status: "contributed",
+          beingId: "bng_alpha",
+          beingHandle: "agent-alpha",
+          clientId: "cli_1",
+          launch: {
+            clientId: "cli_1",
+            agentId: "agt_1",
+            accessToken: "access_2",
+            refreshToken: "refresh_2",
+            expiresAt: "2026-03-29T00:15:00.000Z",
+            mcpUrl: "https://mcp.opndomain.com/mcp",
+            apiOrigin: "https://api.opndomain.com",
+            rootDomain: "opndomain.com",
+          },
+        } as T;
+      }
+      throw new Error(`Unexpected tool ${name}`);
+    },
+  });
+
+  assert.equal(result.status, "contributed");
+  assert.equal(state?.beingHandle, "agent-alpha");
+  assert.equal(state?.beingId, "bng_alpha");
+});

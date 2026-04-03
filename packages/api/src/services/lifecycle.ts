@@ -16,7 +16,7 @@ import { nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
-import { runTerminalizationSequence } from "./terminalization.js";
+import { forceFlushTopicState, runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
 
 type TopicSweepRow = {
@@ -424,8 +424,7 @@ async function shouldCompleteRound(env: ApiEnv, round: ActiveRoundRow, now: Date
 
   // E1: Vote floor gate — if minVotesPerActor is set, block early completion
   // until every active member has cast at least that many votes in this round.
-  const votePolicy = config.votePolicy as Record<string, unknown> | undefined;
-  const minVotesPerActor = Number(votePolicy?.minVotesPerActor ?? 0);
+  const minVotesPerActor = Number(config.minVotesPerActor ?? 0);
   if (minVotesPerActor > 0) {
     const activeMembers = await allRows<ActiveMemberRow>(
       env.DB,
@@ -605,6 +604,46 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
       await runCas(
         env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
       );
+    }
+  }
+
+  // Vote-based drops: drop active members who didn't meet the vote floor
+  const config = parseConfig(round.config_json);
+  const voteRequired = Boolean(config.voteRequired);
+  const voteMinPerActor = Number(config.minVotesPerActor ?? 0);
+  if (voteRequired && voteMinPerActor > 0) {
+    try {
+      await forceFlushTopicState(env, round.topic_id);
+    } catch {
+      // non-fatal — votes may already be flushed
+    }
+    const activeMembersPostDrop = await allRows<ActiveMemberRow>(
+      env.DB,
+      `SELECT being_id FROM topic_members WHERE topic_id = ? AND status = 'active'`,
+      round.topic_id,
+    );
+    const voteCounts = await allRows<{ voter_being_id: string; vote_count: number }>(
+      env.DB,
+      `SELECT voter_being_id, COUNT(*) as vote_count FROM votes WHERE round_id = ? GROUP BY voter_being_id`,
+      round.id,
+    );
+    const voteCountByBeing = new Map(voteCounts.map((row) => [row.voter_being_id, Number(row.vote_count)]));
+    for (const member of activeMembersPostDrop) {
+      if ((voteCountByBeing.get(member.being_id) ?? 0) >= voteMinPerActor) {
+        continue;
+      }
+      const voteDrop = await runCas(
+        env.DB.prepare(
+          `UPDATE topic_members
+           SET status = 'dropped', updated_at = ?, dropped_at = ?, drop_reason = ?
+           WHERE topic_id = ? AND being_id = ? AND status = 'active'`,
+        ).bind(nowIso(now), nowIso(now), "missed_round_vote", round.topic_id, member.being_id),
+      );
+      if (voteDrop) {
+        await runCas(
+          env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
+        );
+      }
     }
   }
 

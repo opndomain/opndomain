@@ -115,6 +115,24 @@ function resolveSpawnCommand(cmd: string, args: string[]): [string, string[]] {
   return [cmd, args];
 }
 
+function isUnsupportedChatgptCodexModelError(error: unknown): error is Error {
+  return error instanceof Error
+    && error.message.includes("is not supported when using Codex with a ChatGPT account");
+}
+
+function formatCodexError(error: unknown, modelOverride: string | null): Error {
+  if (isUnsupportedChatgptCodexModelError(error)) {
+    const modelMessage = modelOverride
+      ? `The configured Codex model override "${modelOverride}" is not available for the current Codex login.`
+      : "The configured Codex model is not available for the current Codex login.";
+    return new Error(
+      `${modelMessage} Clear LLM_MODEL in scripts/producer/.env to let Codex choose its default model, or switch Codex to an API-backed login that supports explicit model selection.`,
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 async function generateViaCodex(
   config: ProducerConfig,
   systemPrompt: string,
@@ -136,7 +154,17 @@ async function generateViaCodex(
       args.splice(1, 0, "-m", config.codexModelOverride);
     }
 
-    await spawnAsync(config.codexCmd, args, stdinPrompt);
+    try {
+      await spawnAsync(config.codexCmd, args, stdinPrompt);
+    } catch (error) {
+      if (!config.codexModelOverride || !isUnsupportedChatgptCodexModelError(error)) {
+        throw formatCodexError(error, config.codexModelOverride);
+      }
+
+      const fallbackArgs = args.filter((arg, index) => !(index === 1 && arg === "-m") && !(index === 2 && arg === config.codexModelOverride));
+
+      await spawnAsync(config.codexCmd, fallbackArgs, stdinPrompt);
+    }
 
     const output = await readFile(outputFile, "utf-8");
     return output;

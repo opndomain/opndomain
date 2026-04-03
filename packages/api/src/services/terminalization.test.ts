@@ -150,8 +150,12 @@ function queueClosedTopicPresentationReads(db: FakeDb) {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate_v2",
+      topic_format: "scheduled_research",
       status: "closed",
       current_round_index: 1,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      change_sequence: 1,
       updated_at: "2026-03-25T00:00:00.000Z",
     },
   ]);
@@ -224,7 +228,48 @@ function queueTerminalizationSuccessPath(
     { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
     { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
   ]);
-  db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+  // Verdict queue: 1st consumed by runTerminalizationSequence initial check (null = no existing verdict),
+  // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
+  const presentationVerdictRow = {
+    confidence: "moderate",
+    terminalization_mode: "full_template",
+    summary: verdictRow?.summary ?? "summary",
+    verdict_outcome: null,
+    positions_json: null,
+    reasoning_json: JSON.stringify({
+      editorialBody:
+        verdictRow?.editorialBody
+        ?? "This topic closed after 2 completed rounds with a verdict shaped by transcript-visible scoring rather than a single unchallenged claim.\n\nThe clearest closing signal came from @alpha in the propose round, where the highest-scoring excerpt emphasized: \"Body\"",
+      narrative: verdictRow?.narrative ?? [
+        {
+          roundIndex: 0,
+          roundKind: "propose",
+          title: "propose round",
+          summary: "Lead signal: Body",
+        },
+      ],
+      highlights: verdictRow?.highlights ?? [
+        {
+          contributionId: "cnt_1",
+          beingId: "bng_1",
+          beingHandle: "alpha",
+          roundKind: "propose",
+          excerpt: "Body",
+          finalScore: 73,
+          reason: "Highest-scoring visible contribution in the propose round.",
+        },
+      ],
+      topContributionsPerRound: [
+        {
+          roundKind: "propose",
+          contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+        },
+      ],
+      completedRounds: 2,
+      totalRounds: 2,
+    }),
+  };
+  db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, presentationVerdictRow, presentationVerdictRow]);
   db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
     { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
     { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -265,45 +310,6 @@ function queueTerminalizationSuccessPath(
   db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 2, topic_vote_count: 2 }]);
   db.queueFirst("FROM domain_reputation", [null]);
   queueClosedTopicPresentationReads(db);
-  db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-    {
-      confidence: "moderate",
-      terminalization_mode: "full_template",
-      summary: verdictRow?.summary ?? "summary",
-      reasoning_json: JSON.stringify({
-        editorialBody:
-          verdictRow?.editorialBody
-          ?? "This topic closed after 2 completed rounds with a verdict shaped by transcript-visible scoring rather than a single unchallenged claim.\n\nThe clearest closing signal came from @alpha in the propose round, where the highest-scoring excerpt emphasized: \"Body\"",
-        narrative: verdictRow?.narrative ?? [
-          {
-            roundIndex: 0,
-            roundKind: "propose",
-            title: "propose round",
-            summary: "Lead signal: Body",
-          },
-        ],
-        highlights: verdictRow?.highlights ?? [
-          {
-            contributionId: "cnt_1",
-            beingId: "bng_1",
-            beingHandle: "alpha",
-            roundKind: "propose",
-            excerpt: "Body",
-            finalScore: 73,
-            reason: "Highest-scoring visible contribution in the propose round.",
-          },
-        ],
-        topContributionsPerRound: [
-          {
-            roundKind: "propose",
-            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-          },
-        ],
-        completedRounds: 2,
-        totalRounds: 2,
-      }),
-    },
-  ]);
 }
 
 describe("terminalization service", () => {
@@ -392,7 +398,27 @@ describe("terminalization service", () => {
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
     db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
-    db.queueFirst("FROM verdicts WHERE topic_id = ?", [{ id: "vrd_1" }]);
+    // Verdict queue: 1st consumed by runTerminalizationSequence initial check,
+    // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
+    const flushVerdictRow = {
+      id: "vrd_1",
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 2,
+        totalRounds: 2,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [flushVerdictRow, flushVerdictRow, flushVerdictRow]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
       { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
       { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -436,23 +462,6 @@ describe("terminalization service", () => {
     db.queueFirst("FROM domain_reputation", [null]);
     db.queueAll("SELECT id, average_score, sample_count, m2, consistency_score, decayed_score, last_active_at\n      FROM domain_reputation", []);
     queueClosedTopicPresentationReads(db);
-    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-      {
-        confidence: "moderate",
-        terminalization_mode: "full_template",
-        summary: "summary",
-        reasoning_json: JSON.stringify({
-          topContributionsPerRound: [
-            {
-              roundKind: "propose",
-              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-            },
-          ],
-          completedRounds: 2,
-          totalRounds: 2,
-        }),
-      },
-    ]);
 
     const warnings: string[] = [];
     const originalConsoleWarn = console.warn;
@@ -497,7 +506,28 @@ describe("terminalization service", () => {
       { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
       { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
     ]);
-    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+    // Verdict queue: 1st consumed by runTerminalizationSequence initial check (null = no existing verdict),
+    // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
+    const verdictRow2 = {
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        editorialBody:
+          "This topic closed after 2 completed rounds with a verdict shaped by transcript-visible scoring rather than a single unchallenged claim.\n\nThe clearest closing signal came from @alpha in the propose round, where the highest-scoring excerpt emphasized: \"Body\"",
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 2,
+        totalRounds: 2,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, verdictRow2, verdictRow2]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
       { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
       { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -538,25 +568,6 @@ describe("terminalization service", () => {
     db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 2, topic_vote_count: 2 }]);
     db.queueFirst("FROM domain_reputation", [null]);
     queueClosedTopicPresentationReads(db);
-    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-      {
-        confidence: "moderate",
-        terminalization_mode: "full_template",
-        summary: "summary",
-        reasoning_json: JSON.stringify({
-          editorialBody:
-            "This topic closed after 2 completed rounds with a verdict shaped by transcript-visible scoring rather than a single unchallenged claim.\n\nThe clearest closing signal came from @alpha in the propose round, where the highest-scoring excerpt emphasized: \"Body\"",
-          topContributionsPerRound: [
-            {
-              roundKind: "propose",
-              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-            },
-          ],
-          completedRounds: 2,
-          totalRounds: 2,
-        }),
-      },
-    ]);
 
     const result = await runTerminalizationSequence(
       {
@@ -603,7 +614,25 @@ describe("terminalization service", () => {
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
     db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
-    db.queueFirst("FROM verdicts WHERE topic_id = ?", [{ id: "vrd_1" }]);
+    const retermVerdictRow = {
+      id: "vrd_1",
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 2,
+        totalRounds: 2,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [retermVerdictRow, retermVerdictRow, retermVerdictRow]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
       { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
       { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -655,23 +684,6 @@ describe("terminalization service", () => {
     }]);
     db.queueAll("SELECT id, average_score, sample_count, m2, consistency_score, decayed_score, last_active_at\n      FROM domain_reputation", []);
     queueClosedTopicPresentationReads(db);
-    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-      {
-        confidence: "moderate",
-        terminalization_mode: "full_template",
-        summary: "summary",
-        reasoning_json: JSON.stringify({
-          topContributionsPerRound: [
-            {
-              roundKind: "propose",
-              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-            },
-          ],
-          completedRounds: 2,
-          totalRounds: 2,
-        }),
-      },
-    ]);
 
     const result = await runTerminalizationSequence(
       {
@@ -707,7 +719,26 @@ describe("terminalization service", () => {
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
     db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
-    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+    // Verdict queue: 1st consumed by runTerminalizationSequence initial check (null = backfill),
+    // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
+    const backfillVerdictRow = {
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 2,
+        totalRounds: 2,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, backfillVerdictRow, backfillVerdictRow]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
       { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
       { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -759,23 +790,6 @@ describe("terminalization service", () => {
     }]);
     db.queueAll("SELECT id, average_score, sample_count, m2, consistency_score, decayed_score, last_active_at\n      FROM domain_reputation", []);
     queueClosedTopicPresentationReads(db);
-    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-      {
-        confidence: "moderate",
-        terminalization_mode: "full_template",
-        summary: "summary",
-        reasoning_json: JSON.stringify({
-          topContributionsPerRound: [
-            {
-              roundKind: "propose",
-              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-            },
-          ],
-          completedRounds: 2,
-          totalRounds: 2,
-        }),
-      },
-    ]);
 
     const result = await runTerminalizationSequence(
       {
@@ -816,7 +830,24 @@ describe("terminalization service", () => {
       { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
       { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
     ]);
-    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+    const epistemicVerdictRow = {
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 2,
+        totalRounds: 2,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, epistemicVerdictRow, epistemicVerdictRow]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
       { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
       { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -856,23 +887,6 @@ describe("terminalization service", () => {
     db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
     db.queueFirst("FROM domain_reputation", [null]);
     queueClosedTopicPresentationReads(db);
-    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-      {
-        confidence: "moderate",
-        terminalization_mode: "full_template",
-        summary: "summary",
-        reasoning_json: JSON.stringify({
-          topContributionsPerRound: [
-            {
-              roundKind: "propose",
-              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-            },
-          ],
-          completedRounds: 2,
-          totalRounds: 2,
-        }),
-      },
-    ]);
 
     const result = await runTerminalizationSequence(
       {
@@ -908,7 +922,25 @@ describe("terminalization service", () => {
       { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
       { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
     ]);
-    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null]);
+    const failOpenVerdictRow = {
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 2,
+        totalRounds: 2,
+        epistemic: { status: "unavailable" },
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, failOpenVerdictRow, failOpenVerdictRow]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
       { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
       { id: "rnd_2", sequence_index: 1, round_kind: "predict", status: "completed" },
@@ -952,24 +984,6 @@ describe("terminalization service", () => {
     db.queueFirst("SELECT COUNT(*) AS count\n      FROM claim_resolution_evidence", [{ count: 0 }]);
     db.queueFirst("FROM epistemic_reliability", [null]);
     queueClosedTopicPresentationReads(db);
-    db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-      {
-        confidence: "moderate",
-        terminalization_mode: "full_template",
-        summary: "summary",
-        reasoning_json: JSON.stringify({
-          topContributionsPerRound: [
-            {
-              roundKind: "propose",
-              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
-            },
-          ],
-          completedRounds: 2,
-          totalRounds: 2,
-          epistemic: { status: "unavailable" },
-        }),
-      },
-    ]);
 
     const originalConsoleError = console.error;
     let result: Awaited<ReturnType<typeof runTerminalizationSequence>>;

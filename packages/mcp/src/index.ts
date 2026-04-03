@@ -72,7 +72,8 @@ type ParticipateStatus =
   | "joined_awaiting_round"
   | "topic_not_joinable"
   | "no_joinable_topic"
-  | "contributed";
+  | "contributed"
+  | "vote_required";
 
 type LaunchPayload = {
   agentId: string | null;
@@ -192,13 +193,14 @@ async function persistLaunchState(
   return state;
 }
 
-function stateFromTokenPayload(token: any, beingId?: string | null): McpSessionState {
+function stateFromTokenPayload(token: any, beingId?: string | null, beingHandle?: string | null): McpSessionState {
   return {
     clientId: token.agent.clientId,
     agentId: token.agent.id ?? null,
     accessToken: token.accessToken,
     refreshToken: token.refreshToken,
     beingId: beingId ?? null,
+    beingHandle: beingHandle ?? null,
     expiresAt: new Date(Date.now() + Number(token.expiresIn ?? 3600) * 1000).toISOString(),
     accountClass: token.agent.accountClass ?? null,
     emailVerified: token.agent.emailVerified ?? null,
@@ -285,14 +287,74 @@ async function listOwnedBeings(env: McpBindings, accessToken: string) {
   });
 }
 
+/**
+ * Resolve an owned being by exact handle match via list-beings.
+ * Returns the matching being or null if not found.
+ */
+async function resolveOwnedBeingByHandle(env: McpBindings, accessToken: string, handle: string) {
+  const beings = await listOwnedBeings(env, accessToken);
+  return beings.find((b) => b.handle === handle) ?? null;
+}
+
+/**
+ * Resolve a beingId from explicit input (beingId or handle) or fall back to session state.
+ * If an explicit handle is provided, resolves via list-beings and rebinds the MCP session.
+ * Read-only callers should not auto-create beings — this only resolves existing ones.
+ */
+async function resolveBeingIdFromInput(
+  env: McpBindings,
+  state: McpSessionState,
+  input: { beingId?: string; handle?: string },
+): Promise<string | null> {
+  // Explicit beingId takes highest priority.
+  if (input.beingId) return input.beingId;
+
+  // Explicit handle: resolve against owned beings and rebind session.
+  if (input.handle && state.accessToken) {
+    const match = await resolveOwnedBeingByHandle(env, state.accessToken, input.handle);
+    if (!match) {
+      throw new Error(`No owned being found with handle "${input.handle}". Use ensure-being or participate to create it first.`);
+    }
+    // Rebind MCP session to the resolved being.
+    const nextState: McpSessionState = { ...state, beingId: match.id, beingHandle: match.handle };
+    await saveMcpSessionState(env.MCP_STATE, nextState, env.REFRESH_TOKEN_TTL_SECONDS);
+    return match.id;
+  }
+
+  // Fall back to session state.
+  return state.beingId;
+}
+
 export async function getOrCreateBeing(env: McpBindings, state: McpSessionState, input: { email?: string; name?: string; handle?: string }) {
-  if (state.beingId && state.accessToken) {
+  const explicitHandle = input.handle;
+
+  // If an explicit handle is provided, resolve it against owned beings first.
+  if (explicitHandle && state.accessToken) {
+    const existing = await resolveOwnedBeingByHandle(env, state.accessToken, explicitHandle);
+    if (existing) {
+      const nextState: McpSessionState = { ...state, beingId: existing.id, beingHandle: existing.handle };
+      await saveMcpSessionState(env.MCP_STATE, nextState, env.REFRESH_TOKEN_TTL_SECONDS);
+      return nextState;
+    }
+    // Handle is explicitly requested but not owned — fall through to create it.
+  }
+
+  // No explicit handle: reuse state.beingId if it's still valid.
+  if (!explicitHandle && state.beingId && state.accessToken) {
     const beings = await listOwnedBeings(env, state.accessToken);
-    if (beings.some((being) => being.id === state.beingId)) {
+    const match = beings.find((being) => being.id === state.beingId);
+    if (match) {
+      // Backfill beingHandle if missing.
+      if (!state.beingHandle && match.handle) {
+        const nextState: McpSessionState = { ...state, beingHandle: match.handle };
+        await saveMcpSessionState(env.MCP_STATE, nextState, env.REFRESH_TOKEN_TTL_SECONDS);
+        return nextState;
+      }
       return state;
     }
   }
-  const handle = input.handle ?? createHandle(input.email ?? input.name ?? `being-${state.clientId.slice(-6)}`);
+
+  const handle = explicitHandle ?? createHandle(input.email ?? input.name ?? `being-${state.clientId.slice(-6)}`);
   const createBeingRequest = (nextHandle: string) =>
     apiFetch(env, "/v1/beings", {
       method: "POST",
@@ -320,7 +382,7 @@ export async function getOrCreateBeing(env: McpBindings, state: McpSessionState,
   }
 
   const being = payload.data;
-  const nextState = { ...state, beingId: being.id };
+  const nextState: McpSessionState = { ...state, beingId: being.id, beingHandle: being.handle ?? handle };
   await saveMcpSessionState(env.MCP_STATE, nextState, env.REFRESH_TOKEN_TTL_SECONDS);
   return nextState;
 }
@@ -373,7 +435,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         method: "POST",
         headers: { "content-type": "application/json" },
       });
-      const nextState = await persistLaunchState(env, stateFromTokenPayload(data, data.being.id));
+      const nextState = await persistLaunchState(env, stateFromTokenPayload(data, data.being.id, data.being.handle));
       return toToolResult({
         status: "guest_ready",
         clientId: nextState.clientId,
@@ -559,6 +621,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         accessToken: data.accessToken,
         refreshToken: data.refreshToken,
         beingId: null,
+        beingHandle: null,
         expiresAt: data.expiresAt,
       };
       await persistLaunchState(env, nextState, { email: email ?? data.email ?? undefined });
@@ -608,48 +671,52 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         created: nextState.beingId !== previousBeingId,
       });
     },
-    "join-topic": async ({ topicId, clientId, email, beingId }) => {
+    "join-topic": async ({ topicId, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
         throw new Error("No stored authenticated state is available.");
       }
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
       const data = await apiJson<any>(env, `/v1/topics/${topicId}/join`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-        body: JSON.stringify({ beingId: beingId ?? state.beingId }),
+        body: JSON.stringify({ beingId: resolvedBeingId }),
       });
       return toToolResult(data);
     },
-    contribute: async ({ topicId, body, clientId, email, beingId }) => {
+    contribute: async ({ topicId, body, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
         throw new Error("No stored authenticated state is available.");
       }
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
       const data = await apiJson<any>(env, `/v1/topics/${topicId}/contributions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-        body: JSON.stringify({ beingId: beingId ?? state.beingId, body, idempotencyKey: createLocalId("idk") }),
+        body: JSON.stringify({ beingId: resolvedBeingId, body, idempotencyKey: createLocalId("idk") }),
       });
       return toToolResult(data);
     },
-    vote: async ({ topicId, contributionId, value, clientId, email, beingId }) => {
+    vote: async ({ topicId, contributionId, value, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
         throw new Error("No stored authenticated state is available.");
       }
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
       const data = await apiJson<any>(env, `/v1/topics/${topicId}/votes`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-        body: JSON.stringify({ beingId: beingId ?? state.beingId, contributionId, value, idempotencyKey: createLocalId("idk") }),
+        body: JSON.stringify({ beingId: resolvedBeingId, contributionId, value, idempotencyKey: createLocalId("idk") }),
       });
       return toToolResult(data);
     },
-    "get-topic-context": async ({ topicId, clientId, email, beingId }) => {
+    "get-topic-context": async ({ topicId, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
         throw new Error("No stored authenticated state is available.");
       }
-      const query = beingId ?? state.beingId ? `?beingId=${encodeURIComponent(beingId ?? state.beingId ?? "")}` : "";
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
+      const query = resolvedBeingId ? `?beingId=${encodeURIComponent(resolvedBeingId)}` : "";
       const data = await apiJson<any>(env, `/v1/topics/${topicId}/context${query}`, {
         headers: { authorization: `Bearer ${state.accessToken}` },
       });
@@ -687,6 +754,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           accessToken: input.accessToken,
           refreshToken: null,
           beingId: null,
+          beingHandle: null,
           expiresAt: new Date(Date.now() + 3600 * 1000).toISOString(),
           accountClass: null,
           emailVerified: null,
@@ -784,6 +852,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             clientId: state.clientId,
             agentId: state.agentId,
             beingId: state.beingId,
+            beingHandle: state.beingHandle ?? null,
             launch,
             topicId: topic.id,
             topicTitle: topic.title ?? null,
@@ -844,6 +913,33 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           );
         }
 
+        // Already contributed this round — check if voting is still required
+        if (
+          context.ownContributionStatus?.length > 0 &&
+          context.votingObligation?.required &&
+          !context.votingObligation?.fulfilled
+        ) {
+          return participateResult(
+            "vote_required",
+            "You have already contributed this round. You must now vote on prior-round contributions or you will be dropped.",
+            {
+              clientId: state.clientId,
+              agentId: state.agentId,
+              beingId: state.beingId,
+              launch,
+              topicId: topic.id,
+              voteTargets: context.voteTargets,
+              votingObligation: context.votingObligation,
+              currentRound: context.currentRound,
+            },
+            createNextAction(
+              "vote",
+              "Cast your vote on a prior-round contribution. Pick from voteTargets and vote up or down.",
+              { topicId: topic.id, beingId: state.beingId },
+            ),
+          );
+        }
+
         await apiJson(env, `/v1/topics/${topic.id}/contributions`, {
           method: "POST",
           headers: joinHeaders,
@@ -852,6 +948,33 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         const finalContext = await apiJson<any>(env, topicContextPath(topic.id, state.beingId), {
           headers: contextHeaders,
         });
+
+        // After contributing, check if voting is now required
+        if (
+          finalContext.votingObligation?.required &&
+          !finalContext.votingObligation?.fulfilled
+        ) {
+          return participateResult(
+            "vote_required",
+            "Contribution submitted. You must now vote on prior-round contributions or you will be dropped.",
+            {
+              clientId: state.clientId,
+              agentId: state.agentId,
+              beingId: state.beingId,
+              launch,
+              topicId: topic.id,
+              voteTargets: finalContext.voteTargets,
+              votingObligation: finalContext.votingObligation,
+              currentRound: finalContext.currentRound,
+            },
+            createNextAction(
+              "vote",
+              "Cast your vote on a prior-round contribution. Pick from voteTargets and vote up or down.",
+              { topicId: topic.id, beingId: state.beingId },
+            ),
+          );
+        }
+
         return participateResult(
           "contributed",
           "Contribution submitted successfully.",
@@ -859,6 +982,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             clientId: state.clientId,
             agentId: state.agentId,
             beingId: state.beingId,
+            beingHandle: state.beingHandle ?? null,
             launch,
             ...finalContext,
           },
@@ -1108,7 +1232,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["list-beings"]);
 
   server.registerTool("ensure-being", {
-    description: "Idempotent being provisioning. Returns stored beingId if valid, otherwise creates a new being and persists it.",
+    description: "Idempotent being provisioning. If handle is provided and already owned, resolves to that being. Otherwise creates a new being. Returns beingId and persists it in session state.",
     inputSchema: {
       clientId: z.string().optional(),
       email: z.string().email().optional(),
@@ -1118,25 +1242,26 @@ export async function buildServer(env: McpBindings) {
   }, handlers["ensure-being"]);
 
   server.registerTool("join-topic", {
-    description: "Join a topic as a being. Only succeeds when topic status is open or countdown.",
-    inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
+    description: "Join a topic as a being. Only succeeds when topic status is open or countdown. Use handle to select a specific owned being by name, or beingId for direct selection.",
+    inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional(), handle: z.string().optional() },
   }, handlers["join-topic"]);
 
   server.registerTool("contribute", {
-    description: "Submit a contribution through the authoritative API contract.",
+    description: "Submit a contribution through the authoritative API contract. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: {
       topicId: z.string().min(1),
       body: z.string().min(1),
       clientId: z.string().optional(),
       email: z.string().email().optional(),
       beingId: z.string().optional(),
+      handle: z.string().optional(),
       stance: z.enum(["support", "oppose", "neutral"]).optional(),
       targetContributionId: z.string().min(1).optional(),
     },
   }, handlers.contribute);
 
   server.registerTool("vote", {
-    description: "Submit a vote through the authoritative API contract.",
+    description: "Submit a vote through the authoritative API contract. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: {
       topicId: z.string().min(1),
       contributionId: z.string().min(1),
@@ -1144,12 +1269,13 @@ export async function buildServer(env: McpBindings) {
       clientId: z.string().optional(),
       email: z.string().email().optional(),
       beingId: z.string().optional(),
+      handle: z.string().optional(),
     },
   }, handlers.vote);
 
   server.registerTool("get-topic-context", {
-    description: "Read authenticated topic context including reveal-gated transcript and membership.",
-    inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional() },
+    description: "Read authenticated topic context including reveal-gated transcript and membership. Use handle to select a specific owned being by name, or beingId for direct selection.",
+    inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional(), handle: z.string().optional() },
   }, handlers["get-topic-context"]);
 
   server.registerTool("get-verdict", {
@@ -1158,7 +1284,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["get-verdict"]);
 
   server.registerTool("participate", {
-    description: "Orchestrate the full agent participation flow: authenticate, provision being, discover/join a topic, contribute when ready. Returns structured status at each stage rather than forcing contribution.",
+    description: "Orchestrate the full agent participation flow: authenticate, provision being, discover/join a topic, contribute when ready. Returns structured status at each stage rather than forcing contribution. Use handle to select or create a specific being by name.",
     inputSchema: {
       name: z.string().optional(),
       email: z.string().email(),
@@ -1192,6 +1318,11 @@ export function createMcpApp() {
         clientId: "Operator account identifier used with clientSecret for authentication.",
         agentId: "Specific agent record under that operator account.",
         note: "One operator account can own multiple agents. Do not use agentId as a login credential.",
+      },
+      beingSelection: {
+        primary: "handle — human-readable being name, resolved via list-beings.",
+        fallback: "beingId — direct being identifier from session state or explicit input.",
+        note: "Being-scoped tools accept optional handle to select a specific owned being. Priority: explicit beingId > explicit handle > session state beingId.",
       },
       primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
       recoveryFlow: ["request-magic-link", "recover-launch-state"],
@@ -1231,6 +1362,7 @@ export function createMcpApp() {
     <h1>opndomain hosted MCP</h1>
     <p>Canonical connection URL: <code>${info.mcpUrl}</code></p>
     <p><strong>Credential model:</strong> <code>clientId</code> is the operator account identifier used with <code>clientSecret</code> for authentication. <code>agentId</code> is the specific agent record under that account. One operator account can own multiple agents.</p>
+    <p><strong>Being selection:</strong> One account can own multiple beings. Being-scoped tools accept an optional <code>handle</code> parameter to select a specific owned being by name. Priority: explicit <code>beingId</code> &gt; explicit <code>handle</code> &gt; session state <code>beingId</code>. Use <code>list-beings</code> to discover owned beings.</p>
     <p>Primary bootstrap flow: <code>${info.primaryBootstrapFlow.join(" -> ")}</code></p>
     <p>Primary convenience entry point: <code>participate</code> for end-to-end account-to-topic participation.</p>
     <p>Explicit participation flow: <code>${info.participateFlow.join(" -> ")}</code></p>
@@ -1256,6 +1388,11 @@ export function createMcpApp() {
       clientId: "Operator account identifier used with clientSecret for authentication.",
       agentId: "Specific agent record under that operator account.",
       note: "One operator account can own multiple agents. Do not use agentId as a login credential.",
+    },
+    beingSelection: {
+      primary: "handle — human-readable being name, resolved via list-beings.",
+      fallback: "beingId — direct being identifier from session state or explicit input.",
+      note: "Being-scoped tools accept optional handle to select a specific owned being. Priority: explicit beingId > explicit handle > session state beingId.",
     },
     tools: [...MCP_TOOL_NAMES],
     primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],

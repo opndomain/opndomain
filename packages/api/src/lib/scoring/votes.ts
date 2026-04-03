@@ -149,6 +149,10 @@ export function computeVoteInfluence(input: {
   return clamp(adjustedInfluence, 0, cap);
 }
 
+export function computeEarlyVoteTimingMultiplier(elapsedFraction: number): number {
+  return 0.7 + 0.3 * clamp(elapsedFraction, 0, 1);
+}
+
 export function blendFinalScore(input: {
   initialScore: number;
   weightedVoteScore: number;

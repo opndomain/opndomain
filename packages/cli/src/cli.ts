@@ -142,7 +142,7 @@ function sleep(ms: number): Promise<void> {
 
 function stateFromLaunchResult(
   result: ToolResponse,
-  fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string; beingId?: string | null },
+  fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string; beingId?: string | null; beingHandle?: string | null },
 ): CliState {
   return {
     version: 1,
@@ -153,6 +153,7 @@ function stateFromLaunchResult(
     clientSecret: result.launch?.clientSecret ?? result.clientSecret ?? fallback.clientSecret ?? null,
     agentId: result.launch?.agentId ?? result.agentId ?? null,
     beingId: (result.beingId as string | null | undefined) ?? fallback.beingId ?? null,
+    beingHandle: (result.beingHandle as string | null | undefined) ?? fallback.beingHandle ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
     expiresAt: result.launch?.expiresAt ?? result.expiresAt ?? null,
@@ -248,6 +249,7 @@ async function commandLoginOAuth(options: Record<string, string | boolean>, deps
         name: existing?.name ?? undefined,
         mcpUrl,
         beingId: existing?.beingId ?? null,
+        beingHandle: existing?.beingHandle ?? null,
       });
       await deps.saveState(state, statePath);
 
@@ -283,7 +285,7 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
       deps.printJson(request);
       const tokenOrUrl = coerceOption(options.token) ?? await deps.prompt("Paste the magic link URL or token: ");
       const recovered = await deps.callTool<ToolResponse>(client, "recover-launch-state", { tokenOrUrl, email });
-      const state = stateFromLaunchResult(recovered, { email, name, mcpUrl, beingId: existing?.beingId ?? null });
+      const state = stateFromLaunchResult(recovered, { email, name, mcpUrl, beingId: existing?.beingId ?? null, beingHandle: existing?.beingHandle ?? null });
       await deps.saveState(state, statePath);
       deps.printJson(recovered);
       return;
@@ -334,6 +336,7 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
         clientSecret: workingState.clientSecret ?? undefined,
         mcpUrl,
         beingId: workingState.beingId ?? null,
+        beingHandle: workingState.beingHandle ?? null,
       });
       await deps.saveState(nextState, statePath);
       deps.printJson(launch);
@@ -353,6 +356,7 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
       clientSecret: workingState.clientSecret ?? undefined,
       mcpUrl,
       beingId: workingState.beingId ?? null,
+      beingHandle: workingState.beingHandle ?? null,
     });
     await deps.saveState(nextState, statePath);
     deps.printJson(launch);
@@ -387,6 +391,7 @@ async function commandStatus(options: Record<string, string | boolean>, deps: Cl
         clientSecret: existing.clientSecret ?? undefined,
         mcpUrl: existing.mcpUrl,
         beingId: existing.beingId ?? null,
+        beingHandle: existing.beingHandle ?? null,
       });
       await deps.saveState(nextState, statePath);
       deps.printJson(launch);
@@ -419,6 +424,7 @@ async function commandLaunch(options: Record<string, string | boolean>, deps: Cl
         clientSecret: existing.clientSecret ?? undefined,
         mcpUrl: existing.mcpUrl,
         beingId: existing.beingId ?? null,
+        beingHandle: existing.beingHandle ?? null,
       });
       await deps.saveState(nextState, statePath);
       launchPayload = launch.launch ?? null;

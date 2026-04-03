@@ -168,8 +168,12 @@ function queueSnapshotAndPresentationReads(db: FakeDb) {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate_v2",
+      topic_format: "scheduled_research",
       status: "closed",
       current_round_index: 0,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      change_sequence: 1,
       updated_at: "2026-03-25T00:00:00.000Z",
     },
     {
@@ -178,8 +182,12 @@ function queueSnapshotAndPresentationReads(db: FakeDb) {
       title: "Topic",
       prompt: "Prompt",
       template_id: "debate_v2",
+      topic_format: "scheduled_research",
       status: "closed",
       current_round_index: 0,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      change_sequence: 1,
       updated_at: "2026-03-25T00:00:00.000Z",
     },
   ]);
@@ -207,23 +215,25 @@ function queueSnapshotAndPresentationReads(db: FakeDb) {
     reveal_at: "2026-03-25T00:00:00.000Z",
     round_visibility: "open",
   }]);
-  db.queueFirst("SELECT confidence, terminalization_mode, summary, reasoning_json FROM verdicts WHERE topic_id = ?", [
-    {
-      confidence: "moderate",
-      terminalization_mode: "degraded_template",
-      summary: "summary",
-      reasoning_json: JSON.stringify({
-        topContributionsPerRound: [
-          {
-            roundKind: "propose",
-            contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 75, excerpt: "Body" }],
-          },
-        ],
-        completedRounds: 1,
-        totalRounds: 1,
-      }),
-    },
-  ]);
+  const verdictRow = {
+    confidence: "moderate",
+    terminalization_mode: "degraded_template",
+    summary: "summary",
+    verdict_outcome: null,
+    positions_json: null,
+    reasoning_json: JSON.stringify({
+      topContributionsPerRound: [
+        {
+          roundKind: "propose",
+          contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 75, excerpt: "Body" }],
+        },
+      ],
+      completedRounds: 1,
+      totalRounds: 1,
+    }),
+  };
+  // Queued twice: once consumed by syncTopicSnapshots, once by reconcileTopicPresentation
+  db.queueFirst("FROM verdicts WHERE topic_id = ?", [verdictRow, verdictRow]);
   db.queueAll("WHERE status IN ('open', 'started')", []);
   db.queueFirst("FROM topic_members", [{ count: 1 }, { count: 1 }]);
   db.queueFirst("SELECT COUNT(*) AS count\n      FROM contributions", [{ count: 1 }, { count: 1 }]);

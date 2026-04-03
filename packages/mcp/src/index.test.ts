@@ -789,6 +789,190 @@ async function testStartedTopicContribution() {
   assertOk(fetcher.requests.some((request) => request.pathname === "/v1/topics/top_started/contributions"));
 }
 
+async function testExplicitHandleResolvesExistingOwnedBeing() {
+  const { env, kv, fetcher } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([
+        { id: "bng_alpha", handle: "agent-alpha" },
+        { id: "bng_beta", handle: "agent-beta" },
+      ]);
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_alpha",
+    beingHandle: "agent-alpha",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  const result = structured(await createToolHandlers(env)["ensure-being"]({
+    clientId: "cli_1",
+    handle: "agent-beta",
+  }));
+  assertEqual(result.beingId, "bng_beta");
+  // created=true because beingId changed (from bng_alpha to bng_beta), even though no new being was created via API
+  assertEqual(result.created, true);
+  // Session state should be rebound to agent-beta
+  const persisted = await kv.get(mcpSessionKey("cli_1"), "json") as any;
+  assertEqual(persisted.beingId, "bng_beta");
+  assertEqual(persisted.beingHandle, "agent-beta");
+  // No POST to /v1/beings — resolved from existing owned beings
+  assertEqual(fetcher.requests.filter((r) => r.method === "POST" && r.pathname === "/v1/beings").length, 0);
+}
+
+async function testExplicitHandleCreatesWhenNotOwned() {
+  const { env, kv, fetcher } = buildEnv(({ method, url, body }) => {
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([{ id: "bng_alpha", handle: "agent-alpha" }]);
+    }
+    if (method === "POST" && url.pathname === "/v1/beings") {
+      assertEqual(body.handle, "agent-new");
+      return jsonResponse({ id: "bng_new", handle: "agent-new" });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_alpha",
+    beingHandle: "agent-alpha",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  const result = structured(await createToolHandlers(env)["ensure-being"]({
+    clientId: "cli_1",
+    handle: "agent-new",
+  }));
+  assertEqual(result.beingId, "bng_new");
+  assertEqual(result.created, true);
+  const persisted = await kv.get(mcpSessionKey("cli_1"), "json") as any;
+  assertEqual(persisted.beingId, "bng_new");
+  assertEqual(persisted.beingHandle, "agent-new");
+}
+
+async function testHandleResolutionInReadOnlyToolRejectsUnknownHandle() {
+  const { env, kv } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([{ id: "bng_alpha", handle: "agent-alpha" }]);
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_alpha",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  // get-topic-context with unknown handle should fail (read-only tools don't create)
+  await assertRejects(
+    () => createToolHandlers(env)["get-topic-context"]({
+      topicId: "top_1",
+      clientId: "cli_1",
+      handle: "nonexistent",
+    }),
+    /No owned being found with handle "nonexistent"/,
+  );
+}
+
+async function testHandleResolutionRebindsMcpSession() {
+  const { env, kv } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([
+        { id: "bng_alpha", handle: "agent-alpha" },
+        { id: "bng_beta", handle: "agent-beta" },
+      ]);
+    }
+    if (method === "GET" && url.pathname === "/v1/topics/top_1/context") {
+      return jsonResponse({ topicId: "top_1", currentRound: null });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_alpha",
+    beingHandle: "agent-alpha",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  // Explicitly switch to agent-beta via handle in get-topic-context
+  const result = structured(await createToolHandlers(env)["get-topic-context"]({
+    topicId: "top_1",
+    clientId: "cli_1",
+    handle: "agent-beta",
+  }));
+  assertEqual(result.topicId, "top_1");
+  // MCP session should now be rebound to agent-beta
+  const persisted = await kv.get(mcpSessionKey("cli_1"), "json") as any;
+  assertEqual(persisted.beingId, "bng_beta");
+  assertEqual(persisted.beingHandle, "agent-beta");
+}
+
+async function testNoExplicitHandleReusesStateBeing() {
+  const { env, kv, fetcher } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([{ id: "bng_alpha", handle: "agent-alpha" }]);
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_alpha",
+    beingHandle: "agent-alpha",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  // No explicit handle: should reuse state.beingId without creating
+  const result = structured(await createToolHandlers(env)["ensure-being"]({
+    clientId: "cli_1",
+  }));
+  assertEqual(result.beingId, "bng_alpha");
+  assertEqual(result.created, false);
+  // No POST to /v1/beings
+  assertEqual(fetcher.requests.filter((r) => r.method === "POST" && r.pathname === "/v1/beings").length, 0);
+}
+
+async function testBeingHandleBackfilledOnExistingState() {
+  const { env, kv } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([{ id: "bng_1", handle: "existing-handle" }]);
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  // State without beingHandle (legacy)
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_1",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  const result = structured(await createToolHandlers(env)["ensure-being"]({
+    clientId: "cli_1",
+  }));
+  assertEqual(result.beingId, "bng_1");
+  assertEqual(result.created, false);
+  // beingHandle should be backfilled
+  const persisted = await kv.get(mcpSessionKey("cli_1"), "json") as any;
+  assertEqual(persisted.beingHandle, "existing-handle");
+}
+
 export async function runAllTests() {
   await testStableToolsList();
   await testDiscoveryMetadata();
@@ -813,4 +997,10 @@ export async function runAllTests() {
   await testStartedTopicNotJoinable();
   await testStartedTopicAwaitingRound();
   await testStartedTopicContribution();
+  await testExplicitHandleResolvesExistingOwnedBeing();
+  await testExplicitHandleCreatesWhenNotOwned();
+  await testHandleResolutionInReadOnlyToolRejectsUnknownHandle();
+  await testHandleResolutionRebindsMcpSession();
+  await testNoExplicitHandleReusesStateBeing();
+  await testBeingHandleBackfilledOnExistingState();
 }

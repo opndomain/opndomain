@@ -116,6 +116,13 @@ type VoteTargetDetailRow = {
   being_handle: string;
 };
 
+type OwnVoteRow = {
+  id: string;
+  contribution_id: string;
+  direction: number;
+  created_at: string;
+};
+
 type PendingRoundScheduleRow = {
   id: string;
   sequence_index: number;
@@ -349,11 +356,12 @@ function resolveFormatDefaults(input: {
     badRequest("invalid_topic_format_config", "Scheduled Research topics cannot set rolling quorum controls.");
   }
 
+  const startsAt = input.startsAt ?? nowIso(addMinutes(new Date(), 30));
   return {
     minDistinctParticipants: DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
     countdownSeconds: null,
-    startsAt: input.startsAt ?? nowIso(addMinutes(new Date(), 30)),
-    joinUntil: input.joinUntil ?? nowIso(addMinutes(new Date(), 15)),
+    startsAt,
+    joinUntil: input.joinUntil ?? nowIso(addMinutes(new Date(startsAt), -5)),
   };
 }
 
@@ -1023,6 +1031,42 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
           ...Array.from(ownedBeingIds),
         )
       : [];
+  const ownVoteRows =
+    currentRound && beingId
+      ? await allRows<OwnVoteRow>(
+          env.DB,
+          `
+            SELECT id, contribution_id, direction, created_at
+            FROM votes
+            WHERE round_id = ? AND voter_being_id = ?
+          `,
+          currentRound.id,
+          beingId,
+        )
+      : [];
+  const ownVoteStatus = ownVoteRows.map((row) => ({
+    voteId: row.id,
+    contributionId: row.contribution_id,
+    direction: row.direction,
+    createdAt: row.created_at,
+  }));
+  const votingObligation = parsedCurrentRoundConfig
+    ? (() => {
+        const required = Boolean(parsedCurrentRoundConfig.voteRequired);
+        const minVotesPerActor = Number(parsedCurrentRoundConfig.minVotesPerActor ?? 0);
+        const votesCast = ownVoteRows.length;
+        const fulfilled = !required || votesCast >= minVotesPerActor;
+        return {
+          required,
+          minVotesPerActor,
+          votesCast,
+          fulfilled,
+          dropWarning: required && !fulfilled
+            ? "You will be dropped if you do not vote before the round deadline."
+            : null,
+        };
+      })()
+    : null;
   const currentRoundConfig = parsedCurrentRoundConfig
     ? {
         roundKind: currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
@@ -1097,6 +1141,8 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     })),
     currentRoundConfig,
     voteTargets,
+    ownVoteStatus,
+    votingObligation,
   };
 }
 

@@ -812,4 +812,154 @@ describe("topic lifecycle sweeps", () => {
     );
     assert.deepEqual(quality.mutatedTopicIds, ["top_quality"]);
   });
+
+  it("drops non-voters on round completion", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [
+      {
+        id: "rnd_v1",
+        topic_id: "top_vote",
+        domain_id: "dom_1",
+        sequence_index: 1,
+        status: "active",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:30:00.000Z",
+        reveal_at: "2026-03-24T11:30:00.000Z",
+        cadence_preset: null,
+        config_json: JSON.stringify({
+          completionStyle: "aggressive",
+          visibility: "open",
+          roundDurationMinutes: 30,
+          voteRequired: true,
+          minVotesPerActor: 1,
+        }),
+      },
+    ]);
+    db.queueAll("FROM contributions c", [
+      { id: "cnt_1", being_id: "bng_1", visibility: "normal", final_score: 80, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_2", being_id: "bng_2", visibility: "normal", final_score: 70, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_3", being_id: "bng_3", visibility: "normal", final_score: 65, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+    ]);
+    // Active members for contribution-drop check
+    db.queueAll("FROM topic_members\n      WHERE topic_id = ? AND status = 'active'", [
+      { being_id: "bng_1" },
+      { being_id: "bng_2" },
+    ]);
+    // Contributing members — both contributed, so no contribution drops
+    db.queueAll("SELECT DISTINCT being_id\n        FROM contributions", [
+      { being_id: "bng_1" },
+      { being_id: "bng_2" },
+    ]);
+    // Active members for vote-drop check (post contribution-drop)
+    db.queueAll("FROM topic_members WHERE topic_id = ? AND status = 'active'", [
+      { being_id: "bng_1" },
+      { being_id: "bng_2" },
+    ]);
+    // Vote counts — only bng_1 voted
+    db.queueAll("FROM votes WHERE round_id = ? GROUP BY voter_being_id", [
+      { voter_being_id: "bng_1", vote_count: 1 },
+    ]);
+    // Rounds for advance
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
+      {
+        id: "rnd_v1",
+        topic_id: "top_vote",
+        sequence_index: 1,
+        status: "completed",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:30:00.000Z",
+        reveal_at: "2026-03-24T11:30:00.000Z",
+        config_json: JSON.stringify({ visibility: "open", roundDurationMinutes: 30 }),
+      },
+    ]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+      TOPIC_STATE_DO: {
+        idFromName: () => ({}),
+        get: () => ({
+          fetch: async () => new Response(JSON.stringify({ flushed: true, remaining: 0 })),
+        }),
+      },
+    } as never;
+
+    await sweepTopicLifecycle(env, {
+      cron: "* * * * *",
+      now: new Date("2026-03-24T11:30:00.000Z"),
+    });
+
+    const voteDropUpdate = db.runs.find(
+      (run) => run.sql.includes("SET status = 'dropped'") && run.bindings.includes("missed_round_vote"),
+    );
+    assert.ok(voteDropUpdate, "expected a vote-drop UPDATE");
+    assert.deepEqual(voteDropUpdate?.bindings, [
+      "2026-03-24T11:30:00.000Z",
+      "2026-03-24T11:30:00.000Z",
+      "missed_round_vote",
+      "top_vote",
+      "bng_2",
+    ]);
+    const incrementUpdate = db.runs.filter((run) => run.sql.includes("UPDATE beings SET drop_count"));
+    assert.ok(incrementUpdate.some((run) => run.bindings.includes("bng_2")));
+  });
+
+  it("vote floor gate blocks early completion when a member has not voted", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [
+      {
+        id: "rnd_gate",
+        topic_id: "top_gate",
+        domain_id: "dom_1",
+        sequence_index: 1,
+        status: "active",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T12:00:00.000Z",
+        reveal_at: "2026-03-24T11:00:00.000Z",
+        cadence_preset: null,
+        config_json: JSON.stringify({
+          completionStyle: "aggressive",
+          visibility: "open",
+          roundDurationMinutes: 60,
+          voteRequired: true,
+          minVotesPerActor: 1,
+        }),
+      },
+    ]);
+    // Vote floor gate queries — single-line SQL in shouldCompleteRound
+    db.queueAll("SELECT being_id FROM topic_members WHERE topic_id = ?", [
+      { being_id: "bng_1" },
+      { being_id: "bng_2" },
+    ]);
+    db.queueAll("FROM votes WHERE round_id = ? GROUP BY voter_being_id", [
+      { voter_being_id: "bng_1", vote_count: 1 },
+    ]);
+    // Contributions — enough for aggressive early completion
+    db.queueAll("FROM contributions c", [
+      { id: "cnt_1", being_id: "bng_1", visibility: "normal", final_score: 80, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_2", being_id: "bng_2", visibility: "normal", final_score: 70, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_3", being_id: "bng_3", visibility: "normal", final_score: 65, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+    ]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      cron: "* * * * *",
+      now: new Date("2026-03-24T11:15:00.000Z"),
+    });
+
+    // Round should NOT complete early because bng_2 has not voted
+    assert.deepEqual(result.mutatedTopicIds, []);
+    assert.equal(
+      db.runs.some((run) => run.sql.includes("UPDATE rounds SET status = 'completed'")),
+      false,
+    );
+  });
 });

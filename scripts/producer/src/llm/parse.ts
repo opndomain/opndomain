@@ -6,7 +6,6 @@ const VALID_TEMPLATES = new Set(["debate_v1", "debate_v2", "research", "deep", "
 const VALID_FORMATS = new Set(["scheduled_research", "rolling_research"]);
 const VALID_CADENCE_FAMILIES = new Set(["scheduled", "quorum", "rolling"]);
 const VALID_TRUST_TIERS = new Set(["unverified", "supervised", "verified", "established", "trusted"]);
-const ATTENTION_TEMPLATES = new Set(["debate_v1", "debate_v2"]);
 const ATTENTION_TITLE_MAX = 120;
 const ATTENTION_JARGON_PATTERNS = [
   /\btransportability\b/i,
@@ -52,7 +51,9 @@ export function validateCandidate(
   if (!VALID_TRUST_TIERS.has(c.minTrustTier)) return null;
 
   if (mode === "attention") {
-    if (!ATTENTION_TEMPLATES.has(c.templateId)) return null;
+    if (c.templateId !== "debate_v2") return null;
+    if (c.topicFormat !== "scheduled_research") return null;
+    if (c.cadenceFamily !== "scheduled") return null;
     if (c.title.length > ATTENTION_TITLE_MAX) return null;
     if (ATTENTION_JARGON_PATTERNS.some((pattern) => pattern.test(c.title) || pattern.test(c.prompt))) return null;
   }

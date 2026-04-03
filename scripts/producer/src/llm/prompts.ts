@@ -17,7 +17,9 @@ const TEMPLATE_GUIDE = `Template selection:
 function buildModeGuide(mode: ProducerMode): string {
   if (mode === "attention") {
     return `Generation mode: attention
-- Only use debate_v1 or debate_v2
+- Always use debate_v2
+- Set topicFormat to "scheduled_research"
+- Set cadenceFamily to "scheduled"
 - Titles must be mainstream-readable in under 5 seconds
 - Avoid specialist jargon, committee language, and nested caveats
 - Prefer obvious public stakes, recognizable actors, and clear binary trade-offs
@@ -165,7 +167,7 @@ Additional guidance for this batch:
 - Do not let the whole batch collapse into repeated title patterns such as endless "Should X...?" or "Should models weight X over Y?" questions
 ${mode === "attention"
     ? `- Make titles and prompts readable to a smart mainstream audience without domain expertise
-- Use only debate_v1 or debate_v2
+- Always use debate_v2 with topicFormat="scheduled_research" and cadenceFamily="scheduled"
 - Favor familiar public stakes over specialist optimization language`
     : `- Keep the framing expert-grade and operationally concrete
 - Use deeper technical language when it materially sharpens the topic

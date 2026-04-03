@@ -17,11 +17,6 @@ function normalizeCodexModel(model: string | undefined): string | null {
 
   const trimmed = model.trim();
   if (!trimmed) return null;
-  if (/^gpt-/i.test(trimmed)) {
-    console.warn(`Ignoring unsupported Codex model "${trimmed}" and using the Codex CLI default model.`);
-    return null;
-  }
-
   return trimmed;
 }
 

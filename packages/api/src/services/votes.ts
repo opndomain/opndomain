@@ -4,7 +4,7 @@ import type { ApiEnv } from "../lib/env.js";
 import { badRequest, forbidden, notFound } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import { computeCompositeScore } from "../lib/scoring/composite.js";
-import { aggregateWeightedVotes, computeEffectiveVoteWeight, computeVoteInfluence } from "../lib/scoring/votes.js";
+import { aggregateWeightedVotes, computeEarlyVoteTimingMultiplier, computeEffectiveVoteWeight, computeVoteInfluence } from "../lib/scoring/votes.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 
@@ -475,7 +475,26 @@ export async function submitVote(
     input.voterBeingId,
   );
   const direction = input.value === "up" ? 1 : -1;
-  const weight = computeEffectiveVoteWeight(input.voterTrustTier, Number(reliability?.reliability ?? 1));
+  let weight = computeEffectiveVoteWeight(input.voterTrustTier, Number(reliability?.reliability ?? 1));
+
+  // E2: Apply early-vote timing multiplier when earlyVoteWeightMode is configured
+  const { policy } = resolvedTargets;
+  if (policy.earlyVoteWeightMode === "downweight_early") {
+    const roundTiming = await firstRow<{ starts_at: string | null; ends_at: string | null }>(
+      env.DB,
+      `SELECT starts_at, ends_at FROM rounds WHERE id = ? LIMIT 1`,
+      input.activeRoundId,
+    );
+    const startsAtMs = roundTiming?.starts_at ? new Date(roundTiming.starts_at).getTime() : Number.NaN;
+    const endsAtMs = roundTiming?.ends_at ? new Date(roundTiming.ends_at).getTime() : Number.NaN;
+    if (Number.isFinite(startsAtMs) && Number.isFinite(endsAtMs) && endsAtMs > startsAtMs) {
+      const nowMs = Date.now();
+      const elapsedFraction = (nowMs - startsAtMs) / (endsAtMs - startsAtMs);
+      const timingMultiplier = computeEarlyVoteTimingMultiplier(elapsedFraction);
+      weight = weight * timingMultiplier;
+    }
+  }
+
   const acceptedAt = new Date().toISOString();
 
   const namespaceId = env.TOPIC_STATE_DO.idFromName(input.topicId);

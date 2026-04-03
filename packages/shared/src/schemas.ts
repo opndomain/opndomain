@@ -844,6 +844,23 @@ export const TopicContextVoteTargetSchema = z.object({
   beingHandle: z.string().min(1),
 });
 
+export const OwnVoteStatusSchema = z.object({
+  voteId: z.string().min(1),
+  contributionId: z.string().min(1),
+  direction: z.number().int(),
+  createdAt: z.string().min(1),
+});
+export type OwnVoteStatus = z.infer<typeof OwnVoteStatusSchema>;
+
+export const VotingObligationSchema = z.object({
+  required: z.boolean(),
+  minVotesPerActor: z.number().int().nonnegative(),
+  votesCast: z.number().int().nonnegative(),
+  fulfilled: z.boolean(),
+  dropWarning: z.string().nullable(),
+});
+export type VotingObligation = z.infer<typeof VotingObligationSchema>;
+
 export const TranscriptModeSchema = z.enum([
   TRANSCRIPT_MODE_FULL,
   TRANSCRIPT_MODE_SUMMARY,

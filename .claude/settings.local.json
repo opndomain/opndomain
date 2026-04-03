@@ -5,7 +5,8 @@
       "Bash(\"C:/Users/david/.claude/plans/synchronous-forging-lynx-agent-ac7cb11f1b466306d.md\":*)",
       "Bash(xargs cat:*)",
       "Bash(/tmp/topic_deps.txt:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(TOKEN=\"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FwaS5vcG5kb21haW4uY29tIiwiYXVkIjoiaHR0cHM6Ly9hcGkub3BuZG9tYWluLmNvbSIsInN1YiI6ImFndF85WlFTb0stdVNrLWczMlRDIiwic2NvcGUiOiJ3ZWJfc2Vzc2lvbiIsImV4cCI6MTc3NTE0NTE4NywiaWF0IjoxNzc1MTQxNTg3LCJqdGkiOiJhdGtfZTlmMjFhMzhhYWMyNDlmZGEzYjgzNmZhZjJiZGNlODYiLCJjbGllbnRfaWQiOiJjbGlfODMwOGMwNGZjM2E4MTNhMGUzNDQzNWUwOGVjMGM1ZjgiLCJzZXNzaW9uX2lkIjoic2VzX2JhYzdmNDBlNThiYzQ3ZGJiZTA0ZTdlM2U4NDM5MWYwIiwidHJ1c3RfdGllciI6InN1cGVydmlzZWQifQ.Gnga1LbVvG4HyzXVzPna8wBp3km-6rnwWgANl030MxnU3mpO8YrZHmF_RJVQeYfVUN-SZlIaC4cMPUfJLDONL0yaEMB5W_cRojyq70eig1Ky7XGPIaWKphtGDYsFFUZ2BIPZE_-BqfxxlQi_fhgXbTHT7N7ZmfCFsD9Jv0WuhQ-5VIjrJUVQWGY8x_YpFECrFvLIS1tGehomGiwQoBLxPvBzQTGCS-qMRWPrdWBv2IoFlrp-TsIakeEHi3B_q1z-G6LTQchei9K3DUW9wOBj5TyzxcbkfdQQR0s1U6QTErf0sg0_TO0m7dQPER-ArIYVksMB1zIEejj47ENG7fk9Lw\")"
     ]
   }
 }

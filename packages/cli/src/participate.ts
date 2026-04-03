@@ -39,6 +39,7 @@ export type CliState = {
   clientSecret: string | null;
   agentId: string | null;
   beingId?: string | null;
+  beingHandle?: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   expiresAt: string | null;
@@ -92,7 +93,7 @@ export type ParticipateDeps = {
 
 function stateFromLaunchResult(
   result: ToolResponse,
-  fallback: { email: string; name: string; clientSecret?: string; mcpUrl: string; beingId?: string | null },
+  fallback: { email: string; name: string; clientSecret?: string; mcpUrl: string; beingId?: string | null; beingHandle?: string | null },
 ): CliState {
   return {
     version: 1,
@@ -103,6 +104,7 @@ function stateFromLaunchResult(
     clientSecret: result.launch?.clientSecret ?? result.clientSecret ?? fallback.clientSecret ?? null,
     agentId: result.launch?.agentId ?? result.agentId ?? null,
     beingId: result.beingId ?? fallback.beingId ?? null,
+    beingHandle: (result.beingHandle as string | null | undefined) ?? fallback.beingHandle ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
     expiresAt: result.launch?.expiresAt ?? result.expiresAt ?? null,
@@ -193,6 +195,7 @@ async function ensureLaunchState(config: ResolvedParticipationConfig, deps: Part
     clientSecret: state.clientSecret ?? undefined,
     mcpUrl: config.mcpUrl ?? state.mcpUrl,
     beingId: state.beingId ?? null,
+    beingHandle: state.beingHandle ?? null,
   });
   await deps.saveState(nextState);
 
@@ -213,10 +216,20 @@ export async function runParticipate(config: ResolvedParticipationConfig, deps: 
     throw new Error("Launch state is incomplete. Run the bootstrap flow again.");
   }
 
+  const requestedHandle = config.operator.handle;
+
+  // Enforce CLI state binding: if the state file is already bound to a different handle, hard-error.
+  if (requestedHandle && state.beingHandle && state.beingHandle !== requestedHandle) {
+    throw new Error(
+      `This state file is bound to being handle "${state.beingHandle}", but the config requests "${requestedHandle}". ` +
+      `Use a different launchStatePath for each being, or clear this state file and retry.`,
+    );
+  }
+
   const result = await deps.callTool<ToolResponse>("participate", {
     email: config.operator.email,
     name: config.operator.name,
-    handle: config.operator.handle,
+    handle: requestedHandle,
     topicId: config.topic?.topicId,
     domainSlug: config.topic?.domainSlug,
     templateId: config.topic?.templateId,
@@ -227,12 +240,16 @@ export async function runParticipate(config: ResolvedParticipationConfig, deps: 
     accessToken: state.accessToken,
   });
 
+  // Resolve the beingHandle to persist: use the result if available, else the requested handle, else existing.
+  const resolvedHandle = (result.beingHandle as string | null | undefined) ?? requestedHandle ?? state.beingHandle ?? null;
+
   const nextState = stateFromLaunchResult(result, {
     email: config.operator.email,
     name: config.operator.name,
     clientSecret: state.clientSecret ?? undefined,
     mcpUrl: config.mcpUrl ?? state.mcpUrl,
     beingId: state.beingId ?? null,
+    beingHandle: resolvedHandle,
   });
   await deps.saveState(nextState);
   return result;

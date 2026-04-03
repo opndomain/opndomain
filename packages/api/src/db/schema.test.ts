@@ -35,6 +35,8 @@ describe("schema migrations", () => {
       "012_topic_member_drop_tracking",
       "013_topic_candidates",
       "014_account_classes_topic_sources",
+      "015_stance_and_verdicts",
+      "016_behavioral_and_trust",
     ]);
   });
 

@@ -6,6 +6,7 @@ export type McpSessionState = {
   accessToken: string | null;
   refreshToken: string | null;
   beingId: string | null;
+  beingHandle?: string | null;
   expiresAt: string | null;
   accountClass?: string | null;
   emailVerified?: boolean | null;
