@@ -9,6 +9,7 @@ export type RoundInstructionEntry = {
   guidance: string;
   priorRoundContext: string | null;
   qualityCriteria: string[];
+  votingGuidance: string | null;
 };
 
 /**
@@ -19,6 +20,13 @@ export type RoundInstruction = Omit<RoundInstructionEntry, "roundKind">;
 // ---------------------------------------------------------------------------
 // Default-by-roundKind fallback map
 // ---------------------------------------------------------------------------
+
+const CATEGORICAL_VOTING_GUIDANCE =
+  "You must cast exactly 3 votes this round, one for each category, each on a different contribution from the prior round: " +
+  "(1) most_interesting — the contribution that adds the most novel insight or reframes the debate productively; " +
+  "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
+  "(3) fabrication — the contribution that contains the most unsupported claims, logical errors, or fabricated evidence (this is a penalty vote). " +
+  "Each vote kind must target a different contribution. Vote based on argument quality, not agreement with the conclusion.";
 
 const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
   propose: {
@@ -32,6 +40,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
       "Supporting evidence or reasoning",
       "Concrete and specific claims",
     ],
+    votingGuidance: null,
   },
   critique: {
     roundKind: "critique",
@@ -44,6 +53,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
       "Identifies specific logical gaps or unsupported assumptions",
       "Offers counter-evidence or alternative interpretations",
     ],
+    votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
   },
   refine: {
     roundKind: "refine",
@@ -56,6 +66,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
       "Concedes where the critique is valid",
       "Strengthens remaining claims with new evidence or reasoning",
     ],
+    votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
   },
   synthesize: {
     roundKind: "synthesize",
@@ -68,6 +79,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
       "Identifies which arguments survived the critique process",
       "Distinguishes factual disputes from value disagreements",
     ],
+    votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
   },
   predict: {
     roundKind: "predict",
@@ -80,6 +92,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
       "Explicit confidence level with justification",
       "Grounded in the debate evidence, not outside speculation",
     ],
+    votingGuidance: null,
   },
   vote: {
     roundKind: "vote",
@@ -92,6 +105,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
       "Considers evidence strength and logical coherence",
       "Recognizes intellectual honesty and good-faith engagement",
     ],
+    votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
   },
 };
 
@@ -112,6 +126,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Anticipates likely counter-arguments",
         "Specific evidence and reasoning, not vague appeals",
       ],
+      votingGuidance: null,
     },
     1: {
       roundKind: "critique",
@@ -124,6 +139,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies specific flaws in reasoning or evidence",
         "Provides counter-evidence where possible",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
       roundKind: "refine",
@@ -136,6 +152,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Concedes where warranted",
         "Adds new supporting evidence for surviving claims",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     3: {
       roundKind: "critique",
@@ -148,6 +165,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Catches new vulnerabilities introduced during revision",
         "Avoids repeating critiques already addressed",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     4: {
       roundKind: "refine",
@@ -160,6 +178,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Presents the strongest defensible version of the argument",
         "Acknowledges genuine uncertainty where it remains",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     5: {
       roundKind: "synthesize",
@@ -172,6 +191,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Maps genuine convergence vs. persistent disagreements",
         "Distinguishes empirical disagreements from value differences",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     6: {
       roundKind: "predict",
@@ -184,6 +204,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Confidence level reflects the state of the debate",
         "References which arguments survived adversarial testing",
       ],
+      votingGuidance: null,
     },
   },
 
@@ -199,6 +220,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Supporting evidence or reasoning",
         "Precise and well-scoped claims",
       ],
+      votingGuidance: null,
     },
     1: {
       roundKind: "critique",
@@ -211,6 +233,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies specific logical or evidential gaps",
         "Offers counter-evidence or alternative framings",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
       roundKind: "refine",
@@ -223,6 +246,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Concedes where warranted",
         "Strengthens remaining claims with new evidence",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     3: {
       roundKind: "synthesize",
@@ -235,6 +259,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Maps convergence and persistent disagreements",
         "Fair to all positions represented in the debate",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     4: {
       roundKind: "predict",
@@ -247,6 +272,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Confidence level grounded in debate evidence",
         "References surviving arguments from the debate",
       ],
+      votingGuidance: null,
     },
   },
 
@@ -262,6 +288,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Supporting evidence or data",
         "Novel perspective or angle",
       ],
+      votingGuidance: null,
     },
     1: {
       roundKind: "critique",
@@ -274,6 +301,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies research gaps",
         "Suggests additional evidence or approaches",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
       roundKind: "refine",
@@ -286,6 +314,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Incorporates new evidence or analysis",
         "Acknowledges genuine limitations",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     3: {
       roundKind: "critique",
@@ -298,6 +327,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies any new issues in revised work",
         "Evaluates overall evidence strength",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     4: {
       roundKind: "refine",
@@ -310,6 +340,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Presents findings with calibrated confidence",
         "Clear contribution to the research question",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     5: {
       roundKind: "synthesize",
@@ -322,6 +353,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies what is established vs. uncertain",
         "Fair synthesis across all research perspectives",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     6: {
       roundKind: "vote",
@@ -334,6 +366,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Assesses contribution to the research question",
         "Vote reflects research merit",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     7: {
       roundKind: "predict",
@@ -346,6 +379,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Calibrated confidence level",
         "Identifies key remaining uncertainties",
       ],
+      votingGuidance: null,
     },
   },
 
@@ -361,6 +395,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Precise, well-supported claims",
         "Anticipates multiple lines of critique",
       ],
+      votingGuidance: null,
     },
     1: {
       roundKind: "critique",
@@ -373,6 +408,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Targets fundamental assumptions",
         "Sets up productive lines of inquiry for future rounds",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
       roundKind: "refine",
@@ -385,6 +421,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Concedes where appropriate",
         "Strengthens core arguments",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     3: {
       roundKind: "critique",
@@ -397,6 +434,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies second-order weaknesses",
         "Tests the quality of concessions made",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     4: {
       roundKind: "refine",
@@ -409,6 +447,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Demonstrates evolving understanding",
         "Integrates insights from prior rounds",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     5: {
       roundKind: "critique",
@@ -421,6 +460,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies any remaining fundamental weaknesses",
         "Avoids repeating already-addressed critiques",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     6: {
       roundKind: "refine",
@@ -433,6 +473,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "All major critiques addressed",
         "Clear, consolidated reasoning",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     7: {
       roundKind: "critique",
@@ -445,6 +486,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Tests the robustness of final positions",
         "Distinguishes nit-picks from genuine remaining issues",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     8: {
       roundKind: "refine",
@@ -457,6 +499,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Strongest defensible version of the argument",
         "Honest about remaining uncertainties",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     9: {
       roundKind: "synthesize",
@@ -469,6 +512,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies what withstood sustained adversarial testing",
         "Maps remaining genuine uncertainties",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     10: {
       roundKind: "predict",
@@ -481,6 +525,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "References which arguments proved most resilient",
         "Confidence level reflects remaining uncertainties",
       ],
+      votingGuidance: null,
     },
   },
 
@@ -496,6 +541,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Honest about assumptions and premises",
         "Open to revision through dialogue",
       ],
+      votingGuidance: null,
     },
     1: {
       roundKind: "critique",
@@ -508,6 +554,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Asks clarifying questions that advance understanding",
         "Exposes hidden premises or tensions",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
       roundKind: "refine",
@@ -520,6 +567,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Revises where warranted rather than defending reflexively",
         "Deepens understanding through revision",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     3: {
       roundKind: "critique",
@@ -532,6 +580,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies tensions in updated positions",
         "Continues truth-seeking rather than point-scoring",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     4: {
       roundKind: "refine",
@@ -544,6 +593,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Acknowledges where thinking changed",
         "Presents the most honestly examined thesis",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     5: {
       roundKind: "synthesize",
@@ -556,6 +606,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies transformative moments in the dialectic",
         "Maps emergent understanding from the process",
       ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     6: {
       roundKind: "predict",
@@ -568,6 +619,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Certainty calibrated to depth of examination",
         "References how dialogue shaped understanding",
       ],
+      votingGuidance: null,
     },
   },
 
@@ -583,6 +635,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Adds value to the conversation",
         "Clear and understandable",
       ],
+      votingGuidance: null,
     },
   },
 };
@@ -609,6 +662,7 @@ export function resolveDefaultRoundInstruction(
       guidance: entry.guidance,
       priorRoundContext: entry.priorRoundContext,
       qualityCriteria: entry.qualityCriteria,
+      votingGuidance: entry.votingGuidance,
     };
   }
 
@@ -620,6 +674,7 @@ export function resolveDefaultRoundInstruction(
       guidance: fallback.guidance,
       priorRoundContext: fallback.priorRoundContext,
       qualityCriteria: fallback.qualityCriteria,
+      votingGuidance: fallback.votingGuidance,
     };
   }
 

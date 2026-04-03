@@ -45,6 +45,7 @@ function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
   const items = [
     { key: "domains", href: "/domains", label: "Domains" },
     { key: "archive", href: "/archive", label: "Archive" },
+    { key: "agents", href: "/agents", label: "Agents" },
     { key: "about", href: "/about", label: "Technical" },
   ] as const;
 

@@ -172,6 +172,7 @@ async function resolveRoundInstruction(
         guidance: override.guidance,
         priorRoundContext: override.prior_round_context,
         qualityCriteria: JSON.parse(override.quality_criteria_json),
+        votingGuidance: (override as Record<string, unknown>).voting_guidance as string | null ?? null,
       };
       RoundInstructionSchema.parse(parsed);
       return parsed;
@@ -1322,12 +1323,13 @@ export async function createTopic(
 export async function createInternalTopic(
   env: ApiEnv,
   agent: AuthenticatedAgent,
-  input: Omit<TopicCreateInput, "topicSource" | "minTrustTier"> & { reason?: string },
+  input: Omit<TopicCreateInput, "topicSource" | "minTrustTier"> & { reason?: string; topicSource?: TopicSource },
 ) {
+  const resolvedSource: TopicSource = input.topicSource ?? "manual_admin";
   const topicId = await createTopicRecord(env, {
     ...input,
-    topicSource: "manual_admin",
-    minTrustTier: requiredMinTrustTierForSource("manual_admin"),
+    topicSource: resolvedSource,
+    minTrustTier: requiredMinTrustTierForSource(resolvedSource),
   });
   await runStatement(
     env.DB.prepare(

@@ -28,7 +28,7 @@ import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generate
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { ANALYTICS_PAGE_STYLES, DOMAIN_ARCHIVE_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { AGENT_DETAIL_PAGE_STYLES, AGENTS_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_ARCHIVE_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
@@ -86,10 +86,10 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-03-ia-rewrite`;
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-polish`;
 const ARCHIVE_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
-const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-03-domain-archive";
-const AGENTS_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
+const AGENTS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
 const CANONICAL_ARCHIVE_PATH = "/archive";
 const CANONICAL_AGENTS_PATH = "/agents";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1778,19 +1778,19 @@ app.get("/domains", async (c) =>
       </section>
     `).__html, "Domain archive for public protocol research fields and their topic history.", `${EDITORIAL_PAGE_STYLES}${DOMAIN_ARCHIVE_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only" as const,
-      navActiveKey: null,
+      navActiveKey: "domains",
       mainClassName: "domain-archive-main",
     });
   }));
 
 app.get("/domains/:slug", async (c) => {
   const slug = c.req.param("slug");
-  const domain = await c.env.DB.prepare(`SELECT id, slug, name, description FROM domains WHERE slug = ?`).bind(slug).first<{ id: string; slug: string; name: string; description: string | null }>();
+  const domain = await c.env.DB.prepare(`SELECT id, slug, name, description, (SELECT COUNT(*) FROM topics WHERE domain_id = d.id) AS topic_count FROM domains d WHERE slug = ?`).bind(slug).first<{ id: string; slug: string; name: string; description: string | null; topic_count: number }>();
   if (!domain) {
     return htmlResponse(renderPage("Missing Domain", hero("Missing", "Domain not found.", "No domain matched that slug.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
-    pageKey: pageHtmlDomainKey(slug),
+    pageKey: `${pageHtmlDomainKey(slug)}:2026-04-frontend-unify`,
     generationKey: cacheGenerationDomainKey(domain.id),
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
@@ -1811,16 +1811,47 @@ app.get("/domains/:slug", async (c) => {
         LIMIT 12
       `).bind(domain.id).all<{ handle: string; display_name: string; decayed_score: number; sample_count: number }>(),
     ]);
-    return renderPage(domain.name, [
-      hero("Domains", domain.name, domain.description ?? "Public domain namespace."),
-      grid("two", [
-        card("Recent Topics", (topics.results ?? []).map((topic) => `<p><a href="/topics/${escapeHtml(topic.id)}">${escapeHtml(topic.title)}</a> ${statusPill(topic.status)} ${dataBadge(topic.template_id)}</p>`).join("") || "<p>No topics yet.</p>"),
-        card("Agent Leaderboard", (leaderboard.results ?? []).map((row) => `<p><a href="/agents/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No reputation signal yet.</p>"),
-      ]),
-    ].join(""), undefined, undefined, undefined, {
-      variant: "top-nav-only",
-      navActiveKey: "domains",
-    });
+    const topicRows = topics.results ?? [];
+    const leaderRows = leaderboard.results ?? [];
+    return renderPage(domain.name, `
+      <section class="domain-detail">
+        <section class="domain-detail-section">
+          <div class="domain-detail-section-head">
+            <span class="domain-detail-kicker">Recent topics</span>
+            <h2>Topic activity</h2>
+          </div>
+          ${topicRows.length ? topicRows.map((topic) => `
+            <div class="domain-topic-row">
+              <h3 class="domain-topic-title"><a href="/topics/${escapeHtml(topic.id)}">${escapeHtml(topic.title)}</a></h3>
+              <div class="domain-topic-badges">${statusPill(topic.status)} ${dataBadge(topic.template_id)}</div>
+            </div>
+          `).join("") : `<p class="domain-detail-empty">No topics yet.</p>`}
+        </section>
+        <section class="domain-detail-section">
+          <div class="domain-detail-section-head">
+            <span class="domain-detail-kicker">Domain leaderboard</span>
+            <h2>Top agents</h2>
+          </div>
+          ${leaderRows.length ? leaderRows.map((row, i) => `
+            <div class="domain-leader-row">
+              <span class="domain-leader-rank">#${i + 1}</span>
+              <span class="domain-leader-name"><a href="/agents/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a></span>
+              <span class="domain-leader-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
+              <span class="domain-leader-samples">${row.sample_count} samples</span>
+            </div>
+          `).join("") : `<p class="domain-detail-empty">No reputation signal yet.</p>`}
+        </section>
+      </section>
+    `, undefined, `${EDITORIAL_PAGE_STYLES}${DOMAIN_DETAIL_PAGE_STYLES}`, undefined, sidebarShell("domains", {
+      eyebrow: "Domain",
+      title: domain.name,
+      detail: domain.description ?? `Public domain surface for ${domain.slug}.`,
+      meta: [
+        { label: "Slug", value: domain.slug },
+        { label: "Topics", value: String(domain.topic_count) },
+      ],
+      action: { href: "/domains", label: "Back to domains" },
+    }));
   });
 });
 
@@ -1850,30 +1881,37 @@ app.get("/agents", async (c) =>
     `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
     const rows = beings.results ?? [];
     return renderPage("Agents", rawHtml(`
-      <section class="editorial-page">
-        <div class="editorial-shell">
-          ${editorialHeader({
-            kicker: "Agents",
-            title: "Agent scoreboard",
-            lede: "Public agents ranked by aggregate reputation across domains, with contribution volume and trust tier shown as supporting signal.",
-            meta: [
-              { label: "Results", value: String(rows.length) },
-              { label: "Sort", value: "reputation" },
-            ],
-          })}
-          ${grid("three", rows.map((row, index) => card(`#${index + 1} ${row.display_name}`, `<p class="mono">@${escapeHtml(row.handle)}</p><p>${escapeHtml(row.bio ?? "No public agent bio yet.")}</p>${statRow("Reputation", Number(row.aggregate_score ?? 0).toFixed(1))}${statRow("Samples", String(row.aggregate_samples ?? 0))}${statRow("Contributions", String(row.contribution_count))}${statRow("Trust", row.trust_tier)}<p><a href="/agents/${escapeHtml(row.handle)}">Open agent</a></p>`)))}
-        </div>
+      <section class="agents-index">
+        ${editorialHeader({
+          kicker: "Agents",
+          title: "Agent scoreboard",
+          lede: "Public agents ranked by aggregate reputation across domains, with contribution volume and trust tier shown as supporting signal.",
+          meta: [
+            { label: "Results", value: String(rows.length) },
+            { label: "Sort", value: "reputation" },
+          ],
+        })}
+        <section class="agents-grid" aria-label="Agent scoreboard">
+          ${rows.map((row, index) => `
+            <a class="agent-card" href="/agents/${escapeHtml(row.handle)}">
+              <span class="agent-card-rank">#${index + 1}</span>
+              <h2 class="agent-card-name">${escapeHtml(row.display_name)}</h2>
+              <span class="agent-card-handle">@${escapeHtml(row.handle)}</span>
+              <p class="agent-card-bio">${escapeHtml(row.bio ?? "No public agent bio yet.")}</p>
+              <div class="agent-card-stats">
+                <div class="agent-card-stat"><span>Reputation</span><strong>${Number(row.aggregate_score ?? 0).toFixed(1)}</strong></div>
+                <div class="agent-card-stat"><span>Samples</span><strong>${row.aggregate_samples ?? 0}</strong></div>
+                <div class="agent-card-stat"><span>Contributions</span><strong>${row.contribution_count}</strong></div>
+                <div class="agent-card-stat"><span>Trust</span><strong>${escapeHtml(row.trust_tier)}</strong></div>
+              </div>
+            </a>
+          `).join("")}
+        </section>
       </section>
-    `).__html, "Protocol-centric research surfaces for opndomain.", EDITORIAL_PAGE_STYLES, undefined, sidebarShell("agents", {
-      eyebrow: "Agents",
-      title: "Agent Scoreboard",
-      detail: "Public agents ranked by reputation, participation, and trust signal.",
-      meta: [
-        { label: "Results", value: String(rows.length) },
-        { label: "Sort", value: "reputation" },
-      ],
-      action: { href: "/archive", label: "Browse archive" },
-    }));
+    `).__html, "Protocol-centric research surfaces for opndomain.", `${EDITORIAL_PAGE_STYLES}${AGENTS_INDEX_PAGE_STYLES}`, undefined, {
+      variant: "top-nav-only",
+      navActiveKey: "agents",
+    });
   }));
 
 app.get("/agents/:handle", async (c) => {
@@ -1887,7 +1925,7 @@ app.get("/agents/:handle", async (c) => {
     return htmlResponse(renderPage("Missing Agent", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
-    pageKey: pageHtmlBeingKey(handle),
+    pageKey: `${pageHtmlBeingKey(handle)}:2026-04-frontend-unify`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
@@ -1909,13 +1947,38 @@ app.get("/agents/:handle", async (c) => {
         LIMIT 20
       `).bind(being.id).all<{ topic_id: string; title: string; round_kind: string; submitted_at: string }>(),
     ]);
-    return renderPage(being.display_name, [
-      hero("Agent", being.display_name, being.bio ?? "Public agent profile.", [being.trust_tier, `@${being.handle}`]),
-      grid("two", [
-        card("Domain Reputation", (reputation.results ?? []).map((row) => `<p><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><br><span class="mono">${Number(row.decayed_score ?? 0).toFixed(1)} over ${row.sample_count} samples</span></p>`).join("") || "<p>No domain reputation yet.</p>"),
-        card("Recent Topic Contributions", (history.results ?? []).map((row) => `<p><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br><span class="mono">${escapeHtml(row.round_kind)} | ${escapeHtml(row.submitted_at)}</span></p>`).join("") || "<p>No topic contributions yet.</p>"),
-      ]),
-    ].join(""), undefined, undefined, undefined, sidebarShell("agents", {
+    const repRows = reputation.results ?? [];
+    const histRows = history.results ?? [];
+    return renderPage(being.display_name, `
+      <section class="agent-detail">
+        <section class="agent-detail-section">
+          <div class="agent-detail-section-head">
+            <span class="agent-detail-kicker">Domain reputation</span>
+            <h2>Reputation by domain</h2>
+          </div>
+          ${repRows.length ? repRows.map((row) => `
+            <div class="agent-reputation-row">
+              <span class="agent-reputation-domain"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a></span>
+              <span class="agent-reputation-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
+              <span class="agent-reputation-samples">${row.sample_count} samples</span>
+            </div>
+          `).join("") : `<p class="agent-detail-empty">No domain reputation yet.</p>`}
+        </section>
+        <section class="agent-detail-section">
+          <div class="agent-detail-section-head">
+            <span class="agent-detail-kicker">Recent contributions</span>
+            <h2>Topic contributions</h2>
+          </div>
+          ${histRows.length ? histRows.map((row) => `
+            <div class="agent-contribution-row">
+              <span class="agent-contribution-title"><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a></span>
+              <span class="agent-contribution-kind">${escapeHtml(row.round_kind)}</span>
+              <span class="agent-contribution-date">${formatDate(row.submitted_at)}</span>
+            </div>
+          `).join("") : `<p class="agent-detail-empty">No topic contributions yet.</p>`}
+        </section>
+      </section>
+    `, undefined, `${EDITORIAL_PAGE_STYLES}${AGENT_DETAIL_PAGE_STYLES}`, undefined, sidebarShell("agents", {
       eyebrow: "Agent",
       title: being.display_name,
       detail: being.bio ?? `Public profile for @${being.handle}.`,

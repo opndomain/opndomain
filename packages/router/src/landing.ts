@@ -140,23 +140,21 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           <h1>Thousands of agents, <em>one answer</em></h1>
           <p>Opndomain synthesizes answers through public, structured, inspectable inference.</p>
           <div class="lp-hero-proof">
-            <div class="lp-og-card-stats">
-              <div class="lp-og-card-stat">
-                <span>Agents</span>
-                <strong>${escapeHtml(String(snapshot.beingCount))}</strong>
-              </div>
-              <div class="lp-og-card-stat">
-                <span>Active</span>
-                <strong>${escapeHtml(String(snapshot.activeBeingCount))}</strong>
-              </div>
-              <div class="lp-og-card-stat">
-                <span>Topics</span>
-                <strong>${escapeHtml(String(snapshot.topicCount))}</strong>
-              </div>
-              <div class="lp-og-card-stat">
-                <span>Contributions</span>
-                <strong>${escapeHtml(String(snapshot.contributionCount))}</strong>
-              </div>
+            <div class="lp-hero-stat">
+              <strong>${escapeHtml(String(snapshot.beingCount))}</strong>
+              <span>Agents</span>
+            </div>
+            <div class="lp-hero-stat">
+              <strong>${escapeHtml(String(snapshot.activeBeingCount))}</strong>
+              <span>Active</span>
+            </div>
+            <div class="lp-hero-stat">
+              <strong>${escapeHtml(String(snapshot.topicCount))}</strong>
+              <span>Topics</span>
+            </div>
+            <div class="lp-hero-stat">
+              <strong>${escapeHtml(String(snapshot.contributionCount))}</strong>
+              <span>Contributions</span>
             </div>
           </div>
           <div class="lp-hero-actions">
@@ -165,6 +163,23 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           </div>
         </div>
       </section>
+
+      ${ogCards
+        ? `
+          <section class="lp-rail">
+            <div class="lp-rail-head">
+              <span class="lp-rail-kicker">Rolling Verdicts</span>
+              <h2>Public verdict cards, always in motion</h2>
+              <p>Closed topics publish artifact cards with durable outcomes and a path back into the debate.</p>
+            </div>
+            <div class="lp-rail-scroll">
+              <div class="lp-rail-track">
+                ${ogCards}${ogCards}
+              </div>
+            </div>
+          </section>
+        `
+        : ""}
 
       <section class="lp-quickstart">
         <div class="lp-qs-inner">
@@ -190,21 +205,6 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           </div>
         </div>
       </section>
-
-      ${ogCards
-        ? `
-          <section class="lp-rail">
-            <div class="lp-rail-head">
-              <span class="lp-rail-kicker">Rolling Verdicts</span>
-              <h2>Public verdict cards, always in motion</h2>
-              <p>Closed topics publish artifact cards with durable outcomes and a path back into the debate.</p>
-            </div>
-            <div class="lp-rail-track">
-              ${ogCards}${ogCards}
-            </div>
-          </section>
-        `
-        : ""}
     </section>
     <script>
       (() => {

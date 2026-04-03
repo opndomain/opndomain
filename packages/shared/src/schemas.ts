@@ -413,6 +413,7 @@ export const CreateInternalTopicSchema = CreateTopicSchema.omit({
   minTrustTier: true,
 }).extend({
   reason: z.string().min(1).max(500).optional(),
+  topicSource: TopicSourceSchema.optional(),
 });
 
 export const TopicFormatSummarySchema = z.object({
@@ -840,6 +841,7 @@ export const RoundInstructionSchema = z.object({
   guidance: z.string(),
   priorRoundContext: z.string().nullable(),
   qualityCriteria: z.array(z.string()),
+  votingGuidance: z.string().nullable(),
 });
 
 export const RoundInstructionOverrideRequestSchema = z.object({
@@ -848,6 +850,7 @@ export const RoundInstructionOverrideRequestSchema = z.object({
   guidance: z.string().min(1).max(2000),
   priorRoundContext: z.string().min(1).max(1000).nullable(),
   qualityCriteria: z.array(z.string().min(1).max(300)).min(1).max(10),
+  votingGuidance: z.string().min(1).max(2000).nullable().optional(),
 });
 
 export const TopicContextCurrentRoundConfigSchema = z.object({

@@ -290,7 +290,7 @@ class FakeDb {
   batchCalls = 0;
   executedBatches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
   throwOnBatch = false;
-  nextBatchResults: Array<{ success?: boolean; error?: string }> | null = null;
+  nextBatchResults: Array<{ success?: boolean; error?: string; meta?: { changes?: number } }> | null = null;
   throwOnRunMatch: RegExp | null = null;
   persistedContributionIds = new Set<string>();
   persistedScoreIds = new Set<string>();
@@ -336,13 +336,14 @@ class FakeDb {
     if (this.throwOnBatch) {
       throw new Error("simulated partial failure");
     }
-    const results: Array<{ success?: boolean; error?: string }> =
+    const results: Array<{ success?: boolean; error?: string; meta?: { changes?: number } }> =
       this.nextBatchResults ?? statements.map(() => ({ success: true }));
     this.nextBatchResults = null;
     for (let index = 0; index < statements.length; index += 1) {
       const statement = statements[index];
       const result = results[index];
-      if (!result || result.error || result.success === false) {
+      const changes = result?.meta?.changes;
+      if (!result || result.error || result.success === false || changes === 0) {
         continue;
       }
       if (statement.sql.includes("INSERT OR IGNORE INTO contributions")) {
@@ -1269,6 +1270,62 @@ describe("topic state durable object", () => {
     assert.equal(voteInsert?.bindings[7], "most_interesting");
     assert.equal(voteInsert?.bindings[8], null);
     assert.equal(voteInsert?.bindings[9], null);
+  });
+
+  it("keeps vote rows pending when D1 ignores the insert with zero changes", async () => {
+    const storage = new FakeStorage();
+    const db = new FakeDb();
+    const acceptedAt = new Date().toISOString();
+
+    storage.sql.exec(
+      `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+       VALUES (?, 'votes', 'insert', ?, 0, ?)`,
+      "vot_zero",
+      JSON.stringify({
+        voteId: "vot_zero",
+        topicId: "top_1",
+        roundId: "rnd_active",
+        contributionId: "cnt_1",
+        voterBeingId: "bng_2",
+        direction: 1,
+        weight: 2,
+        voteKind: "most_correct",
+        weightedValue: 2,
+        acceptedAt,
+        idempotencyKey: "idem_vote_zero",
+        targetRoundId: "rnd_prior",
+      }),
+      acceptedAt,
+    );
+    db.nextBatchResults = [{ success: true, meta: { changes: 0 } }];
+    db.queueAll("SELECT id, starts_at, ends_at\n        FROM rounds\n        WHERE id IN", [{
+      id: "rnd_active",
+      starts_at: "2026-03-25T00:00:00.000Z",
+      ends_at: "2026-03-25T00:10:00.000Z",
+    }]);
+    queueSnapshotRows(db, "top_1");
+
+    const originalConsoleError = console.error;
+    let result: Awaited<ReturnType<typeof flushPendingTopicState>>;
+    try {
+      console.error = () => undefined;
+      result = await flushPendingTopicState(
+        { storage } as never,
+        {
+          DB: db as never,
+          SNAPSHOTS: { put: async () => undefined } as never,
+          PUBLIC_ARTIFACTS: { put: async () => undefined } as never,
+          PUBLIC_CACHE: { delete: async () => undefined } as never,
+          TOPIC_TRANSCRIPT_PREFIX: "topics",
+          CURATED_OPEN_KEY: "curated/open.json",
+        } as never,
+      );
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    assert.equal(result.remainingCount, 1);
+    assert.equal(Number(storage.sql.pendingAux.get("vot_zero")?.flushed ?? 0), 0);
   });
 
   it("force-flush drains pending votes before returning", async () => {

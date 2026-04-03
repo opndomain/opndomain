@@ -509,9 +509,9 @@ async function flushVoteRecords(
     );
   });
 
-  let results: Array<{ success?: boolean; error?: string }> = [];
+  let results: Array<{ success?: boolean; error?: string; meta?: { changes?: number } }> = [];
   try {
-    results = (await env.DB.batch(statements)) as Array<{ success?: boolean; error?: string }>;
+    results = (await env.DB.batch(statements)) as Array<{ success?: boolean; error?: string; meta?: { changes?: number } }>;
   } catch (error) {
     console.error("topic-state vote flush batch failed", error);
     return {
@@ -524,28 +524,73 @@ async function flushVoteRecords(
     };
   }
 
+  // Diagnostic: log any batch result mismatches
+  if (results.length !== parsedVotes.length) {
+    console.error("vote-flush batch result/statement count mismatch", {
+      statementsCount: parsedVotes.length,
+      resultsCount: results.length,
+    });
+  }
+
   const flushedContributionIds = new Set<string>();
   const flushedTopicIds = new Set<string>();
   const topicChangeSequences = new Map<string, number>();
   let flushedAuxRows = 0;
+  let skippedCount = 0;
+  let zeroChangeCount = 0;
   for (let index = 0; index < results.length; index += 1) {
     const result = results[index];
-    if (!result || result.error || result.success === false) {
+    const { payload } = parsedVotes[index];
+    const changes = (result as { meta?: { changes?: number } })?.meta?.changes ?? -1;
+    if (changes === 0) {
+      console.error("vote-flush INSERT OR IGNORE was ignored (0 changes)", {
+        index,
+        voteId: payload.voteId,
+        voteKind: payload.voteKind,
+        contributionId: String(payload.contributionId).slice(-8),
+        voterBeingId: String(payload.voterBeingId).slice(-8),
+        roundId: String(payload.roundId).slice(-8),
+        direction: payload.direction,
+      });
+      zeroChangeCount++;
+    }
+    if (!result || result.error || result.success === false || changes === 0) {
+      console.error("vote-flush statement skipped", {
+        index,
+        voteId: payload.voteId,
+        voteKind: payload.voteKind,
+        voterBeingId: String(payload.voterBeingId).slice(-8),
+        hasResult: Boolean(result),
+        success: result?.success,
+        error: result?.error,
+        changes,
+      });
+      skippedCount++;
       continue;
     }
-    const { vote, payload } = parsedVotes[index];
+    const { vote, payload: votePayload } = parsedVotes[index];
     if (vote.source === "aux") {
       sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, vote.id);
       flushedAuxRows += 1;
     } else {
       sqlExec(state, `UPDATE pending_votes SET flushed = 1 WHERE id = ?`, vote.id);
     }
-    flushedContributionIds.add(String(payload.contributionId));
-    flushedTopicIds.add(String(payload.topicId));
-    const changeSequence = Number(payload.changeSequence ?? 0);
-    if (changeSequence > Number(topicChangeSequences.get(String(payload.topicId)) ?? 0)) {
-      topicChangeSequences.set(String(payload.topicId), changeSequence);
+    flushedContributionIds.add(String(votePayload.contributionId));
+    flushedTopicIds.add(String(votePayload.topicId));
+    const changeSequence = Number(votePayload.changeSequence ?? 0);
+    if (changeSequence > Number(topicChangeSequences.get(String(votePayload.topicId)) ?? 0)) {
+      topicChangeSequences.set(String(votePayload.topicId), changeSequence);
     }
+  }
+
+  if (skippedCount > 0 || zeroChangeCount > 0) {
+    console.error("vote-flush summary", {
+      total: parsedVotes.length,
+      flushed: parsedVotes.length - skippedCount,
+      skipped: skippedCount,
+      zeroChanges: zeroChangeCount,
+      flushedAuxRows,
+    });
   }
 
   const reconciledVoteAggregates = await reconcileVoteAggregates(

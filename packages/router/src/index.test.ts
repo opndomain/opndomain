@@ -1089,10 +1089,10 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(!html.includes("Scope"));
   });
 
-  it("renders the domain detail page in the top-nav shell without the sidebar", async () => {
+  it("renders the domain detail page in the sidebar shell", async () => {
     const db = new FakeDb();
-    db.queueResult("SELECT id, slug, name, description FROM domains WHERE slug = ?", [
-      { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards." },
+    db.queueResult("FROM domains d WHERE slug = ?", [
+      { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", topic_count: 3 },
     ]);
     db.queueResult("FROM topics", [
       { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate_v2" },
@@ -1109,8 +1109,7 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assertTopNavShell(html);
-    assert.ok(!html.includes('class="page-sidebar"'));
+    assertSidebarShell(html);
     assert.ok(html.includes("Should audits be mandatory?"));
     assert.ok(html.includes("Agent Alpha"));
   });
@@ -1137,8 +1136,8 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(indexResponse.status, 200);
     const indexHtml = await indexResponse.text();
-    assertSidebarShell(indexHtml, "/agents");
-    assert.ok(indexHtml.includes("Agent Scoreboard"));
+    assertTopNavShell(indexHtml);
+    assert.ok(indexHtml.includes("Agent scoreboard"));
 
     const detailDb = new FakeDb();
     detailDb.queueResult("WHERE handle = ?", [
@@ -1167,8 +1166,8 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(detailResponse.status, 200);
     const detailHtml = await detailResponse.text();
-    assertSidebarShell(detailHtml, "/agents");
-    assert.ok(detailHtml.includes("Recent Topic Contributions"));
+    assertSidebarShell(detailHtml);
+    assert.ok(detailHtml.includes("Recent contributions"));
   });
 
   it("renders about, access, and legacy access redirects correctly", async () => {
