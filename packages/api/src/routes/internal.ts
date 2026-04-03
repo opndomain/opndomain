@@ -52,6 +52,11 @@ import { backfillPlatformDailyRollups as backfillPlatformDailyRollupsService } f
 import { reconcileTopicPresentation } from "../services/presentation.js";
 import { backfillTopicClaims, forceFlushTopicState, runTerminalizationSequence } from "../services/terminalization.js";
 import { recomputeContributionFinalScore } from "../services/votes.js";
+import { assembleDossier } from "../services/dossier.js";
+import { unaliasSlot } from "../services/canonical-slots.js";
+import { getFinalizationProgress } from "../services/instance-finalization.js";
+import { getLatestMergeRevision, executeMerge } from "../services/merge-engine.js";
+import { sweepAutonomousTopics } from "../services/autonomous-lifecycle.js";
 
 export const internalRoutes = new Hono<{ Bindings: ApiEnv }>();
 
@@ -323,6 +328,49 @@ internalRoutes.post("/topics/:topicId/reconcile-presentation", async (c) => {
   const body = parseJsonBody(ReconcilePresentationRequestSchema, await c.req.json());
   const result = await reconcileTopicPresentation(c.env, c.req.param("topicId"), body.reason);
   return jsonData(c, result);
+});
+
+internalRoutes.post("/topics/:topicId/dossier/assemble", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const topicId = c.req.param("topicId");
+  const dossier = await assembleDossier(c.env, topicId);
+  return jsonData(c, {
+    topicId,
+    assembled: dossier !== null,
+    revision: dossier?.revision ?? null,
+    assemblyMethod: dossier?.assemblyMethod ?? null,
+  });
+});
+
+internalRoutes.post("/topics/:topicId/dossier/rebuild", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const topicId = c.req.param("topicId");
+  const steps: Record<string, { success: boolean; error?: string }> = {};
+
+  try {
+    await backfillTopicClaims(c.env, topicId);
+    steps.backfillClaims = { success: true };
+  } catch (error) {
+    steps.backfillClaims = { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  try {
+    await assembleDossier(c.env, topicId);
+    steps.assembleDossier = { success: true };
+  } catch (error) {
+    steps.assembleDossier = { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  try {
+    await reconcileTopicPresentation(c.env, topicId);
+    steps.reconcilePresentation = { success: true };
+  } catch (error) {
+    steps.reconcilePresentation = { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+
+  return jsonData(c, { topicId, steps });
 });
 
 internalRoutes.post("/topics/:topicId/open", async (c) => {
@@ -765,4 +813,69 @@ internalRoutes.get("/health", async (c) => {
     })),
     scaleTelemetry,
   });
+});
+
+// === Autonomous Rolling Topic Routes ===
+
+// POST /slots/:slotId/unalias — Remove alias from a canonical slot (future revisions only)
+internalRoutes.post("/slots/:slotId/unalias", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const slotId = c.req.param("slotId");
+  const result = await unaliasSlot(c.env, slotId);
+  if (!result) {
+    return c.json({ error: "not_found_or_not_aliased", code: "not_found", message: "Slot not found or not aliased." }, 404);
+  }
+  return c.json({ ok: true, slotId, message: "Alias removed. Future revisions will treat this slot as independent." });
+});
+
+// GET /topics/:topicId/instances — List all instances for an autonomous topic
+internalRoutes.get("/topics/:topicId/instances", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const topicId = c.req.param("topicId");
+  const instances = await allRows(
+    c.env.DB,
+    `SELECT * FROM topic_instances WHERE topic_id = ? ORDER BY instance_index`,
+    topicId,
+  );
+  return c.json({ topicId, instances });
+});
+
+// GET /topics/:topicId/instances/:instanceId/finalization — Get finalization progress
+internalRoutes.get("/topics/:topicId/instances/:instanceId/finalization", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const instanceId = c.req.param("instanceId");
+  const progress = await getFinalizationProgress(c.env, instanceId);
+  return c.json({ instanceId, ...progress });
+});
+
+// GET /topics/:topicId/merge — Get latest merge revision
+internalRoutes.get("/topics/:topicId/merge", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const topicId = c.req.param("topicId");
+  const revision = await getLatestMergeRevision(c.env, topicId);
+  return c.json({ topicId, revision });
+});
+
+// POST /topics/:topicId/merge — Force a merge
+internalRoutes.post("/topics/:topicId/merge", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const topicId = c.req.param("topicId");
+  const result = await executeMerge(c.env, topicId);
+  if (!result) {
+    return c.json({ error: "no_instances", code: "no_instances", message: "No finalized instances ready for merge." }, 400);
+  }
+  return c.json({ ok: true, ...result });
+});
+
+// POST /autonomous/sweep — Manually trigger autonomous lifecycle sweep
+internalRoutes.post("/autonomous/sweep", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const mutatedTopicIds = await sweepAutonomousTopics(c.env);
+  return c.json({ ok: true, mutatedTopicIds });
 });

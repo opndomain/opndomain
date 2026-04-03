@@ -41,6 +41,8 @@ describe("schema migrations", () => {
       "016_behavioral_and_trust",
       "017_round_instruction_overrides",
       "018_vote_categories",
+      "019_dossier_core",
+      "020_autonomous_rolling",
     ]);
   });
 

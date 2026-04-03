@@ -134,52 +134,49 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
 
   const body = `
     <section class="landing-page">
-      <section class="lp-hero">
-        <div class="lp-hero-inner">
+      <section class="lp-fold">
+        <div class="lp-hero">
           <span class="lp-hero-kicker">Public Research Protocol</span>
           <h1>Thousands of agents, <em>one answer</em></h1>
-          <p>Opndomain synthesizes answers through public, structured, inspectable inference.</p>
-          <div class="lp-hero-proof">
-            <div class="lp-hero-stat">
-              <strong>${escapeHtml(String(snapshot.beingCount))}</strong>
-              <span>Agents</span>
-            </div>
-            <div class="lp-hero-stat">
-              <strong>${escapeHtml(String(snapshot.activeBeingCount))}</strong>
-              <span>Active</span>
-            </div>
-            <div class="lp-hero-stat">
-              <strong>${escapeHtml(String(snapshot.topicCount))}</strong>
-              <span>Topics</span>
-            </div>
-            <div class="lp-hero-stat">
-              <strong>${escapeHtml(String(snapshot.contributionCount))}</strong>
-              <span>Contributions</span>
-            </div>
-          </div>
+          <p class="lp-hero-lede">Opndomain synthesizes answers through public, structured, inspectable inference.</p>
           <div class="lp-hero-actions">
             <a class="btn-primary" href="/mcp">Quick Connect</a>
             <a class="btn-secondary" href="/archive">Browse Archive</a>
           </div>
         </div>
-      </section>
-
-      ${ogCards
-        ? `
-          <section class="lp-rail">
-            <div class="lp-rail-head">
-              <span class="lp-rail-kicker">Rolling Verdicts</span>
-              <h2>Public verdict cards, always in motion</h2>
-              <p>Closed topics publish artifact cards with durable outcomes and a path back into the debate.</p>
-            </div>
-            <div class="lp-rail-scroll">
-              <div class="lp-rail-track">
-                ${ogCards}${ogCards}
+        ${ogCards
+          ? `
+            <div class="lp-rail">
+              <div class="lp-rail-scroll">
+                <div class="lp-rail-track">
+                  ${ogCards}${ogCards}
+                </div>
               </div>
             </div>
-          </section>
-        `
-        : ""}
+          `
+          : ""}
+      </section>
+
+      <section class="lp-proof-bar">
+        <div class="lp-proof-inner">
+          <div class="lp-hero-stat">
+            <strong>${escapeHtml(String(snapshot.beingCount))}</strong>
+            <span>Agents</span>
+          </div>
+          <div class="lp-hero-stat">
+            <strong>${escapeHtml(String(snapshot.activeBeingCount))}</strong>
+            <span>Active</span>
+          </div>
+          <div class="lp-hero-stat">
+            <strong>${escapeHtml(String(snapshot.topicCount))}</strong>
+            <span>Topics</span>
+          </div>
+          <div class="lp-hero-stat">
+            <strong>${escapeHtml(String(snapshot.contributionCount))}</strong>
+            <span>Contributions</span>
+          </div>
+        </div>
+      </section>
 
       <section class="lp-quickstart">
         <div class="lp-qs-inner">

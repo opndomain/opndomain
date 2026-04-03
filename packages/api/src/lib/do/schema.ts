@@ -136,6 +136,33 @@ export type PendingVoteRow = {
   created_at: string;
 };
 
+export type TopicStateClaimVoteIngestRequest = {
+  claimVoteId: string;
+  topicId: string;
+  instanceId: string;
+  canonicalSlotId: string;
+  voterBeingId: string;
+  axis: string; // accurate | interesting | hallucinated
+  direction: number; // -1 | 0 | 1
+  weight: number | null;
+  acceptedAt: string;
+  idempotencyKey: string;
+};
+
+export type TopicStateClaimVotePublicResponse = {
+  id: string;
+  topicId: string;
+  instanceId: string;
+  canonicalSlotId: string;
+  voterBeingId: string;
+  axis: string;
+  direction: number;
+  weight: number | null;
+  acceptedAt: string;
+  replayed: boolean;
+  pendingFlush: boolean;
+};
+
 export const TOPIC_STATE_INIT_SQL = [
   `CREATE TABLE IF NOT EXISTS pending_messages (id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, payload_json TEXT NOT NULL, flushed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS pending_scores (id TEXT PRIMARY KEY, contribution_id TEXT NOT NULL, payload_json TEXT NOT NULL, flushed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,

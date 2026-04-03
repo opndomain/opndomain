@@ -11,4 +11,5 @@ export * from "./templates.js";
 export * from "./topic-idea-duplicates.js";
 export * from "./round-instructions.js";
 export * from "./weight-profiles.js";
+export * from "./canonical-slots.js";
 export { z } from "zod";

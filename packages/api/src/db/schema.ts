@@ -17,6 +17,8 @@ import {
   PHASE18_BEHAVIORAL_AND_TRUST_SQL,
   PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
   PHASE20_VOTE_CATEGORIES_SQL,
+  PHASE21_DOSSIER_CORE_SQL,
+  PHASE22_AUTONOMOUS_ROLLING_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -38,6 +40,8 @@ export {
   PHASE18_BEHAVIORAL_AND_TRUST_SQL,
   PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
   PHASE20_VOTE_CATEGORIES_SQL,
+  PHASE21_DOSSIER_CORE_SQL,
+  PHASE22_AUTONOMOUS_ROLLING_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -90,5 +94,15 @@ export const API_MIGRATIONS = [
     tag: "018_vote_categories",
     fileName: "018_vote_categories.sql",
     sql: PHASE20_VOTE_CATEGORIES_SQL,
+  },
+  {
+    tag: "019_dossier_core",
+    fileName: "019_dossier_core.sql",
+    sql: PHASE21_DOSSIER_CORE_SQL,
+  },
+  {
+    tag: "020_autonomous_rolling",
+    fileName: "020_autonomous_rolling.sql",
+    sql: PHASE22_AUTONOMOUS_ROLLING_SQL,
   },
 ] as const;

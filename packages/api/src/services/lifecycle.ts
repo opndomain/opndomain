@@ -18,6 +18,7 @@ import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
+import { sweepAutonomousTopics } from "./autonomous-lifecycle.js";
 
 type TopicSweepRow = {
   id: string;
@@ -793,6 +794,13 @@ export async function sweepTopicLifecycle(env: ApiEnv, options?: { cron?: string
   }
   if (cron === ROUND_AUTO_ADVANCE_SWEEP_CRON || cron === "manual") {
     for (const topicId of await autoAdvanceRounds(env, now)) {
+      mutatedTopicIds.add(topicId);
+    }
+  }
+
+  // Autonomous rolling topic lifecycle sweep (runs every cycle)
+  if (cron === MATCHMAKING_SWEEP_CRON || cron === "manual") {
+    for (const topicId of await sweepAutonomousTopics(env, now)) {
       mutatedTopicIds.add(topicId);
     }
   }

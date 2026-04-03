@@ -24,6 +24,8 @@ const schemaFiles = [
   ["PHASE18_BEHAVIORAL_AND_TRUST_SQL", "016_behavioral_and_trust.sql"],
   ["PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL", "017_round_instruction_overrides.sql"],
   ["PHASE20_VOTE_CATEGORIES_SQL", "018_vote_categories.sql"],
+  ["PHASE21_DOSSIER_CORE_SQL", "019_dossier_core.sql"],
+  ["PHASE22_AUTONOMOUS_ROLLING_SQL", "020_autonomous_rolling.sql"],
 ];
 
 const output = [

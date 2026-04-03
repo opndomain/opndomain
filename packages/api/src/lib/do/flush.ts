@@ -485,112 +485,100 @@ async function flushVoteRecords(
     parsedVotes.map(({ payload }) => String(payload.roundId ?? "")),
   );
 
-  const statements = parsedVotes.map(({ payload }) => {
-    const timing = computeVoteTimingPercentages(
-      payload.acceptedAt,
-      roundTimingByRoundId.get(String(payload.roundId ?? "")),
-    );
-    return env.DB.prepare(
-      `INSERT OR IGNORE INTO votes (
-        id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_kind, vote_position_pct, round_elapsed_pct, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(
-      payload.voteId,
-      payload.topicId,
-      payload.roundId,
-      payload.contributionId,
-      payload.voterBeingId,
-      payload.direction,
-      payload.weight,
-      payload.voteKind ?? "legacy",
-      timing.votePositionPct,
-      timing.roundElapsedPct,
-      payload.acceptedAt,
-    );
-  });
-
-  let results: Array<{ success?: boolean; error?: string; meta?: { changes?: number } }> = [];
-  try {
-    results = (await env.DB.batch(statements)) as Array<{ success?: boolean; error?: string; meta?: { changes?: number } }>;
-  } catch (error) {
-    console.error("topic-state vote flush batch failed", error);
-    return {
-      flushedContributionIds: [],
-      flushedTopicIds: [],
-      topicChangeSequences: new Map(),
-      remainingCount: votes.length,
-      recomputeDurationMs: null,
-      flushedAuxRows: 0,
-    };
-  }
-
-  // Diagnostic: log any batch result mismatches
-  if (results.length !== parsedVotes.length) {
-    console.error("vote-flush batch result/statement count mismatch", {
-      statementsCount: parsedVotes.length,
-      resultsCount: results.length,
-    });
-  }
-
   const flushedContributionIds = new Set<string>();
   const flushedTopicIds = new Set<string>();
   const topicChangeSequences = new Map<string, number>();
   let flushedAuxRows = 0;
-  let skippedCount = 0;
-  let zeroChangeCount = 0;
-  for (let index = 0; index < results.length; index += 1) {
-    const result = results[index];
-    const { payload } = parsedVotes[index];
-    const changes = (result as { meta?: { changes?: number } })?.meta?.changes ?? -1;
-    if (changes === 0) {
-      console.error("vote-flush INSERT OR IGNORE was ignored (0 changes)", {
-        index,
-        voteId: payload.voteId,
-        voteKind: payload.voteKind,
-        contributionId: String(payload.contributionId).slice(-8),
-        voterBeingId: String(payload.voterBeingId).slice(-8),
-        roundId: String(payload.roundId).slice(-8),
-        direction: payload.direction,
-      });
-      zeroChangeCount++;
-    }
-    if (!result || result.error || result.success === false || changes === 0) {
-      console.error("vote-flush statement skipped", {
-        index,
-        voteId: payload.voteId,
-        voteKind: payload.voteKind,
-        voterBeingId: String(payload.voterBeingId).slice(-8),
-        hasResult: Boolean(result),
-        success: result?.success,
-        error: result?.error,
-        changes,
-      });
-      skippedCount++;
+
+  for (const { vote, payload } of parsedVotes) {
+    const timing = computeVoteTimingPercentages(
+      payload.acceptedAt,
+      roundTimingByRoundId.get(String(payload.roundId ?? "")),
+    );
+
+    // Check for existing vote to handle dedup
+    const existing = await env.DB.prepare(
+      `SELECT id FROM votes WHERE id = ? LIMIT 1`,
+    ).bind(payload.voteId).first<{ id: string }>();
+    if (existing) {
+      // Already flushed — mark as flushed and continue
+      if (vote.source === "aux") {
+        sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, vote.id);
+        flushedAuxRows += 1;
+      } else {
+        sqlExec(state, `UPDATE pending_votes SET flushed = 1 WHERE id = ?`, vote.id);
+      }
       continue;
     }
-    const { vote, payload: votePayload } = parsedVotes[index];
+
+    // Check for duplicate vote kind per voter per round
+    const duplicateKind = await env.DB.prepare(
+      `SELECT id, contribution_id FROM votes
+       WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ?
+       LIMIT 1`,
+    ).bind(payload.roundId, payload.voteKind ?? "legacy", payload.voterBeingId).first<{ id: string; contribution_id: string }>();
+
+    // Check for exact duplicate (same voter, same contribution, same kind, same round)
+    const exactDuplicate = duplicateKind
+      ? await env.DB.prepare(
+          `SELECT id FROM votes
+           WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ? AND contribution_id = ?
+           LIMIT 1`,
+        ).bind(payload.roundId, payload.voteKind ?? "legacy", payload.voterBeingId, payload.contributionId).first<{ id: string }>()
+      : null;
+
+    if (duplicateKind && !exactDuplicate) {
+      // Different contribution for the same vote kind — skip, mark flushed
+      if (vote.source === "aux") {
+        sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, vote.id);
+        flushedAuxRows += 1;
+      } else {
+        sqlExec(state, `UPDATE pending_votes SET flushed = 1 WHERE id = ?`, vote.id);
+      }
+      continue;
+    }
+
+    try {
+      const result = await env.DB.prepare(
+        `INSERT INTO votes (
+          id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_kind, vote_position_pct, round_elapsed_pct, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        payload.voteId,
+        payload.topicId,
+        payload.roundId,
+        payload.contributionId,
+        payload.voterBeingId,
+        payload.direction,
+        payload.weight,
+        payload.voteKind ?? "legacy",
+        timing.votePositionPct,
+        timing.roundElapsedPct,
+        payload.acceptedAt,
+      ).run();
+
+      const changes = (result as { meta?: { changes?: number } })?.meta?.changes ?? 1;
+      if (changes === 0) {
+        // D1 returned zero changes — keep pending for retry
+        continue;
+      }
+    } catch (error) {
+      console.error(`vote flush failed for ${payload.voteId}`, error);
+      continue;
+    }
+
     if (vote.source === "aux") {
       sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, vote.id);
       flushedAuxRows += 1;
     } else {
       sqlExec(state, `UPDATE pending_votes SET flushed = 1 WHERE id = ?`, vote.id);
     }
-    flushedContributionIds.add(String(votePayload.contributionId));
-    flushedTopicIds.add(String(votePayload.topicId));
-    const changeSequence = Number(votePayload.changeSequence ?? 0);
-    if (changeSequence > Number(topicChangeSequences.get(String(votePayload.topicId)) ?? 0)) {
-      topicChangeSequences.set(String(votePayload.topicId), changeSequence);
+    flushedContributionIds.add(String(payload.contributionId));
+    flushedTopicIds.add(String(payload.topicId));
+    const changeSequence = Number(payload.changeSequence ?? 0);
+    if (changeSequence > Number(topicChangeSequences.get(String(payload.topicId)) ?? 0)) {
+      topicChangeSequences.set(String(payload.topicId), changeSequence);
     }
-  }
-
-  if (skippedCount > 0 || zeroChangeCount > 0) {
-    console.error("vote-flush summary", {
-      total: parsedVotes.length,
-      flushed: parsedVotes.length - skippedCount,
-      skipped: skippedCount,
-      zeroChanges: zeroChangeCount,
-      flushedAuxRows,
-    });
   }
 
   const reconciledVoteAggregates = await reconcileVoteAggregates(
@@ -697,6 +685,65 @@ async function flushEpistemicClaimRecords(state: DurableObjectState, env: ApiEnv
   return flushedCount;
 }
 
+function readPendingAuxClaimVotes(state: DurableObjectState) {
+  return sqlExec(
+    state,
+    `SELECT id, payload_json, flushed, created_at
+     FROM pending_aux
+     WHERE flushed = 0 AND table_name = 'claim_votes' AND operation = 'insert'
+     ORDER BY created_at ASC
+     LIMIT ?`,
+    TOPIC_STATE_PENDING_RECORD_LIMIT,
+  ) as Array<{ id: string; payload_json: string; flushed: number; created_at: string }>;
+}
+
+async function flushClaimVoteRecords(state: DurableObjectState, env: ApiEnv): Promise<number> {
+  const rows = readPendingAuxClaimVotes(state);
+  let flushedCount = 0;
+  for (const row of rows) {
+    const payload = JSON.parse(row.payload_json) as {
+      claimVoteId: string;
+      topicId: string;
+      instanceId: string;
+      canonicalSlotId: string;
+      voterBeingId: string;
+      axis: string;
+      direction: number;
+      weight: number | null;
+      acceptedAt: string;
+    };
+    try {
+      await runStatement(
+        env.DB
+          .prepare(
+            `INSERT INTO claim_votes
+             (id, topic_id, instance_id, canonical_slot_id, voter_being_id, axis, direction, weight, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(instance_id, canonical_slot_id, voter_being_id, axis) DO UPDATE SET
+               direction = excluded.direction,
+               weight = excluded.weight`,
+          )
+          .bind(
+            payload.claimVoteId,
+            payload.topicId,
+            payload.instanceId,
+            payload.canonicalSlotId,
+            payload.voterBeingId,
+            payload.axis,
+            payload.direction,
+            payload.weight,
+            payload.acceptedAt,
+          ),
+      );
+      sqlExec(state, `UPDATE pending_aux SET flushed = 1 WHERE id = ?`, row.id);
+      flushedCount += 1;
+    } catch (error) {
+      console.error(`claim vote flush failed for ${payload.claimVoteId}`, error);
+    }
+  }
+  return flushedCount;
+}
+
 export async function flushPendingTopicState(
   state: DurableObjectState,
   env: ApiEnv,
@@ -705,6 +752,7 @@ export async function flushPendingTopicState(
   const contributionResult = await flushContributionRecords(state, env);
   const voteResult = await flushVoteRecords(state, env);
   const flushedEpistemicClaimRows = await flushEpistemicClaimRecords(state, env);
+  const flushedClaimVoteRows = await flushClaimVoteRecords(state, env);
   const allFlushedContributionIds = new Set([
     ...contributionResult.flushedContributionIds,
     ...voteResult.flushedContributionIds,
@@ -763,7 +811,7 @@ export async function flushPendingTopicState(
   await recordTopicStateFlushTelemetry(state, {
     contributionsPerFlush: contributionResult.flushedContributionIds.length,
     votesPerFlush: voteResult.flushedContributionIds.length,
-    auxRowsPerFlush: voteResult.flushedAuxRows + flushedEpistemicClaimRows,
+    auxRowsPerFlush: voteResult.flushedAuxRows + flushedEpistemicClaimRows + flushedClaimVoteRows,
     recomputeDurationMs: voteResult.recomputeDurationMs,
     snapshotDurationMs,
     publishedAt: lastPublishedAt,
@@ -788,7 +836,7 @@ export async function flushPendingTopicState(
         flushedContributionIds: Array.from(allFlushedContributionIds).sort(),
         contributionsPerFlush: contributionResult.flushedContributionIds.length,
         votesPerFlush: voteResult.flushedContributionIds.length,
-        auxRowsPerFlush: voteResult.flushedAuxRows + flushedEpistemicClaimRows,
+        auxRowsPerFlush: voteResult.flushedAuxRows + flushedEpistemicClaimRows + flushedClaimVoteRows,
         remainingCount:
           Number((sqlExec(state, `SELECT COUNT(*) AS count FROM pending_messages WHERE flushed = 0`)[0] as { count?: number } | undefined)?.count ?? 0) +
           Number((sqlExec(state, `SELECT COUNT(*) AS count FROM pending_votes WHERE flushed = 0`)[0] as { count?: number } | undefined)?.count ?? 0) +

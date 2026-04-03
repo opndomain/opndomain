@@ -1011,6 +1011,57 @@ export const VerdictScoreBreakdownSchema = z.object({
   terminalizationMode: TerminalizationModeSchema,
 });
 
+// --- Dossier schemas ---
+
+export const DossierClaimConfidenceSchema = z.object({
+  label: z.enum(["low", "medium", "high"]),
+  reasons: z.array(z.string()),
+});
+
+export const DossierEvidenceSnippetSchema = z.object({
+  contributionId: z.string(),
+  beingHandle: z.string(),
+  evidenceKind: z.enum(["support", "challenge", "context", "correction"]),
+  excerpt: z.string(),
+  finalScore: z.number(),
+});
+
+export const DossierClaimSchema = z.object({
+  claimId: z.string(),
+  body: z.string(),
+  contributionId: z.string(),
+  beingHandle: z.string(),
+  verifiability: z.enum(["empirical", "comparative", "normative", "predictive", "unclassified"]),
+  resolutionStatus: z.enum(["unresolved", "contested", "supported", "refuted", "mixed"]),
+  confidence: DossierClaimConfidenceSchema,
+  evidenceCount: z.number(),
+  evidence: z.array(DossierEvidenceSnippetSchema),
+});
+
+export const DossierContestedClaimSchema = DossierClaimSchema.extend({
+  strongestContradiction: z.object({
+    claimId: z.string(),
+    body: z.string(),
+    confidence: z.number(),
+  }).nullable(),
+});
+
+export const DossierDataSchema = z.object({
+  assembledAt: z.string(),
+  assemblyMethod: z.string(),
+  revision: z.number(),
+  executiveSummary: z.string(),
+  bestSupportedClaims: z.array(DossierClaimSchema),
+  mostContestedClaims: z.array(DossierContestedClaimSchema),
+  claimSectionEmpty: z.boolean(),
+});
+
+export type DossierData = z.infer<typeof DossierDataSchema>;
+export type DossierClaim = z.infer<typeof DossierClaimSchema>;
+export type DossierContestedClaim = z.infer<typeof DossierContestedClaimSchema>;
+export type DossierEvidenceSnippet = z.infer<typeof DossierEvidenceSnippetSchema>;
+export type DossierClaimConfidence = z.infer<typeof DossierClaimConfidenceSchema>;
+
 export const VerdictPresentationSchema = z.object({
   topicId: z.string().min(1),
   title: z.string().min(1),
@@ -1036,6 +1087,7 @@ export const VerdictPresentationSchema = z.object({
   }),
   synthesisOutcome: VerdictOutcomeSchema.optional(),
   positions: VerdictPositionsSchema.optional(),
+  dossier: DossierDataSchema.optional(),
 });
 
 export const VerdictFetchResponseSchema = z.discriminatedUnion("status", [

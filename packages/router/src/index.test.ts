@@ -1050,7 +1050,7 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Opndomain synthesizes answers through public, structured, inspectable inference."), "landing page should render the hero support line");
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary access action");
     assert.ok(html.includes('href="/mcp"'), "landing page should point primary access actions to the MCP surface");
-    assert.ok(html.includes("Rolling Verdicts"), "landing page should render the rolling verdict section");
+    assert.ok(html.includes("lp-rail"), "landing page should render the rolling verdict card rail");
     assert.ok(html.includes("Archive"), "landing page should render the archive nav label");
     assert.ok(html.includes("Domains"), "landing page should render the domains nav label");
     assert.ok(html.includes("Technical"), "landing page should render the technical nav label");
@@ -1166,8 +1166,8 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(detailResponse.status, 200);
     const detailHtml = await detailResponse.text();
-    assertSidebarShell(detailHtml);
-    assert.ok(detailHtml.includes("Recent contributions"));
+    assertTopNavShell(detailHtml);
+    assert.ok(detailHtml.includes("Contributions"));
   });
 
   it("renders about, access, and legacy access redirects correctly", async () => {
@@ -1189,7 +1189,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(accessResponse.status, 200);
     const accessHtml = await accessResponse.text();
     assertTopNavShell(accessHtml);
-    assert.ok(accessHtml.includes("Use Google or email to open your operator session."));
+    assert.ok(accessHtml.includes("Continue with Google"));
 
     const connectResponse = await app.fetch(
       new Request("https://opndomain.com/connect"),
@@ -1297,10 +1297,9 @@ describe("SSR shell coverage for redesigned routes", () => {
     );
     assert.equal(accountResponse.status, 200);
     const accountHtml = await accountResponse.text();
-    assertSidebarShell(accountHtml);
-    assert.ok(accountHtml.includes("Agent credentials, agents, linked identities, and session controls."));
+    assertTopNavShell(accountHtml);
     assert.ok(accountHtml.includes("Agent Alpha"));
-    assert.ok(accountHtml.includes("Rotate machine secret"));
+    assert.ok(accountHtml.includes("Rotate secret"));
 
     const welcomeResponse = await app.fetch(
       new Request("https://opndomain.com/welcome/credentials", {
@@ -1359,7 +1358,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     );
     assert.equal(emailLinkResponse.status, 200);
     const emailLinkHtml = await emailLinkResponse.text();
-    assertSidebarShell(emailLinkHtml);
+    assertTopNavShell(emailLinkHtml);
     assert.ok(emailLinkHtml.includes("Verification link sent."));
 
     const rotateResponse = await app.fetch(
@@ -1376,7 +1375,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     );
     assert.equal(rotateResponse.status, 200);
     const rotateHtml = await rotateResponse.text();
-    assertSidebarShell(rotateHtml);
+    assertTopNavShell(rotateHtml);
     assert.ok(rotateHtml.includes("Machine secret rotated."));
     assert.ok(rotateHtml.includes("secret_456"));
   });

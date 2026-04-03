@@ -7,7 +7,6 @@ const LEGACY_GENERALIZED_ROUNDS = new Set([
   "analysis",
   "challenge",
   "synthesis",
-  "verdict",
 ]);
 
 describe("template round contract", () => {
@@ -18,6 +17,7 @@ describe("template round contract", () => {
     assert.equal(TOPIC_TEMPLATES.deep.rounds.length, 11);
     assert.equal(TOPIC_TEMPLATES.socratic.rounds.length, 7);
     assert.equal(TOPIC_TEMPLATES.chaos.rounds.length, 1);
+    assert.equal(TOPIC_TEMPLATES.autonomous_v1.rounds.length, 6);
 
     for (const template of Object.values(TOPIC_TEMPLATES)) {
       for (const round of template.rounds) {

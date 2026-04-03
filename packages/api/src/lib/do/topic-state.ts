@@ -16,6 +16,8 @@ import {
   type TopicStatePublicResponse,
   type TopicStateVoteIngestRequest,
   type TopicStateVotePublicResponse,
+  type TopicStateClaimVoteIngestRequest,
+  type TopicStateClaimVotePublicResponse,
 } from "./schema.js";
 
 const TOPIC_STATE_LAST_ACTIVITY_KEY = "meta:last-activity";
@@ -422,7 +424,58 @@ export class TopicStateDurableObject {
           payload.acceptedAt,
         );
       });
+
       await updatePendingVoteAggregates(this.state, payloadWithSequence);
+
+      await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.acceptedAt);
+      await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));
+      await recordTopicStateAcceptLatency(this.state, Date.now() - startedAt, payload.acceptedAt);
+      return Response.json(responseJson, { status: 200 });
+    }
+    if (url.pathname === "/claim-vote" && request.method === "POST") {
+      const payload = (await request.json()) as TopicStateClaimVoteIngestRequest;
+      const idempotencyKey = `cv:${payload.idempotencyKey}`;
+      const replayByIdempotency = sqlFirst<{ response_json: string }>(
+        this.state,
+        `SELECT response_json FROM idempotency_keys WHERE key = ?`,
+        idempotencyKey,
+      );
+      if (replayByIdempotency) {
+        return Response.json(JSON.parse(replayByIdempotency.response_json), { status: 200 });
+      }
+
+      const responseJson: TopicStateClaimVotePublicResponse = {
+        id: payload.claimVoteId,
+        topicId: payload.topicId,
+        instanceId: payload.instanceId,
+        canonicalSlotId: payload.canonicalSlotId,
+        voterBeingId: payload.voterBeingId,
+        axis: payload.axis,
+        direction: payload.direction,
+        weight: payload.weight,
+        acceptedAt: payload.acceptedAt,
+        replayed: false,
+        pendingFlush: true,
+      };
+
+      await withStorageTransaction(this.state, async () => {
+        sqlExec(
+          this.state,
+          `INSERT INTO pending_aux (id, table_name, operation, payload_json, flushed, created_at)
+           VALUES (?, 'claim_votes', 'insert', ?, 0, ?)`,
+          payload.claimVoteId,
+          JSON.stringify(payload),
+          payload.acceptedAt,
+        );
+        sqlExec(
+          this.state,
+          `INSERT INTO idempotency_keys (key, contribution_id, response_json, created_at) VALUES (?, ?, ?, ?)`,
+          idempotencyKey,
+          payload.claimVoteId,
+          JSON.stringify(responseJson),
+          payload.acceptedAt,
+        );
+      });
 
       await this.state.storage.put(TOPIC_STATE_LAST_ACTIVITY_KEY, payload.acceptedAt);
       await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));

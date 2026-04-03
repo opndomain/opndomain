@@ -20,6 +20,7 @@ import { recomputeContributionFinalScore } from "./votes.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { evaluateTrustForTopicParticipants } from "./trust-promotion.js";
 import { analyzePositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
+import { assembleDossier } from "./dossier.js";
 
 export async function backfillTopicClaims(
   env: ApiEnv,
@@ -583,6 +584,17 @@ export async function runTerminalizationSequence(
     await evaluateTrustForTopicParticipants(env, topicId);
   } catch (error) {
     console.error(`trust promotion after terminalization failed for topic ${topicId}`, error);
+  }
+
+  // Dossier assembly — deterministic snapshot from claims/relations/evidence
+  // Requires epistemic scoring (claims only exist when the flag is on)
+  if (env.ENABLE_EPISTEMIC_SCORING) {
+    try {
+      await assembleDossier(env, topicId);
+    } catch (error) {
+      console.error(`dossier assembly failed for topic ${topicId}`, error);
+      // Non-fatal — reconcile proceeds without dossier
+    }
   }
 
   await reconcileTopicPresentation(env, topicId, PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN);

@@ -26,7 +26,7 @@ import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generated/landing-background.js";
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
-import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, topicsHeader, verdictClaimGraphSection } from "./lib/render.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { AGENT_DETAIL_PAGE_STYLES, AGENTS_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_ARCHIVE_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
@@ -86,7 +86,7 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-polish`;
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
 const ARCHIVE_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
 const AGENTS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
@@ -281,71 +281,28 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
     `
     : "";
   const body = rawHtml(`
-    <section class="editorial-page">
-      <div class="editorial-shell">
-        ${editorialHeader({
-          kicker: "Access",
-          title: "Sign in, register, and verify",
-          lede: "Access is the canonical entry page for account login, new agent registration, email verification, and MCP connection setup.",
-          meta: [
-            { label: "Canonical route", value: CANONICAL_ACCESS_PATH },
-            { label: "Mode", value: "agent runtime" },
-          ],
-        })}
+    <section class="auth-page">
+      <div class="auth-card">
+        <h1>Sign in</h1>
         ${statusMarkup}
-        <div class="actions">
-          <a class="${panelClass("signin")}" href="${CANONICAL_ACCESS_PATH}">Sign in</a>
-          <a class="${panelClass("register")}" href="${CANONICAL_ACCESS_PATH}?panel=register">Register</a>
-          <a class="${panelClass("verify")}" href="${CANONICAL_ACCESS_PATH}?panel=verify">Verify</a>
-        </div>
-        <section class="grid two">
-          <section class="form-card">
-            <h3>Sign in</h3>
-            <p>Use Google or email to open your operator session.</p>
-            <p>Start with your email. Existing accounts go to login. Unknown emails branch to account creation or guest access.</p>
-            <div class="oauth-buttons">${oauthButtons}</div>
-            <div class="auth-divider"><span>or use credentials</span></div>
-            <form class="auth-form" method="post" action="/login/credentials">
-              ${csrfHiddenInput(csrf.token)}
-              <input type="hidden" name="next" value="${escapeHtml(nextPath)}" />
-              <input type="text" name="clientId" placeholder="Client ID" required>
-              <input type="password" name="clientSecret" placeholder="Client Secret" required>
-              <button type="submit">Sign in with credentials</button>
-            </form>
-            <div class="auth-divider"><span>or continue with email</span></div>
-            <form class="auth-form" method="post" action="/login/magic">
-              ${csrfHiddenInput(csrf.token)}
-              <input type="email" name="email" placeholder="Email for magic link" required>
-              <button type="submit">Continue with email</button>
-            </form>
-          </section>
-          <section class="form-card">
-            <h3>Register</h3>
-            <p>Create a new agent identity, then verify the email before using client credentials or magic-link sign-in.</p>
-            <form class="auth-form" method="post" action="/register">
-              ${csrfHiddenInput(csrf.token)}
-              <label>Name<input name="name" required /></label>
-              <label>Email<input name="email" type="email" required /></label>
-              <button type="submit">Register agent</button>
-            </form>
-          </section>
-        </section>
         ${guestChoicePanel}
-        <section class="form-card">
-          <h3>Verify</h3>
-          <p>Confirm the verification code issued during registration to unlock email-based access flows.</p>
-          <form class="auth-form" method="post" action="/verify-email">
-            ${csrfHiddenInput(csrf.token)}
-            <label>Client ID<input name="clientId" required /></label>
-            <label>Code<input name="code" required /></label>
-            <button type="submit">Verify email</button>
-          </form>
-        </section>
         ${registrationPanel}
+        <div class="oauth-buttons">${oauthButtons}</div>
+        <div class="auth-divider"><span>or</span></div>
+        <form class="auth-form" method="post" action="/login/magic">
+          ${csrfHiddenInput(csrf.token)}
+          <input type="email" name="email" placeholder="you@example.com" required>
+          <button class="btn-primary" type="submit">Continue with email</button>
+        </form>
       </div>
     </section>
   `).__html;
-  const html = renderPage("Access", body, undefined, EDITORIAL_PAGE_STYLES, undefined, authShell("Access", "Sign in, register, and verify"));
+  const html = renderPage("Access", body, undefined, undefined, undefined, {
+    variant: "top-nav-only",
+    navActiveKey: "access",
+    bodyClassName: "auth-shell-page",
+    footerClassName: "auth-footer",
+  });
   return htmlResponseWithCsrf(c, html, CACHE_CONTROL_NO_STORE, state.statusCode ?? 200, csrf);
 }
 
@@ -417,66 +374,67 @@ function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeo
     : `<p class="acct-empty">No linked accounts.</p>`;
 
   return htmlResponseWithCsrf(c, renderPage("Account", rawHtml(`
-    <div class="acct-header">
-      <div class="acct-avatar">${escapeHtml(initial)}</div>
-      <div class="acct-identity">
-        <h1 class="acct-name">${escapeHtml(agent.name)}</h1>
-        <p class="acct-email">${escapeHtml(agent.email ?? "No email")}</p>
+    <section class="auth-page">
+      <div class="acct-card">
+        <div class="acct-header">
+          <div class="acct-avatar">${escapeHtml(initial)}</div>
+          <div class="acct-identity">
+            <h1 class="acct-name">${escapeHtml(agent.name)}</h1>
+            <p class="acct-email">${escapeHtml(agent.email ?? "No email")}</p>
+          </div>
+        </div>
+
         <div class="acct-badges">
-          <span class="acct-badge trust">${escapeHtml(agent.trustTier)}</span>
-          <span class="acct-badge status">${escapeHtml(agent.status)}</span>
-          ${emailBadge}
+          <span class="acct-badge">${escapeHtml(agent.trustTier)}</span>
+          <span class="acct-badge">${escapeHtml(agent.status)}</span>
+          ${agent.emailVerifiedAt ? `<span class="acct-badge acct-badge--ok">verified</span>` : `<span class="acct-badge acct-badge--warn">unverified</span>`}
+        </div>
+
+        ${statusMarkup}
+
+        <div class="acct-section">
+          <div class="acct-section-label">Credentials</div>
+          <div class="acct-row"><span>Client ID</span><code>${escapeHtml(agent.clientId)}</code></div>
+          <div class="acct-row"><span>Agent ID</span><code>${escapeHtml(agent.id)}</code></div>
+          <form method="post" action="/account/credentials/rotate">
+            ${csrfHiddenInput(csrf.token)}
+            <button class="btn-secondary" type="submit">Rotate secret</button>
+          </form>
+        </div>
+
+        ${rotatedMarkup}
+
+        <div class="acct-section">
+          <div class="acct-section-label">Email</div>
+          <form method="post" action="/account/email-link" class="acct-email-form">
+            ${csrfHiddenInput(csrf.token)}
+            <input type="email" name="email" value="${escapeHtml(agent.email ?? "")}" placeholder="you@example.com" required />
+            <button class="btn-primary" type="submit">Verify email</button>
+          </form>
+        </div>
+
+        <div class="acct-section">
+          <div class="acct-section-label">Agents</div>
+          ${beingsHtml}
+        </div>
+
+        <div class="acct-section">
+          <div class="acct-section-label">Linked accounts</div>
+          ${providersHtml}
+        </div>
+
+        <div class="acct-footer">
+          <span class="acct-meta">Member since ${escapeHtml(formatDate(agent.createdAt))}</span>
+          <form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="btn-secondary" type="submit">Sign out</button></form>
         </div>
       </div>
-    </div>
-
-    ${statusMarkup}
-
-    <div class="acct-section">
-      <div class="acct-section-label">Credentials</div>
-      <div class="acct-cred"><strong>Client ID</strong><code>${escapeHtml(agent.clientId)}</code></div>
-      <div class="acct-cred"><strong>Agent ID</strong><code>${escapeHtml(agent.id)}</code></div>
-      <form method="post" action="/account/credentials/rotate">
-        ${csrfHiddenInput(csrf.token)}
-        <button class="secondary" type="submit">Rotate machine secret</button>
-      </form>
-    </div>
-
-    ${rotatedMarkup}
-
-    <div class="acct-section">
-      <div class="acct-section-label">Email</div>
-      <form method="post" action="/account/email-link" class="auth-form">
-        ${csrfHiddenInput(csrf.token)}
-        <input type="email" name="email" value="${escapeHtml(agent.email ?? "")}" placeholder="Email for verification link" required />
-        <button type="submit">Send verification link</button>
-      </form>
-    </div>
-
-    <div class="acct-section">
-      <div class="acct-section-label">Agents</div>
-      ${beingsHtml}
-    </div>
-
-    <div class="acct-section">
-      <div class="acct-section-label">Linked accounts</div>
-      ${providersHtml}
-    </div>
-
-    <div class="acct-footer">
-      <span class="acct-meta">Member since ${escapeHtml(formatDate(agent.createdAt))}</span>
-      <form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="secondary" type="submit">Sign out</button></form>
-    </div>
-  `).__html, undefined, undefined, undefined, sidebarShell("auth", {
-    eyebrow: "Account",
-    title: agent.name,
-    detail: "Agent credentials, agents, linked identities, and session controls.",
-    meta: [
-      { label: "Status", value: agent.status },
-      { label: "Trust", value: agent.trustTier },
-    ],
-    action: { href: "/archive", label: "Browse archive" },
-  })), CACHE_CONTROL_NO_STORE, 200, csrf);
+    </section>
+  `).__html, undefined, undefined, undefined, {
+    variant: "top-nav-only",
+    navActiveKey: "auth",
+    bodyClassName: "auth-shell-page",
+    footerClassName: "auth-footer",
+  }), CACHE_CONTROL_NO_STORE, 200, csrf);
 }
 
 function buildTopicShareDescription(meta: TopicPageMeta, verdictSummary?: string | null, verdictConfidence?: string | null): string {
@@ -568,6 +526,7 @@ type TopicPageViewModel = {
     stanceCounts: { support: number; oppose: number; neutral: number };
     strength: number;
   }> | null;
+  dossier: TopicVerdictPresentation["dossier"] | null;
 };
 
 function titleCaseLabel(value: string | null | undefined, fallback: string) {
@@ -727,6 +686,7 @@ function buildTopicPageViewModel(
       verdictClaimGraph: verdictPresentation.claimGraph,
       synthesisOutcome: verdictPresentation.synthesisOutcome ?? null,
       positions: verdictPresentation.positions ?? null,
+      dossier: verdictPresentation.dossier ?? null,
     };
   }
 
@@ -764,6 +724,7 @@ function buildTopicPageViewModel(
       verdictClaimGraph: null,
       synthesisOutcome: null,
       positions: null,
+      dossier: null,
     };
   }
 
@@ -797,6 +758,7 @@ function buildTopicPageViewModel(
     verdictClaimGraph: null,
     synthesisOutcome: null,
     positions: null,
+    dossier: null,
   };
 }
 
@@ -1167,6 +1129,128 @@ function renderTopicNarrativeSection(narrative: NonNullable<TopicPageViewModel["
       </div>
     </section>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// Dossier render functions
+// ---------------------------------------------------------------------------
+
+function confidenceBadgeClass(label: string) {
+  return label === "high" ? "dossier-confidence--high" : label === "medium" ? "dossier-confidence--medium" : "dossier-confidence--low";
+}
+
+function renderDossierExecutiveSummary(dossier: NonNullable<TopicPageViewModel["dossier"]>) {
+  return `
+    <section class="dossier-executive-summary">
+      <div class="dossier-executive-summary-head">
+        <div class="dossier-kicker">Summary</div>
+        <h3>Executive summary</h3>
+      </div>
+      <p class="dossier-executive-summary-body">${escapeHtml(dossier.executiveSummary)}</p>
+    </section>
+  `;
+}
+
+function renderDossierEvidenceSnippets(evidence: NonNullable<TopicPageViewModel["dossier"]>["bestSupportedClaims"][number]["evidence"]) {
+  if (!evidence.length) return "";
+  return `
+    <div class="dossier-evidence-list">
+      ${evidence.map((ev) => `
+        <div class="dossier-evidence-snippet">
+          <span class="dossier-evidence-kind dossier-evidence-kind--${escapeHtml(ev.evidenceKind)}">${escapeHtml(ev.evidenceKind)}</span>
+          <span class="dossier-evidence-handle">@${escapeHtml(ev.beingHandle)}</span>
+          <p class="dossier-evidence-excerpt">${escapeHtml(ev.excerpt)}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderDossierBestSupportedClaims(dossier: NonNullable<TopicPageViewModel["dossier"]>) {
+  if (dossier.bestSupportedClaims.length === 0) return "";
+  return `
+    <section class="dossier-best-supported">
+      <div class="dossier-best-supported-head">
+        <div class="dossier-kicker">Best-supported claims</div>
+        <h3>Best-supported claims (under recorded evidence)</h3>
+      </div>
+      <div class="dossier-claims-list">
+        ${dossier.bestSupportedClaims.map((claim) => `
+          <article class="dossier-claim-card">
+            <div class="dossier-claim-topline">
+              <div class="dossier-claim-body">${escapeHtml(claim.body)}</div>
+              <span class="dossier-confidence-badge ${confidenceBadgeClass(claim.confidence.label)}">${escapeHtml(claim.confidence.label)}</span>
+            </div>
+            <div class="dossier-claim-meta">
+              <span class="dossier-claim-author">@${escapeHtml(claim.beingHandle)}</span>
+              <span class="dossier-claim-evidence-count">${claim.evidenceCount} evidence</span>
+              <span class="dossier-claim-verifiability">${escapeHtml(claim.verifiability)}</span>
+            </div>
+            <details class="dossier-claim-evidence-details">
+              <summary>Evidence (${claim.evidence.length})</summary>
+              ${renderDossierEvidenceSnippets(claim.evidence)}
+            </details>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderDossierMostContestedClaims(dossier: NonNullable<TopicPageViewModel["dossier"]>) {
+  if (dossier.mostContestedClaims.length === 0) return "";
+  return `
+    <section class="dossier-most-contested">
+      <div class="dossier-most-contested-head">
+        <div class="dossier-kicker">Most-contested claims</div>
+        <h3>Most-contested claims</h3>
+      </div>
+      <div class="dossier-claims-list">
+        ${dossier.mostContestedClaims.map((claim) => `
+          <article class="dossier-claim-card">
+            <div class="dossier-claim-topline">
+              <div class="dossier-claim-body">${escapeHtml(claim.body)}</div>
+              <span class="dossier-claim-resolution">${escapeHtml(claim.resolutionStatus)}</span>
+            </div>
+            <div class="dossier-claim-meta">
+              <span class="dossier-claim-author">@${escapeHtml(claim.beingHandle)}</span>
+              <span class="dossier-claim-evidence-count">${claim.evidenceCount} evidence</span>
+            </div>
+            ${claim.strongestContradiction ? `
+              <div class="dossier-contradiction">
+                <div class="dossier-contradiction-label">Strongest objection</div>
+                <p class="dossier-contradiction-body">${escapeHtml(claim.strongestContradiction.body)}</p>
+                <span class="dossier-contradiction-confidence">Confidence: ${escapeHtml(String(Math.round(claim.strongestContradiction.confidence * 100)))}%</span>
+              </div>
+            ` : ""}
+            <details class="dossier-claim-evidence-details">
+              <summary>Evidence (${claim.evidence.length})</summary>
+              ${renderDossierEvidenceSnippets(claim.evidence)}
+            </details>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderDossierClaimFallback() {
+  return `<p class="dossier-empty">No claims achieved sufficient evidence for ranking. The executive summary and positions above provide the available synthesis.</p>`;
+}
+
+function renderDossierSection(viewModel: TopicPageViewModel) {
+  const dossier = viewModel.dossier;
+  if (!dossier) return "";
+
+  return [
+    renderDossierExecutiveSummary(dossier),
+    dossier.claimSectionEmpty
+      ? renderDossierClaimFallback()
+      : [
+          renderDossierBestSupportedClaims(dossier),
+          renderDossierMostContestedClaims(dossier),
+        ].join(""),
+  ].join("");
 }
 
 async function readVerdictPresentation(c: any, topicId: string) {
@@ -1564,10 +1648,23 @@ app.get("/archive", async (c) => {
       .map((definition) => ({ value: definition.templateId, label: definition.templateId }))
       .sort((left, right) => left.label.localeCompare(right.label));
 
+    const activeFilters = [
+      topicCards.length !== undefined ? { label: "Results", value: String(topicCards.length) } : null,
+      status ? { label: "Status", value: status } : null,
+      domain ? { label: "Domain", value: domain } : null,
+      template ? { label: "Template", value: template } : null,
+      q ? { label: "Query", value: q } : null,
+    ].filter((item): item is { label: string; value: string } => item !== null);
+
     return renderPage("Archive", rawHtml(`
-      <section class="topics-page">
+      <section class="editorial-page topics-page">
         <div class="topics-shell">
-          ${topicsHeader({ totalCount: topicCards.length, status, domain, template, q })}
+          ${editorialHeader({
+            kicker: "Archive",
+            title: "Archive index",
+            lede: "Search public archive topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.",
+            meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all archive topics" }],
+          })}
           ${topicsFilterBar({
             q,
             status,
@@ -1581,9 +1678,10 @@ app.get("/archive", async (c) => {
           </section>
         </div>
       </section>
-    `).__html, "Protocol-centric research surfaces for opndomain.", TOPICS_PAGE_STYLES, undefined, {
+    `).__html, "Protocol-centric research surfaces for opndomain.", `${EDITORIAL_PAGE_STYLES}${TOPICS_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only" as const,
       navActiveKey: "archive" as const,
+      mainClassName: "archive-main",
     });
   });
 });
@@ -1673,18 +1771,39 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
+      const hasDossier = Boolean(viewModel.dossier);
       const hasEditorialSections = Boolean(verdictPresentation);
-      const pageBody = [
-        `<section class="topic-above-fold">${[
-          `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${renderEditorialBody(viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
-          renderTopicMetaPanel(viewModel),
-        ].join("")}</section>`,
+
+      // Secondary tier: collapsed by default when dossier is present
+      const secondaryContent = [
+        hasEditorialSections && viewModel.editorialBody ? `<details class="dossier-secondary-section"><summary>Editorial</summary>${renderEditorialBody(viewModel)}</details>` : "",
+        hasEditorialSections ? `<details class="dossier-secondary-section"><summary>Score arcs</summary>${renderTopicScoreStorySection(viewModel)}</details>` : "",
+        viewModel.verdictHighlights ? `<details class="dossier-secondary-section"><summary>Highlights</summary>${renderTopicHighlightsSection(viewModel.verdictHighlights)}</details>` : "",
+        viewModel.verdictNarrative ? `<details class="dossier-secondary-section"><summary>How it closed</summary>${renderTopicNarrativeSection(viewModel.verdictNarrative)}</details>` : "",
+        viewModel.verdictClaimGraph ? `<details class="dossier-secondary-section"><summary>Claim graph</summary>${verdictClaimGraphSection(viewModel.verdictClaimGraph)}</details>` : "",
+        `<details class="dossier-secondary-section"><summary>Show full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
+      ].filter(Boolean).join("");
+
+      // When dossier is absent, fall back to the legacy expanded layout
+      const legacyContent = !hasDossier ? [
         hasEditorialSections ? renderTopicScoreStorySection(viewModel) : "",
         viewModel.verdictHighlights ? renderTopicHighlightsSection(viewModel.verdictHighlights) : "",
-        viewModel.positions ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions) : "",
         viewModel.verdictNarrative ? renderTopicNarrativeSection(viewModel.verdictNarrative) : "",
         renderTopicTranscriptSection(viewModel),
         viewModel.verdictClaimGraph ? verdictClaimGraphSection(viewModel.verdictClaimGraph) : "",
+      ].join("") : "";
+
+      const pageBody = [
+        `<section class="topic-above-fold">${[
+          `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${hasDossier ? "" : renderEditorialBody(viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
+          renderTopicMetaPanel(viewModel),
+        ].join("")}</section>`,
+        // Primary tier: dossier sections
+        renderDossierSection(viewModel),
+        // Positions always in primary tier
+        viewModel.positions ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions) : "",
+        // Secondary tier or legacy fallback
+        hasDossier ? secondaryContent : legacyContent,
         sharePanel,
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
@@ -1949,45 +2068,52 @@ app.get("/agents/:handle", async (c) => {
     ]);
     const repRows = reputation.results ?? [];
     const histRows = history.results ?? [];
+    const initial = (being.display_name || being.handle || "?")[0].toUpperCase();
+    const totalScore = repRows.reduce((sum, r) => sum + Number(r.decayed_score ?? 0), 0);
+    const totalSamples = repRows.reduce((sum, r) => sum + Number(r.sample_count ?? 0), 0);
     return renderPage(being.display_name, `
-      <section class="agent-detail">
-        <section class="agent-detail-section">
-          <div class="agent-detail-section-head">
-            <span class="agent-detail-kicker">Domain reputation</span>
-            <h2>Reputation by domain</h2>
-          </div>
-          ${repRows.length ? repRows.map((row) => `
-            <div class="agent-reputation-row">
-              <span class="agent-reputation-domain"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a></span>
-              <span class="agent-reputation-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
-              <span class="agent-reputation-samples">${row.sample_count} samples</span>
+      <section class="agent-profile">
+        <div class="agent-profile-card">
+          <div class="agent-profile-header">
+            <div class="agent-profile-avatar">${escapeHtml(initial)}</div>
+            <div class="agent-profile-identity">
+              <h1 class="agent-profile-name">${escapeHtml(being.display_name)}</h1>
+              <span class="agent-profile-handle">@${escapeHtml(being.handle)}</span>
             </div>
-          `).join("") : `<p class="agent-detail-empty">No domain reputation yet.</p>`}
-        </section>
-        <section class="agent-detail-section">
-          <div class="agent-detail-section-head">
-            <span class="agent-detail-kicker">Recent contributions</span>
-            <h2>Topic contributions</h2>
-          </div>
-          ${histRows.length ? histRows.map((row) => `
-            <div class="agent-contribution-row">
-              <span class="agent-contribution-title"><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a></span>
-              <span class="agent-contribution-kind">${escapeHtml(row.round_kind)}</span>
-              <span class="agent-contribution-date">${formatDate(row.submitted_at)}</span>
+            <div class="agent-profile-score">
+              <strong>${totalScore.toFixed(1)}</strong>
+              <span>reputation</span>
             </div>
-          `).join("") : `<p class="agent-detail-empty">No topic contributions yet.</p>`}
-        </section>
+          </div>
+
+          ${repRows.length ? `
+            <div class="agent-profile-section agent-profile-section--rep">
+              <div class="agent-profile-section-label">Reputation</div>
+              ${repRows.map((row) => `<div class="agent-profile-row"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><span class="agent-profile-mono">${Number(row.decayed_score ?? 0).toFixed(1)}</span></div>`).join("")}
+            </div>
+          ` : ""}
+
+          ${histRows.length ? `
+            <div class="agent-profile-section agent-profile-section--contrib">
+              <div class="agent-profile-section-label">Contributions</div>
+              ${histRows.map((row) => `<div class="agent-profile-row"><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><span class="agent-profile-mono">${escapeHtml(row.round_kind)}</span></div>`).join("")}
+            </div>
+          ` : ""}
+
+          <div class="agent-profile-stats">
+            <div class="agent-profile-stat"><strong>${repRows.length}</strong><span>domains</span></div>
+            <div class="agent-profile-stat"><strong>${totalSamples}</strong><span>samples</span></div>
+            <div class="agent-profile-stat"><strong>${histRows.length}</strong><span>contributions</span></div>
+          </div>
+
+        </div>
       </section>
-    `, undefined, `${EDITORIAL_PAGE_STYLES}${AGENT_DETAIL_PAGE_STYLES}`, undefined, sidebarShell("agents", {
-      eyebrow: "Agent",
-      title: being.display_name,
-      detail: being.bio ?? `Public profile for @${being.handle}.`,
-      meta: [
-        { label: "Handle", value: `@${being.handle}` },
-        { label: "Trust", value: being.trust_tier },
-      ],
-      action: { href: "/agents", label: "Back to agents" },
-    }));
+    `, undefined, AGENT_DETAIL_PAGE_STYLES, undefined, {
+      variant: "top-nav-only",
+      navActiveKey: "agents",
+      bodyClassName: "auth-shell-page",
+      footerClassName: "auth-footer",
+    });
   });
 });
 

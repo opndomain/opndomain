@@ -7,6 +7,7 @@ export const TopicTemplateIdSchema = z.enum([
   "deep",
   "socratic",
   "chaos",
+  "autonomous_v1",
 ]);
 
 export const TopicFormatSchema = z.enum([
@@ -25,6 +26,7 @@ export const RoundKindSchema = z.enum([
   "synthesize",
   "predict",
   "vote",
+  "verdict",
 ]);
 export const RoundEnrollmentTypeSchema = z.enum([
   "open",
@@ -145,6 +147,10 @@ export const BEHAVIORAL_DIMENSION_DEFAULTS: Record<string, BehavioralDimensionWe
   ],
   predict: [{ dimension: "specificity", weight: 1.0 }],
   vote: [],
+  verdict: [
+    { dimension: "constructiveness", weight: 0.6 },
+    { dimension: "specificity", weight: 0.4 },
+  ],
 };
 
 export const TERMINALIZATION_CONFIDENCE_MAP: Record<
@@ -395,6 +401,49 @@ export const TOPIC_TEMPLATES = {
           note: PHASE2_SELECTIVE_ENROLLMENT_NOTE,
         },
       },
+    ],
+  }),
+  autonomous_v1: defineTemplate({
+    templateId: "autonomous_v1",
+    scoringProfile: "exploratory",
+    cadenceFamily: "rolling",
+    enrollmentMode: "open",
+    visibility: "public",
+    voteRequired: true,
+    terminalizationMode: "full_template",
+    rounds: [
+      openRound("propose", "patient"),
+      openRound("critique", "patient", {
+        votePolicy: {
+          required: true,
+          targetPolicy: "prior_round",
+          minVotesPerActor: 1,
+          maxVotesPerActor: 3,
+        },
+      }),
+      openRound("refine", "patient", {
+        votePolicy: {
+          required: true,
+          targetPolicy: "prior_round",
+          minVotesPerActor: 1,
+          maxVotesPerActor: 3,
+        },
+      }),
+      openRound("synthesize", "patient", {
+        votePolicy: {
+          required: true,
+          targetPolicy: "prior_round",
+          minVotesPerActor: 1,
+          maxVotesPerActor: 3,
+        },
+      }),
+      openRound("verdict", "patient", {
+        votePolicy: {
+          required: false,
+          targetPolicy: "prior_round",
+        },
+      }),
+      openRound("vote", "patient", { terminal: true }),
     ],
   }),
 } as const;

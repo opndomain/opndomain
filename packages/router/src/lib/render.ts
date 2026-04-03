@@ -440,76 +440,44 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
   const hasActiveFilters = Boolean(options.status || options.domain || options.template || options.q);
   return `
     <section class="topics-filterbar">
-      <div class="topics-filter-shell">
-        <form class="topics-search-form" method="get" action="/archive">
-          <div class="topics-search-field">
-            <label for="topics-query">Keyword Search</label>
-            <input id="topics-query" name="q" type="search" value="${esc(options.q)}" placeholder="Search topic titles, prompts, and domains">
-          </div>
-          ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
-          ${options.domain ? `<input type="hidden" name="domain" value="${esc(options.domain)}">` : ""}
-          ${options.template ? `<input type="hidden" name="template" value="${esc(options.template)}">` : ""}
-          <div class="topics-filter-actions">
-            <button type="submit">Search</button>
-            ${hasActiveFilters ? `<a class="topics-filter-clear" href="/archive">Clear all</a>` : ""}
-          </div>
-        </form>
-        <div class="topics-filter-status">
-          <span class="topics-filter-label">Status</span>
-          <div class="topics-status-pills" aria-label="Filter topics by status">
-            <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
-            <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
-            <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
-          </div>
+      <form class="topics-filter-row" method="get" action="/archive">
+        <input class="topics-search-input" name="q" type="search" value="${esc(options.q)}" placeholder="Search topics...">
+        <select class="topics-filter-select" name="domain">
+          ${topicsFilterOption("", "All domains", options.domain)}
+          ${options.domainOptions.map((option) => topicsFilterOption(option.value, option.label, options.domain)).join("")}
+        </select>
+        <select class="topics-filter-select" name="template">
+          ${topicsFilterOption("", "All templates", options.template)}
+          ${options.templateOptions.map((option) => topicsFilterOption(option.value, option.label, options.template)).join("")}
+        </select>
+        <div class="topics-status-pills" aria-label="Filter topics by status">
+          <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
+          <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
+          <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
         </div>
-        <form class="topics-filter-form" method="get" action="/archive">
-          ${options.q ? `<input type="hidden" name="q" value="${esc(options.q)}">` : ""}
-          ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
-          <div class="topics-filter-grid">
-            <div class="topics-filter-field">
-              <label for="topics-domain">Domain</label>
-              <select id="topics-domain" name="domain">
-                ${topicsFilterOption("", "All domains", options.domain)}
-                ${options.domainOptions.map((option) => topicsFilterOption(option.value, option.label, options.domain)).join("")}
-              </select>
-            </div>
-            <div class="topics-filter-field">
-              <label for="topics-template">Template</label>
-              <select id="topics-template" name="template">
-                ${topicsFilterOption("", "All templates", options.template)}
-                ${options.templateOptions.map((option) => topicsFilterOption(option.value, option.label, options.template)).join("")}
-              </select>
-            </div>
-          </div>
-          <div class="topics-filter-actions">
-            <button type="submit">Apply</button>
-          </div>
-        </form>
-      </div>
+        ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
+        <button class="topics-filter-btn" type="submit">Search</button>
+        ${hasActiveFilters ? `<a class="topics-filter-clear" href="/archive">Clear</a>` : ""}
+      </form>
     </section>
   `;
 }
 
 export function topicCard(topic: TopicCardData) {
-  const prompt = topic.prompt?.trim() || "No prompt excerpt is available for this topic yet.";
-  const currentRound = topic.current_round_index === null ? "Not started" : `Round ${topic.current_round_index + 1}`;
   return `
     <article class="topics-card">
       <div class="topics-card-head">
         <div class="topics-card-copy">
           <span class="topics-card-eyebrow">${esc(topic.template_id)}</span>
           <h2><a href="/topics/${esc(topic.id)}">${esc(topic.title)}</a></h2>
-          <p>${esc(prompt)}</p>
         </div>
-        <div class="topics-card-state"><strong>${esc(topic.status)}</strong>${esc(currentRound)}</div>
+        <span class="topics-card-status">${esc(topic.status)}</span>
       </div>
       <div class="topics-card-meta">
         ${topicCardStat("Domain", rawHtml(`<a href="/domains/${esc(topic.domain_slug)}">${esc(topic.domain_name)}</a>`))}
         ${topicCardStat("Participants", String(topic.member_count))}
         ${topicCardStat("Rounds", String(topic.round_count))}
-        ${topicCardStat("Updated", formatDate(topic.updated_at))}
-        ${topicCardStat("Created", formatDate(topic.created_at))}
-        ${topicCardStat("Topic ID", rawHtml(`<span class="mono">${esc(topic.id)}</span>`))}
+        ${topicCardStat("Date", formatDate(topic.created_at))}
       </div>
     </article>
   `;

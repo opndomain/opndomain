@@ -28,6 +28,7 @@ export const LIVE_WEIGHT_PROFILES: Record<BaseWeightProfileKey, ScoreWeightProfi
   synthesize: { relevance: 0.24, novelty: 0.1, reframe: 0.24, substance: 0.25, role: 0.17 },
   predict: { relevance: 0.21, novelty: 0.14, reframe: 0.18, substance: 0.29, role: 0.18 },
   vote: { relevance: 0.2, novelty: 0.16, reframe: 0.16, substance: 0.31, role: 0.17 },
+  verdict: { relevance: 0.24, novelty: 0.1, reframe: 0.24, substance: 0.25, role: 0.17 },
   default: { relevance: 0.2, novelty: 0.18, reframe: 0.15, substance: 0.32, role: 0.15 },
 };
 
@@ -38,6 +39,7 @@ export const SHADOW_WEIGHT_PROFILES: Record<BaseWeightProfileKey, ScoreWeightPro
   synthesize: { relevance: 0.26, novelty: 0.08, reframe: 0.26, substance: 0.22, role: 0.18 },
   predict: { relevance: 0.23, novelty: 0.12, reframe: 0.2, substance: 0.26, role: 0.19 },
   vote: { relevance: 0.22, novelty: 0.14, reframe: 0.16, substance: 0.28, role: 0.2 },
+  verdict: { relevance: 0.26, novelty: 0.08, reframe: 0.26, substance: 0.22, role: 0.18 },
   default: { relevance: 0.23, novelty: 0.17, reframe: 0.13, substance: 0.28, role: 0.19 },
 };
 

@@ -1,7 +1,9 @@
 import { Hono } from "hono";
-import { VoteSubmissionSchema } from "@opndomain/shared";
+import { VoteSubmissionSchema, ClaimVoteAxisSchema, ClaimVoteDirectionSchema } from "@opndomain/shared";
+import { z } from "zod";
 import type { ApiEnv } from "../lib/env.js";
 import { firstRow } from "../lib/db.js";
+import { createId } from "../lib/ids.js";
 import { ApiError, badRequest, conflict, forbidden } from "../lib/errors.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
@@ -182,7 +184,9 @@ voteRoutes.post("/:topicId/votes", async (c) => {
     const payload = await doResponse.json() as {
       weight?: number;
       replayed?: boolean;
+      id?: string;
     };
+
     if (doResponse.status === 409) {
       return c.json(payload, 409);
     }
@@ -214,6 +218,115 @@ voteRoutes.post("/:topicId/votes", async (c) => {
           message: error.message,
           details: error.details,
         },
+        error.status as never,
+      );
+    }
+    throw error;
+  }
+});
+
+const ClaimVoteSubmissionSchema = z.object({
+  beingId: z.string().min(1),
+  instanceId: z.string().min(1),
+  canonicalSlotId: z.string().min(1),
+  axis: ClaimVoteAxisSchema,
+  direction: ClaimVoteDirectionSchema,
+});
+
+voteRoutes.post("/:topicId/claim-votes", async (c) => {
+  try {
+    const body = parseJsonBody(ClaimVoteSubmissionSchema, await c.req.json());
+    const topicId = c.req.param("topicId");
+    const { agent } = await authenticateRequest(c.env, c.req.raw);
+
+    // Verify being belongs to agent
+    const being = await firstRow<{ id: string; trust_tier: string }>(
+      c.env.DB,
+      `SELECT id, trust_tier FROM beings WHERE id = ? AND agent_id = ?`,
+      body.beingId,
+      agent.id,
+    );
+    if (!being) {
+      return forbidden("Being not found or not owned by agent.");
+    }
+
+    // Verify instance belongs to topic, is in correct phase, and being is a participant
+    const instance = await firstRow<{ id: string; status: string; current_round_kind: string | null }>(
+      c.env.DB,
+      `SELECT ti.id, ti.status, ti.current_round_kind FROM topic_instances ti
+       WHERE ti.id = ? AND ti.topic_id = ?`,
+      body.instanceId,
+      topicId,
+    );
+    if (!instance || instance.status !== "running") {
+      return badRequest("instance_not_active", "Instance is not in a running state.");
+    }
+
+    // Verify the instance is in the claim vote phase (vote round)
+    const activeRound = await firstRow<{ round_kind: string }>(
+      c.env.DB,
+      `SELECT round_kind FROM rounds
+       WHERE instance_id = ? AND status = 'active' LIMIT 1`,
+      body.instanceId,
+    );
+    if (!activeRound || activeRound.round_kind !== "vote") {
+      return badRequest("wrong_phase", "Claim votes are only accepted during the vote round.");
+    }
+
+    const participant = await firstRow<{ id: string }>(
+      c.env.DB,
+      `SELECT id FROM instance_participants WHERE instance_id = ? AND being_id = ?`,
+      body.instanceId,
+      body.beingId,
+    );
+    if (!participant) {
+      return forbidden("Not a participant in this instance.");
+    }
+
+    // Verify slot exists, belongs to topic, and is ballot-eligible
+    const slot = await firstRow<{ id: string; ballot_eligible: number }>(
+      c.env.DB,
+      `SELECT id, ballot_eligible FROM canonical_slots WHERE id = ? AND topic_id = ?`,
+      body.canonicalSlotId,
+      topicId,
+    );
+    if (!slot) {
+      return badRequest("slot_not_found", "Canonical slot not found.");
+    }
+    if (!slot.ballot_eligible) {
+      return badRequest("slot_not_eligible", "This slot is not ballot-eligible.");
+    }
+
+    // Submit to topic-state DO
+    const doId = c.env.TOPIC_STATE_DO.idFromName(topicId);
+    const stub = c.env.TOPIC_STATE_DO.get(doId);
+    const claimVoteId = createId("cv");
+    const acceptedAt = new Date().toISOString();
+    const idempotencyKey = `${body.instanceId}:${body.canonicalSlotId}:${body.beingId}:${body.axis}`;
+
+    const doResponse = await stub.fetch(new Request("https://do/claim-vote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        claimVoteId,
+        topicId,
+        instanceId: body.instanceId,
+        canonicalSlotId: body.canonicalSlotId,
+        voterBeingId: body.beingId,
+        axis: body.axis,
+        direction: body.direction,
+        weight: null,
+        acceptedAt,
+        idempotencyKey,
+      }),
+    }));
+
+    const payload = await doResponse.json();
+    return jsonData(c, payload, doResponse.status);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return c.json(
+        { error: error.code, code: error.code, message: error.message, details: error.details },
         error.status as never,
       );
     }

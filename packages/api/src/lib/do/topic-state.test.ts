@@ -59,7 +59,7 @@ class FakeSql {
       return [];
     }
     if (sql.startsWith("INSERT INTO pending_aux")) {
-      const tableName = sql.includes("'epistemic_claims'") ? "epistemic_claims" : "votes";
+      const tableName = sql.includes("'epistemic_claims'") ? "epistemic_claims" : sql.includes("'claim_votes'") ? "claim_votes" : "votes";
       const operation = sql.includes("'upsert'") ? "upsert" : "insert";
       this.pendingAux.set(String(values[0]), {
         id: values[0],
@@ -166,7 +166,8 @@ class FakeSql {
       return Array.from(this.pendingAux.values())
         .filter((row) => Number(row.flushed) === 0 && (
           (sql.includes("table_name = 'votes'") && String(row.table_name) === "votes") ||
-          (sql.includes("table_name = 'epistemic_claims'") && String(row.table_name) === "epistemic_claims")
+          (sql.includes("table_name = 'epistemic_claims'") && String(row.table_name) === "epistemic_claims") ||
+          (sql.includes("table_name = 'claim_votes'") && String(row.table_name) === "claim_votes")
         ))
         .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
         .slice(0, limit);
@@ -291,10 +292,12 @@ class FakeDb {
   executedBatches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
   throwOnBatch = false;
   nextBatchResults: Array<{ success?: boolean; error?: string; meta?: { changes?: number } }> | null = null;
+  nextRunResults: Array<{ success?: boolean; meta?: { changes?: number } }> | null = null;
   throwOnRunMatch: RegExp | null = null;
   persistedContributionIds = new Set<string>();
   persistedScoreIds = new Set<string>();
   persistedVoteIds = new Set<string>();
+  persistedVotes = new Map<string, { id: string; roundId: string; voteKind: string; voterBeingId: string; contributionId: string }>();
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
@@ -372,6 +375,27 @@ class FakeQueryStatement {
   }
 
   async first<T>() {
+    if (this.sql.includes("SELECT id FROM votes WHERE id = ? LIMIT 1")) {
+      const row = this.db.persistedVotes.get(String(this.bindings[0]));
+      return (row ? { id: row.id } : null) as T | null;
+    }
+    if (this.sql.includes("WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ? AND contribution_id = ?")) {
+      const row = Array.from(this.db.persistedVotes.values()).find((vote) =>
+        vote.roundId === String(this.bindings[0]) &&
+        vote.voteKind === String(this.bindings[1]) &&
+        vote.voterBeingId === String(this.bindings[2]) &&
+        vote.contributionId === String(this.bindings[3]),
+      );
+      return (row ? { id: row.id } : null) as T | null;
+    }
+    if (this.sql.includes("WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ?")) {
+      const row = Array.from(this.db.persistedVotes.values()).find((vote) =>
+        vote.roundId === String(this.bindings[0]) &&
+        vote.voteKind === String(this.bindings[1]) &&
+        vote.voterBeingId === String(this.bindings[2]),
+      );
+      return (row ? { id: row.id, contribution_id: row.contributionId } : null) as T | null;
+    }
     return this.db.consumeFirst<T>(this.sql);
   }
 
@@ -384,7 +408,20 @@ class FakeQueryStatement {
       throw new Error(`simulated run failure for ${this.sql}`);
     }
     this.db.runs.push({ sql: this.sql, bindings: this.bindings });
-    return { success: true };
+    const result = this.db.nextRunResults?.shift() ?? { success: true, meta: { changes: 1 } };
+    const changes = result.meta?.changes ?? 1;
+    if (changes !== 0 && this.sql.includes("INSERT INTO votes")) {
+      const [id, , roundId, contributionId, voterBeingId, , , voteKind] = this.bindings;
+      this.db.persistedVoteIds.add(String(id));
+      this.db.persistedVotes.set(String(id), {
+        id: String(id),
+        roundId: String(roundId),
+        voteKind: String(voteKind),
+        voterBeingId: String(voterBeingId),
+        contributionId: String(contributionId),
+      });
+    }
+    return result;
   }
 }
 
@@ -1184,7 +1221,7 @@ describe("topic state durable object", () => {
 
     assert.deepEqual(result.flushedContributionIds, ["cnt_1"]);
     assert.equal(result.remainingCount, 0);
-    assert.equal(db.batchCalls > 0, true);
+    assert.equal(db.runs.some((run) => run.sql.includes("INSERT INTO votes")), true);
     assert.equal(db.runs.some((run) => run.sql.includes("UPDATE contribution_scores")), true);
     const topicAggregate = await storage.get("votes:topic-aggregate:top_1") as {
       topicId: string;
@@ -1212,7 +1249,7 @@ describe("topic state durable object", () => {
     assert.equal(contributionAggregate.upvoteCount, 1);
     assert.equal(contributionAggregate.downvoteCount, 0);
     assert.equal(typeof contributionAggregate.reconciledAt, "string");
-    const voteInsert = db.executedBatches[0]?.find((statement) => statement.sql.includes("INSERT OR IGNORE INTO votes"));
+    const voteInsert = db.runs.find((statement) => statement.sql.includes("INSERT INTO votes"));
     assert.ok(voteInsert);
     assert.equal(voteInsert?.bindings[7], "most_interesting");
     assert.equal(voteInsert?.bindings[8], 0.5);
@@ -1265,7 +1302,7 @@ describe("topic state durable object", () => {
     );
 
     assert.deepEqual(result.flushedContributionIds, ["cnt_1"]);
-    const voteInsert = db.executedBatches[0]?.find((statement) => statement.sql.includes("INSERT OR IGNORE INTO votes"));
+    const voteInsert = db.runs.find((statement) => statement.sql.includes("INSERT INTO votes"));
     assert.ok(voteInsert);
     assert.equal(voteInsert?.bindings[7], "most_interesting");
     assert.equal(voteInsert?.bindings[8], null);
@@ -1297,7 +1334,7 @@ describe("topic state durable object", () => {
       }),
       acceptedAt,
     );
-    db.nextBatchResults = [{ success: true, meta: { changes: 0 } }];
+    db.nextRunResults = [{ success: true, meta: { changes: 0 } }];
     db.queueAll("SELECT id, starts_at, ends_at\n        FROM rounds\n        WHERE id IN", [{
       id: "rnd_active",
       starts_at: "2026-03-25T00:00:00.000Z",

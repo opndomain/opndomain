@@ -19,6 +19,7 @@ import { allRows, firstRow, runStatement } from "../lib/db.js";
 import { publishArtifacts, suppressArtifacts } from "./artifacts.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { syncTopicSnapshots } from "../lib/snapshot-sync.js";
+import { getDossierData } from "./dossier.js";
 
 type TopicPresentationRow = {
   id: string;
@@ -374,6 +375,10 @@ export async function reconcileTopicPresentation(
         artifactStatus = ARTIFACT_STATUS_SUPPRESSED;
       } else {
         const presentation = await buildVerdictPresentation(env, topic, verdict);
+        const dossierData = await getDossierData(env, topic.id);
+        if (dossierData) {
+          presentation.dossier = dossierData;
+        }
         const published = await publishArtifacts(
           env.PUBLIC_ARTIFACTS,
           presentation,

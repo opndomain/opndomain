@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import path from "node:path";
+
 /**
  * test-debate-e2e.mjs — End-to-end debate test with 5 distinct agent personalities.
  *
@@ -23,6 +26,9 @@ function readFlag(name, fallback) {
 
 const API_BASE_URL = readFlag("--api-base-url", "https://api.opndomain.com");
 const DOMAIN_ID = readFlag("--domain-id", "dom_game-theory");
+const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
+const LOG_DIR = path.resolve("logs");
+const LOG_PATH = path.join(LOG_DIR, `test-debate-e2e-${RUN_ID}.log`);
 
 // Admin credentials (clawdjarvis@gmail.com)
 const ADMIN_CLIENT_ID = "cli_8308c04fc3a813a0e34435e08ec0c5f8";
@@ -129,23 +135,59 @@ function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function writeLine(line = "") {
+  console.log(line);
+  fs.appendFileSync(LOG_PATH, `${line}\n`);
+}
+
 function log(label, payload) {
   const time = new Date().toISOString().slice(11, 19);
-  console.log(`[${time}] ${label}:`, typeof payload === "string" ? payload : JSON.stringify(payload, null, 2));
+  const rendered = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  writeLine(`[${time}] ${label}: ${rendered}`);
 }
 
 function logStep(msg) {
-  console.log(`\n${"=".repeat(60)}\n  ${msg}\n${"=".repeat(60)}`);
+  writeLine(`\n${"=".repeat(60)}\n  ${msg}\n${"=".repeat(60)}`);
+}
+
+function summarizeByRound(rows, key) {
+  return rows.reduce((acc, row) => {
+    const roundKey = `${row.roundIndex}:${row.roundKind}`;
+    const bucket = acc[roundKey] ?? {};
+    bucket[row[key]] = (bucket[row[key]] ?? 0) + 1;
+    acc[roundKey] = bucket;
+    return acc;
+  }, {});
+}
+
+function renderError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack?.split("\n").slice(0, 6).join("\n"),
+    };
+  }
+  return { message: String(error) };
 }
 
 async function api(path, options = {}) {
-  const { method = "GET", token, body, expectedStatus = 200 } = options;
+  const { method = "GET", token, body, expectedStatus = 200, logRequest = false, logLabel = null } = options;
   const url = `${API_BASE_URL}${path}`;
   const headers = {
     accept: "application/json",
     ...(body ? { "content-type": "application/json" } : {}),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
   };
+  const startedAt = Date.now();
+
+  if (logRequest) {
+    log(logLabel ?? "api-request", {
+      method,
+      path,
+      body,
+    });
+  }
 
   const response = await fetch(url, {
     method,
@@ -165,7 +207,26 @@ async function api(path, options = {}) {
   if (!expectedStatuses.includes(response.status)) {
     const code = parsed?.code ?? parsed?.error ?? "unknown";
     const message = parsed?.message ?? `HTTP ${response.status}`;
+    log(logLabel ?? "api-error", {
+      method,
+      path,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      code,
+      message,
+      details: parsed?.details ?? {},
+    });
     throw new Error(`${method} ${path} failed (${response.status}) ${code}: ${message}\n${JSON.stringify(parsed?.details ?? {}, null, 2)}`);
+  }
+
+  if (logRequest) {
+    log(logLabel ?? "api-response", {
+      method,
+      path,
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      data: parsed?.data ?? parsed,
+    });
   }
 
   return parsed.data ?? parsed;
@@ -181,12 +242,24 @@ function idempotencyKey(parts) {
 
 async function main() {
   const startedAt = Date.now();
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+  fs.writeFileSync(LOG_PATH, "");
+  logStep("Run metadata");
+  log("run", {
+    runId: RUN_ID,
+    logPath: LOG_PATH,
+    apiBaseUrl: API_BASE_URL,
+    domainId: DOMAIN_ID,
+    startedAt: new Date(startedAt).toISOString(),
+  });
 
   // ---- Step 1: Admin token ----
   logStep("Step 1: Authenticate admin");
   const adminTokenData = await api("/v1/auth/token", {
     method: "POST",
     body: { grantType: "client_credentials", clientId: ADMIN_CLIENT_ID, clientSecret: ADMIN_CLIENT_SECRET },
+    logRequest: true,
+    logLabel: "admin-auth",
   });
   const adminToken = adminTokenData.accessToken;
   log("admin", { agentId: adminTokenData.agent.id, email: adminTokenData.agent.email });
@@ -196,13 +269,20 @@ async function main() {
   const participants = [];
   for (let i = 0; i < 5; i++) {
     const personality = PERSONALITIES[i];
-    const guest = await api("/v1/auth/guest", { method: "POST", expectedStatus: 201 });
+    const guest = await api("/v1/auth/guest", {
+      method: "POST",
+      expectedStatus: 201,
+      logRequest: true,
+      logLabel: `guest-create-${i + 1}`,
+    });
 
     // Update being profile with personality
     await api(`/v1/beings/${guest.being.id}`, {
       method: "PATCH",
       token: guest.accessToken,
       body: { displayName: personality.displayName, bio: personality.bio },
+      logRequest: true,
+      logLabel: `guest-profile-${i + 1}`,
     });
 
     participants.push({
@@ -235,8 +315,11 @@ async function main() {
       topicSource: "cron_auto",
       reason: "E2E test of round instructions and categorical vote flow",
     },
+    logRequest: true,
+    logLabel: "topic-create",
   });
   log("topic-created", { id: topic.id, status: topic.status, rounds: topic.rounds.length, template: topic.templateId });
+  log("topic-url", `${API_BASE_URL.replace("api.", "")}/topics/${topic.id}`);
 
   // ---- Step 4: Set timing and join window ----
   logStep("Step 4: Set timing and join all 5 agents");
@@ -246,6 +329,8 @@ async function main() {
     method: "PATCH",
     token: adminToken,
     body: { startsAt, joinUntil },
+    logRequest: true,
+    logLabel: "topic-timing",
   });
   log("timing", { startsAt, joinUntil });
 
@@ -254,6 +339,8 @@ async function main() {
       method: "POST",
       token: p.accessToken,
       body: { beingId: p.beingId },
+      logRequest: true,
+      logLabel: `join-${p.displayName}`,
     });
     log("joined", { displayName: p.displayName, beingId: p.beingId });
   }
@@ -268,13 +355,17 @@ async function main() {
   const roundInstructions = {};
   const allVotes = [];
   const allContributions = [];
+  let loopCount = 0;
 
   while (Date.now() < deadlineMs) {
+    loopCount++;
     // Sweep to advance lifecycle
     const sweep = await api("/v1/internal/topics/sweep", {
       method: "POST",
       token: adminToken,
       body: {},
+      logRequest: loopCount === 1 || sweepCount % 5 === 0,
+      logLabel: "sweep",
     });
     sweepCount++;
     if (sweep?.mutatedTopicIds?.length > 0) {
@@ -293,6 +384,20 @@ async function main() {
     const canonical = contexts[0]?.context;
     if (!canonical || typeof canonical.status !== "string") {
       throw new Error("Context response missing status");
+    }
+
+    if (loopCount === 1 || loopCount % 5 === 0) {
+      log("loop-summary", {
+        loopCount,
+        sweepCount,
+        topicId: topic.id,
+        status: canonical.status,
+        currentRoundId: canonical.currentRound?.id ?? null,
+        currentRoundKind: canonical.currentRound?.roundKind ?? null,
+        activeParticipants: contexts.length,
+        contributionsByRound: summarizeByRound(allContributions, "displayName"),
+        votesByRound: summarizeByRound(allVotes, "voteKind"),
+      });
     }
 
     const transitionKey = `${canonical.status}:${canonical.currentRound?.id ?? "none"}:${canonical.currentRound?.sequenceIndex ?? -1}`;
@@ -341,6 +446,13 @@ async function main() {
       if (!contributionKeys.has(contributionKey) && (!Array.isArray(context.ownContributionStatus) || context.ownContributionStatus.length === 0)) {
         const body = CONTRIBUTION_TEMPLATES[roundKind]?.[participant.style]
           ?? `${participant.displayName} responds in ${roundKind} round with characteristic ${participant.style} perspective.`;
+        log("contribution-attempt", {
+          who: participant.displayName,
+          round: roundKind,
+          roundId: currentRound.id,
+          stance: participant.stance,
+          bodyPreview: body.slice(0, 160),
+        });
 
         try {
           const contribution = await api(`/v1/topics/${topic.id}/contributions`, {
@@ -351,8 +463,10 @@ async function main() {
               beingId: participant.beingId,
               body,
               stance: participant.stance,
-              idempotencyKey: idempotencyKey(["e2e", topic.id, currentRound.id, participant.beingId, "contrib"]),
+              idempotencyKey: idempotencyKey(["e2e", "contrib", topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
             },
+            logRequest: true,
+            logLabel: `contribution-${participant.displayName}-${roundKind}`,
           });
           contributionKeys.add(contributionKey);
           allContributions.push({
@@ -369,7 +483,11 @@ async function main() {
             id: contribution?.id ?? "pending",
           });
         } catch (err) {
-          log("contribution-failed", { who: participant.displayName, round: roundKind, reason: err.message?.slice(0, 120) });
+          log("contribution-failed", {
+            who: participant.displayName,
+            round: roundKind,
+            error: renderError(err),
+          });
           contributionKeys.add(contributionKey); // don't retry
           continue;
         }
@@ -381,6 +499,17 @@ async function main() {
       });
       const voteRequired = Boolean(refreshedContext.currentRoundConfig?.voteRequired);
       const voteTargets = Array.isArray(refreshedContext.voteTargets) ? refreshedContext.voteTargets : [];
+      log("vote-context", {
+        who: participant.displayName,
+        round: roundKind,
+        roundId: currentRound.id,
+        voteRequired,
+        voteTargets: voteTargets.map((target) => ({
+          contributionId: target.contributionId,
+          beingId: target.beingId,
+          beingHandle: target.beingHandle ?? null,
+        })),
+      });
       if (!voteRequired || voteTargets.length === 0) continue;
 
       // Get other participants' contributions as vote targets
@@ -396,6 +525,15 @@ async function main() {
 
         // Pick a target — each kind targets a different contribution if possible
         const target = othersTargets[ki % othersTargets.length];
+        log("vote-attempt", {
+          who: participant.displayName,
+          round: roundKind,
+          roundId: currentRound.id,
+          voteKind,
+          targetContributionId: target.contributionId,
+          targetBeingId: target.beingId,
+          targetHandle: target.beingHandle ?? null,
+        });
 
         try {
           const vote = await api(`/v1/topics/${topic.id}/votes`, {
@@ -406,8 +544,10 @@ async function main() {
               beingId: participant.beingId,
               contributionId: target.contributionId,
               voteKind,
-              idempotencyKey: idempotencyKey(["e2e", topic.id, refreshedContext.currentRound.id, participant.beingId, voteKind]),
+              idempotencyKey: idempotencyKey(["e2e", voteKind, topic.id.slice(-12), refreshedContext.currentRound.id.slice(-12), participant.beingId.slice(-12)]),
             },
+            logRequest: true,
+            logLabel: `vote-${participant.displayName}-${voteKind}`,
           });
           voteKeys.add(voteKey);
           allVotes.push({
@@ -423,13 +563,18 @@ async function main() {
             kind: voteKind,
             target: target.beingHandle ?? target.beingId,
             replayed: Boolean(vote?.replayed),
+            voteId: vote?.id ?? null,
+            pendingFlush: vote?.pendingFlush ?? null,
+            weight: vote?.weight ?? null,
           });
         } catch (err) {
           // 3-distinct rule or max-votes may block some combinations — expected
           log("vote-blocked", {
             who: participant.displayName,
             kind: voteKind,
-            reason: err.message?.slice(0, 120),
+            round: roundKind,
+            targetContributionId: target.contributionId,
+            error: renderError(err),
           });
         }
       }
@@ -449,6 +594,8 @@ async function main() {
   log("contributions-total", allContributions.length);
   log("votes-total", allVotes.length);
   log("round-instructions-collected", Object.keys(roundInstructions));
+  log("contributions-by-round", summarizeByRound(allContributions, "displayName"));
+  log("votes-by-round", summarizeByRound(allVotes, "voteKind"));
 
   if (finalContext.status === "closed") {
     try {
@@ -461,7 +608,7 @@ async function main() {
 
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
   logStep(`Complete — ${elapsed}s elapsed`);
-  console.log(`
+  writeLine(`
 SUMMARY:
   Topic:          ${topic.id}
   Template:       debate_v2
@@ -471,6 +618,7 @@ SUMMARY:
   Round Instrs:   ${Object.keys(roundInstructions).join(", ") || "none collected"}
   Final Status:   ${finalContext.status}
   URL:            ${API_BASE_URL.replace("api.", "")}/topics/${topic.id}
+  Log File:       ${LOG_PATH}
   `);
 
   if (finalContext.status !== "closed") {
@@ -480,6 +628,10 @@ SUMMARY:
 }
 
 main().catch((err) => {
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.appendFileSync(LOG_PATH, `[FATAL] ${JSON.stringify(renderError(err), null, 2)}\n`);
+  } catch {}
   console.error("FATAL:", err);
   process.exitCode = 1;
 });
