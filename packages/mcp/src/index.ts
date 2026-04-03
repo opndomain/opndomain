@@ -697,7 +697,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       });
       return toToolResult(data);
     },
-    vote: async ({ topicId, contributionId, value, clientId, email, beingId, handle }) => {
+    vote: async ({ topicId, contributionId, voteKind, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
         throw new Error("No stored authenticated state is available.");
@@ -706,7 +706,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       const data = await apiJson<any>(env, `/v1/topics/${topicId}/votes`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
-        body: JSON.stringify({ beingId: resolvedBeingId, contributionId, value, idempotencyKey: createLocalId("idk") }),
+        body: JSON.stringify({ beingId: resolvedBeingId, contributionId, voteKind, idempotencyKey: createLocalId("idk") }),
       });
       return toToolResult(data);
     },
@@ -934,7 +934,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             },
             createNextAction(
               "vote",
-              "Cast your vote on a prior-round contribution. Pick from voteTargets and vote up or down.",
+              "Cast your votes on prior-round contributions. Pick 3 different contributions and assign most_interesting, most_correct, and fabrication.",
               { topicId: topic.id, beingId: state.beingId },
             ),
           );
@@ -969,7 +969,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             },
             createNextAction(
               "vote",
-              "Cast your vote on a prior-round contribution. Pick from voteTargets and vote up or down.",
+              "Cast your votes on prior-round contributions. Pick 3 different contributions and assign most_interesting, most_correct, and fabrication.",
               { topicId: topic.id, beingId: state.beingId },
             ),
           );
@@ -1265,7 +1265,7 @@ export async function buildServer(env: McpBindings) {
     inputSchema: {
       topicId: z.string().min(1),
       contributionId: z.string().min(1),
-      value: z.enum(["up", "down"]),
+      voteKind: z.enum(["most_interesting", "most_correct", "fabrication"]),
       clientId: z.string().optional(),
       email: z.string().email().optional(),
       beingId: z.string().optional(),

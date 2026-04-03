@@ -4,7 +4,7 @@ import type { ApiEnv } from "../lib/env.js";
 import { badRequest, forbidden, notFound } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import { computeCompositeScore } from "../lib/scoring/composite.js";
-import { aggregateWeightedVotes, computeEarlyVoteTimingMultiplier, computeEffectiveVoteWeight, computeVoteInfluence } from "../lib/scoring/votes.js";
+import { aggregateWeightedVotes, computeCategoryScores, computeEarlyVoteTimingMultiplier, computeEffectiveVoteWeight, computeVoteInfluence } from "../lib/scoring/votes.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 
@@ -32,6 +32,7 @@ type PersistedVoteRow = {
 
 type PersistedContributionVoteRow = PersistedVoteRow & {
   contribution_id: string;
+  vote_kind?: string;
 };
 
 export type TopicVoteStatsRow = {
@@ -86,7 +87,7 @@ export type VoteSubmissionResult = {
   voterBeingId: string;
   direction: number;
   weight: number;
-  value: "up" | "down";
+  voteKind: string;
   weightedValue: number;
   acceptedAt: string;
   replayed: boolean;
@@ -286,7 +287,7 @@ async function loadContributionVotes(env: ApiEnv, contributionIds: string[]) {
   const results = await env.DB
     .prepare(
       `
-        SELECT contribution_id, direction, weight, voter_being_id
+        SELECT contribution_id, direction, weight, voter_being_id, vote_kind
         FROM votes
         WHERE contribution_id IN (${buildInClause(contributionIds)})
       `,
@@ -345,21 +346,33 @@ export async function recomputeContributionFinalScores(
     })();
   if (!overrides?.contributionAggregatesByContributionId) {
     const voteRows = await loadContributionVotes(env, uniqueContributionIds);
-    const votesByContributionId = new Map<string, Array<{ direction: number; weight: number; voterBeingId: string }>>();
+    const votesByContributionId = new Map<string, Array<{ direction: number; weight: number; voterBeingId: string; voteKind?: string }>>();
     for (const vote of voteRows) {
       const existing = votesByContributionId.get(vote.contribution_id) ?? [];
       existing.push({
         direction: vote.direction,
         weight: Number(vote.weight ?? 0),
         voterBeingId: vote.voter_being_id,
+        voteKind: vote.vote_kind,
       });
       votesByContributionId.set(vote.contribution_id, existing);
     }
     for (const context of contexts) {
-      contributionAggregatesByContributionId.set(
-        context.contribution_id,
-        aggregateWeightedVotes(votesByContributionId.get(context.contribution_id) ?? []),
-      );
+      const votes = votesByContributionId.get(context.contribution_id) ?? [];
+      const hasCategoricalVotes = votes.some((v) => v.voteKind && v.voteKind !== "legacy");
+      if (hasCategoricalVotes) {
+        const categoryScores = computeCategoryScores(votes);
+        const baseAggregate = aggregateWeightedVotes(votes);
+        contributionAggregatesByContributionId.set(context.contribution_id, {
+          ...baseAggregate,
+          weightedVoteScore: categoryScores.weightedVoteScore,
+        });
+      } else {
+        contributionAggregatesByContributionId.set(
+          context.contribution_id,
+          aggregateWeightedVotes(votes),
+        );
+      }
     }
   }
 
@@ -445,7 +458,7 @@ export async function submitVote(
   env: ApiEnv,
   input: VoteRouteContext & {
     contributionId: string;
-    value: "up" | "down";
+    voteKind: string;
     idempotencyKey: string;
     resolvedTargets?: ResolvedVoteTargets;
   },
@@ -474,7 +487,7 @@ export async function submitVote(
     `,
     input.voterBeingId,
   );
-  const direction = input.value === "up" ? 1 : -1;
+  const direction = input.voteKind === "fabrication" ? -1 : 1;
   let weight = computeEffectiveVoteWeight(input.voterTrustTier, Number(reliability?.reliability ?? 1));
 
   // E2: Apply early-vote timing multiplier when earlyVoteWeightMode is configured
@@ -510,7 +523,7 @@ export async function submitVote(
       voterBeingId: input.voterBeingId,
       direction,
       weight,
-      value: input.value,
+      voteKind: input.voteKind,
       weightedValue: direction * weight,
       acceptedAt,
       idempotencyKey: input.idempotencyKey,

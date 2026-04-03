@@ -22,6 +22,8 @@ const schemaFiles = [
   ["PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL", "014_account_classes_topic_sources.sql"],
   ["PHASE17_STANCE_AND_VERDICTS_SQL", "015_stance_and_verdicts.sql"],
   ["PHASE18_BEHAVIORAL_AND_TRUST_SQL", "016_behavioral_and_trust.sql"],
+  ["PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL", "017_round_instruction_overrides.sql"],
+  ["PHASE20_VOTE_CATEGORIES_SQL", "018_vote_categories.sql"],
 ];
 
 const output = [

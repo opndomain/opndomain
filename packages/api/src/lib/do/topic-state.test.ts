@@ -84,8 +84,9 @@ class FakeSql {
       this.voteKeys.set(String(values[0]), {
         vote_key: values[0],
         direction: values[1],
-        response_json: values[2],
-        created_at: values[3],
+        vote_kind: values[2],
+        response_json: values[3],
+        created_at: values[4],
       });
       return [];
     }
@@ -109,7 +110,7 @@ class FakeSql {
       const row = this.idempotency.get(String(values[0]));
       return row ? [row] : [];
     }
-    if (sql.includes("SELECT direction, response_json FROM vote_keys")) {
+    if (sql.includes("SELECT direction, vote_kind, response_json FROM vote_keys")) {
       const row = this.voteKeys.get(String(values[0]));
       return row ? [row] : [];
     }
@@ -853,7 +854,7 @@ describe("topic state durable object", () => {
           voterBeingId: "bng_2",
           direction: 1,
           weight: 2,
-          value: "up",
+          voteKind: "most_interesting",
           weightedValue: 2,
           acceptedAt: "2026-03-25T00:00:00.000Z",
           idempotencyKey: "idem_vote_1",
@@ -873,7 +874,7 @@ describe("topic state durable object", () => {
           voterBeingId: "bng_2",
           direction: 1,
           weight: 2,
-          value: "up",
+          voteKind: "most_interesting",
           weightedValue: 2,
           acceptedAt: "2026-03-25T00:00:01.000Z",
           idempotencyKey: "idem_vote_1",
@@ -889,12 +890,12 @@ describe("topic state durable object", () => {
           voteId: "vot_3",
           topicId: "top_1",
           roundId: "rnd_1",
-          contributionId: "cnt_1",
+          contributionId: "cnt_different",
           voterBeingId: "bng_2",
-          direction: -1,
+          direction: 1,
           weight: 2,
-          value: "down",
-          weightedValue: -2,
+          voteKind: "most_interesting",
+          weightedValue: 2,
           acceptedAt: "2026-03-25T00:00:02.000Z",
           idempotencyKey: "idem_vote_2",
           targetRoundId: "rnd_0",
@@ -950,7 +951,7 @@ describe("topic state durable object", () => {
           voterBeingId: "bng_2",
           direction: 1,
           weight: 2,
-          value: "up",
+          voteKind: "most_interesting",
           weightedValue: 2,
           acceptedAt: "2026-03-25T00:00:00.000Z",
           idempotencyKey: "idem_vote_3",
@@ -970,7 +971,7 @@ describe("topic state durable object", () => {
           voterBeingId: "bng_2",
           direction: -1,
           weight: 2,
-          value: "down",
+          voteKind: "fabrication",
           weightedValue: -2,
           acceptedAt: "2026-03-25T00:00:01.000Z",
           idempotencyKey: "idem_vote_4",
@@ -1150,7 +1151,7 @@ describe("topic state durable object", () => {
         voterBeingId: "bng_2",
         direction: 1,
         weight: 2,
-        value: "up",
+        voteKind: "most_interesting",
         weightedValue: 2,
         acceptedAt,
         idempotencyKey: "idem_vote_flush",
@@ -1212,8 +1213,9 @@ describe("topic state durable object", () => {
     assert.equal(typeof contributionAggregate.reconciledAt, "string");
     const voteInsert = db.executedBatches[0]?.find((statement) => statement.sql.includes("INSERT OR IGNORE INTO votes"));
     assert.ok(voteInsert);
-    assert.equal(voteInsert?.bindings[7], 0.5);
+    assert.equal(voteInsert?.bindings[7], "most_interesting");
     assert.equal(voteInsert?.bindings[8], 0.5);
+    assert.equal(voteInsert?.bindings[9], 0.5);
   });
 
   it("persists null vote timing percentages when authoritative round timing is invalid", async () => {
@@ -1233,7 +1235,7 @@ describe("topic state durable object", () => {
         voterBeingId: "bng_2",
         direction: 1,
         weight: 2,
-        value: "up",
+        voteKind: "most_interesting",
         weightedValue: 2,
         acceptedAt,
         idempotencyKey: "idem_vote_invalid",
@@ -1264,8 +1266,9 @@ describe("topic state durable object", () => {
     assert.deepEqual(result.flushedContributionIds, ["cnt_1"]);
     const voteInsert = db.executedBatches[0]?.find((statement) => statement.sql.includes("INSERT OR IGNORE INTO votes"));
     assert.ok(voteInsert);
-    assert.equal(voteInsert?.bindings[7], null);
+    assert.equal(voteInsert?.bindings[7], "most_interesting");
     assert.equal(voteInsert?.bindings[8], null);
+    assert.equal(voteInsert?.bindings[9], null);
   });
 
   it("force-flush drains pending votes before returning", async () => {
@@ -1300,7 +1303,7 @@ describe("topic state durable object", () => {
         voterBeingId: "bng_3",
         direction: -1,
         weight: 1.5,
-        value: "down",
+        voteKind: "fabrication",
         weightedValue: -1.5,
         acceptedAt,
         idempotencyKey: "idem_vote_force_flush",

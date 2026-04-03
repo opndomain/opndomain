@@ -21,13 +21,17 @@ type ExistingVoteRow = {
   voter_being_id: string;
   direction: number;
   weight: number | null;
+  vote_kind: string;
   created_at: string;
 };
 
 type PendingVoteSummary = {
   pendingVoteCount: number;
+  pendingVotesByKind: Record<string, number>;
   hasMatchingVoteKey: boolean;
+  hasMatchingVoteKind: boolean;
   matchingDirection: number | null;
+  contributionAlreadyTargeted: boolean;
 };
 
 function voteReplayResponse(row: ExistingVoteRow) {
@@ -39,7 +43,7 @@ function voteReplayResponse(row: ExistingVoteRow) {
     voterBeingId: row.voter_being_id,
     direction: row.direction,
     weight: row.weight,
-    value: row.direction >= 0 ? "up" : "down",
+    voteKind: row.vote_kind ?? "legacy",
     weightedValue: Number(row.weight ?? 0) * row.direction,
     acceptedAt: row.created_at,
     replayed: true,
@@ -90,18 +94,18 @@ voteRoutes.post("/:topicId/votes", async (c) => {
     const persistedVote = await firstRow<ExistingVoteRow>(
       c.env.DB,
       `
-        SELECT id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, created_at
+        SELECT id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_kind, created_at
         FROM votes
-        WHERE round_id = ? AND contribution_id = ? AND voter_being_id = ?
+        WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ?
       `,
       context.activeRound.id,
-      body.contributionId,
+      body.voteKind,
       body.beingId,
     );
     if (persistedVote) {
-      if (persistedVote.direction !== (body.value === "up" ? 1 : -1)) {
-        conflict("A canonical vote already exists for that voter and contribution.", {
-          existingDirection: persistedVote.direction,
+      if (persistedVote.contribution_id !== body.contributionId) {
+        conflict("You already cast this vote kind on a different contribution this round.", {
+          existingContributionId: persistedVote.contribution_id,
         });
       }
       return jsonData(c, voteReplayResponse(persistedVote));
@@ -110,7 +114,7 @@ voteRoutes.post("/:topicId/votes", async (c) => {
     const namespaceId = c.env.TOPIC_STATE_DO.idFromName(pathTopicId);
     const stub = c.env.TOPIC_STATE_DO.get(namespaceId);
     const pendingVoteSummaryResponse = await stub.fetch(
-      `https://topic-state.internal/vote-summary?roundId=${encodeURIComponent(context.activeRound.id)}&contributionId=${encodeURIComponent(body.contributionId)}&voterBeingId=${encodeURIComponent(body.beingId)}`,
+      `https://topic-state.internal/vote-summary?roundId=${encodeURIComponent(context.activeRound.id)}&contributionId=${encodeURIComponent(body.contributionId)}&voterBeingId=${encodeURIComponent(body.beingId)}&voteKind=${encodeURIComponent(body.voteKind)}`,
     );
     const pendingVoteSummary = (await pendingVoteSummaryResponse.json()) as PendingVoteSummary;
 
@@ -124,13 +128,41 @@ voteRoutes.post("/:topicId/votes", async (c) => {
       context.activeRound.id,
       body.beingId,
     );
-    const requestedDirection = body.value === "up" ? 1 : -1;
+    const requestedDirection = body.voteKind === "fabrication" ? -1 : 1;
     const totalVotesThisRound =
       Number(persistedVoteCountRow?.count ?? 0) + Number(pendingVoteSummary.pendingVoteCount ?? 0);
     const isPendingReplay =
-      pendingVoteSummary.hasMatchingVoteKey && pendingVoteSummary.matchingDirection === requestedDirection;
+      pendingVoteSummary.hasMatchingVoteKind && pendingVoteSummary.matchingDirection === requestedDirection;
     if (totalVotesThisRound >= policy.maxVotesPerActor && !isPendingReplay) {
       forbidden("That being has already used all available votes for the active round.");
+    }
+
+    // 3-distinct: reject if this contribution is already targeted by a different vote kind
+    if (pendingVoteSummary.contributionAlreadyTargeted && !isPendingReplay) {
+      // Also check D1 for already-flushed votes targeting this contribution
+      const existingVoteOnContribution = await firstRow<{ id: string }>(
+        c.env.DB,
+        `SELECT id FROM votes WHERE round_id = ? AND voter_being_id = ? AND contribution_id = ?`,
+        context.activeRound.id,
+        body.beingId,
+        body.contributionId,
+      );
+      if (existingVoteOnContribution) {
+        forbidden("You have already voted on this contribution with a different vote kind.");
+      }
+    }
+    // Also check D1 for the 3-distinct rule
+    if (!isPendingReplay) {
+      const existingD1VoteOnContribution = await firstRow<{ id: string }>(
+        c.env.DB,
+        `SELECT id FROM votes WHERE round_id = ? AND voter_being_id = ? AND contribution_id = ?`,
+        context.activeRound.id,
+        body.beingId,
+        body.contributionId,
+      );
+      if (existingD1VoteOnContribution) {
+        forbidden("You have already voted on this contribution with a different vote kind.");
+      }
     }
 
     const doResponse = await submitVote(c.env, {
@@ -142,7 +174,7 @@ voteRoutes.post("/:topicId/votes", async (c) => {
       voterTrustTier: context.being.trust_tier,
       roundConfig: context.roundConfig,
       contributionId: body.contributionId,
-      value: body.value,
+      voteKind: body.voteKind,
       idempotencyKey: body.idempotencyKey,
       resolvedTargets,
     });
@@ -164,6 +196,7 @@ voteRoutes.post("/:topicId/votes", async (c) => {
           targetRoundId: resolvedTargets.targetRoundId,
           contributionId: body.contributionId,
           voterBeingId: body.beingId,
+          voteKind: body.voteKind,
           direction: requestedDirection as -1 | 1,
           weight: Number(payload.weight ?? 0),
         });

@@ -40,6 +40,7 @@ export const VoteCastEventSchema = ProtocolEventBaseSchema.extend({
   targetRoundId: z.string().min(1),
   contributionId: z.string().min(1),
   voterBeingId: z.string().min(1),
+  voteKind: z.string().min(1),
   direction: z.union([z.literal(-1), z.literal(1)]),
   weight: z.number().finite().nonnegative(),
 });

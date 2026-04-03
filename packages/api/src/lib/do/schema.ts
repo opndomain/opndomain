@@ -38,7 +38,7 @@ export type TopicStateVotePublicResponse = {
   voterBeingId: string;
   direction: number;
   weight: number;
-  value: "up" | "down";
+  voteKind: string;
   weightedValue: number;
   acceptedAt: string;
   replayed: boolean;
@@ -118,7 +118,7 @@ export type TopicStateVoteIngestRequest = {
   voterBeingId: string;
   direction: number;
   weight: number;
-  value: "up" | "down";
+  voteKind: string;
   weightedValue: number;
   acceptedAt: string;
   idempotencyKey: string;
@@ -142,7 +142,7 @@ export const TOPIC_STATE_INIT_SQL = [
   `CREATE TABLE IF NOT EXISTS pending_votes (id TEXT PRIMARY KEY, vote_key TEXT NOT NULL UNIQUE, topic_id TEXT NOT NULL, contribution_id TEXT NOT NULL, payload_json TEXT NOT NULL, flushed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS pending_aux (id TEXT PRIMARY KEY, table_name TEXT NOT NULL, operation TEXT NOT NULL, payload_json TEXT NOT NULL, flushed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS idempotency_keys (key TEXT PRIMARY KEY, contribution_id TEXT NOT NULL, response_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
-  `CREATE TABLE IF NOT EXISTS vote_keys (vote_key TEXT PRIMARY KEY, direction INTEGER NOT NULL, response_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS vote_keys (vote_key TEXT PRIMARY KEY, direction INTEGER NOT NULL, vote_kind TEXT NOT NULL DEFAULT 'legacy', response_json TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS contribution_counts (topic_id TEXT NOT NULL, round_index INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (topic_id, round_index))`,
   `CREATE TABLE IF NOT EXISTS latest_round_contributions (contribution_id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, round_index INTEGER NOT NULL, being_id TEXT NOT NULL, visibility TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE INDEX IF NOT EXISTS idx_pending_messages_unflushed ON pending_messages(flushed, created_at)`,

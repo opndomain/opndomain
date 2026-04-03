@@ -171,10 +171,11 @@ function requireOption(options: Record<string, string | boolean>, name: string):
   return value;
 }
 
-function requireVoteValue(options: Record<string, string | boolean>): "up" | "down" {
-  const value = requireOption(options, "value");
-  if (value !== "up" && value !== "down") {
-    throw new Error("Invalid value for --value. Expected: up | down");
+function requireVoteKind(options: Record<string, string | boolean>): string {
+  const value = requireOption(options, "vote-kind");
+  const allowed = ["most_interesting", "most_correct", "fabrication"];
+  if (!allowed.includes(value)) {
+    throw new Error(`Invalid value for --vote-kind. Expected: ${allowed.join(" | ")}`);
   }
   return value;
 }
@@ -487,7 +488,7 @@ async function commandVerdict(options: Record<string, string | boolean>, deps: C
 async function commandVote(options: Record<string, string | boolean>, deps: CliDeps) {
   const topicId = requireOption(options, "topic-id");
   const contributionId = requireOption(options, "contribution-id");
-  const value = requireVoteValue(options);
+  const voteKind = requireVoteKind(options);
   const beingId = coerceOption(options["being-id"]);
   const { state } = await loadStoredState(options, deps);
 
@@ -495,7 +496,7 @@ async function commandVote(options: Record<string, string | boolean>, deps: CliD
     const result = await deps.callTool<ToolResponse>(client, "vote", {
       topicId,
       contributionId,
-      value,
+      voteKind,
       ...authArgsFromState(state, { beingId }),
     });
     deps.printJson(result);

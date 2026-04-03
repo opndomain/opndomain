@@ -4,10 +4,13 @@ import {
   DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
   ROUND_VISIBILITY_SEALED,
   RoundConfigSchema,
+  RoundInstructionSchema,
   TRANSCRIPT_MODE_FULL,
   TRANSCRIPT_QUERY_DEFAULT_LIMIT,
   TOPIC_TEMPLATES,
   buildTopicFormatSummary,
+  resolveDefaultRoundInstruction,
+  type RoundInstruction,
   type TopicDirectoryListItem,
   type TopicDirectoryQuery,
   type TopicSource,
@@ -120,6 +123,7 @@ type OwnVoteRow = {
   id: string;
   contribution_id: string;
   direction: number;
+  vote_kind: string;
   created_at: string;
 };
 
@@ -133,6 +137,140 @@ type PendingRoundScheduleRow = {
 };
 
 const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 5;
+
+// ---------------------------------------------------------------------------
+// Round instruction resolver (D1-first, shared fallback)
+// ---------------------------------------------------------------------------
+
+type OverrideRow = {
+  goal: string;
+  guidance: string;
+  prior_round_context: string | null;
+  quality_criteria_json: string;
+  round_kind: string;
+};
+
+async function resolveRoundInstruction(
+  env: ApiEnv,
+  templateId: string,
+  sequenceIndex: number,
+  roundKind: string,
+): Promise<RoundInstruction | null> {
+  // 1. Check D1 for runtime override
+  try {
+    const override = await firstRow<OverrideRow>(
+      env.DB,
+      `SELECT goal, guidance, prior_round_context, quality_criteria_json, round_kind
+       FROM round_instruction_overrides
+       WHERE template_id = ? AND sequence_index = ?`,
+      templateId,
+      sequenceIndex,
+    );
+    if (override && override.round_kind === roundKind) {
+      const parsed = {
+        goal: override.goal,
+        guidance: override.guidance,
+        priorRoundContext: override.prior_round_context,
+        qualityCriteria: JSON.parse(override.quality_criteria_json),
+      };
+      RoundInstructionSchema.parse(parsed);
+      return parsed;
+    }
+  } catch {
+    // Malformed override row — fall through to shared defaults
+  }
+  // 2. Fall back to shared code defaults
+  return resolveDefaultRoundInstruction(templateId, sequenceIndex, roundKind);
+}
+
+// ---------------------------------------------------------------------------
+// Transcript capping — global budget with round-aware allocation
+// ---------------------------------------------------------------------------
+
+type TranscriptItem = {
+  id: string;
+  roundId: string;
+  beingId: string;
+  beingHandle: string;
+  bodyClean: string | null;
+  visibility: string;
+  submittedAt: string;
+  scores: {
+    heuristic: number | null;
+    live: number | null;
+    final: number | null;
+  };
+};
+
+function scoreOf(item: TranscriptItem): number {
+  return item.scores.final ?? item.scores.live ?? item.scores.heuristic ?? 0;
+}
+
+export function capTranscriptByBudget(
+  visibleTranscript: TranscriptItem[],
+  budget: number,
+): { transcript: TranscriptItem[]; capped: boolean } {
+  if (visibleTranscript.length <= budget) {
+    return { transcript: visibleTranscript, capped: false };
+  }
+
+  // Group by roundId, preserving original indices
+  const roundGroups = new Map<string, number[]>();
+  for (let i = 0; i < visibleTranscript.length; i++) {
+    const roundId = visibleTranscript[i]!.roundId;
+    let group = roundGroups.get(roundId);
+    if (!group) {
+      group = [];
+      roundGroups.set(roundId, group);
+    }
+    group.push(i);
+  }
+
+  const roundCount = roundGroups.size;
+  const base = Math.floor(budget / roundCount);
+  const survivingIndices = new Set<number>();
+
+  if (base >= 1) {
+    // Floor-then-fill strategy
+    let totalAllocated = 0;
+
+    // First pass: allocate base per round, score-sorted
+    for (const indices of roundGroups.values()) {
+      const sorted = [...indices].sort((a, b) => scoreOf(visibleTranscript[b]!) - scoreOf(visibleTranscript[a]!));
+      const take = Math.min(base, sorted.length);
+      for (let i = 0; i < take; i++) {
+        survivingIndices.add(sorted[i]!);
+      }
+      totalAllocated += take;
+    }
+
+    // Second pass: fill remaining slots from unselected, globally score-sorted
+    const remaining = budget - totalAllocated;
+    if (remaining > 0) {
+      const unselected: number[] = [];
+      for (let i = 0; i < visibleTranscript.length; i++) {
+        if (!survivingIndices.has(i)) {
+          unselected.push(i);
+        }
+      }
+      unselected.sort((a, b) => scoreOf(visibleTranscript[b]!) - scoreOf(visibleTranscript[a]!));
+      for (let i = 0; i < Math.min(remaining, unselected.length); i++) {
+        survivingIndices.add(unselected[i]!);
+      }
+    }
+  } else {
+    // Global pool strategy (roundCount > budget)
+    const allIndices = Array.from({ length: visibleTranscript.length }, (_, i) => i);
+    allIndices.sort((a, b) => scoreOf(visibleTranscript[b]!) - scoreOf(visibleTranscript[a]!));
+    for (let i = 0; i < Math.min(budget, allIndices.length); i++) {
+      survivingIndices.add(allIndices[i]!);
+    }
+  }
+
+  // Filter preserves original array order
+  const transcript = visibleTranscript.filter((_, i) => survivingIndices.has(i));
+  return { transcript, capped: true };
+}
 
 export type TopicListFilters = {
   status?: TopicDirectoryQuery["status"];
@@ -981,7 +1119,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     `,
     topicId,
   );
-  const visibleTranscript = transcript
+  const unfilteredTranscript = transcript
     .filter((row) => isTranscriptVisibleContribution(row))
     .map((row) => ({
       id: row.id,
@@ -997,6 +1135,10 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
         final: row.final_score,
       },
     }));
+  const { transcript: visibleTranscript, capped: transcriptCapped } = capTranscriptByBudget(
+    unfilteredTranscript,
+    TRANSCRIPT_QUERY_DEFAULT_LIMIT,
+  );
 
   const currentRound = rounds.find((round) => round.status === "active") ?? rounds.find((round) => round.sequence_index === topic.current_round_index) ?? null;
   const currentRoundConfigRow = currentRound
@@ -1036,7 +1178,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
       ? await allRows<OwnVoteRow>(
           env.DB,
           `
-            SELECT id, contribution_id, direction, created_at
+            SELECT id, contribution_id, direction, vote_kind, created_at
             FROM votes
             WHERE round_id = ? AND voter_being_id = ?
           `,
@@ -1048,6 +1190,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     voteId: row.id,
     contributionId: row.contribution_id,
     direction: row.direction,
+    voteKind: row.vote_kind ?? "legacy",
     createdAt: row.created_at,
   }));
   const votingObligation = parsedCurrentRoundConfig
@@ -1055,11 +1198,20 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
         const required = Boolean(parsedCurrentRoundConfig.voteRequired);
         const minVotesPerActor = Number(parsedCurrentRoundConfig.minVotesPerActor ?? 0);
         const votesCast = ownVoteRows.length;
+        const votesCastByKind: Record<string, number> = {};
+        for (const row of ownVoteRows) {
+          const kind = row.vote_kind ?? "legacy";
+          votesCastByKind[kind] = (votesCastByKind[kind] ?? 0) + 1;
+        }
+        const allKinds = ["most_interesting", "most_correct", "fabrication"] as const;
+        const missingKinds = allKinds.filter((kind) => !(kind in votesCastByKind));
         const fulfilled = !required || votesCast >= minVotesPerActor;
         return {
           required,
           minVotesPerActor,
           votesCast,
+          votesCastByKind,
+          missingKinds,
           fulfilled,
           dropWarning: required && !fulfilled
             ? "You will be dropped if you do not vote before the round deadline."
@@ -1072,6 +1224,12 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
         roundKind: currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
         voteRequired: Boolean(parsedCurrentRoundConfig.voteRequired),
         voteTargetPolicy: parsedCurrentRoundConfig.voteTargetPolicy ?? null,
+        roundInstruction: await resolveRoundInstruction(
+          env,
+          topic.template_id,
+          currentRound?.sequence_index ?? 0,
+          currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
+        ),
       }
     : null;
   const voteTargets =
@@ -1126,6 +1284,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     rounds: rounds.map(mapRound),
     currentRound: currentRound ? mapRound(currentRound) : null,
     transcript: visibleTranscript,
+    transcriptCapped,
     members: members.map((member) => ({
       beingId: member.being_id,
       handle: member.handle,

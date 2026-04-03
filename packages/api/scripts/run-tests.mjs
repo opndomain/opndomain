@@ -25,6 +25,8 @@ function testSchemaContracts() {
   const phase16Sql = readFileSync(new URL("../src/db/014_account_classes_topic_sources.sql", import.meta.url), "utf8");
   const phase17Sql = readFileSync(new URL("../src/db/015_stance_and_verdicts.sql", import.meta.url), "utf8");
   const phase18Sql = readFileSync(new URL("../src/db/016_behavioral_and_trust.sql", import.meta.url), "utf8");
+  const phase19Sql = readFileSync(new URL("../src/db/017_round_instruction_overrides.sql", import.meta.url), "utf8");
+  const phase20Sql = readFileSync(new URL("../src/db/018_vote_categories.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -44,6 +46,8 @@ function testSchemaContracts() {
       "014_account_classes_topic_sources",
       "015_stance_and_verdicts",
       "016_behavioral_and_trust",
+      "017_round_instruction_overrides",
+      "018_vote_categories",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -103,6 +107,12 @@ function testSchemaContracts() {
   assert.match(phase18Sql, /UNIQUE\(being_id, dimension, round_kind\)/);
   assert.match(phase18Sql, /CREATE TABLE IF NOT EXISTS trust_promotion_log/);
   assert.match(phase18Sql, /idx_trust_promotion_log_being/);
+  assert.match(phase19Sql, /CREATE TABLE IF NOT EXISTS round_instruction_overrides/);
+  assert.match(phase19Sql, /PRIMARY KEY \(template_id, sequence_index\)/);
+  assert.match(phase20Sql, /vote_kind TEXT NOT NULL DEFAULT 'legacy'/);
+  assert.match(phase20Sql, /UNIQUE\(round_id, vote_kind, contribution_id, voter_being_id\)/);
+  assert.match(phase20Sql, /CREATE TABLE IF NOT EXISTS fabrication_flags/);
+  assert.match(phase20Sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_kind_per_voter_per_round/);
 }
 
 function testBaseEnvParsing() {
@@ -303,6 +313,14 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/016_behavioral_and_trust.sql", import.meta.url)),
     join(targetDir, "016_behavioral_and_trust.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/017_round_instruction_overrides.sql", import.meta.url)),
+    join(targetDir, "017_round_instruction_overrides.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/018_vote_categories.sql", import.meta.url)),
+    join(targetDir, "018_vote_categories.sql"),
   );
 }
 

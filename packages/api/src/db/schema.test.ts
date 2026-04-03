@@ -16,6 +16,8 @@ import {
   PHASE14_TOPIC_MEMBER_DROP_TRACKING_SQL,
   PHASE15_TOPIC_CANDIDATES_SQL,
   PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
+  PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
+  PHASE20_VOTE_CATEGORIES_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -37,6 +39,8 @@ describe("schema migrations", () => {
       "014_account_classes_topic_sources",
       "015_stance_and_verdicts",
       "016_behavioral_and_trust",
+      "017_round_instruction_overrides",
+      "018_vote_categories",
     ]);
   });
 
@@ -154,6 +158,21 @@ describe("schema migrations", () => {
     assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_id/);
     assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_url/);
     assert.match(PHASE15_TOPIC_CANDIDATES_SQL, /CREATE TRIGGER IF NOT EXISTS trg_topic_candidates_updated_at/);
+  });
+
+  it("adds round instruction overrides table in phase 19", () => {
+    assert.match(PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL, /CREATE TABLE IF NOT EXISTS round_instruction_overrides/);
+    assert.match(PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL, /PRIMARY KEY \(template_id, sequence_index\)/);
+    assert.match(PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL, /quality_criteria_json TEXT NOT NULL DEFAULT '\[\]'/);
+    assert.match(PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL, /CREATE TRIGGER IF NOT EXISTS trg_round_instruction_overrides_updated_at/);
+  });
+
+  it("adds vote_kind column and fabrication_flags table in phase 20", () => {
+    assert.match(PHASE20_VOTE_CATEGORIES_SQL, /vote_kind TEXT NOT NULL DEFAULT 'legacy'/);
+    assert.match(PHASE20_VOTE_CATEGORIES_SQL, /UNIQUE\(round_id, vote_kind, contribution_id, voter_being_id\)/);
+    assert.match(PHASE20_VOTE_CATEGORIES_SQL, /CREATE TABLE IF NOT EXISTS fabrication_flags/);
+    assert.match(PHASE20_VOTE_CATEGORIES_SQL, /CREATE INDEX IF NOT EXISTS idx_fabrication_flags_contribution/);
+    assert.match(PHASE20_VOTE_CATEGORIES_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_kind_per_voter_per_round/);
   });
 
   it("adds persisted account classes and topic sources in phase 16", () => {

@@ -492,8 +492,8 @@ async function flushVoteRecords(
     );
     return env.DB.prepare(
       `INSERT OR IGNORE INTO votes (
-        id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_position_pct, round_elapsed_pct, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_kind, vote_position_pct, round_elapsed_pct, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
       payload.voteId,
       payload.topicId,
@@ -502,6 +502,7 @@ async function flushVoteRecords(
       payload.voterBeingId,
       payload.direction,
       payload.weight,
+      payload.voteKind ?? "legacy",
       timing.votePositionPct,
       timing.roundElapsedPct,
       payload.acceptedAt,
@@ -553,6 +554,55 @@ async function flushVoteRecords(
     Array.from(flushedContributionIds),
     Array.from(flushedTopicIds),
   );
+
+  // Fabrication flag flush: insert fabrication_flags for fabrication votes
+  // and mark claims as contested when 2+ distinct fabrication voters target the same contribution
+  const fabricationVotes = parsedVotes.filter(
+    ({ vote, payload }) => {
+      const vk = String(payload.voteKind ?? "legacy");
+      return vk === "fabrication" && flushedContributionIds.has(String(payload.contributionId));
+    },
+  );
+  if (fabricationVotes.length > 0) {
+    try {
+      const flagStatements = fabricationVotes.map(({ payload }) =>
+        env.DB.prepare(
+          `INSERT OR IGNORE INTO fabrication_flags (id, contribution_id, voter_being_id, round_id, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        ).bind(
+          `ff_${String(payload.voteId)}`,
+          payload.contributionId,
+          payload.voterBeingId,
+          payload.roundId,
+          payload.acceptedAt,
+        ),
+      );
+      await env.DB.batch(flagStatements);
+
+      // Mark claims contested when 2+ distinct fabrication voters
+      const contestedContributionIds = new Set<string>();
+      for (const contributionId of flushedContributionIds) {
+        const flagCount = await env.DB.prepare(
+          `SELECT COUNT(DISTINCT voter_being_id) AS cnt FROM fabrication_flags WHERE contribution_id = ?`,
+        ).bind(contributionId).first<{ cnt: number }>();
+        if ((flagCount?.cnt ?? 0) >= 2) {
+          contestedContributionIds.add(contributionId);
+        }
+      }
+      if (contestedContributionIds.size > 0) {
+        for (const contributionId of contestedContributionIds) {
+          await env.DB.prepare(
+            `UPDATE claim_resolutions SET status = 'contested'
+             WHERE claim_id IN (SELECT id FROM claims WHERE contribution_id = ?)
+               AND status = 'unresolved'`,
+          ).bind(contributionId).run();
+        }
+      }
+    } catch (error) {
+      console.error("fabrication flag flush failed", error);
+    }
+  }
+
   const recomputeStartedAt = Date.now();
   await recomputeContributionFinalScores(env, Array.from(flushedContributionIds), reconciledVoteAggregates);
   const recomputeDurationMs = Date.now() - recomputeStartedAt;

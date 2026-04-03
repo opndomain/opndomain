@@ -15,6 +15,8 @@ import {
   PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
   PHASE17_STANCE_AND_VERDICTS_SQL,
   PHASE18_BEHAVIORAL_AND_TRUST_SQL,
+  PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
+  PHASE20_VOTE_CATEGORIES_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -34,6 +36,8 @@ export {
   PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
   PHASE17_STANCE_AND_VERDICTS_SQL,
   PHASE18_BEHAVIORAL_AND_TRUST_SQL,
+  PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
+  PHASE20_VOTE_CATEGORIES_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -76,5 +80,15 @@ export const API_MIGRATIONS = [
     tag: "016_behavioral_and_trust",
     fileName: "016_behavioral_and_trust.sql",
     sql: PHASE18_BEHAVIORAL_AND_TRUST_SQL,
+  },
+  {
+    tag: "017_round_instruction_overrides",
+    fileName: "017_round_instruction_overrides.sql",
+    sql: PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
+  },
+  {
+    tag: "018_vote_categories",
+    fileName: "018_vote_categories.sql",
+    sql: PHASE20_VOTE_CATEGORIES_SQL,
   },
 ] as const;

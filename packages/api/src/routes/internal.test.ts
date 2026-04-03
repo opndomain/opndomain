@@ -1047,3 +1047,150 @@ describe("internal routes", () => {
     assert.equal(detailPayload.data.roundCount, 3);
   });
 });
+
+describe("round instruction override admin routes", () => {
+  it("upserts a valid override via PUT", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+        method: "PUT",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          roundKind: "critique",
+          goal: "Custom goal",
+          guidance: "Custom guidance",
+          priorRoundContext: "Custom context",
+          qualityCriteria: ["Criterion 1"],
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json() as { data: { goal: string; templateId: string } };
+    assert.equal(payload.data.goal, "Custom goal");
+    assert.equal(payload.data.templateId, "debate_v2");
+  });
+
+  it("rejects PUT with invalid templateId", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/nonexistent_template/0", {
+        method: "PUT",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          roundKind: "propose",
+          goal: "Goal",
+          guidance: "Guidance",
+          priorRoundContext: null,
+          qualityCriteria: ["Criterion"],
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 400);
+    const payload = await response.json() as { code: string };
+    assert.equal(payload.code, "invalid_template_id");
+  });
+
+  it("rejects PUT with sequenceIndex beyond template round count", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/99", {
+        method: "PUT",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          roundKind: "propose",
+          goal: "Goal",
+          guidance: "Guidance",
+          priorRoundContext: null,
+          qualityCriteria: ["Criterion"],
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 400);
+    const payload = await response.json() as { code: string };
+    assert.equal(payload.code, "sequence_index_out_of_range");
+  });
+
+  it("rejects PUT with mismatched roundKind", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+        method: "PUT",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          roundKind: "refine",  // debate_v2 index 1 is "critique"
+          goal: "Goal",
+          guidance: "Guidance",
+          priorRoundContext: null,
+          qualityCriteria: ["Criterion"],
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 400);
+    const payload = await response.json() as { code: string };
+    assert.equal(payload.code, "round_kind_mismatch");
+  });
+
+  it("deletes an override via DELETE", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+        method: "DELETE",
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 200);
+    const payload = await response.json() as { data: { deleted: boolean } };
+    assert.equal(typeof payload.data.deleted, "boolean");
+  });
+
+  it("rejects non-admin access for PUT", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db, { email: "member@example.com" });
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+        method: "PUT",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          roundKind: "critique",
+          goal: "Goal",
+          guidance: "Guidance",
+          priorRoundContext: null,
+          qualityCriteria: ["Criterion"],
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 403);
+  });
+});

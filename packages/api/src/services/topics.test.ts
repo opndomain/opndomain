@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
-import { TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
+import { RoundInstructionSchema, TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
 import { ApiError } from "../lib/errors.js";
-import { createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, recordTopicView, updateTopic } from "./topics.js";
+import { capTranscriptByBudget, createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, recordTopicView, updateTopic } from "./topics.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -479,8 +479,8 @@ describe("createTopic round config persistence", () => {
     assert.equal(proposeConfig?.minVotesPerActor, undefined);
     assert.equal(critiqueConfig?.voteRequired, true);
     assert.equal(critiqueConfig?.voteTargetPolicy, "prior_round");
-    assert.equal(critiqueConfig?.minVotesPerActor, 1);
-    assert.equal(critiqueConfig?.maxVotesPerActor, 1);
+    assert.equal(critiqueConfig?.minVotesPerActor, 3);
+    assert.equal(critiqueConfig?.maxVotesPerActor, 3);
   });
 
   it("initializes reveal_at from planned timing for sealed and open rounds", async () => {
@@ -992,6 +992,13 @@ describe("topic read contracts", () => {
     assert.equal(currentRoundConfig.voteRequired, true);
     assert.equal(currentRoundConfig.voteTargetPolicy, "prior_round");
 
+    // roundInstruction should be present and valid for debate_v2 critique round
+    assert.ok(currentRoundConfig.roundInstruction);
+    const instruction = RoundInstructionSchema.parse(currentRoundConfig.roundInstruction);
+    assert.ok(instruction.goal.length > 0);
+    assert.ok(instruction.guidance.length > 0);
+    assert.ok(instruction.qualityCriteria.length > 0);
+
     assert.equal(topic.voteTargets.length, 1);
     const voteTarget = TopicContextVoteTargetSchema.parse(topic.voteTargets[0]);
     assert.equal(voteTarget.contributionId, "cnt_2");
@@ -1087,7 +1094,7 @@ describe("topic read contracts", () => {
     // ownContributionStatus — empty (not contributed yet)
     // ownVoteRows — one vote cast
     db.queueAll("FROM votes\n            WHERE round_id = ? AND voter_being_id = ?", [
-      { id: "vot_1", contribution_id: "cnt_2", direction: 1, created_at: "2026-03-25T01:10:00.000Z" },
+      { id: "vot_1", contribution_id: "cnt_2", direction: 1, vote_kind: "most_interesting", created_at: "2026-03-25T01:10:00.000Z" },
     ]);
     // vote targets resolution
     db.queueFirst("WHERE topic_id = ? AND sequence_index = ?", [{
@@ -1552,5 +1559,269 @@ describe("topic transcript reads", () => {
       getTopicTranscript(buildEnv(db), agent as never, "top_1", { since: 1, limit: 10 }),
       (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === "transcript_continuity_missing",
     );
+  });
+});
+
+describe("capTranscriptByBudget", () => {
+  function makeItem(roundId: string, score: number, id?: string) {
+    return {
+      id: id ?? `cnt_${Math.random().toString(36).slice(2, 8)}`,
+      roundId,
+      beingId: "bng_1",
+      beingHandle: "alpha",
+      bodyClean: "test",
+      visibility: "normal",
+      submittedAt: "2026-03-25T00:00:00.000Z",
+      scores: { heuristic: score, live: null, final: null },
+    };
+  }
+
+  it("returns all contributions uncapped when under budget", () => {
+    const items = Array.from({ length: 30 }, (_, i) => makeItem("rnd_1", i));
+    const { transcript, capped } = capTranscriptByBudget(items, 50);
+    assert.equal(transcript.length, 30);
+    assert.equal(capped, false);
+  });
+
+  it("caps to budget when contributions exceed limit", () => {
+    const items = Array.from({ length: 100 }, (_, i) => makeItem("rnd_1", i));
+    const { transcript, capped } = capTranscriptByBudget(items, 50);
+    assert.equal(transcript.length, 50);
+    assert.equal(capped, true);
+  });
+
+  it("preserves original array order after capping", () => {
+    // Create items in round-sequence order with varying scores
+    const items = [
+      makeItem("rnd_0", 90, "cnt_a"),
+      makeItem("rnd_0", 10, "cnt_b"),
+      makeItem("rnd_0", 80, "cnt_c"),
+      makeItem("rnd_1", 95, "cnt_d"),
+      makeItem("rnd_1", 5, "cnt_e"),
+      makeItem("rnd_1", 85, "cnt_f"),
+    ];
+    const { transcript } = capTranscriptByBudget(items, 4);
+    // Should keep top-scored items but in original order
+    for (let i = 1; i < transcript.length; i++) {
+      const prevIdx = items.findIndex((item) => item.id === transcript[i - 1]!.id);
+      const currIdx = items.findIndex((item) => item.id === transcript[i]!.id);
+      assert.ok(prevIdx < currIdx, `Expected original order preserved: ${transcript[i - 1]!.id} before ${transcript[i]!.id}`);
+    }
+  });
+
+  it("distributes budget across rounds with floor-then-fill", () => {
+    // 2 rounds, 100 items each, budget 50 → each round gets at least 25
+    const round1Items = Array.from({ length: 100 }, (_, i) => makeItem("rnd_0", i));
+    const round2Items = Array.from({ length: 100 }, (_, i) => makeItem("rnd_1", i));
+    const items = [...round1Items, ...round2Items];
+    const { transcript, capped } = capTranscriptByBudget(items, 50);
+    assert.equal(transcript.length, 50);
+    assert.equal(capped, true);
+
+    const rnd0Count = transcript.filter((item) => item.roundId === "rnd_0").length;
+    const rnd1Count = transcript.filter((item) => item.roundId === "rnd_1").length;
+    assert.ok(rnd0Count >= 25, `Round 0 should get at least 25 items, got ${rnd0Count}`);
+    assert.ok(rnd1Count >= 25, `Round 1 should get at least 25 items, got ${rnd1Count}`);
+  });
+
+  it("uses global pool when roundCount exceeds budget", () => {
+    // 60 rounds, 10 items each = 600 total, budget 50
+    const items: ReturnType<typeof makeItem>[] = [];
+    for (let r = 0; r < 60; r++) {
+      for (let i = 0; i < 10; i++) {
+        items.push(makeItem(`rnd_${r}`, r * 10 + i));
+      }
+    }
+    const { transcript, capped } = capTranscriptByBudget(items, 50);
+    assert.equal(transcript.length, 50);
+    assert.equal(capped, true);
+  });
+});
+
+describe("topic context round instruction with D1 override", () => {
+  it("uses D1 override when available and roundKind matches", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      topic_source: "manual_user",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 1,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [
+      { id: "rnd_0", topic_id: "top_1", sequence_index: 0, round_kind: "propose", status: "completed", starts_at: null, ends_at: null, reveal_at: "2026-03-25T00:30:00.000Z", created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z" },
+      { id: "rnd_1", topic_id: "top_1", sequence_index: 1, round_kind: "critique", status: "active", starts_at: null, ends_at: null, reveal_at: null, created_at: "2026-03-25T01:00:00.000Z", updated_at: "2026-03-25T01:00:00.000Z" },
+    ]);
+    db.queueAll("FROM topic_members", []);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", []);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "critique",
+        sequenceIndex: 1,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: false,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: { completionMode: "deadline_only", enrollmentMode: "topic_members_only", note: "test" },
+      }),
+    }]);
+    // Queue D1 override row
+    db.queueFirst("FROM round_instruction_overrides", [{
+      goal: "Custom critique goal from D1",
+      guidance: "Custom critique guidance from D1",
+      prior_round_context: "Custom context",
+      quality_criteria_json: JSON.stringify(["Custom criterion 1", "Custom criterion 2"]),
+      round_kind: "critique",
+    }]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
+    const config = TopicContextCurrentRoundConfigSchema.parse(topic.currentRoundConfig);
+    assert.ok(config.roundInstruction);
+    assert.equal(config.roundInstruction.goal, "Custom critique goal from D1");
+    assert.equal(config.roundInstruction.guidance, "Custom critique guidance from D1");
+    assert.deepEqual(config.roundInstruction.qualityCriteria, ["Custom criterion 1", "Custom criterion 2"]);
+  });
+
+  it("falls through to shared default when D1 override roundKind mismatches", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      topic_source: "manual_user",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 1,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [
+      { id: "rnd_0", topic_id: "top_1", sequence_index: 0, round_kind: "propose", status: "completed", starts_at: null, ends_at: null, reveal_at: "2026-03-25T00:30:00.000Z", created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z" },
+      { id: "rnd_1", topic_id: "top_1", sequence_index: 1, round_kind: "critique", status: "active", starts_at: null, ends_at: null, reveal_at: null, created_at: "2026-03-25T01:00:00.000Z", updated_at: "2026-03-25T01:00:00.000Z" },
+    ]);
+    db.queueAll("FROM topic_members", []);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", []);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "critique",
+        sequenceIndex: 1,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: false,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: { completionMode: "deadline_only", enrollmentMode: "topic_members_only", note: "test" },
+      }),
+    }]);
+    // Queue D1 override row with WRONG roundKind
+    db.queueFirst("FROM round_instruction_overrides", [{
+      goal: "This should be skipped",
+      guidance: "This should be skipped",
+      prior_round_context: null,
+      quality_criteria_json: JSON.stringify(["skipped"]),
+      round_kind: "refine",  // Mismatch: persisted is "critique"
+    }]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
+    const config = TopicContextCurrentRoundConfigSchema.parse(topic.currentRoundConfig);
+    assert.ok(config.roundInstruction);
+    // Should get the shared default for debate_v2 critique, not the D1 override
+    assert.notEqual(config.roundInstruction.goal, "This should be skipped");
+    assert.ok(config.roundInstruction.goal.length > 0);
+  });
+
+  it("includes transcriptCapped field in context response", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "test",
+      domain_name: "Test",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate_v2",
+      topic_format: "scheduled_research",
+      topic_source: "manual_user",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [
+      { id: "rnd_0", topic_id: "top_1", sequence_index: 0, round_kind: "propose", status: "active", starts_at: null, ends_at: null, reveal_at: null, created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z" },
+    ]);
+    db.queueAll("FROM topic_members", []);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", []);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "propose",
+        sequenceIndex: 0,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: false,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: { completionMode: "deadline_only", enrollmentMode: "topic_members_only", note: "test" },
+      }),
+    }]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
+    assert.equal(typeof topic.transcriptCapped, "boolean");
+    assert.equal(topic.transcriptCapped, false);
   });
 });

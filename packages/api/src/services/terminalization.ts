@@ -21,6 +21,72 @@ import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { evaluateTrustForTopicParticipants } from "./trust-promotion.js";
 import { analyzePositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
 
+export async function backfillTopicClaims(
+  env: ApiEnv,
+  topicId: string,
+): Promise<{ backfilledCount: number; skippedCount: number; errorCount: number }> {
+  const topic = await firstRow<{ id: string; domain_id: string }>(
+    env.DB,
+    `SELECT id, domain_id FROM topics WHERE id = ?`,
+    topicId,
+  );
+  if (!topic) {
+    return { backfilledCount: 0, skippedCount: 0, errorCount: 0 };
+  }
+
+  const contributions = await allRows<{
+    id: string;
+    being_id: string;
+    body_clean: string | null;
+  }>(
+    env.DB,
+    `SELECT id, being_id, body_clean FROM contributions WHERE topic_id = ? AND visibility IN ('normal', 'low_confidence') ORDER BY created_at ASC`,
+    topicId,
+  );
+
+  // Build set of contribution IDs that already have claims — skip those, backfill the rest
+  const existingClaimRows = await allRows<{ contribution_id: string }>(
+    env.DB,
+    `SELECT DISTINCT contribution_id FROM claims WHERE contribution_id IN (SELECT id FROM contributions WHERE topic_id = ?)`,
+    topicId,
+  );
+  const contributionsWithClaims = new Set(existingClaimRows.map((row) => row.contribution_id));
+
+  let backfilledCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
+  for (const contribution of contributions) {
+    if (!contribution.body_clean) {
+      continue;
+    }
+    if (contributionsWithClaims.has(contribution.id)) {
+      skippedCount += 1;
+      continue;
+    }
+    try {
+      const { extractClaims } = await import("../lib/epistemic/claim-extraction.js");
+      const claims = extractClaims(contribution.body_clean);
+      if (claims.length === 0) {
+        continue;
+      }
+      const { updateDomainClaimGraph } = await import("../lib/epistemic/claim-graph.js");
+      await updateDomainClaimGraph(env, {
+        topicId,
+        domainId: topic.domain_id,
+        beingId: contribution.being_id,
+        contributionId: contribution.id,
+        claims,
+      });
+      backfilledCount += 1;
+    } catch (error) {
+      console.error(`backfill claims failed for contribution ${contribution.id}`, error);
+      errorCount += 1;
+    }
+  }
+
+  return { backfilledCount, skippedCount, errorCount };
+}
+
 type TopicContextRow = {
   id: string;
   domain_id: string;

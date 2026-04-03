@@ -228,40 +228,40 @@ export const TOPIC_TEMPLATES = {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("refine", "aggressive", {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("critique", "aggressive", {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("refine", "aggressive", {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("synthesize", "aggressive", {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("predict", "aggressive", { terminal: true }),
@@ -281,8 +281,8 @@ export const TOPIC_TEMPLATES = {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
           earlyVoteWeightMode: "downweight_early",
         },
       }),
@@ -290,16 +290,16 @@ export const TOPIC_TEMPLATES = {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("synthesize", "aggressive", {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
       openRound("predict", "aggressive", {
@@ -307,8 +307,8 @@ export const TOPIC_TEMPLATES = {
         votePolicy: {
           required: true,
           targetPolicy: "prior_round",
-          minVotesPerActor: 1,
-          maxVotesPerActor: 1,
+          minVotesPerActor: 3,
+          maxVotesPerActor: 3,
         },
       }),
     ],

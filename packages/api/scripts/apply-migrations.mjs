@@ -23,6 +23,8 @@ const migrationFiles = [
   { tag: "014_account_classes_topic_sources", fileName: "014_account_classes_topic_sources.sql" },
   { tag: "015_stance_and_verdicts", fileName: "015_stance_and_verdicts.sql" },
   { tag: "016_behavioral_and_trust", fileName: "016_behavioral_and_trust.sql" },
+  { tag: "017_round_instruction_overrides", fileName: "017_round_instruction_overrides.sql" },
+  { tag: "018_vote_categories", fileName: "018_vote_categories.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -256,6 +258,16 @@ async function bootstrapKnownMigrations() {
       applied: async () =>
         await tableExists("being_behavioral_scores")
         && await tableExists("trust_promotion_log"),
+    },
+    {
+      tag: "017_round_instruction_overrides",
+      fileName: "017_round_instruction_overrides.sql",
+      applied: async () => await tableExists("round_instruction_overrides"),
+    },
+    {
+      tag: "018_vote_categories",
+      fileName: "018_vote_categories.sql",
+      applied: async () => await columnExists("votes", "vote_kind") && await tableExists("fabrication_flags"),
     },
   ];
 

@@ -8,10 +8,13 @@ import {
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
   ReterminalizeTopicRequestSchema,
+  RoundInstructionOverrideRequestSchema,
+  TOPIC_TEMPLATES,
   TopicCandidateCleanupRequestSchema,
   TopicCandidateQuerySchema,
   TopicIdeaContextQuerySchema,
   TopicAdminReasonSchema,
+  TopicTemplateIdSchema,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { assertAdminAgent } from "../lib/admin.js";
@@ -47,7 +50,7 @@ import {
 } from "../services/admin.js";
 import { backfillPlatformDailyRollups as backfillPlatformDailyRollupsService } from "../services/analytics.js";
 import { reconcileTopicPresentation } from "../services/presentation.js";
-import { forceFlushTopicState, runTerminalizationSequence } from "../services/terminalization.js";
+import { backfillTopicClaims, forceFlushTopicState, runTerminalizationSequence } from "../services/terminalization.js";
 import { recomputeContributionFinalScore } from "../services/votes.js";
 
 export const internalRoutes = new Hono<{ Bindings: ApiEnv }>();
@@ -403,6 +406,22 @@ internalRoutes.post("/topics/:topicId/reterminalize", async (c) => {
   return jsonData(c, result);
 });
 
+internalRoutes.post("/topics/:topicId/backfill-claims", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const topicId = c.req.param("topicId");
+  const topic = await firstRow<{ id: string }>(
+    c.env.DB,
+    `SELECT id FROM topics WHERE id = ?`,
+    topicId,
+  );
+  if (!topic) {
+    notFound("The requested topic was not found.");
+  }
+  const result = await backfillTopicClaims(c.env, topicId);
+  return jsonData(c, result);
+});
+
 internalRoutes.post("/contributions/:contributionId/quarantine", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   assertAdminAgent(c.env, agent);
@@ -611,6 +630,112 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
         : null,
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Round instruction overrides
+// ---------------------------------------------------------------------------
+
+internalRoutes.put("/round-instructions/:templateId/:sequenceIndex", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+
+  const templateId = c.req.param("templateId");
+  const sequenceIndexRaw = c.req.param("sequenceIndex");
+  const sequenceIndex = Number(sequenceIndexRaw);
+
+  const templateParse = TopicTemplateIdSchema.safeParse(templateId);
+  if (!templateParse.success) {
+    throw badRequest("invalid_template_id", `Unknown template: ${templateId}`);
+  }
+
+  if (!Number.isInteger(sequenceIndex) || sequenceIndex < 0) {
+    throw badRequest("invalid_sequence_index", "sequenceIndex must be a non-negative integer.");
+  }
+
+  const template = TOPIC_TEMPLATES[templateParse.data];
+  if (sequenceIndex >= template.rounds.length) {
+    throw badRequest(
+      "sequence_index_out_of_range",
+      `sequenceIndex ${sequenceIndex} exceeds template round count (${template.rounds.length}).`,
+    );
+  }
+
+  const body = parseJsonBody(RoundInstructionOverrideRequestSchema, await c.req.json());
+
+  const expectedRoundKind = template.rounds[sequenceIndex]!.roundKind;
+  if (body.roundKind !== expectedRoundKind) {
+    throw badRequest(
+      "round_kind_mismatch",
+      `Template ${templateId} at sequenceIndex ${sequenceIndex} expects roundKind "${expectedRoundKind}", got "${body.roundKind}".`,
+    );
+  }
+
+  await runStatement(
+    c.env.DB.prepare(
+      `INSERT INTO round_instruction_overrides (template_id, sequence_index, round_kind, goal, guidance, prior_round_context, quality_criteria_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (template_id, sequence_index) DO UPDATE SET
+         round_kind = excluded.round_kind,
+         goal = excluded.goal,
+         guidance = excluded.guidance,
+         prior_round_context = excluded.prior_round_context,
+         quality_criteria_json = excluded.quality_criteria_json,
+         updated_at = datetime('now')`,
+    ).bind(
+      templateId,
+      sequenceIndex,
+      body.roundKind,
+      body.goal,
+      body.guidance,
+      body.priorRoundContext,
+      JSON.stringify(body.qualityCriteria),
+    ),
+  );
+
+  return jsonData(c, {
+    templateId,
+    sequenceIndex,
+    roundKind: body.roundKind,
+    goal: body.goal,
+    guidance: body.guidance,
+    priorRoundContext: body.priorRoundContext,
+    qualityCriteria: body.qualityCriteria,
+  });
+});
+
+internalRoutes.delete("/round-instructions/:templateId/:sequenceIndex", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+
+  const templateId = c.req.param("templateId");
+  const sequenceIndexRaw = c.req.param("sequenceIndex");
+  const sequenceIndex = Number(sequenceIndexRaw);
+
+  const templateParse = TopicTemplateIdSchema.safeParse(templateId);
+  if (!templateParse.success) {
+    throw badRequest("invalid_template_id", `Unknown template: ${templateId}`);
+  }
+
+  if (!Number.isInteger(sequenceIndex) || sequenceIndex < 0) {
+    throw badRequest("invalid_sequence_index", "sequenceIndex must be a non-negative integer.");
+  }
+
+  const template = TOPIC_TEMPLATES[templateParse.data];
+  if (sequenceIndex >= template.rounds.length) {
+    throw badRequest(
+      "sequence_index_out_of_range",
+      `sequenceIndex ${sequenceIndex} exceeds template round count (${template.rounds.length}).`,
+    );
+  }
+
+  const result = await runStatement(
+    c.env.DB.prepare(
+      `DELETE FROM round_instruction_overrides WHERE template_id = ? AND sequence_index = ?`,
+    ).bind(templateId, sequenceIndex),
+  );
+
+  return jsonData(c, { deleted: (result.meta?.changes ?? 0) > 0 });
 });
 
 internalRoutes.get("/health", async (c) => {

@@ -168,8 +168,8 @@ function queueAuthenticatedVotePath(
       completionStyle: "aggressive",
       voteRequired: true,
       voteTargetPolicy: "prior_round",
-      minVotesPerActor: 1,
-      maxVotesPerActor: 1,
+      minVotesPerActor: 3,
+      maxVotesPerActor: 3,
       fallbackChain: [],
       terminal: false,
       phase2Execution: {
@@ -208,7 +208,7 @@ async function postVote(
       body: JSON.stringify({
         beingId: "bng_1",
         contributionId: "cnt_1",
-        value: "up",
+        voteKind: "most_interesting",
         idempotencyKey: "idem_vote_123456",
         ...(body ?? {}),
       }),
@@ -226,7 +226,7 @@ describe("vote routes", () => {
 
     const response = await postVote(db, async (request) => {
       if (request.method === "GET") {
-        return Response.json({ pendingVoteCount: 0, hasMatchingVoteKey: false, matchingDirection: null });
+        return Response.json({ pendingVoteCount: 0, pendingVotesByKind: {}, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false });
       }
       forwardedPayload = await request.json() as Record<string, unknown>;
       return Response.json({
@@ -237,7 +237,7 @@ describe("vote routes", () => {
         voterBeingId: "bng_1",
         direction: 1,
         weight: 2.4,
-        value: "up",
+        voteKind: "most_interesting",
         weightedValue: 2.4,
         acceptedAt: "2026-03-25T00:00:00.000Z",
         replayed: false,
@@ -246,17 +246,17 @@ describe("vote routes", () => {
     });
 
     assert.equal(response.status, 200);
-    assert.equal(forwardedPayload?.["value"], "up");
+    assert.equal(forwardedPayload?.["voteKind"], "most_interesting");
     assert.equal(forwardedPayload?.["idempotencyKey"], "idem_vote_123456");
-    const payload = await response.json() as { data: { value: string; weightedValue: number } };
-    assert.equal(payload.data.value, "up");
+    const payload = await response.json() as { data: { voteKind: string; weightedValue: number } };
+    assert.equal(payload.data.voteKind, "most_interesting");
     assert.equal(payload.data.weightedValue, 2.4);
   });
 
   it("rejects self-votes", async () => {
     const db = new FakeDb();
     queueAuthenticatedVotePath(db, { contributionOwnerId: "bng_1" });
-    const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, hasMatchingVoteKey: false, matchingDirection: null }));
+    const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, pendingVotesByKind: {}, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false }));
     assert.equal(response.status, 403);
   });
 
@@ -271,15 +271,16 @@ describe("vote routes", () => {
         voter_being_id: "bng_1",
         direction: 1,
         weight: 2.4,
+        vote_kind: "most_interesting",
         created_at: "2026-03-25T00:00:00.000Z",
       },
     });
-    const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, hasMatchingVoteKey: false, matchingDirection: null }));
+    const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, pendingVotesByKind: {}, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false }));
     assert.equal(response.status, 200);
-    const payload = await response.json() as { data: { replayed: boolean; id: string; value: string } };
+    const payload = await response.json() as { data: { replayed: boolean; id: string; voteKind: string } };
     assert.equal(payload.data.replayed, true);
     assert.equal(payload.data.id, "vot_existing");
-    assert.equal(payload.data.value, "up");
+    assert.equal(payload.data.voteKind, "most_interesting");
   });
 
   it("returns canonical trust-tier failures", async () => {
@@ -295,7 +296,7 @@ describe("vote routes", () => {
       status: "started",
       template_id: "debate_v2",
     }]);
-    const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, hasMatchingVoteKey: false, matchingDirection: null }));
+    const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, pendingVotesByKind: {}, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false }));
     assert.equal(response.status, 403);
     const payload = ErrorEnvelopeSchema.parse(await response.json());
     assert.equal(payload.code, "forbidden");
@@ -320,12 +321,12 @@ describe("vote routes", () => {
     assert.equal(response.status, 400);
   });
 
-  it("enforces one vote per actor per active round across different contributions", async () => {
+  it("enforces max votes per actor per active round across different contributions", async () => {
     const db = new FakeDb();
-    queueAuthenticatedVotePath(db, { maxVoteCount: 1, eligibleContributionIds: ["cnt_1", "cnt_2"] });
+    queueAuthenticatedVotePath(db, { maxVoteCount: 3, eligibleContributionIds: ["cnt_1", "cnt_2"] });
     const response = await postVote(
       db,
-      async () => Response.json({ pendingVoteCount: 0, hasMatchingVoteKey: false, matchingDirection: null }),
+      async () => Response.json({ pendingVoteCount: 0, pendingVotesByKind: {}, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false }),
       { contributionId: "cnt_2" },
     );
     assert.equal(response.status, 403);
@@ -338,7 +339,7 @@ describe("vote routes", () => {
 
     const replayResponse = await postVote(db, async (request) => {
       if (request.method === "GET") {
-        return Response.json({ pendingVoteCount: 1, hasMatchingVoteKey: true, matchingDirection: 1 });
+        return Response.json({ pendingVoteCount: 1, pendingVotesByKind: { most_interesting: 1 }, hasMatchingVoteKey: true, hasMatchingVoteKind: true, matchingDirection: 1, contributionAlreadyTargeted: false });
       }
       postCalls += 1;
       return Response.json({
@@ -349,7 +350,7 @@ describe("vote routes", () => {
         voterBeingId: "bng_1",
         direction: 1,
         weight: 2.4,
-        value: "up",
+        voteKind: "most_interesting",
         weightedValue: 2.4,
         acceptedAt: "2026-03-25T00:00:00.000Z",
         replayed: true,
@@ -361,10 +362,10 @@ describe("vote routes", () => {
     assert.equal(postCalls, 1);
 
     const dbSecond = new FakeDb();
-    queueAuthenticatedVotePath(dbSecond, { eligibleContributionIds: ["cnt_1", "cnt_2"] });
+    queueAuthenticatedVotePath(dbSecond, { maxVoteCount: 3, eligibleContributionIds: ["cnt_1", "cnt_2"] });
     const secondResponse = await postVote(
       dbSecond,
-      async () => Response.json({ pendingVoteCount: 1, hasMatchingVoteKey: false, matchingDirection: null }),
+      async () => Response.json({ pendingVoteCount: 3, pendingVotesByKind: { most_interesting: 1, most_correct: 1, fabrication: 1 }, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false }),
       { contributionId: "cnt_2" },
     );
     assert.equal(secondResponse.status, 403);

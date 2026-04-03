@@ -488,6 +488,9 @@ export const RoundConfigSchema = z.object({
 export const ContributionStanceSchema = z.enum(["support", "oppose", "neutral"]);
 export type ContributionStance = z.infer<typeof ContributionStanceSchema>;
 
+export const VoteKindSchema = z.enum(["most_interesting", "most_correct", "fabrication", "legacy"]);
+export type VoteKind = z.infer<typeof VoteKindSchema>;
+
 export const ContributionSubmissionSchema = z.object({
   beingId: z.string().min(1),
   body: z.string().min(1).max(6000),
@@ -499,7 +502,7 @@ export const ContributionSubmissionSchema = z.object({
 export const VoteSubmissionSchema = z.object({
   beingId: z.string().min(1),
   contributionId: z.string().min(1),
-  value: z.enum(["up", "down"]),
+  voteKind: VoteKindSchema.exclude(["legacy"]),
   idempotencyKey: z.string().min(8).max(120),
 });
 
@@ -832,10 +835,26 @@ export const TopicCandidateCleanupResponseSchema = z.object({
   deleted: z.number().int().nonnegative(),
 });
 
+export const RoundInstructionSchema = z.object({
+  goal: z.string(),
+  guidance: z.string(),
+  priorRoundContext: z.string().nullable(),
+  qualityCriteria: z.array(z.string()),
+});
+
+export const RoundInstructionOverrideRequestSchema = z.object({
+  roundKind: RoundKindSchema,
+  goal: z.string().min(1).max(500),
+  guidance: z.string().min(1).max(2000),
+  priorRoundContext: z.string().min(1).max(1000).nullable(),
+  qualityCriteria: z.array(z.string().min(1).max(300)).min(1).max(10),
+});
+
 export const TopicContextCurrentRoundConfigSchema = z.object({
   roundKind: RoundKindSchema,
   voteRequired: z.boolean(),
   voteTargetPolicy: VoteTargetPolicySchema.nullable(),
+  roundInstruction: RoundInstructionSchema.nullable(),
 });
 
 export const TopicContextVoteTargetSchema = z.object({
@@ -848,6 +867,7 @@ export const OwnVoteStatusSchema = z.object({
   voteId: z.string().min(1),
   contributionId: z.string().min(1),
   direction: z.number().int(),
+  voteKind: VoteKindSchema,
   createdAt: z.string().min(1),
 });
 export type OwnVoteStatus = z.infer<typeof OwnVoteStatusSchema>;
@@ -856,6 +876,8 @@ export const VotingObligationSchema = z.object({
   required: z.boolean(),
   minVotesPerActor: z.number().int().nonnegative(),
   votesCast: z.number().int().nonnegative(),
+  votesCastByKind: z.record(VoteKindSchema, z.number().int().nonnegative()).optional(),
+  missingKinds: z.array(VoteKindSchema).optional(),
   fulfilled: z.boolean(),
   dropWarning: z.string().nullable(),
 });
@@ -966,7 +988,7 @@ export const VerdictClaimNodeSchema = z.object({
   beingHandle: z.string().min(1),
   label: z.string().min(1),
   status: z.enum(["unresolved", "contested", "supported", "refuted", "mixed"]),
-  verifiability: z.enum(["unclassified", "empirical", "normative", "predictive"]),
+  verifiability: z.enum(["unclassified", "empirical", "comparative", "normative", "predictive"]),
   confidence: z.number().min(0).max(1),
 });
 

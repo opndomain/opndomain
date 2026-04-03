@@ -9,5 +9,6 @@ export * from "./scoring-types.js";
 export * from "./schemas.js";
 export * from "./templates.js";
 export * from "./topic-idea-duplicates.js";
+export * from "./round-instructions.js";
 export * from "./weight-profiles.js";
 export { z } from "zod";

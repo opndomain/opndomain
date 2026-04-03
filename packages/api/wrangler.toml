@@ -41,6 +41,7 @@ AWS_SES_REGION = "us-east-2"
 EMAIL_VERIFICATION_BASE_URL = "https://api.opndomain.com"
 OAUTH_CALLBACK_BASE_URL = "https://api.opndomain.com"
 ENABLE_SEMANTIC_SCORING = true
+ENABLE_EPISTEMIC_SCORING = true
 ENABLE_TRANSCRIPT_GUARDRAILS = true
 CURATED_OPEN_KEY = "curated/open.json"
 TOPIC_TRANSCRIPT_PREFIX = "topics"

@@ -102,7 +102,7 @@ function publicResponseFromPayload(payload: TopicStateIngestRequest): TopicState
 }
 
 function voteKeyFromPayload(payload: TopicStateVoteIngestRequest): string {
-  return `${payload.roundId}:${payload.contributionId}:${payload.voterBeingId}`;
+  return `${payload.roundId}:${payload.voteKind}:${payload.voterBeingId}`;
 }
 
 function topicVoteAggregateKey(topicId: string): string {
@@ -137,7 +137,7 @@ function voteResponseFromPayload(payload: TopicStateVoteIngestRequest, replayed 
     voterBeingId: payload.voterBeingId,
     direction: payload.direction,
     weight: payload.weight,
-    value: payload.value,
+    voteKind: payload.voteKind,
     weightedValue: payload.weightedValue,
     acceptedAt: payload.acceptedAt,
     replayed,
@@ -239,6 +239,7 @@ function readPendingVoteSummary(
   roundId: string,
   contributionId: string,
   voterBeingId: string,
+  voteKind?: string,
 ) {
   const rows = sqlExec(
     state,
@@ -249,20 +250,31 @@ function readPendingVoteSummary(
 
   let pendingVoteCount = 0;
   let matchingDirection: number | null = null;
+  const pendingVotesByKind: Record<string, number> = {};
+  let hasMatchingVoteKind = false;
+  let contributionAlreadyTargeted = false;
   for (const row of rows) {
     const payload = JSON.parse(String(row.payload_json)) as TopicStateVoteIngestRequest;
     if (payload.roundId === roundId && payload.voterBeingId === voterBeingId) {
       pendingVoteCount += 1;
+      pendingVotesByKind[payload.voteKind] = (pendingVotesByKind[payload.voteKind] ?? 0) + 1;
       if (payload.contributionId === contributionId) {
         matchingDirection = payload.direction;
+        contributionAlreadyTargeted = true;
+      }
+      if (voteKind && payload.voteKind === voteKind) {
+        hasMatchingVoteKind = true;
       }
     }
   }
 
   return {
     pendingVoteCount,
+    pendingVotesByKind,
     hasMatchingVoteKey: matchingDirection !== null,
+    hasMatchingVoteKind,
     matchingDirection,
+    contributionAlreadyTargeted,
   };
 }
 
@@ -344,7 +356,8 @@ export class TopicStateDurableObject {
       const roundId = url.searchParams.get("roundId") ?? "";
       const contributionId = url.searchParams.get("contributionId") ?? "";
       const voterBeingId = url.searchParams.get("voterBeingId") ?? "";
-      return Response.json(readPendingVoteSummary(this.state, roundId, contributionId, voterBeingId));
+      const voteKind = url.searchParams.get("voteKind") ?? undefined;
+      return Response.json(readPendingVoteSummary(this.state, roundId, contributionId, voterBeingId, voteKind));
     }
     if (url.pathname === "/vote" && request.method === "POST") {
       const payload = (await request.json()) as TopicStateVoteIngestRequest;
@@ -358,19 +371,20 @@ export class TopicStateDurableObject {
         return Response.json(JSON.parse(replayByIdempotency.response_json), { status: 200 });
       }
       const voteKey = voteKeyFromPayload(payload);
-      const replay = sqlFirst<{ direction: number; response_json: string }>(
+      const replay = sqlFirst<{ direction: number; vote_kind: string; response_json: string }>(
         this.state,
-        `SELECT direction, response_json FROM vote_keys WHERE vote_key = ?`,
+        `SELECT direction, vote_kind, response_json FROM vote_keys WHERE vote_key = ?`,
         voteKey,
       );
       if (replay) {
-        if (Number(replay.direction) !== payload.direction) {
+        const replayedResponse = JSON.parse(replay.response_json) as { contributionId?: string };
+        if (replayedResponse.contributionId !== payload.contributionId) {
           return Response.json(
             {
-              error: "conflict",
-              code: "conflict",
-              message: "A canonical vote already exists for that voter and contribution.",
-              details: { existingDirection: Number(replay.direction) },
+              error: "vote_kind_already_cast",
+              code: "vote_kind_already_cast",
+              message: `You already cast a ${payload.voteKind} vote on a different contribution this round.`,
+              details: { existingContributionId: replayedResponse.contributionId },
             },
             { status: 409 },
           );
@@ -392,9 +406,10 @@ export class TopicStateDurableObject {
         );
         sqlExec(
           this.state,
-          `INSERT INTO vote_keys (vote_key, direction, response_json, created_at) VALUES (?, ?, ?, ?)`,
+          `INSERT INTO vote_keys (vote_key, direction, vote_kind, response_json, created_at) VALUES (?, ?, ?, ?, ?)`,
           voteKey,
           payload.direction,
+          payload.voteKind,
           JSON.stringify(responseJson),
           payload.acceptedAt,
         );
@@ -413,6 +428,23 @@ export class TopicStateDurableObject {
       await this.state.storage.setAlarm(nextAlarmAfter(TOPIC_STATE_FLUSH_INTERVAL_MS));
       await recordTopicStateAcceptLatency(this.state, Date.now() - startedAt, payload.acceptedAt);
       return Response.json(responseJson, { status: 200 });
+    }
+    if (url.pathname === "/round-voter-counts" && request.method === "GET") {
+      const roundId = url.searchParams.get("roundId") ?? "";
+      const rows = sqlExec(
+        this.state,
+        `SELECT payload_json FROM pending_votes WHERE flushed = 0
+         UNION ALL
+         SELECT payload_json FROM pending_aux WHERE flushed = 0 AND table_name = 'votes'`,
+      ) as Iterable<{ payload_json: string }>;
+      const counts: Record<string, number> = {};
+      for (const row of rows) {
+        const payload = JSON.parse(String(row.payload_json)) as TopicStateVoteIngestRequest;
+        if (payload.roundId === roundId) {
+          counts[payload.voterBeingId] = (counts[payload.voterBeingId] ?? 0) + 1;
+        }
+      }
+      return Response.json(counts);
     }
     if (url.pathname === "/force-flush" && request.method === "POST") {
       let remaining = 0;

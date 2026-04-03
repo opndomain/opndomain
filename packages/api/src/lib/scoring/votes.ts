@@ -16,6 +16,7 @@ export type WeightedVote = {
   direction: number;
   weight: number;
   voterBeingId: string;
+  voteKind?: string;
 };
 
 export type WeightedVoteAggregate = {
@@ -163,4 +164,39 @@ export function blendFinalScore(input: {
     0,
     100,
   );
+}
+
+export function computeCategoryScores(votes: WeightedVote[]): {
+  interestScore: number;
+  correctnessScore: number;
+  fabricationPenalty: number;
+  weightedVoteScore: number;
+} {
+  const interestVotes = votes.filter((v) => v.voteKind === "most_interesting");
+  const correctnessVotes = votes.filter((v) => v.voteKind === "most_correct");
+  const fabricationVotes = votes.filter((v) => v.voteKind === "fabrication");
+  const legacyVotes = votes.filter((v) => !v.voteKind || v.voteKind === "legacy");
+
+  // For legacy votes, treat as equal interest + correctness
+  const interestScore = normalizeVoteScore([...interestVotes, ...legacyVotes]);
+  const correctnessScore = normalizeVoteScore([...correctnessVotes, ...legacyVotes]);
+  const fabricationPenalty = fabricationVotes.length === 0 ? 1.0 : Math.max(0, 1 - fabricationVotes.length * 0.25);
+
+  const weightedVoteScore = (interestScore * 0.4 + correctnessScore * 0.6) * fabricationPenalty;
+  return { interestScore, correctnessScore, fabricationPenalty, weightedVoteScore };
+}
+
+function normalizeVoteScore(votes: WeightedVote[]): number {
+  if (votes.length === 0) return 50;
+  let totalWeight = 0;
+  let weightedSum = 0;
+  for (const vote of votes) {
+    const w = Number.isFinite(vote.weight) && vote.weight > 0 ? vote.weight : 0;
+    if (w === 0) continue;
+    totalWeight += w;
+    weightedSum += w;
+  }
+  if (totalWeight === 0) return 50;
+  // Normalize: each vote is an endorsement (direction=1), scaled 0-100
+  return clamp((weightedSum / totalWeight) * 100, 0, 100);
 }

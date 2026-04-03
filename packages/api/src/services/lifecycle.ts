@@ -613,37 +613,67 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   const voteMinPerActor = Number(config.minVotesPerActor ?? 0);
   if (voteRequired && voteMinPerActor > 0) {
     try {
-      await forceFlushTopicState(env, round.topic_id);
-    } catch {
-      // non-fatal — votes may already be flushed
-    }
-    const activeMembersPostDrop = await allRows<ActiveMemberRow>(
-      env.DB,
-      `SELECT being_id FROM topic_members WHERE topic_id = ? AND status = 'active'`,
-      round.topic_id,
-    );
-    const voteCounts = await allRows<{ voter_being_id: string; vote_count: number }>(
-      env.DB,
-      `SELECT voter_being_id, COUNT(*) as vote_count FROM votes WHERE round_id = ? GROUP BY voter_being_id`,
-      round.id,
-    );
-    const voteCountByBeing = new Map(voteCounts.map((row) => [row.voter_being_id, Number(row.vote_count)]));
-    for (const member of activeMembersPostDrop) {
-      if ((voteCountByBeing.get(member.being_id) ?? 0) >= voteMinPerActor) {
-        continue;
+      const namespaceId = env.TOPIC_STATE_DO.idFromName(round.topic_id);
+      const stub = env.TOPIC_STATE_DO.get(namespaceId);
+
+      // Force flush and capture result
+      let flushRemaining = 0;
+      try {
+        const flushResponse = await stub.fetch("https://topic-state.internal/force-flush", { method: "POST" });
+        const flushResult = (await flushResponse.json()) as { flushed: boolean; remaining: number };
+        flushRemaining = flushResult.remaining;
+      } catch (flushError) {
+        console.error("vote-drop force-flush failed, proceeding with best-effort data", flushError);
+        flushRemaining = 1; // assume incomplete
       }
-      const voteDrop = await runCas(
-        env.DB.prepare(
-          `UPDATE topic_members
-           SET status = 'dropped', updated_at = ?, dropped_at = ?, drop_reason = ?
-           WHERE topic_id = ? AND being_id = ? AND status = 'active'`,
-        ).bind(nowIso(now), nowIso(now), "missed_round_vote", round.topic_id, member.being_id),
+
+      // Get D1 vote counts
+      const activeMembersPostDrop = await allRows<ActiveMemberRow>(
+        env.DB,
+        `SELECT being_id FROM topic_members WHERE topic_id = ? AND status = 'active'`,
+        round.topic_id,
       );
-      if (voteDrop) {
-        await runCas(
-          env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
-        );
+      const voteCounts = await allRows<{ voter_being_id: string; vote_count: number }>(
+        env.DB,
+        `SELECT voter_being_id, COUNT(*) as vote_count FROM votes WHERE round_id = ? GROUP BY voter_being_id`,
+        round.id,
+      );
+      const voteCountByBeing = new Map(voteCounts.map((row) => [row.voter_being_id, Number(row.vote_count)]));
+
+      // If flush incomplete, merge with pending counts from DO
+      if (flushRemaining > 0) {
+        try {
+          const pendingResponse = await stub.fetch(
+            `https://topic-state.internal/round-voter-counts?roundId=${encodeURIComponent(round.id)}`,
+          );
+          const pendingCounts = (await pendingResponse.json()) as Record<string, number>;
+          for (const [beingId, count] of Object.entries(pendingCounts)) {
+            voteCountByBeing.set(beingId, (voteCountByBeing.get(beingId) ?? 0) + Number(count));
+          }
+        } catch (pendingError) {
+          console.error("vote-drop pending count fetch failed, using D1 only", pendingError);
+        }
       }
+
+      for (const member of activeMembersPostDrop) {
+        if ((voteCountByBeing.get(member.being_id) ?? 0) >= voteMinPerActor) {
+          continue;
+        }
+        const voteDrop = await runCas(
+          env.DB.prepare(
+            `UPDATE topic_members
+             SET status = 'dropped', updated_at = ?, dropped_at = ?, drop_reason = ?
+             WHERE topic_id = ? AND being_id = ? AND status = 'active'`,
+          ).bind(nowIso(now), nowIso(now), "missed_round_vote", round.topic_id, member.being_id),
+        );
+        if (voteDrop) {
+          await runCas(
+            env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
+          );
+        }
+      }
+    } catch (voteDropError) {
+      console.error("vote-drop block failed for round", round.id, voteDropError);
     }
   }
 
@@ -721,9 +751,13 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
     if (!(await shouldCompleteRound(env, round, now))) {
       continue;
     }
-    const advanced = await advanceRound(env, round, now);
-    if (advanced) {
-      mutatedTopicIds.add(round.topic_id);
+    try {
+      const advanced = await advanceRound(env, round, now);
+      if (advanced) {
+        mutatedTopicIds.add(round.topic_id);
+      }
+    } catch (advanceError) {
+      console.error("advanceRound failed for round", round.id, advanceError);
     }
   }
 
