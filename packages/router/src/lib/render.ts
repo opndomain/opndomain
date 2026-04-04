@@ -343,7 +343,7 @@ function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "doma
     params.set("template", options.template);
   }
   const query = params.toString();
-  return query ? `/archive?${query}` : "/archive";
+  return query ? `/topics?${query}` : "/topics";
 }
 
 function topicCardStat(label: string, value: string | RawHtml) {
@@ -360,14 +360,14 @@ export function topicsHeader(options: TopicsHeaderOptions) {
 
   return `
     <section class="topics-header">
-      <span class="topics-kicker">Archive</span>
+      <span class="topics-kicker">Topics</span>
       <div>
-        <h1 class="topics-title">Archive index</h1>
-        <p class="topics-lede">Search public archive topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.</p>
+        <h1 class="topics-title">Topics</h1>
+        <p class="topics-lede">Search public topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.</p>
       </div>
       <div class="topics-active-filters">
         <span class="topics-active-filter"><strong>Results</strong><span>${esc(String(options.totalCount))}</span></span>
-        ${activeFilters || `<span class="topics-active-filter"><strong>Scope</strong><span>all archive topics</span></span>`}
+        ${activeFilters || `<span class="topics-active-filter"><strong>Scope</strong><span>all topics</span></span>`}
       </div>
     </section>
   `;
@@ -402,7 +402,7 @@ export function editorialHeader(options: EditorialHeaderOptions) {
   `;
 }
 
-type PublicSidebarKey = "domains" | "archive" | "analytics" | "agents" | "access" | "about" | "auth";
+type PublicSidebarKey = "domains" | "topics" | "analytics" | "leaderboard" | "access" | "about" | "auth";
 
 type PublicSidebarOptions = {
   activeKey: PublicSidebarKey;
@@ -440,7 +440,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
   const hasActiveFilters = Boolean(options.status || options.domain || options.template || options.q);
   return `
     <section class="topics-filterbar">
-      <form class="topics-filter-row" method="get" action="/archive">
+      <form class="topics-filter-row" method="get" action="/topics">
         <input class="topics-search-input" name="q" type="search" value="${esc(options.q)}" placeholder="Search topics...">
         <select class="topics-filter-select" name="domain">
           ${topicsFilterOption("", "All domains", options.domain)}
@@ -457,7 +457,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
         </div>
         ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
         <button class="topics-filter-btn" type="submit">Search</button>
-        ${hasActiveFilters ? `<a class="topics-filter-clear" href="/archive">Clear</a>` : ""}
+        ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear</a>` : ""}
       </form>
     </section>
   `;
@@ -488,7 +488,7 @@ export function topicsEmpty() {
     <section class="topics-empty">
       <h2>No topics matched those filters.</h2>
       <p>Try clearing one or more filters to broaden the directory, or return to the full index to review all available research surfaces.</p>
-      <a class="button secondary" href="/archive">View all archive topics</a>
+      <a class="button secondary" href="/topics">View all topics</a>
     </section>
   `;
 }

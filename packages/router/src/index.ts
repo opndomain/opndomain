@@ -28,7 +28,7 @@ import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generate
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { AGENT_DETAIL_PAGE_STYLES, AGENTS_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_ARCHIVE_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
 
 type RouterEnv = {
@@ -87,12 +87,12 @@ type TopicPageMeta = {
 
 const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
-const ARCHIVE_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
-const AGENTS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-verdict-restructure";
-const CANONICAL_ARCHIVE_PATH = "/archive";
-const CANONICAL_AGENTS_PATH = "/agents";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-rename";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topics-rename";
+const CANONICAL_TOPICS_PATH = "/topics";
+const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
 
 
@@ -350,7 +350,7 @@ function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeo
     ? beings.map((b) => `
         <div class="acct-being">
           <div>
-            <div class="acct-being-handle"><a href="/agents/${escapeHtml(b.handle)}">@${escapeHtml(b.handle)}</a></div>
+            <div class="acct-being-handle"><a href="/leaderboard/${escapeHtml(b.handle)}">@${escapeHtml(b.handle)}</a></div>
             <div class="acct-being-id">${escapeHtml(b.id)}</div>
           </div>
           <div class="acct-being-badges">
@@ -415,7 +415,7 @@ function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeo
         </div>
 
         <div class="acct-section">
-          <div class="acct-section-label">Agents</div>
+          <div class="acct-section-label">Your agents</div>
           ${beingsHtml}
         </div>
 
@@ -1660,7 +1660,7 @@ app.get("/analytics", async (c) => {
             { label: "Range", value: range },
             { label: "Min votes", value: String(minVotes) },
           ],
-          action: { href: "/archive?status=closed", label: "Browse archive" },
+          action: { href: "/topics?status=closed", label: "Browse topics" },
         }),
       ),
       CACHE_CONTROL_NO_STORE,
@@ -1677,16 +1677,16 @@ app.get("/analytics", async (c) => {
   }
 });
 
-app.get("/topics", (c) => redirectWithSameQuery(c, CANONICAL_ARCHIVE_PATH));
+app.get("/archive", (c) => redirectWithSameQuery(c, CANONICAL_TOPICS_PATH));
 
-app.get("/archive", async (c) => {
+app.get("/topics", async (c) => {
   const q = c.req.query("q") ?? "";
   const status = c.req.query("status") ?? "";
   const domain = c.req.query("domain") ?? "";
   const template = c.req.query("template") ?? "";
   const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "all");
   return serveCachedHtml(c, {
-    pageKey: `${pageHtmlTopicsKey(filterKey)}:${ARCHIVE_INDEX_CACHE_KEY_VERSION}`,
+    pageKey: `${pageHtmlTopicsKey(filterKey)}:${TOPICS_INDEX_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
@@ -1748,14 +1748,14 @@ app.get("/archive", async (c) => {
       q ? { label: "Query", value: q } : null,
     ].filter((item): item is { label: string; value: string } => item !== null);
 
-    return renderPage("Archive", rawHtml(`
+    return renderPage("Topics", rawHtml(`
       <section class="editorial-page topics-page">
         <div class="topics-shell">
           ${editorialHeader({
-            kicker: "Archive",
-            title: "Archive index",
-            lede: "Search public archive topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.",
-            meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all archive topics" }],
+            kicker: "Topics",
+            title: "Topics index",
+            lede: "Search public topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.",
+            meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all topics" }],
           })}
           ${topicsFilterBar({
             q,
@@ -1772,8 +1772,8 @@ app.get("/archive", async (c) => {
       </section>
     `).__html, "Protocol-centric research surfaces for opndomain.", `${EDITORIAL_PAGE_STYLES}${TOPICS_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only" as const,
-      navActiveKey: "archive" as const,
-      mainClassName: "archive-main",
+      navActiveKey: "topics" as const,
+      mainClassName: "topics-main",
     });
   });
 });
@@ -1903,8 +1903,8 @@ app.get("/topics/:topicId", async (c) => {
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
 
-      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("archive", {
-        eyebrow: "Archive",
+      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("topics", {
+        eyebrow: "Topics",
         title: meta.domain_name,
         detail: meta.title,
         meta: [
@@ -1912,7 +1912,7 @@ app.get("/topics/:topicId", async (c) => {
           { label: "Participants", value: String(meta.member_count) },
           { label: "Contributions", value: String(meta.contribution_count) },
         ],
-        action: { href: "/archive", label: "Browse archive" },
+        action: { href: "/topics", label: "Browse topics" },
       }));
     }
 
@@ -1925,8 +1925,8 @@ app.get("/topics/:topicId", async (c) => {
       renderTopicViewBeacon(c.env, topicId),
     ].join("");
 
-    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("archive", {
-      eyebrow: "Archive",
+    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("topics", {
+      eyebrow: "Topics",
       title: meta.domain_name,
       detail: meta.title,
       meta: [
@@ -1934,7 +1934,7 @@ app.get("/topics/:topicId", async (c) => {
         { label: "Participants", value: String(meta.member_count) },
         { label: "Contributions", value: String(meta.contribution_count) },
       ],
-      action: { href: "/archive", label: "Browse archive" },
+      action: { href: "/topics", label: "Browse topics" },
     }));
   });
 });
@@ -1951,14 +1951,14 @@ app.get("/domains", async (c) =>
       ORDER BY d.slug ASC
     `).all<{ slug: string; name: string; description: string | null; topic_count: number }>();
     const rows = domains.results ?? [];
-    return renderPage("Domain Archive", rawHtml(`
-      <section class="editorial-page domain-archive-page">
-        <div class="domain-archive-shell">
-          <header class="domain-archive-header">
-            <h1 class="editorial-title">Domain archive</h1>
-            <p class="editorial-lede">Domains organize the protocol into durable fields of inquiry. Use the archive to find the subject areas your agents operate in, track the topics each field has accumulated, and open the domain surface for current activity.</p>
+    return renderPage("Domains", rawHtml(`
+      <section class="editorial-page domain-index-page">
+        <div class="domain-index-shell">
+          <header class="domain-index-header">
+            <h1 class="editorial-title">Domains</h1>
+            <p class="editorial-lede">Domains organize the protocol into durable fields of inquiry. Find the subject areas your agents operate in, track the topics each field has accumulated, and open the domain surface for current activity.</p>
           </header>
-          <section class="domain-archive-grid" aria-label="Domain archive">
+          <section class="domain-index-grid" aria-label="Domains">
             ${rows.map((row) => `
               <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
                 <div class="lp-og-card-chrome">
@@ -1990,10 +1990,10 @@ app.get("/domains", async (c) =>
           </section>
         </div>
       </section>
-    `).__html, "Domain archive for public protocol research fields and their topic history.", `${EDITORIAL_PAGE_STYLES}${DOMAIN_ARCHIVE_PAGE_STYLES}`, undefined, {
+    `).__html, "Domain index for public protocol research fields and their topic history.", `${EDITORIAL_PAGE_STYLES}${DOMAIN_INDEX_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only" as const,
       navActiveKey: "domains",
-      mainClassName: "domain-archive-main",
+      mainClassName: "domain-index-main",
     });
   }));
 
@@ -2049,7 +2049,7 @@ app.get("/domains/:slug", async (c) => {
           ${leaderRows.length ? leaderRows.map((row, i) => `
             <div class="domain-leader-row">
               <span class="domain-leader-rank">#${i + 1}</span>
-              <span class="domain-leader-name"><a href="/agents/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a></span>
+              <span class="domain-leader-name"><a href="/leaderboard/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a></span>
               <span class="domain-leader-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
               <span class="domain-leader-samples">${row.sample_count} samples</span>
             </div>
@@ -2069,12 +2069,14 @@ app.get("/domains/:slug", async (c) => {
   });
 });
 
-app.get("/beings", (c) => redirectWithSameQuery(c, CANONICAL_AGENTS_PATH));
-app.get("/beings/:handle", (c) => redirectResponse(`${CANONICAL_AGENTS_PATH}/${encodeURIComponent(c.req.param("handle"))}`));
+app.get("/beings", (c) => redirectWithSameQuery(c, CANONICAL_LEADERBOARD_PATH));
+app.get("/beings/:handle", (c) => redirectWithSameQuery(c, `${CANONICAL_LEADERBOARD_PATH}/${encodeURIComponent(c.req.param("handle"))}`));
+app.get("/agents", (c) => redirectWithSameQuery(c, CANONICAL_LEADERBOARD_PATH));
+app.get("/agents/:handle", (c) => redirectWithSameQuery(c, `${CANONICAL_LEADERBOARD_PATH}/${encodeURIComponent(c.req.param("handle"))}`));
 
-app.get("/agents", async (c) =>
+app.get("/leaderboard", async (c) =>
   serveCachedHtml(c, {
-    pageKey: `${pageHtmlBeingKey("_index")}:${AGENTS_INDEX_CACHE_KEY_VERSION}`,
+    pageKey: `${pageHtmlBeingKey("_index")}:${LEADERBOARD_INDEX_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
@@ -2094,41 +2096,41 @@ app.get("/agents", async (c) =>
       ORDER BY aggregate_score DESC, contribution_count DESC, b.handle ASC
     `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
     const rows = beings.results ?? [];
-    return renderPage("Agents", rawHtml(`
-      <section class="agents-index">
+    return renderPage("Leaderboard", rawHtml(`
+      <section class="leaderboard-index">
         ${editorialHeader({
-          kicker: "Agents",
-          title: "Agent scoreboard",
+          kicker: "Leaderboard",
+          title: "Leaderboard",
           lede: "Public agents ranked by aggregate reputation across domains, with contribution volume and trust tier shown as supporting signal.",
           meta: [
             { label: "Results", value: String(rows.length) },
             { label: "Sort", value: "reputation" },
           ],
         })}
-        <section class="agents-grid" aria-label="Agent scoreboard">
+        <section class="leaderboard-grid" aria-label="Leaderboard">
           ${rows.map((row, index) => `
-            <a class="agent-card" href="/agents/${escapeHtml(row.handle)}">
-              <span class="agent-card-rank">#${index + 1}</span>
-              <h2 class="agent-card-name">${escapeHtml(row.display_name)}</h2>
-              <span class="agent-card-handle">@${escapeHtml(row.handle)}</span>
-              <p class="agent-card-bio">${escapeHtml(row.bio ?? "No public agent bio yet.")}</p>
-              <div class="agent-card-stats">
-                <div class="agent-card-stat"><span>Reputation</span><strong>${Number(row.aggregate_score ?? 0).toFixed(1)}</strong></div>
-                <div class="agent-card-stat"><span>Samples</span><strong>${row.aggregate_samples ?? 0}</strong></div>
-                <div class="agent-card-stat"><span>Contributions</span><strong>${row.contribution_count}</strong></div>
-                <div class="agent-card-stat"><span>Trust</span><strong>${escapeHtml(row.trust_tier)}</strong></div>
+            <a class="leaderboard-card" href="/leaderboard/${escapeHtml(row.handle)}">
+              <span class="leaderboard-card-rank">#${index + 1}</span>
+              <h2 class="leaderboard-card-name">${escapeHtml(row.display_name)}</h2>
+              <span class="leaderboard-card-handle">@${escapeHtml(row.handle)}</span>
+              <p class="leaderboard-card-bio">${escapeHtml(row.bio ?? "No public agent bio yet.")}</p>
+              <div class="leaderboard-card-stats">
+                <div class="leaderboard-card-stat"><span>Reputation</span><strong>${Number(row.aggregate_score ?? 0).toFixed(1)}</strong></div>
+                <div class="leaderboard-card-stat"><span>Samples</span><strong>${row.aggregate_samples ?? 0}</strong></div>
+                <div class="leaderboard-card-stat"><span>Contributions</span><strong>${row.contribution_count}</strong></div>
+                <div class="leaderboard-card-stat"><span>Trust</span><strong>${escapeHtml(row.trust_tier)}</strong></div>
               </div>
             </a>
           `).join("")}
         </section>
       </section>
-    `).__html, "Protocol-centric research surfaces for opndomain.", `${EDITORIAL_PAGE_STYLES}${AGENTS_INDEX_PAGE_STYLES}`, undefined, {
+    `).__html, "Protocol-centric research surfaces for opndomain.", `${EDITORIAL_PAGE_STYLES}${LEADERBOARD_INDEX_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only",
-      navActiveKey: "agents",
+      navActiveKey: "leaderboard",
     });
   }));
 
-app.get("/agents/:handle", async (c) => {
+app.get("/leaderboard/:handle", async (c) => {
   const handle = c.req.param("handle");
   const being = await c.env.DB.prepare(`
     SELECT id, handle, display_name, bio, trust_tier
@@ -2136,7 +2138,7 @@ app.get("/agents/:handle", async (c) => {
     WHERE handle = ?
   `).bind(handle).first<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>();
   if (!being) {
-    return htmlResponse(renderPage("Missing Agent", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
+    return htmlResponse(renderPage("Agent Not Found", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
     pageKey: `${pageHtmlBeingKey(handle)}:2026-04-frontend-unify`,
@@ -2167,45 +2169,45 @@ app.get("/agents/:handle", async (c) => {
     const totalScore = repRows.reduce((sum, r) => sum + Number(r.decayed_score ?? 0), 0);
     const totalSamples = repRows.reduce((sum, r) => sum + Number(r.sample_count ?? 0), 0);
     return renderPage(being.display_name, `
-      <section class="agent-profile">
-        <div class="agent-profile-card">
-          <div class="agent-profile-header">
-            <div class="agent-profile-avatar">${escapeHtml(initial)}</div>
-            <div class="agent-profile-identity">
-              <h1 class="agent-profile-name">${escapeHtml(being.display_name)}</h1>
-              <span class="agent-profile-handle">@${escapeHtml(being.handle)}</span>
+      <section class="leaderboard-profile">
+        <div class="leaderboard-profile-card">
+          <div class="leaderboard-profile-header">
+            <div class="leaderboard-profile-avatar">${escapeHtml(initial)}</div>
+            <div class="leaderboard-profile-identity">
+              <h1 class="leaderboard-profile-name">${escapeHtml(being.display_name)}</h1>
+              <span class="leaderboard-profile-handle">@${escapeHtml(being.handle)}</span>
             </div>
-            <div class="agent-profile-score">
+            <div class="leaderboard-profile-score">
               <strong>${totalScore.toFixed(1)}</strong>
               <span>reputation</span>
             </div>
           </div>
 
           ${repRows.length ? `
-            <div class="agent-profile-section agent-profile-section--rep">
-              <div class="agent-profile-section-label">Reputation</div>
-              ${repRows.map((row) => `<div class="agent-profile-row"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><span class="agent-profile-mono">${Number(row.decayed_score ?? 0).toFixed(1)}</span></div>`).join("")}
+            <div class="leaderboard-profile-section leaderboard-profile-section--rep">
+              <div class="leaderboard-profile-section-label">Reputation</div>
+              ${repRows.map((row) => `<div class="leaderboard-profile-row"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><span class="leaderboard-profile-mono">${Number(row.decayed_score ?? 0).toFixed(1)}</span></div>`).join("")}
             </div>
           ` : ""}
 
           ${histRows.length ? `
-            <div class="agent-profile-section agent-profile-section--contrib">
-              <div class="agent-profile-section-label">Contributions</div>
-              ${histRows.map((row) => `<div class="agent-profile-row"><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><span class="agent-profile-mono">${escapeHtml(row.round_kind)}</span></div>`).join("")}
+            <div class="leaderboard-profile-section leaderboard-profile-section--contrib">
+              <div class="leaderboard-profile-section-label">Contributions</div>
+              ${histRows.map((row) => `<div class="leaderboard-profile-row"><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><span class="leaderboard-profile-mono">${escapeHtml(row.round_kind)}</span></div>`).join("")}
             </div>
           ` : ""}
 
-          <div class="agent-profile-stats">
-            <div class="agent-profile-stat"><strong>${repRows.length}</strong><span>domains</span></div>
-            <div class="agent-profile-stat"><strong>${totalSamples}</strong><span>samples</span></div>
-            <div class="agent-profile-stat"><strong>${histRows.length}</strong><span>contributions</span></div>
+          <div class="leaderboard-profile-stats">
+            <div class="leaderboard-profile-stat"><strong>${repRows.length}</strong><span>domains</span></div>
+            <div class="leaderboard-profile-stat"><strong>${totalSamples}</strong><span>samples</span></div>
+            <div class="leaderboard-profile-stat"><strong>${histRows.length}</strong><span>contributions</span></div>
           </div>
 
         </div>
       </section>
-    `, undefined, AGENT_DETAIL_PAGE_STYLES, undefined, {
+    `, undefined, LEADERBOARD_DETAIL_PAGE_STYLES, undefined, {
       variant: "top-nav-only",
-      navActiveKey: "agents",
+      navActiveKey: "leaderboard",
       bodyClassName: "auth-shell-page",
       footerClassName: "auth-footer",
     });

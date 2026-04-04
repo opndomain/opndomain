@@ -660,24 +660,24 @@ describe("GET /topics", () => {
     });
   }
 
-  it("renders the archive directory from API-backed topics and domain filters", async () => {
+  it("renders the topics directory from API-backed topics and domain filters", async () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api);
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/archive"),
+      new Request("https://opndomain.com/topics"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Archive index"));
+    assert.ok(html.includes("Topics"));
     assert.ok(html.includes("Keyword Search"));
     assert.ok(html.includes("Should frontier model audits be mandatory?"));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/archive">All</a>'));
-    assert.ok(html.includes('class="topics-status-pill" href="/archive?status=open">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
     assert.ok(html.includes('value="ai-safety"'));
     assert.ok(html.includes('value="debate_v2"'));
   });
@@ -688,7 +688,7 @@ describe("GET /topics", () => {
     queueTopicsApi(api, { topics: [] });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/archive?status=open"),
+      new Request("https://opndomain.com/topics?status=open"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -697,7 +697,7 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes("No topics matched those filters."));
     assert.ok(html.includes("<strong>Status</strong><span>open</span>"));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/archive?status=open">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open">Open</a>'));
   });
 
   it("preserves domain and template filters in segmented status links", async () => {
@@ -708,18 +708,18 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/archive?status=open&domain=ai-safety&template=debate_v2"),
+      new Request("https://opndomain.com/topics?status=open&domain=ai-safety&template=debate_v2"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes('class="topics-status-pill" href="/archive?domain=ai-safety&amp;template=debate_v2">All</a>'));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/archive?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
-    assert.ok(html.includes('class="topics-status-pill" href="/archive?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?domain=ai-safety&amp;template=debate_v2">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
     assert.ok(html.includes('input type="hidden" name="status" value="open"'));
-    assert.ok(html.includes('href="/archive">Clear all</a>'));
+    assert.ok(html.includes('href="/topics">Clear all</a>'));
   });
 
   it("passes the metadata query to the API and preserves it across filters", async () => {
@@ -730,7 +730,7 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/archive?q=frontier"),
+      new Request("https://opndomain.com/topics?q=frontier"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -739,7 +739,7 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes('<input id="topics-query" name="q" type="search" value="frontier"'));
     assert.ok(html.includes("<strong>Query</strong><span>frontier</span>"));
-    assert.ok(html.includes('href="/archive?q=frontier'));
+    assert.ok(html.includes('href="/topics?q=frontier'));
     assert.ok(html.includes('input type="hidden" name="q" value="frontier"'));
   });
 
@@ -765,7 +765,7 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/archive?template=debate_v2"),
+      new Request("https://opndomain.com/topics?template=debate_v2"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -935,8 +935,8 @@ describe("GET /analytics", () => {
     assert.ok(html.includes("Scoring Distribution"));
     assert.ok(html.includes("Vote Reliability"));
     assert.ok(html.includes("Should frontier labs publish red-team results?"));
-    assert.ok(html.includes('href="/archive"'));
-    assert.ok(html.includes("Archive"));
+    assert.ok(html.includes('href="/topics"'));
+    assert.ok(html.includes("Topics"));
     assert.ok(html.includes("Reliability vs Votes"));
   });
 
@@ -1052,7 +1052,7 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary access action");
     assert.ok(html.includes('href="/mcp"'), "landing page should point primary access actions to the MCP surface");
     assert.ok(html.includes("lp-rail"), "landing page should render the rolling verdict card rail");
-    assert.ok(html.includes("Archive"), "landing page should render the archive nav label");
+    assert.ok(html.includes("Topics"), "landing page should render the topics nav label");
     assert.ok(html.includes("Domains"), "landing page should render the domains nav label");
     assert.ok(html.includes("Technical"), "landing page should render the technical nav label");
     assert.ok(html.includes("Access"), "landing page should render the access nav label");
@@ -1083,7 +1083,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     const html = await response.text();
     assertTopNavShell(html);
     assert.ok(!html.includes('class="page-sidebar"'));
-    assert.ok(html.includes("Domain archive"));
+    assert.ok(html.includes("Domains"));
     assert.ok(html.includes("AI Safety"));
     assert.ok(html.includes("Domains organize the protocol into durable fields of inquiry."));
     assert.ok(!html.includes("Results"));
@@ -1115,7 +1115,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(html.includes("Agent Alpha"));
   });
 
-  it("redirects legacy beings routes and renders agents index/detail inside the sidebar shell", async () => {
+  it("redirects legacy beings and agents routes and renders leaderboard index/detail inside the sidebar shell", async () => {
     const indexDb = new FakeDb();
     indexDb.queueResult("LEFT JOIN domain_reputation dr ON dr.being_id = b.id", [
       { handle: "agent-alpha", display_name: "Agent Alpha", bio: "Specialist in model evaluations.", trust_tier: "verified", contribution_count: 9, aggregate_score: 91.5, aggregate_samples: 14 },
@@ -1127,10 +1127,18 @@ describe("SSR shell coverage for redesigned routes", () => {
       ctx(),
     );
     assert.equal(legacyIndexResponse.status, 302);
-    assert.equal(legacyIndexResponse.headers.get("location"), "/agents");
+    assert.equal(legacyIndexResponse.headers.get("location"), "/leaderboard");
+
+    const legacyAgentsIndexResponse = await app.fetch(
+      new Request("https://opndomain.com/agents"),
+      buildEnv(indexDb),
+      ctx(),
+    );
+    assert.equal(legacyAgentsIndexResponse.status, 302);
+    assert.equal(legacyAgentsIndexResponse.headers.get("location"), "/leaderboard");
 
     const indexResponse = await app.fetch(
-      new Request("https://opndomain.com/agents"),
+      new Request("https://opndomain.com/leaderboard"),
       buildEnv(indexDb),
       ctx(),
     );
@@ -1138,7 +1146,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(indexResponse.status, 200);
     const indexHtml = await indexResponse.text();
     assertTopNavShell(indexHtml);
-    assert.ok(indexHtml.includes("Agent scoreboard"));
+    assert.ok(indexHtml.includes("Leaderboard"));
 
     const detailDb = new FakeDb();
     detailDb.queueResult("WHERE handle = ?", [
@@ -1157,10 +1165,18 @@ describe("SSR shell coverage for redesigned routes", () => {
       ctx(),
     );
     assert.equal(legacyDetailResponse.status, 302);
-    assert.equal(legacyDetailResponse.headers.get("location"), "/agents/agent-alpha");
+    assert.equal(legacyDetailResponse.headers.get("location"), "/leaderboard/agent-alpha");
+
+    const legacyAgentsDetailResponse = await app.fetch(
+      new Request("https://opndomain.com/agents/agent-alpha"),
+      buildEnv(detailDb),
+      ctx(),
+    );
+    assert.equal(legacyAgentsDetailResponse.status, 302);
+    assert.equal(legacyAgentsDetailResponse.headers.get("location"), "/leaderboard/agent-alpha");
 
     const detailResponse = await app.fetch(
-      new Request("https://opndomain.com/agents/agent-alpha"),
+      new Request("https://opndomain.com/leaderboard/agent-alpha"),
       buildEnv(detailDb),
       ctx(),
     );

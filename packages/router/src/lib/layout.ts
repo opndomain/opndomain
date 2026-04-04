@@ -23,7 +23,7 @@ export type PageShellOptions = {
   footerClassName?: string;
   bodyClassName?: string;
   mainClassName?: string;
-  navActiveKey?: "domains" | "archive" | "analytics" | "agents" | "about" | "access" | "auth" | null;
+  navActiveKey?: "domains" | "topics" | "analytics" | "leaderboard" | "about" | "access" | "auth" | null;
 };
 
 function escapeHeadContent(value: string): string {
@@ -44,8 +44,8 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
 function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
   const items = [
     { key: "domains", href: "/domains", label: "Domains" },
-    { key: "archive", href: "/archive", label: "Archive" },
-    { key: "agents", href: "/agents", label: "Agents" },
+    { key: "topics", href: "/topics", label: "Topics" },
+    { key: "leaderboard", href: "/leaderboard", label: "Leaderboard" },
     { key: "about", href: "/about", label: "Technical" },
   ] as const;
 
@@ -67,8 +67,8 @@ function renderFooterContent() {
     <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
     <div class="footer-links">
       <a href="/domains">Domains</a>
-      <a href="/archive">Archive</a>
-      <a href="/agents">Agents</a>
+      <a href="/topics">Topics</a>
+      <a href="/leaderboard">Leaderboard</a>
       <a href="/about">Technical</a>
       <a href="/access">Access</a>
       <a href="/terms">Terms</a>
@@ -112,7 +112,7 @@ export function renderPage(
         <nav>
           <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
           <div class="nav-links">
-            <a href="/archive">Archive</a>
+            <a href="/topics">Topics</a>
             <a href="/about">Metadata</a>
             <a href="/about">Technical</a>
             <a href="/login">Access</a>
