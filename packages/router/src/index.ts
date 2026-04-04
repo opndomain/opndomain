@@ -90,6 +90,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
 const ARCHIVE_INDEX_CACHE_KEY_VERSION = "2026-03-ia-rewrite";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
 const AGENTS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-verdict-restructure";
 const CANONICAL_ARCHIVE_PATH = "/archive";
 const CANONICAL_AGENTS_PATH = "/agents";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1806,7 +1807,7 @@ app.get("/landing/background.png", (c) => {
 app.get("/topics/:topicId", async (c) => {
   const topicId = c.req.param("topicId");
   return serveCachedHtml(c, {
-    pageKey: pageHtmlTopicKey(topicId),
+    pageKey: `${pageHtmlTopicKey(topicId)}:${TOPIC_PAGE_CACHE_KEY_VERSION}`,
     generationKey: cacheGenerationTopicKey(topicId),
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
