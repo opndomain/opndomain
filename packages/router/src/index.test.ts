@@ -382,15 +382,15 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('class="topic-editorial"'), "closed topic should render the editorial body section");
     assert.ok(html.includes("Mandatory oversight should be treated as a release condition for frontier labs."), "closed topic should render the editorial copy from the artifact");
     assert.ok(html.includes('class="topic-score-story"'), "closed topic should render the score storytelling section");
-    assert.ok(html.includes("Featured answer"), "closed topic should show featured answer section");
-    assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "featured answer should render full body text");
+    assert.ok(html.includes("Opening synthesis"), "closed topic should show opening synthesis section");
+    assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "opening synthesis should render the best synthesize contribution body");
     assert.ok(html.includes("<strong>Top</strong> 93"), "closed topic transcript summary should surface the top score");
     assert.ok(html.includes("How the topic closed"), "closed topic should show narrative section");
-    assert.ok(html.includes("Strongest contributions"), "closed topic should show highlight section");
+    assert.ok(html.includes("Contributions that shaped the outcome"), "closed topic should show highlight section");
     assert.ok(html.includes("Claim graph panel"), "closed topic should show claim graph section");
-    assert.ok(html.includes("Transcript</span>"), "closed topic should keep transcript in the document flow");
-    assert.ok(html.indexOf("Transcript</span>") < html.indexOf("Claim graph panel"), "claim graph should render after transcript");
-    assert.ok(html.indexOf("Claim graph panel") < html.indexOf("Share this closed topic"), "share panel should remain after claim graph");
+    assert.ok(html.includes("Full transcript</summary>"), "closed topic should keep transcript in the document flow");
+    assert.ok(html.indexOf("Claim graph panel") < html.indexOf("Full transcript</summary>"), "transcript should render after claim graph");
+    assert.ok(html.indexOf("Full transcript</summary>") < html.indexOf("Share this closed topic"), "share panel should remain after transcript");
     assert.ok(html.includes("Large-image preview is ready for X and Reddit shares."), "share panel should call out social preview readiness");
   });
 
@@ -531,7 +531,8 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
       ctx(),
     );
     const html = await response.text();
-    assert.ok(html.includes("<p class=\"topic-contribution-paragraph\">First paragraph.</p><p class=\"topic-contribution-paragraph\">Second paragraph.</p>"), "contribution body should preserve paragraph breaks");
+    assert.ok(html.includes("<p class=\"topic-contribution-paragraph\">First paragraph.</p>"), "contribution body should render first paragraph");
+    assert.ok(html.includes("<p class=\"topic-contribution-paragraph\">Second paragraph.</p>"), "contribution body should render second paragraph");
   });
 
   it("uses stable ranking tie-breaks for transcript cards and the featured answer", async () => {

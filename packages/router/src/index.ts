@@ -437,13 +437,11 @@ function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeo
   }), CACHE_CONTROL_NO_STORE, 200, csrf);
 }
 
-function buildTopicShareDescription(meta: TopicPageMeta, verdictSummary?: string | null, verdictConfidence?: string | null): string {
+function buildTopicShareDescription(meta: TopicPageMeta, verdictSummary?: string | null): string {
   const countSummary = `${meta.member_count} participants, ${meta.contribution_count} contributions`;
   const summary = verdictSummary ?? meta.verdict_summary;
-  const confidenceLabel = verdictConfidence ?? meta.verdict_confidence;
   if (meta.status === "closed" && summary) {
-    const confidence = confidenceLabel ? ` Confidence: ${confidenceLabel}.` : "";
-    return trimCopy(`${meta.domain_name}. ${summary}${confidence} ${countSummary}.`, 220);
+    return trimCopy(`${meta.domain_name}. ${summary} ${countSummary}.`, 220);
   }
   return trimCopy(`${meta.domain_name}. ${meta.prompt} ${countSummary}.`, 220);
 }
@@ -513,8 +511,8 @@ type TopicPageViewModel = {
   rounds: TopicRoundViewModel[];
   editorialBody: string | null;
   headlineLabel: string | null;
-  headlineStance: string | null;
-  confidencePercentLabel: string | null;
+  headlineStance: string | null; // Pass 2: remove when OG/artifact confidence removal is complete
+  confidencePercentLabel: string | null; // Pass 2: remove when OG/artifact confidence removal is complete
   verdictNarrative: TopicVerdictPresentation["narrative"] | null;
   verdictHighlights: TopicVerdictPresentation["highlights"] | null;
   verdictClaimGraph: TopicVerdictPresentation["claimGraph"] | null;
@@ -527,6 +525,10 @@ type TopicPageViewModel = {
     strength: number;
   }> | null;
   dossier: TopicVerdictPresentation["dossier"] | null;
+  openingSynthesisHtml: string | null;
+  openingSynthesisContributionId: string | null;
+  closureLine: string;
+  convergenceLabel: string | null;
 };
 
 function titleCaseLabel(value: string | null | undefined, fallback: string) {
@@ -538,6 +540,16 @@ function titleCaseLabel(value: string | null | undefined, fallback: string) {
     .filter(Boolean)
     .map((part) => part[0]!.toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function mapConvergenceLabel(outcome: string | null): string | null {
+  const map: Record<string, string> = {
+    clear_synthesis: "Clear synthesis",
+    contested_synthesis: "Contested synthesis",
+    emerging_synthesis: "Emerging synthesis",
+    insufficient_signal: "Insufficient signal",
+  };
+  return outcome ? map[outcome] ?? null : null;
 }
 
 function renderParagraphs(text: string | null | undefined, className: string) {
@@ -650,6 +662,37 @@ function buildTopicPageViewModel(
   ];
 
   if (meta.status === "closed" && verdictPresentation) {
+    const completedRounds = verdictPresentation.scoreBreakdown.completedRounds;
+    const totalRounds = verdictPresentation.scoreBreakdown.totalRounds;
+    const participantCount = verdictPresentation.scoreBreakdown.participantCount;
+    const contributionCount = verdictPresentation.scoreBreakdown.contributionCount;
+    const terminalizationMode = verdictPresentation.scoreBreakdown.terminalizationMode ?? "standard";
+    const closureLine = `${participantCount} participants · ${completedRounds} rounds · debate completed`;
+    const convergenceLabel = mapConvergenceLabel(verdictPresentation.synthesisOutcome ?? null);
+
+    // Opening synthesis: best synthesize contribution, editorial fallback, summary fallback
+    let openingSynthesisHtml: string | null = null;
+    let openingSynthesisContributionId: string | null = null;
+    const synthesizeRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "synthesize");
+    const lastSynthesizeRound = synthesizeRounds[synthesizeRounds.length - 1];
+    if (lastSynthesizeRound) {
+      const ranked = buildRankedContributionViewModel(lastSynthesizeRound.contributions, lastSynthesizeRound);
+      const best = ranked[0];
+      if (best) {
+        openingSynthesisHtml = best.bodyHtml;
+        openingSynthesisContributionId = best.id;
+      }
+    }
+    if (!openingSynthesisHtml && verdictPresentation.editorialBody) {
+      const firstParagraph = verdictPresentation.editorialBody.trim().split(/\n\s*\n/)[0]?.trim();
+      if (firstParagraph) {
+        openingSynthesisHtml = `<p>${escapeHtml(firstParagraph)}</p>`;
+      }
+    }
+    if (!openingSynthesisHtml && verdictPresentation.summary) {
+      openingSynthesisHtml = `<p>${escapeHtml(verdictPresentation.summary)}</p>`;
+    }
+
     return {
       prompt,
       participants,
@@ -657,21 +700,21 @@ function buildTopicPageViewModel(
       visibleRoundCount,
       headerMeta,
       metaPanel: {
-        kicker: "Confidence",
-        primaryValue: `${Math.round(verdictPresentation.confidence.score * 100)}%`,
-        secondaryValue: verdictPresentation.confidence.label,
-        explanation: verdictPresentation.confidence.explanation,
+        kicker: "Status",
+        primaryValue: "Completed",
+        secondaryValue: closureLine,
+        explanation: convergenceLabel
+          ? `${convergenceLabel}. ${completedRounds}/${totalRounds} rounds under ${terminalizationMode}.`
+          : `${completedRounds}/${totalRounds} rounds under ${terminalizationMode}.`,
         badges: [
-          verdictPresentation.confidence.label,
           verdictPresentation.domain,
           meta.template_id,
-          verdictPresentation.headline.stance,
+          convergenceLabel ?? verdictPresentation.headline.stance,
         ],
         stats: [
-          { label: "Confidence", value: `${Math.round(verdictPresentation.confidence.score * 100)}%` },
-          { label: "Completed rounds", value: `${verdictPresentation.scoreBreakdown.completedRounds}/${verdictPresentation.scoreBreakdown.totalRounds}` },
-          { label: "Participants", value: String(verdictPresentation.scoreBreakdown.participantCount) },
-          { label: "Contributions", value: String(verdictPresentation.scoreBreakdown.contributionCount) },
+          { label: "Completed rounds", value: `${completedRounds}/${totalRounds}` },
+          { label: "Participants", value: String(participantCount) },
+          { label: "Contributions", value: String(contributionCount) },
         ],
         tone: "verdict",
       },
@@ -687,6 +730,10 @@ function buildTopicPageViewModel(
       synthesisOutcome: verdictPresentation.synthesisOutcome ?? null,
       positions: verdictPresentation.positions ?? null,
       dossier: verdictPresentation.dossier ?? null,
+      openingSynthesisHtml,
+      openingSynthesisContributionId,
+      closureLine,
+      convergenceLabel,
     };
   }
 
@@ -725,6 +772,10 @@ function buildTopicPageViewModel(
       synthesisOutcome: null,
       positions: null,
       dossier: null,
+      openingSynthesisHtml: null,
+      openingSynthesisContributionId: null,
+      closureLine: "",
+      convergenceLabel: null,
     };
   }
 
@@ -759,6 +810,10 @@ function buildTopicPageViewModel(
     synthesisOutcome: null,
     positions: null,
     dossier: null,
+    openingSynthesisHtml: null,
+    openingSynthesisContributionId: null,
+    closureLine: "",
+    convergenceLabel: null,
   };
 }
 
@@ -782,6 +837,39 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel) {
         `).join("")}
       </div>
     </header>
+  `;
+}
+
+function renderVerdictClosure(viewModel: TopicPageViewModel): string {
+  if (!viewModel.closureLine) return "";
+  return `
+    <div class="topic-verdict-closure">
+      <div class="topic-verdict-closure-status">${escapeHtml(viewModel.closureLine)}</div>
+      ${viewModel.convergenceLabel
+        ? `<span class="topic-verdict-closure-convergence">${escapeHtml(viewModel.convergenceLabel)}</span>`
+        : ""}
+    </div>
+  `;
+}
+
+function renderOpeningSynthesis(viewModel: TopicPageViewModel): string {
+  if (!viewModel.openingSynthesisHtml) return "";
+  return `
+    <section class="topic-opening-synthesis">
+      <div class="topic-opening-synthesis-kicker">Opening synthesis</div>
+      <div class="topic-opening-synthesis-body">${viewModel.openingSynthesisHtml}</div>
+    </section>
+  `;
+}
+
+function renderSharpestObjection(viewModel: TopicPageViewModel): string {
+  const objection = viewModel.dossier?.mostContestedClaims[0]?.strongestContradiction;
+  if (!objection || objection.confidence < 0.5) return "";
+  return `
+    <section class="topic-sharpest-objection">
+      <div class="topic-sharpest-objection-kicker">Sharpest objection</div>
+      <blockquote class="topic-sharpest-objection-body">${escapeHtml(objection.body)}</blockquote>
+    </section>
   `;
 }
 
@@ -890,7 +978,7 @@ function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
 }
 
 function renderEditorialBody(viewModel: TopicPageViewModel) {
-  if (!viewModel.editorialBody || !viewModel.headlineStance || !viewModel.confidencePercentLabel) {
+  if (!viewModel.editorialBody) {
     return "";
   }
 
@@ -902,12 +990,13 @@ function renderEditorialBody(viewModel: TopicPageViewModel) {
 
   return `
     <section class="topic-editorial">
-      <div class="topic-editorial-kicker">${escapeHtml(viewModel.headlineLabel ?? "Verdict")}</div>
+      <div class="topic-editorial-kicker">${escapeHtml(viewModel.headlineLabel ?? "Analysis")}</div>
       <div class="topic-editorial-body">${paragraphs}</div>
-      <div class="topic-editorial-stance">
-        <span class="topic-stance-marker">${escapeHtml(viewModel.headlineStance)}</span>
-        <span class="topic-stance-confidence">${escapeHtml(viewModel.metaPanel.secondaryValue)} &middot; ${escapeHtml(viewModel.confidencePercentLabel)}</span>
-      </div>
+      ${viewModel.convergenceLabel ? `
+        <div class="topic-editorial-stance">
+          <span class="topic-verdict-closure-convergence">${escapeHtml(viewModel.convergenceLabel)}</span>
+        </div>
+      ` : ""}
     </section>
   `;
 }
@@ -1053,15 +1142,19 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
   `;
 }
 
-function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>) {
+function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>, excludeContributionId: string | null) {
+  const filtered = excludeContributionId
+    ? highlights.filter((h) => h.contributionId !== excludeContributionId)
+    : highlights;
+  if (filtered.length === 0) return "";
   return `
     <section class="topic-highlights">
       <div class="topic-highlights-head">
-        <div class="topic-highlights-kicker">Highlights</div>
-        <h3>Strongest contributions</h3>
+        <div class="topic-highlights-kicker">What moved the debate</div>
+        <h3>Contributions that shaped the outcome</h3>
       </div>
       <div class="topic-highlights-grid">
-        ${highlights.map((highlight) => `
+        ${filtered.map((highlight) => `
           <article class="topic-highlight-card">
             <div class="topic-highlight-topline">
               <div class="topic-highlight-meta">@${escapeHtml(highlight.beingHandle)} &middot; ${escapeHtml(titleCaseLabel(highlight.roundKind, "Unknown round"))}</div>
@@ -1080,23 +1173,21 @@ function renderPositionsSection(
   synthesisOutcome: string | null,
   positions: NonNullable<TopicPageViewModel["positions"]>,
 ) {
-  const outcomeLabel = synthesisOutcome
-    ? titleCaseLabel(synthesisOutcome, "Synthesis")
-    : "Synthesis";
   return `
     <section class="topic-positions">
       <div class="topic-positions-head">
         <div class="topic-positions-kicker">Positions</div>
-        <h3>${escapeHtml(outcomeLabel)}</h3>
+        <h3>Where the debate clustered</h3>
       </div>
       <div class="topic-positions-list">
         ${positions.map((pos) => `
           <article class="topic-position-card">
-            <div class="topic-position-label">${escapeHtml(pos.label)}</div>
-            <div class="topic-position-meta">
-              <span class="topic-position-strength">${pos.strength}% strength</span>
-              <span class="topic-position-contributions">${pos.contributionIds.length} contributions</span>
+            <div class="topic-position-head">
+              <div class="topic-position-label">${escapeHtml(pos.label)}</div>
+              <span class="topic-position-strength-value">${pos.strength}%</span>
             </div>
+            <div class="topic-position-bar-track"><span class="topic-position-bar-fill" style="width: ${pos.strength}%;"></span></div>
+            <div class="topic-position-meta">${pos.contributionIds.length} contributions</div>
             <div class="topic-position-stances">
               <span class="stance-support">${pos.stanceCounts.support} support</span>
               <span class="stance-oppose">${pos.stanceCounts.oppose} oppose</span>
@@ -1220,7 +1311,7 @@ function renderDossierMostContestedClaims(dossier: NonNullable<TopicPageViewMode
               <div class="dossier-contradiction">
                 <div class="dossier-contradiction-label">Strongest objection</div>
                 <p class="dossier-contradiction-body">${escapeHtml(claim.strongestContradiction.body)}</p>
-                <span class="dossier-contradiction-confidence">Confidence: ${escapeHtml(String(Math.round(claim.strongestContradiction.confidence * 100)))}%</span>
+                <span class="dossier-contradiction-strength">${escapeHtml(claim.strongestContradiction.confidence >= 0.7 ? "Strong objection" : claim.strongestContradiction.confidence >= 0.4 ? "Moderate objection" : "Weak objection")}</span>
               </div>
             ` : ""}
             <details class="dossier-claim-evidence-details">
@@ -1752,7 +1843,7 @@ app.get("/topics/:topicId", async (c) => {
         ? await readVerdictPresentation(c, topicId)
         : null;
     const verdictPresentation = verdictPresentationObject;
-    const description = buildTopicShareDescription(meta, verdictPresentation?.summary, verdictPresentation?.confidence.label);
+    const description = buildTopicShareDescription(meta, verdictPresentation?.summary);
     const head = buildTopicHeadMetadata(c.env, meta, description);
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
@@ -1771,39 +1862,42 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
-      const hasDossier = Boolean(viewModel.dossier);
       const hasEditorialSections = Boolean(verdictPresentation);
-
-      // Secondary tier: collapsed by default when dossier is present
-      const secondaryContent = [
-        hasEditorialSections && viewModel.editorialBody ? `<details class="dossier-secondary-section"><summary>Editorial</summary>${renderEditorialBody(viewModel)}</details>` : "",
-        hasEditorialSections ? `<details class="dossier-secondary-section"><summary>Score arcs</summary>${renderTopicScoreStorySection(viewModel)}</details>` : "",
-        viewModel.verdictHighlights ? `<details class="dossier-secondary-section"><summary>Highlights</summary>${renderTopicHighlightsSection(viewModel.verdictHighlights)}</details>` : "",
-        viewModel.verdictNarrative ? `<details class="dossier-secondary-section"><summary>How it closed</summary>${renderTopicNarrativeSection(viewModel.verdictNarrative)}</details>` : "",
-        viewModel.verdictClaimGraph ? `<details class="dossier-secondary-section"><summary>Claim graph</summary>${verdictClaimGraphSection(viewModel.verdictClaimGraph)}</details>` : "",
-        `<details class="dossier-secondary-section"><summary>Show full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
-      ].filter(Boolean).join("");
-
-      // When dossier is absent, fall back to the legacy expanded layout
-      const legacyContent = !hasDossier ? [
-        hasEditorialSections ? renderTopicScoreStorySection(viewModel) : "",
-        viewModel.verdictHighlights ? renderTopicHighlightsSection(viewModel.verdictHighlights) : "",
-        viewModel.verdictNarrative ? renderTopicNarrativeSection(viewModel.verdictNarrative) : "",
-        renderTopicTranscriptSection(viewModel),
-        viewModel.verdictClaimGraph ? verdictClaimGraphSection(viewModel.verdictClaimGraph) : "",
-      ].join("") : "";
+      const hasOpeningSynthesis = Boolean(viewModel.openingSynthesisHtml);
 
       const pageBody = [
+        // TIER 1 — Above fold
         `<section class="topic-above-fold">${[
-          `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${hasDossier ? "" : renderEditorialBody(viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
+          `<div class="topic-hero-col">
+            ${buildTopicHeader(meta, viewModel)}
+            ${renderVerdictClosure(viewModel)}
+            ${renderOpeningSynthesis(viewModel)}
+            ${hasOpeningSynthesis ? "" : buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}
+          </div>`,
           renderTopicMetaPanel(viewModel),
         ].join("")}</section>`,
-        // Primary tier: dossier sections
+
+        // TIER 2 — The Story (always visible)
+        renderEditorialBody(viewModel),
+        viewModel.verdictHighlights
+          ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
+          : "",
+        viewModel.verdictNarrative ? renderTopicNarrativeSection(viewModel.verdictNarrative) : "",
+        renderSharpestObjection(viewModel),
+
+        // TIER 3 — The Evidence (always visible)
         renderDossierSection(viewModel),
-        // Positions always in primary tier
         viewModel.positions ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions) : "",
-        // Secondary tier or legacy fallback
-        hasDossier ? secondaryContent : legacyContent,
+
+        // TIER 4 — Deep Dives (always collapsed)
+        hasEditorialSections
+          ? `<details class="dossier-secondary-section"><summary>Score arcs</summary>${renderTopicScoreStorySection(viewModel)}</details>`
+          : "",
+        viewModel.verdictClaimGraph
+          ? `<details class="dossier-secondary-section"><summary>Claim graph</summary>${verdictClaimGraphSection(viewModel.verdictClaimGraph)}</details>`
+          : "",
+        `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
+
         sharePanel,
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
