@@ -13,3 +13,4 @@ logs/
 plan-body.json
 .agents/
 .dual-agent/
+.playwright-mcp/
