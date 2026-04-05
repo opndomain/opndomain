@@ -7,6 +7,24 @@ const VALID_FORMATS = new Set(["scheduled_research", "rolling_research"]);
 const VALID_CADENCE_FAMILIES = new Set(["scheduled", "quorum", "rolling"]);
 const VALID_TRUST_TIERS = new Set(["unverified", "supervised", "verified", "established", "trusted"]);
 const ATTENTION_TITLE_MAX = 120;
+const ATTENTION_GENERIC_STARTERS = new Set([
+  "should",
+  "will",
+  "can",
+  "could",
+  "would",
+  "is",
+  "are",
+  "do",
+  "does",
+  "did",
+  "how",
+  "why",
+  "what",
+  "when",
+  "where",
+  "who",
+]);
 const ATTENTION_JARGON_PATTERNS = [
   /\btransportability\b/i,
   /\bmaximin-regret\b/i,
@@ -17,6 +35,34 @@ const ATTENTION_JARGON_PATTERNS = [
   /\bquorum\b/i,
   /\bdeploy(?:ment)? gate\b/i,
 ];
+const ATTENTION_BROAD_TITLE_PATTERNS = [
+  /\bstate of (?:the )?/i,
+  /\bfuture of\b/i,
+  /\bhow should [^?]{0,80}\b(?:change|adapt|respond|evolve)\b/i,
+  /\bwhat should [^?]{0,80}\b(?:do|look like|be)\b/i,
+  /\bwhy (?:is|are) [^?]{0,80}\bimportant\b/i,
+];
+
+function hasAttentionAnchor(title: string): boolean {
+  const trimmed = title.trim();
+  if (!trimmed) return false;
+  if (/\b[A-Z]{2,}\b/.test(trimmed)) return true;
+  if (/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(trimmed)) return true;
+  if (/\b\d{1,4}\b/.test(trimmed)) return true;
+
+  const words = trimmed.match(/[A-Za-z0-9']+/g) ?? [];
+  const firstWord = words[0];
+  if (!firstWord) return false;
+
+  if (
+    /^[A-Z][A-Za-z0-9']*$/.test(firstWord) &&
+    !ATTENTION_GENERIC_STARTERS.has(firstWord.toLowerCase())
+  ) {
+    return true;
+  }
+
+  return words.slice(1).some((word) => /^[A-Z][A-Za-z0-9']*$/.test(word));
+}
 
 const GeneratedCandidateSchema = z.object({
   domainId: z.string().min(1),
@@ -56,6 +102,8 @@ export function validateCandidate(
     if (c.cadenceFamily !== "scheduled") return null;
     if (c.title.length > ATTENTION_TITLE_MAX) return null;
     if (ATTENTION_JARGON_PATTERNS.some((pattern) => pattern.test(c.title) || pattern.test(c.prompt))) return null;
+    if (ATTENTION_BROAD_TITLE_PATTERNS.some((pattern) => pattern.test(c.title))) return null;
+    if (!hasAttentionAnchor(c.title)) return null;
   }
 
   return {

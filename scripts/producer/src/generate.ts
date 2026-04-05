@@ -8,7 +8,71 @@ import {
   type TopicIdeaContextRecord,
 } from "./topic-idea-duplicates.js";
 
-function computePriorityScore(item: SourceItem, inventory: Map<string, InventoryItem>, bufferTarget: number): number {
+const ATTENTION_DOMAIN_BONUS = new Set([
+  "dom_politics",
+  "dom_governance",
+  "dom_economics",
+  "dom_finance",
+  "dom_business-strategy",
+  "dom_sports",
+  "dom_tech-policy",
+]);
+
+const ATTENTION_PUBLIC_ENTITY_PATTERNS = [
+  /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/g,
+  /\b(?:Florida|Georgia|Texas|California|New York|Congress|Senate|House|Supreme Court|White House|IRS|SEC|NCAA|NFL|NBA|MLB|PGA|NATO|EU|Fed)\b/g,
+  /\b\d{4}\b/g,
+];
+
+const ATTENTION_VAGUE_PATTERNS = [
+  /\bstate of (?:the )?/i,
+  /\bfuture of\b/i,
+  /\binnovation\b/i,
+  /\bresearchers\b/i,
+  /\bscientists\b/i,
+  /\bindustry\b/i,
+  /\bsector\b/i,
+  /\becosystem\b/i,
+  /\bframework\b/i,
+  /\bplatforms\b/i,
+];
+
+function computeAttentionSignal(item: SourceItem): number {
+  let score = 0;
+  const headline = `${item.title} ${item.summary.slice(0, 240)}`;
+
+  for (const domainId of item.suggestedDomains) {
+    if (ATTENTION_DOMAIN_BONUS.has(domainId)) {
+      score += 8;
+    }
+  }
+
+  for (const pattern of ATTENTION_PUBLIC_ENTITY_PATTERNS) {
+    const matches = headline.match(pattern);
+    if (matches) {
+      score += Math.min(matches.length * 6, 18);
+    }
+  }
+
+  if (/\bvs\.?\b/i.test(headline)) score += 6;
+  if (/\bban\b|\btax\b|\blaw\b|\bdeal\b|\btrade\b|\binjury\b|\bcontract\b|\belection\b|\blawsuit\b|\bprobe\b/i.test(headline)) score += 8;
+  if (/[?:]/.test(item.title)) score += 3;
+
+  for (const pattern of ATTENTION_VAGUE_PATTERNS) {
+    if (pattern.test(item.title)) {
+      score -= 10;
+    }
+  }
+
+  return score;
+}
+
+function computePriorityScore(
+  item: SourceItem,
+  inventory: Map<string, InventoryItem>,
+  bufferTarget: number,
+  mode: ProducerMode,
+): number {
   let score = 0;
 
   // Recency bonus
@@ -33,6 +97,10 @@ function computePriorityScore(item: SourceItem, inventory: Map<string, Inventory
     else if (fillRatio < 0.5) maxDeficitBonus = Math.max(maxDeficitBonus, 20);
   }
   score += maxDeficitBonus;
+
+  if (mode === "attention") {
+    score += computeAttentionSignal(item);
+  }
 
   return Math.min(100, score);
 }
@@ -70,16 +138,25 @@ export async function generateFromSources(
     return [];
   }
 
+  const scoredItems = allItems
+    .map((item) => ({
+      item,
+      priority: computePriorityScore(item, inventoryMap, config.bufferTarget, options.mode),
+    }))
+    .sort((a, b) => b.priority - a.priority);
+
+  const rankedItems = scoredItems.map((entry) => entry.item);
+
   // Batch items for LLM
   const systemPrompt = buildGenerationSystemPrompt(options.mode);
   const candidates: CandidateOutput[] = [];
   const batches: SourceItem[][] = [];
 
-  for (let i = 0; i < allItems.length; i += config.batchSize) {
-    batches.push(allItems.slice(i, i + config.batchSize));
+  for (let i = 0; i < rankedItems.length; i += config.batchSize) {
+    batches.push(rankedItems.slice(i, i + config.batchSize));
   }
 
-  console.log(`Processing ${allItems.length} items in ${batches.length} batch(es)...`);
+  console.log(`Processing ${rankedItems.length} items in ${batches.length} batch(es)...`);
 
   for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
     const batch = batches[batchIndex];
@@ -90,7 +167,7 @@ export async function generateFromSources(
         let acceptedCount = 0;
         for (let i = 0; i < rawCandidates.length; i++) {
           const sourceItem = batch[i] ?? batch[batch.length - 1];
-          const priority = computePriorityScore(sourceItem, inventoryMap, config.bufferTarget);
+          const priority = computePriorityScore(sourceItem, inventoryMap, config.bufferTarget, options.mode);
 
           const candidate = validateCandidate(
             rawCandidates[i],

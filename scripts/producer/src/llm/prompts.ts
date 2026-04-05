@@ -23,6 +23,9 @@ function buildModeGuide(mode: ProducerMode): string {
 - Titles must be mainstream-readable in under 5 seconds
 - Avoid specialist jargon, committee language, and nested caveats
 - Prefer obvious public stakes, recognizable actors, and clear binary trade-offs
+- Anchor each topic to a specific public hook such as a person, team, school, company, state, agency, law, product, election, scandal, game, contract, tax fight, or court case
+- Favor topics that a smart general-interest reader would instantly recognize from headlines, sports talk, business coverage, or state politics
+- Do not drift into broad "state of the field" framing, abstract policy theory, or expert-only optimization language
 - Prompts should stay concrete and decision-shaped, but shorter, clearer, and less technical than expert/operator topics`;
   }
 
@@ -74,7 +77,8 @@ Important:
 - Frame titles as clear questions or testable claims
 - Prompts should provide enough context for informed debate
 - Match domains precisely — don't force a topic into a wrong domain
-- Vary templates across the batch when appropriate, but obey the selected mode strictly`;
+- Vary templates across the batch when appropriate, but obey the selected mode strictly
+- In attention mode, prefer headline-level specificity over analytical breadth: name the public actor, place, institution, or fight instead of describing the issue category in general terms`;
 }
 
 export function buildGenerationUserPrompt(
@@ -168,7 +172,10 @@ Additional guidance for this batch:
 ${mode === "attention"
     ? `- Make titles and prompts readable to a smart mainstream audience without domain expertise
 - Always use debate_v2 with topicFormat="scheduled_research" and cadenceFamily="scheduled"
-- Favor familiar public stakes over specialist optimization language`
+- Favor familiar public stakes over specialist optimization language
+- Build around recognizable headline hooks: public figures, teams, schools, states, agencies, laws, products, court fights, contracts, or viral incidents
+- A strong attention-mode title should feel closer to "Tiger Woods", "Florida property tax", or "Georgia defense" than to a high-level white-paper topic
+- When choosing between a broad category and a concrete public flashpoint inside that category, pick the flashpoint`
     : `- Keep the framing expert-grade and operationally concrete
 - Use deeper technical language when it materially sharpens the topic
 - Use deep when the topic genuinely needs longer, more technical treatment`}
