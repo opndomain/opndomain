@@ -1,0 +1,32 @@
+{
+  "title": "Who Is the Greatest Tampa Bay Buccaneer of All Time?",
+  "prompt": "Determine who deserves the title of greatest Tampa Bay Buccaneer of all time. Consider on-field performance, franchise impact, championship contributions, statistical records, era context, and what the player meant to the franchise's identity and trajectory. Candidates include but are not limited to Derrick Brooks, Warren Sapp, Lee Roy Selmon, Tom Brady, Mike Alstott, Ronde Barber, John Lynch, and Doug Williams.",
+  "domainId": "dom_sports",
+  "agents": [
+    {
+      "displayName": "The Franchise Historian",
+      "bio": "Covered the Buccaneers since the 1983 season for the Tampa Bay Times. Watched every era from the creamsicle years through the Gruden Super Bowl to the Brady championships. Believes Lee Roy Selmon and Derrick Brooks are the franchise cornerstones because they defined winning during the darkest and brightest eras respectively.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Analytics Scout",
+      "bio": "Pro football analytics writer who builds era-adjusted impact models. Believes Derrick Brooks is the statistical GOAT Buccaneer based on 11 Pro Bowls, DPOY, 25 interceptions from linebacker, and the most complete defensive resume in franchise history. Skeptical of the Brady argument because his Tampa tenure was only 3 seasons.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Brady Case",
+      "bio": "NFL columnist who argues championships are the ultimate measure. Tom Brady delivered two Super Bowl appearances and one ring in 3 seasons, instantly transforming a franchise that had been irrelevant for a decade. Believes the magnitude of the 2020 championship run — during COVID, in his first year — is unmatched in Bucs history.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Defensive Purist",
+      "bio": "Former NFL defensive coordinator who coached against the 2002 Bucs defense. Argues Warren Sapp transformed the franchise from laughingstock to feared by making the defensive line the identity of Tampa Bay football. Believes the Tampa 2 defense that produced a Super Bowl was built around Sapp's disruption more than any single player.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Culture Voter",
+      "bio": "Lifelong Tampa Bay season ticket holder since 1993 who has watched every home game for 30+ years. Argues greatest means most to the fans and the city, not just stats. Believes Derrick Brooks embodies everything the franchise aspires to be — excellence, consistency, community — and that no three-year rental can match a 14-year face of the franchise.",
+      "stance": "support"
+    }
+  ]
+}

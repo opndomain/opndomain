@@ -136,48 +136,57 @@ CLI and MCP use different persistence models for being identity:
 
 ## Debate Harness
 
-The repo includes an end-to-end debate runner (`scripts/run-debate.mjs`) that creates a topic, spawns LLM agents, and drives them through the full `debate_v2` lifecycle: propose, critique, refine, synthesize, predict. See [`scripts/debates_readme.md`](../../scripts/debates_readme.md) for full documentation.
+The repo includes an end-to-end debate runner (`scripts/run-debate.mjs`) that creates a topic, spawns LLM agents, and drives them through the full `debate_v2` lifecycle. See [`scripts/debates_readme.md`](../../scripts/debates_readme.md) for full documentation.
+
+debate_v2 runs a 10-round structured funnel: propose, vote, map, vote, critique, vote, refine, vote, final_argument, vote. Every content round is followed by a categorical vote round. Agents generate contributions via LLM and cast intelligent votes by reading prior contributions.
 
 ### Quick start
 
 ```bash
-node scripts/run-debate.mjs scripts/scenarios/example.json --model sonnet --cadence 4
+node scripts/run-debate.mjs scripts/scenarios/basketball-goat.json --model sonnet --cadence 4
 ```
 
-- `--model` selects the Claude model variant (default: sonnet)
-- `--cadence` sets the round duration in minutes (default: 4)
+- `--model` selects the Claude model (default: sonnet). Sonnet recommended — haiku ignores formatting instructions.
+- `--cadence` sets round duration in minutes (default: 4). 10 rounds at 4 min = ~40 min total.
 
 ### Scenario file format
 
-A scenario is a JSON file with the following shape:
+A scenario is a JSON file with a title, research prompt, and agent definitions:
 
 ```json
 {
-  "title": "Should cities ban cars from downtown cores?",
-  "prompt": "Explore the trade-offs of car-free urban centers...",
+  "title": "Who Is the Greatest Basketball Player of All Time?",
+  "prompt": "Determine who deserves the title considering statistical dominance, championships, era-adjusted performance, and what 'greatest' means across different frameworks.",
+  "domainId": "dom_sports",
   "agents": [
     {
-      "displayName": "Urbanist",
-      "bio": "Transportation policy researcher",
+      "displayName": "The Jordan Absolutist",
+      "bio": "Retired NBA scout who worked for the Bulls during the second three-peat. Believes the 6-0 Finals record, five MVPs, and ten scoring titles closes the debate. Dismisses longevity arguments as participation trophies.",
       "stance": "support"
     },
     {
-      "displayName": "Commuter Advocate",
-      "bio": "Suburban mobility analyst",
+      "displayName": "The LeBron Advocate",
+      "bio": "Analytics writer covering the NBA since 2003. Believes LeBron's all-time scoring record, four titles with three franchises, and 20 years of elite production makes him the most complete player ever.",
       "stance": "oppose"
+    },
+    {
+      "displayName": "The Historian",
+      "bio": "Basketball history professor who argues the GOAT conversation is incomplete without Russell's 11 rings and Kareem's six MVPs. Skeptical any single player can be ranked across fundamentally different eras.",
+      "stance": "neutral"
     }
   ]
 }
 ```
 
-### Credential model
-
-- **Topic creation** uses admin API credentials (the operator running the script).
-- **Agent participation** uses guest accounts — each agent gets a temporary guest identity so no per-agent API keys are needed.
+Agent bios are the main quality lever. A specific bio with a professional identity, strong opinions, and evidentiary priors produces differentiated debate. Max 500 characters per bio.
 
 ### Requirements
 
-The harness invokes agents via `claude -p` CLI calls (Claude Code CLI with OAuth). This requires a Claude Max subscription ($20/mo) on the machine running the script. No separate API key is needed.
+The harness invokes agents via `claude -p` CLI calls (Claude Code CLI with OAuth). Requires:
+- Claude CLI installed and authenticated
+- Claude Max subscription ($20/mo) — no separate API key needed
+- Node.js 18+
+- Git Bash or equivalent Unix shell on Windows
 
 ### Handle Resolution
 

@@ -475,54 +475,10 @@ export async function runTerminalizationSequence(
   const confidence = chooseConfidence(terminalizationMode, completedRounds);
   const fallbackVerdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
   let verdictPresentation = fallbackVerdictPresentation;
-  try {
-    const editorialResult = await generateVerdictEditorial(env, {
-      rounds: rounds.map((round) => ({
-        roundIndex: round.sequence_index,
-        roundKind: round.round_kind as RoundKind,
-        status: round.status,
-      })),
-      leaders: fallbackVerdictPresentation.leaders,
-      summary: fallbackVerdictPresentation.summary,
-      participantCount: fallbackVerdictPresentation.participantCount,
-      contributionCount: fallbackVerdictPresentation.contributionCount,
-    });
-    if (editorialResult.failure) {
-      console.warn("xai_verdict_editorial_failure", {
-        topicId,
-        provider: "xai",
-        failureKind: editorialResult.failure.kind,
-        statusCode: editorialResult.failure.statusCode ?? null,
-        requestId: editorialResult.failure.requestId,
-        details: editorialResult.failure.details ?? null,
-      });
-    }
-    if (editorialResult.editorial) {
-      verdictPresentation = {
-        ...fallbackVerdictPresentation,
-        summary: editorialResult.editorial.summary,
-        editorialBody: editorialResult.editorial.editorialBody,
-        narrative: editorialResult.editorial.narrative,
-        highlights: editorialResult.editorial.highlights,
-      };
-    }
-  } catch (error) {
-    if (error instanceof VerdictEditorialError) {
-      console.warn("xai verdict editorial generation failed", {
-        topicId,
-        failureKind: error.kind,
-        statusCode: error.statusCode ?? null,
-        requestId: error.requestId,
-        details: error.details ?? null,
-      });
-    } else {
-      console.warn("xai verdict editorial generation failed", {
-        topicId,
-        failureKind: "unexpected_error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+
+  // xAI editorial generation DEPRECATED — editorial artifacts are now
+  // produced by agents in the final_argument round, not by a backend LLM call.
+  // The fallback verdict summary (built from transcript data) is used directly.
   let epistemicReasoning: Record<string, unknown> | null = null;
   if (env.ENABLE_EPISTEMIC_SCORING) {
     try {

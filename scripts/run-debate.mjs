@@ -122,6 +122,104 @@ function idempotencyKey(parts) {
 
 // ---- LLM via claude CLI ----
 
+async function callClaude(systemPrompt, userPrompt) {
+  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
+  const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
+  fs.writeFileSync(systemPromptFile, systemPrompt);
+
+  const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
+
+  const content = await new Promise((resolve, reject) => {
+    const proc = spawn("bash", ["-c", shellCmd], {
+      timeout: 120_000,
+      cwd: cleanCwd,
+      env: { ...process.env },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (chunk) => { stdout += chunk; });
+    proc.stderr.on("data", (chunk) => { stderr += chunk; });
+    proc.stdin.write(userPrompt);
+    proc.stdin.end();
+    proc.on("close", (code) => {
+      if (code !== 0) reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 200)}`));
+      else resolve(stdout.trim());
+    });
+    proc.on("error", reject);
+  });
+
+  try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
+  return content;
+}
+
+async function generateVoteDecisions(agent, context, targetTexts) {
+  const roundInstruction = context.currentRoundConfig?.roundInstruction;
+  const votingGuidance = roundInstruction?.votingGuidance ?? "";
+
+  const systemPrompt = `You are "${agent.displayName}" casting votes in a structured research debate.
+
+Persona: ${agent.bio}
+Stance: ${agent.stance}
+
+You must evaluate the contributions below and select exactly 3 different contributions to vote on, one for each category:
+
+1. most_interesting — the contribution that adds the most novel insight or reframes the debate most productively
+2. most_correct — the contribution with the strongest evidence and most defensible reasoning
+3. fabrication — the contribution with the most unsupported claims, logical errors, or fabricated evidence (penalty vote)
+
+Each vote MUST target a DIFFERENT contribution. Vote based on argument quality, not agreement.
+
+OUTPUT FORMAT — CRITICAL:
+Respond with exactly 3 lines, each in this format:
+most_interesting: CONTRIBUTION_ID
+most_correct: CONTRIBUTION_ID
+fabrication: CONTRIBUTION_ID
+
+Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else — no explanations, no prose.`;
+
+  const contributionList = targetTexts.map((t) =>
+    `ID: ${t.contributionId}\nAuthor: @${t.beingHandle}\nText: ${t.body}`
+  ).join("\n\n---\n\n");
+
+  const userPrompt = [
+    `TOPIC: ${context.title}`,
+    `ROUND: ${context.currentRound?.roundKind} (round ${(context.currentRound?.sequenceIndex ?? 0) + 1})`,
+    votingGuidance ? `\nVOTING GUIDANCE: ${votingGuidance}` : "",
+    `\nCONTRIBUTIONS TO EVALUATE:\n\n${contributionList}`,
+    `\nRespond with exactly 3 lines — one per vote kind — using the exact contribution IDs above:`,
+  ].filter(Boolean).join("\n");
+
+  log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length });
+  const raw = await callClaude(systemPrompt, userPrompt);
+  log("vote-llm-done", { who: agent.displayName, raw: raw.slice(0, 200) });
+
+  // Parse the 3 lines
+  const decisions = {};
+  const validIds = new Set(targetTexts.map((t) => t.contributionId));
+  for (const line of raw.split("\n")) {
+    const match = line.match(/^(most_interesting|most_correct|fabrication)\s*:\s*(\S+)/i);
+    if (match) {
+      const kind = match[1].toLowerCase();
+      const id = match[2].trim();
+      if (validIds.has(id) && !Object.values(decisions).includes(id)) {
+        decisions[kind] = id;
+      }
+    }
+  }
+
+  // Fallback: if LLM didn't return valid structured output, assign mechanically
+  const usedIds = new Set(Object.values(decisions));
+  const remaining = targetTexts.filter((t) => !usedIds.has(t.contributionId));
+  for (const kind of ["most_interesting", "most_correct", "fabrication"]) {
+    if (!decisions[kind] && remaining.length > 0) {
+      decisions[kind] = remaining.shift().contributionId;
+    }
+  }
+
+  return decisions;
+}
+
 async function generateContribution(agent, context) {
   const roundKind = context.currentRound?.roundKind ?? "unknown";
   const roundInstruction = context.currentRoundConfig?.roundInstruction;
@@ -167,39 +265,7 @@ Write 2-3 paragraphs, 150-350 words. Stay in character. Engage with prior contri
 
   userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever — no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
 
-  // Run claude from a clean temp dir (no CLAUDE.md) so the default
-  // system prompt doesn't inject Claude Code identity/instructions.
-  // Write system prompt to a temp file to avoid shell escaping issues
-  // with quotes, parentheses, and newlines in agent bios.
-  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
-  const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
-  fs.writeFileSync(systemPromptFile, systemPrompt);
-
-  // Build a shell command that reads the system prompt from a file via subshell.
-  // This avoids shell escaping issues with complex agent bios.
-  const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
-
-  const content = await new Promise((resolve, reject) => {
-    const proc = spawn("bash", ["-c", shellCmd], {
-      timeout: 120_000,
-      cwd: cleanCwd,
-      env: { ...process.env },
-    });
-
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (chunk) => { stdout += chunk; });
-    proc.stderr.on("data", (chunk) => { stderr += chunk; });
-    proc.stdin.write(userPrompt.join("\n"));
-    proc.stdin.end();
-    proc.on("close", (code) => {
-      if (code !== 0) reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 200)}`));
-      else resolve(stdout.trim());
-    });
-    proc.on("error", reject);
-  });
-
-  try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
+  const content = await callClaude(systemPrompt, userPrompt.join("\n"));
   if (!content) throw new Error("claude CLI returned empty output");
 
   // Hard cap at 5500 chars to stay within the 6000 char API limit
@@ -301,7 +367,7 @@ async function main() {
   const contributionKeys = new Set();
   const voteKeys = new Set();
   let lastTransitionKey = null;
-  const deadlineMs = Date.now() + 30 * 60_000;
+  const deadlineMs = Date.now() + 60 * 60_000; // 60 minute max (10-round v2 needs ~45 min)
   let sweepCount = 0;
   const allVotes = [];
   const allContributions = [];
@@ -397,42 +463,83 @@ async function main() {
       }
     }
 
-    // Cast categorical votes
-    for (const { participant, context } of contexts) {
+    // Cast categorical votes — use LLM to read contributions and pick targets
+    const pendingVoters = contexts.filter(({ participant, context }) => {
       const currentRound = context.currentRound;
-      if (!currentRound || context.status !== "started") continue;
+      if (!currentRound || context.status !== "started") return false;
+      const voteKey = `${participant.beingId}:${currentRound.id}:voted`;
+      return !voteKeys.has(voteKey);
+    });
 
-      const refreshedContext = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: participant.accessToken });
-      const voteRequired = Boolean(refreshedContext.currentRoundConfig?.voteRequired);
-      const voteTargets = Array.isArray(refreshedContext.voteTargets) ? refreshedContext.voteTargets : [];
-      if (!voteRequired || voteTargets.length === 0) continue;
+    if (pendingVoters.length > 0) {
+      // Fetch fresh context for vote targets (need latest after contributions land)
+      const voterContexts = await Promise.all(
+        pendingVoters.map(async ({ participant }) => {
+          const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: participant.accessToken });
+          return { participant, context: ctx };
+        }),
+      );
 
-      const othersTargets = voteTargets.filter((t) => t.beingId !== participant.beingId);
-      if (othersTargets.length === 0) continue;
+      // Run vote decisions in parallel via LLM
+      const voteResults = await Promise.allSettled(
+        voterContexts.map(async ({ participant, context: ctx }) => {
+          const voteRequired = Boolean(ctx.currentRoundConfig?.voteRequired);
+          const voteTargets = Array.isArray(ctx.voteTargets) ? ctx.voteTargets : [];
+          if (!voteRequired || voteTargets.length === 0) return null;
 
-      const voteKinds = ["most_interesting", "most_correct", "fabrication"];
-      for (let ki = 0; ki < voteKinds.length; ki++) {
-        const voteKind = voteKinds[ki];
-        const voteKey = `${participant.beingId}:${currentRound.id}:${voteKind}`;
-        if (voteKeys.has(voteKey)) continue;
+          const othersTargets = voteTargets.filter((t) => t.beingId !== participant.beingId);
+          if (othersTargets.length < 3) return null; // need at least 3 distinct targets
 
-        const target = othersTargets[ki % othersTargets.length];
-        try {
-          await api(`/v1/topics/${topic.id}/votes`, {
-            method: "POST", token: participant.accessToken, expectedStatus: [200, 201],
-            body: {
-              beingId: participant.beingId,
-              contributionId: target.contributionId,
-              voteKind,
-              idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), refreshedContext.currentRound.id.slice(-12), participant.beingId.slice(-12)]),
-            },
+          // Build the contribution text for each vote target from transcript
+          const transcript = ctx.transcript ?? [];
+          const targetTexts = othersTargets.map((t) => {
+            const contrib = transcript.find((c) => c.id === t.contributionId);
+            return {
+              contributionId: t.contributionId,
+              beingHandle: t.beingHandle ?? t.beingId,
+              body: contrib?.bodyClean?.slice(0, 600) ?? "[contribution not visible]",
+            };
           });
-          voteKeys.add(voteKey);
-          allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind });
-          log("vote", { who: participant.displayName, kind: voteKind, target: target.beingHandle ?? target.beingId });
-        } catch (err) {
-          log("vote-blocked", { who: participant.displayName, kind: voteKind, error: err.message?.slice(0, 120) });
+
+          // Ask LLM to pick votes
+          const voteDecisions = await generateVoteDecisions(participant, ctx, targetTexts);
+          return { participant, context: ctx, voteDecisions, othersTargets };
+        }),
+      );
+
+      for (const result of voteResults) {
+        if (result.status === "rejected") {
+          log("vote-llm-error", { error: renderError(result.reason) });
+          continue;
         }
+        if (!result.value) continue;
+        const { participant, context: ctx, voteDecisions, othersTargets } = result.value;
+        const currentRound = ctx.currentRound;
+
+        for (const [voteKind, contributionId] of Object.entries(voteDecisions)) {
+          const voteKey = `${participant.beingId}:${currentRound.id}:${voteKind}`;
+          if (voteKeys.has(voteKey)) continue;
+
+          const target = othersTargets.find((t) => t.contributionId === contributionId) ?? othersTargets[0];
+          try {
+            await api(`/v1/topics/${topic.id}/votes`, {
+              method: "POST", token: participant.accessToken, expectedStatus: [200, 201],
+              body: {
+                beingId: participant.beingId,
+                contributionId: target.contributionId,
+                voteKind,
+                idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
+              },
+            });
+            voteKeys.add(voteKey);
+            allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind });
+            log("vote", { who: participant.displayName, kind: voteKind, target: target.beingHandle ?? target.beingId });
+          } catch (err) {
+            log("vote-blocked", { who: participant.displayName, kind: voteKind, error: err.message?.slice(0, 120) });
+          }
+        }
+        // Mark this agent as having voted this round
+        voteKeys.add(`${participant.beingId}:${currentRound.id}:voted`);
       }
     }
 
