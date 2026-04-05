@@ -91,4 +91,56 @@ describe("verdict presentation contract", () => {
     assert.equal(parsed.scoreBreakdown.terminalizationMode, "full_template");
     assert.equal(parsed.claimGraph.nodes[0]?.status, "supported");
   });
+
+  it("accepts the optional minorityReports and bothSidesSummary fields", () => {
+    const parsed = VerdictPresentationSchema.parse({
+      topicId: "top_456",
+      title: "Should distributed storage be required?",
+      domain: "energy",
+      publishedAt: "2026-04-01T12:00:00Z",
+      status: "published",
+      headline: { label: "Verdict", text: "Distributed storage should be mandated.", stance: "support" },
+      summary: "Support converged around targeted mandates.",
+      confidence: { label: "strong", score: 0.82, explanation: "Rounds converged." },
+      scoreBreakdown: { completedRounds: 5, totalRounds: 5, participantCount: 4, contributionCount: 20, terminalizationMode: "full_template" },
+      narrative: [{ roundIndex: 0, roundKind: "propose", title: "Opening", summary: "Initial proposals." }],
+      highlights: [{ contributionId: "con_1", beingId: "bng_1", beingHandle: "analyst", roundKind: "propose", excerpt: "Key point.", finalScore: 85, reason: "Top contribution." }],
+      claimGraph: { available: false, nodes: [], edges: [], fallbackNote: null },
+      minorityReports: [
+        { contributionId: "con_3", handle: "dissenter", body: "Cost concerns remain unresolved.", finalScore: 62.5, positionLabel: "Too expensive" },
+      ],
+      bothSidesSummary: {
+        majorityCase: "Evidence supports targeted storage mandates.",
+        counterArgument: "Cost and implementation complexity are unresolved.",
+        finalVerdict: "Mandates are warranted where outage risk is high, but cost barriers need policy support.",
+      },
+    });
+
+    assert.ok(parsed.minorityReports);
+    assert.equal(parsed.minorityReports.length, 1);
+    assert.equal(parsed.minorityReports[0].handle, "dissenter");
+    assert.ok(parsed.bothSidesSummary);
+    assert.match(parsed.bothSidesSummary.majorityCase, /targeted storage/);
+    assert.match(parsed.bothSidesSummary.finalVerdict, /outage risk/);
+  });
+
+  it("accepts payloads without minorityReports and bothSidesSummary", () => {
+    const parsed = VerdictPresentationSchema.parse({
+      topicId: "top_789",
+      title: "Test topic",
+      domain: "general",
+      publishedAt: "2026-04-01T12:00:00Z",
+      status: "published",
+      headline: { label: "Verdict", text: "Conclusion.", stance: "mixed" },
+      summary: "Summary.",
+      confidence: { label: "moderate", score: 0.6, explanation: "Moderate signal." },
+      scoreBreakdown: { completedRounds: 3, totalRounds: 5, participantCount: 2, contributionCount: 5, terminalizationMode: "degraded_template" },
+      narrative: [{ roundIndex: 0, roundKind: "propose", title: "Opening", summary: "Initial." }],
+      highlights: [{ contributionId: "con_1", beingId: "bng_1", beingHandle: "agent", roundKind: "propose", excerpt: "Excerpt.", finalScore: 50, reason: "Reason." }],
+      claimGraph: { available: false, nodes: [], edges: [], fallbackNote: null },
+    });
+
+    assert.equal(parsed.minorityReports, undefined);
+    assert.equal(parsed.bothSidesSummary, undefined);
+  });
 });

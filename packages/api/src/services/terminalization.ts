@@ -5,7 +5,7 @@ import {
   TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS,
   VERDICT_TOP_CONTRIBUTIONS_PER_ROUND,
 } from "@opndomain/shared";
-import type { RoundKind, TerminalizationMode, VerdictConfidence } from "@opndomain/shared";
+import type { RoundKind, TerminalizationMode, VerdictConfidence, VerdictPosition } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { createId } from "../lib/ids.js";
@@ -408,6 +408,219 @@ async function buildEpistemicVerdictReasoning(
   };
 }
 
+// --- Structured verdict extraction functions ---
+
+function normalizePositionLabel(label: string): string {
+  return label.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+const MAP_POSITION_REGEX =
+  /POSITION\s+\d+:\s*(.+?)(?:\n|$)[\s\S]*?HELD BY:\s*(.+?)(?:\n|$)[\s\S]*?CLASSIFICATION:\s*(majority|runner[_-]up|minority)/gi;
+
+export function extractMapRoundPositions(
+  contributions: ContributionRow[],
+): { positions: VerdictPosition[]; positionBeingMap: Map<string, string[]> } | null {
+  const mapContributions = contributions.filter(
+    (c) => c.round_kind === "map" && c.visibility !== "quarantined",
+  );
+  if (mapContributions.length === 0) return null;
+
+  // Take highest-scored map contribution
+  const sorted = [...mapContributions].sort(
+    (a, b) => (Number(b.final_score ?? 0)) - (Number(a.final_score ?? 0)),
+  );
+  const bestMap = sorted[0];
+  if (!bestMap.body_clean) return null;
+
+  // Build handle -> being_id map from propose-round contributions
+  const handleToBeingId = new Map<string, string>();
+  for (const c of contributions) {
+    if (c.round_kind === "propose") {
+      handleToBeingId.set(c.being_handle.toLowerCase(), c.being_id);
+    }
+  }
+
+  // Build being_id -> contribution IDs map (all rounds)
+  const beingContributions = new Map<string, string[]>();
+  for (const c of contributions) {
+    if (c.visibility === "quarantined") continue;
+    const existing = beingContributions.get(c.being_id) ?? [];
+    existing.push(c.id);
+    beingContributions.set(c.being_id, existing);
+  }
+
+  // Index contributions by ID for O(1) lookup during score computation
+  const contributionById = new Map<string, ContributionRow>();
+  for (const c of contributions) {
+    contributionById.set(c.id, c);
+  }
+
+  // Parse POSITION blocks
+  const positions: VerdictPosition[] = [];
+  const positionBeingMap = new Map<string, string[]>();
+  let match: RegExpExecArray | null;
+  MAP_POSITION_REGEX.lastIndex = 0;
+
+  while ((match = MAP_POSITION_REGEX.exec(bestMap.body_clean)) !== null) {
+    const label = match[1].trim();
+    const heldByRaw = match[2].trim();
+    const classificationRaw = match[3].trim();
+
+    // Resolve handles to being_ids
+    const handles = heldByRaw.split(",").map((h) => h.trim().replace(/^@/, "").toLowerCase());
+    const beingIds: string[] = [];
+    for (const handle of handles) {
+      const beingId = handleToBeingId.get(handle);
+      if (beingId) beingIds.push(beingId);
+    }
+
+    // Collect all contribution IDs from resolved beings
+    const contributionIds: string[] = [];
+    for (const beingId of beingIds) {
+      const cids = beingContributions.get(beingId);
+      if (cids) contributionIds.push(...cids);
+    }
+
+    // Normalize classification
+    const normalizedClassification = classificationRaw.replace("-", "_").toLowerCase();
+    const validClassifications = ["majority", "runner_up", "minority"] as const;
+    const classification = validClassifications.includes(normalizedClassification as typeof validClassifications[number])
+      ? (normalizedClassification as "majority" | "runner_up" | "minority")
+      : "minority" as const;
+
+    // Compute stance counts and scores from matched contributions
+    let totalScore = 0;
+    const stanceCounts = { support: 0, oppose: 0, neutral: 0 };
+    for (const cid of contributionIds) {
+      const c = contributionById.get(cid);
+      if (!c) continue;
+      totalScore += Number(c.final_score ?? 0);
+      const stance = c.stance as "support" | "oppose" | "neutral" | null;
+      if (stance === "support") stanceCounts.support++;
+      else if (stance === "oppose") stanceCounts.oppose++;
+      else stanceCounts.neutral++;
+    }
+
+    const aggregateScore = contributionIds.length > 0
+      ? Math.round(totalScore / contributionIds.length * 10) / 10
+      : 0;
+    const strength = Math.min(100, Math.round(
+      (stanceCounts.support / Math.max(1, stanceCounts.support + stanceCounts.oppose)) * 100,
+    ));
+
+    const normalizedLabel = normalizePositionLabel(label);
+    positions.push({
+      label,
+      contributionIds,
+      aggregateScore,
+      stanceCounts,
+      strength,
+      classification,
+    });
+    positionBeingMap.set(normalizedLabel, beingIds);
+  }
+
+  if (positions.length < 2) return null;
+
+  return { positions, positionBeingMap };
+}
+
+export function extractWinningFinalArgument(
+  contributions: ContributionRow[],
+): { contributionId: string; beingId: string; beingHandle: string; body: string; finalScore: number } | null {
+  const finalArgs = contributions.filter(
+    (c) => c.round_kind === "final_argument" && c.visibility !== "quarantined",
+  );
+  if (finalArgs.length === 0) return null;
+
+  const sorted = [...finalArgs].sort(
+    (a, b) => (Number(b.final_score ?? 0)) - (Number(a.final_score ?? 0)),
+  );
+  const best = sorted[0];
+  if (!best.body_clean) return null;
+
+  return {
+    contributionId: best.id,
+    beingId: best.being_id,
+    beingHandle: best.being_handle,
+    body: best.body_clean,
+    finalScore: Number(best.final_score ?? 0),
+  };
+}
+
+export function extractMinorityReports(
+  contributions: ContributionRow[],
+  positionBeingMap: Map<string, string[]>,
+  classifiedPositions: VerdictPosition[],
+): Array<{ contributionId: string; handle: string; body: string; finalScore: number; positionLabel: string }> {
+  if (positionBeingMap.size === 0) return [];
+
+  const finalArgs = contributions.filter(
+    (c) => c.round_kind === "final_argument" && c.visibility !== "quarantined",
+  );
+  if (finalArgs.length < 2) return [];
+
+  const sorted = [...finalArgs].sort(
+    (a, b) => (Number(b.final_score ?? 0)) - (Number(a.final_score ?? 0)),
+  );
+
+  // Skip the winning contribution (index 0)
+  const reports: Array<{ contributionId: string; handle: string; body: string; finalScore: number; positionLabel: string }> = [];
+  for (let i = 1; i < sorted.length && reports.length < 3; i++) {
+    const c = sorted[i];
+    if (!c.body_clean) continue;
+
+    // Find which position this author belongs to
+    let matchedLabel: string | null = null;
+    let matchedClassification: string | null = null;
+    for (const [normalizedLabel, beingIds] of positionBeingMap.entries()) {
+      if (beingIds.includes(c.being_id)) {
+        matchedLabel = normalizedLabel;
+        // Find the classified position by normalized label
+        const pos = classifiedPositions.find(
+          (p) => normalizePositionLabel(p.label) === normalizedLabel,
+        );
+        if (pos) matchedClassification = pos.classification ?? null;
+        break;
+      }
+    }
+
+    // Only include as minority report if position has an explicit non-majority classification
+    if (!matchedLabel || !matchedClassification || matchedClassification === "majority") continue;
+
+    // Find the original (non-normalized) label from classifiedPositions
+    const originalPos = classifiedPositions.find(
+      (p) => normalizePositionLabel(p.label) === matchedLabel,
+    );
+
+    reports.push({
+      contributionId: c.id,
+      handle: c.being_handle,
+      body: c.body_clean,
+      finalScore: Number(c.final_score ?? 0),
+      positionLabel: originalPos?.label ?? matchedLabel,
+    });
+  }
+
+  return reports;
+}
+
+export function extractBothSidesSummary(
+  winningBody: string,
+): { majorityCase: string; counterArgument: string; finalVerdict: string } | null {
+  const majorityMatch = /MAJORITY CASE:\s*([\s\S]*?)(?=COUNTER-ARGUMENT:|$)/i.exec(winningBody);
+  const counterMatch = /COUNTER-ARGUMENT:\s*([\s\S]*?)(?=FINAL VERDICT:|$)/i.exec(winningBody);
+  const verdictMatch = /FINAL VERDICT:\s*([\s\S]*?)$/i.exec(winningBody);
+
+  const majorityCase = majorityMatch?.[1]?.trim() ?? "";
+  const counterArgument = counterMatch?.[1]?.trim() ?? "";
+  const finalVerdict = verdictMatch?.[1]?.trim() ?? "";
+
+  if (!majorityCase || !counterArgument || !finalVerdict) return null;
+
+  return { majorityCase, counterArgument, finalVerdict };
+}
+
 export async function runTerminalizationSequence(
   env: ApiEnv,
   topicId: string,
@@ -476,9 +689,15 @@ export async function runTerminalizationSequence(
   const fallbackVerdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
   let verdictPresentation = fallbackVerdictPresentation;
 
-  // xAI editorial generation DEPRECATED — editorial artifacts are now
-  // produced by agents in the final_argument round, not by a backend LLM call.
-  // The fallback verdict summary (built from transcript data) is used directly.
+  // Extract winning final argument as editorial body
+  const winningFinalArg = extractWinningFinalArgument(refreshedContributions);
+  if (winningFinalArg) {
+    verdictPresentation.editorialBody = winningFinalArg.body;
+  }
+
+  // Extract both-sides structure from winning body (label-keyed parsing)
+  const bothSides = winningFinalArg ? extractBothSidesSummary(winningFinalArg.body) : null;
+
   let epistemicReasoning: Record<string, unknown> | null = null;
   if (env.ENABLE_EPISTEMIC_SCORING) {
     try {
@@ -498,7 +717,25 @@ export async function runTerminalizationSequence(
   const positions = analyzePositions(refreshedContributions);
   const totalContributions = refreshedContributions.length;
   const classifiedPositions = classifyPositions(positions, totalContributions);
-  const verdictOutcome = synthesizeOutcome(classifiedPositions, verdictPresentation.participantCount);
+
+  // Prefer agent-authored map positions over lexical heuristic
+  const mapResult = extractMapRoundPositions(refreshedContributions);
+  let finalPositions: VerdictPosition[] = classifiedPositions;
+  let positionBeingMap = new Map<string, string[]>();
+  if (mapResult && mapResult.positions.length >= 2) {
+    // Compute share inline using full contribution count as denominator (matches classifyPositions semantics)
+    finalPositions = mapResult.positions.map((p) => ({
+      ...p,
+      share: Math.round((p.contributionIds.length / Math.max(1, totalContributions)) * 100),
+    }));
+    positionBeingMap = mapResult.positionBeingMap;
+  }
+
+  // Recompute verdictOutcome from finalPositions so convergence label stays aligned with positions_json
+  const verdictOutcome = synthesizeOutcome(finalPositions, verdictPresentation.participantCount);
+
+  // Extract minority reports using explicit being-to-position provenance
+  const minorityReports = extractMinorityReports(refreshedContributions, positionBeingMap, finalPositions);
 
   const verdictId = await writeVerdict(
     env,
@@ -516,10 +753,12 @@ export async function runTerminalizationSequence(
       narrative: verdictPresentation.narrative,
       highlights: verdictPresentation.highlights,
       ...(epistemicReasoning ? { epistemic: epistemicReasoning } : {}),
+      ...(minorityReports.length > 0 ? { minorityReports } : {}),
+      ...(bothSides ? { bothSidesSummary: bothSides } : {}),
     },
     Boolean(options?.reterminalize),
     verdictOutcome,
-    classifiedPositions.length > 0 ? JSON.stringify(classifiedPositions) : null,
+    finalPositions.length > 0 ? JSON.stringify(finalPositions) : null,
   );
   if (!options?.reterminalize) {
     try {

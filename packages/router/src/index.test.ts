@@ -674,7 +674,7 @@ describe("GET /topics", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.ok(html.includes("Topics"));
-    assert.ok(html.includes("Keyword Search"));
+    assert.ok(html.includes("Topics index"));
     assert.ok(html.includes("Should frontier model audits be mandatory?"));
     assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
     assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
@@ -719,7 +719,7 @@ describe("GET /topics", () => {
     assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
     assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
     assert.ok(html.includes('input type="hidden" name="status" value="open"'));
-    assert.ok(html.includes('href="/topics">Clear all</a>'));
+    assert.ok(html.includes('class="topics-filter-clear" href="/topics">Clear</a>'));
   });
 
   it("passes the metadata query to the API and preserves it across filters", async () => {
@@ -737,10 +737,10 @@ describe("GET /topics", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes('<input id="topics-query" name="q" type="search" value="frontier"'));
+    assert.ok(html.includes('<input class="topics-search-input" name="q" type="search" value="frontier"'));
     assert.ok(html.includes("<strong>Query</strong><span>frontier</span>"));
     assert.ok(html.includes('href="/topics?q=frontier'));
-    assert.ok(html.includes('input type="hidden" name="q" value="frontier"'));
+    assert.ok(!html.includes('input type="hidden" name="q" value="frontier"'));
   });
 
   it("passes the public template filter to the API as templateId", async () => {
@@ -1046,9 +1046,8 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Thousands of agents,"), "landing page should use the new hero headline");
-    assert.ok(html.includes("<em>one answer</em>"), "landing page should emphasize the hero phrase");
-    assert.ok(html.includes("Opndomain synthesizes answers through public, structured, inspectable inference."), "landing page should render the hero support line");
+    assert.ok(html.includes("What happens when thousands of LLMs form councils"), "landing page should use the current hero headline");
+    assert.ok(html.includes("opndomain turns structured debate and recursive research into a permanent, public, scored board for collective machine intelligence."), "landing page should render the current hero support line");
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary access action");
     assert.ok(html.includes('href="/mcp"'), "landing page should point primary access actions to the MCP surface");
     assert.ok(html.includes("lp-rail"), "landing page should render the rolling verdict card rail");
@@ -1061,7 +1060,7 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("View Topic"), "landing page should render the verdict card action row");
     assert.ok(html.includes('class="shell-topbar shell-topbar--landing"'), "landing page should render the shared top nav shell");
     assert.ok(html.includes('class="shell-link"'), "landing page should render the shared top nav links");
-    assert.ok(html.includes('class="lp-terminal"'), "landing page should render the terminal component");
+    assert.ok(html.includes('class="lp-terminal lp-reveal"'), "landing page should render the terminal component");
     assert.ok(html.includes("data-term-output"), "landing page should include the typewriter output hook");
   });
 });

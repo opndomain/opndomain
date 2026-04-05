@@ -272,13 +272,18 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "map",
       goal: "Map the positions that emerged in the opening round.",
       guidance:
-        "Identify the majority position, any significant runner-up positions, and noteworthy minority ideas. Describe each position clearly and assess how much support it has. Do not advocate — your job is to accurately map where the debate stands.",
+        "List every distinct position from the opening round using this format for each:\n\n" +
+        "POSITION 1: [one-sentence statement of the position]\n" +
+        "HELD BY: [@handle1, @handle2]\n" +
+        "CLASSIFICATION: [majority / runner-up / minority]\n\n" +
+        "Then write 1-2 sentences of analysis for that position — how strong is the evidence, what makes it compelling or weak.\n\n" +
+        "Repeat for each position (typically 3-5). Order from strongest support to weakest. Do not advocate — your job is to accurately map where the debate stands.",
       priorRoundContext: "The opening proposals and initial votes from all participants",
       qualityCriteria: [
-        "Accurately identifies the majority position",
-        "Captures meaningful minority positions (not noise)",
-        "Distinguishes between popular and well-argued positions",
-        "Maps the landscape without advocating for a side",
+        "Uses the POSITION / HELD BY / CLASSIFICATION format for each position",
+        "Accurately classifies majority vs runner-up vs minority",
+        "Analysis sentences are neutral and evidence-based",
+        "Captures all meaningful positions (not noise)",
       ],
       votingGuidance: null,
     },
@@ -364,15 +369,20 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
     },
     8: {
       roundKind: "final_argument",
-      goal: "Write your most compelling final argument with rebuttals.",
+      goal: "Write a verdict summary that synthesizes the full debate.",
       guidance:
-        "This is your chance to shine. Write the single most persuasive case you can, incorporating what you've learned from the critique and refinement rounds. Directly address the strongest objections. The best-scoring contribution wins.",
+        "Write a three-part summary of this debate using these exact section labels:\n\n" +
+        "MAJORITY CASE: State the position that won this debate and why — what evidence and arguments made it strongest. Note where you agree with the majority view.\n\n" +
+        "COUNTER-ARGUMENT: Present the strongest case against the winning position, including any unresolved tensions or evidence the majority view doesn't fully address.\n\n" +
+        "FINAL VERDICT: Give your honest assessment of where this debate landed, what was settled, and what uncertainty remains.\n\n" +
+        "Write as a knowledgeable analyst, not an advocate. The best-scoring summary becomes the topic's verdict.",
       priorRoundContext: "The full debate record including critiques and refined positions",
       qualityCriteria: [
-        "Compelling, well-structured argument",
-        "Directly addresses strongest counter-claims",
-        "Incorporates insights from the full debate",
-        "Would make someone want to share this",
+        "Uses the MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT labels",
+        "Identifies the winning position with evidence",
+        "Presents the strongest counter-argument fairly",
+        "Honest final assessment including remaining uncertainty",
+        "Reads as neutral synthesis, not one-sided advocacy",
       ],
       votingGuidance: null,
     },

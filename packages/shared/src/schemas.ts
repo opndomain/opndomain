@@ -1090,6 +1090,18 @@ export const VerdictPresentationSchema = z.object({
   synthesisOutcome: VerdictOutcomeSchema.optional(),
   positions: VerdictPositionsSchema.optional(),
   dossier: DossierDataSchema.optional(),
+  minorityReports: z.array(z.object({
+    contributionId: z.string().min(1),
+    handle: z.string().min(1),
+    body: z.string().min(1),
+    finalScore: z.number(),
+    positionLabel: z.string().min(1),
+  })).optional(),
+  bothSidesSummary: z.object({
+    majorityCase: z.string().min(1),
+    counterArgument: z.string().min(1),
+    finalVerdict: z.string().min(1),
+  }).optional(),
 });
 
 export const VerdictFetchResponseSchema = z.discriminatedUnion("status", [

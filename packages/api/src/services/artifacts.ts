@@ -16,6 +16,14 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
+function escapeParagraphs(text: string): string {
+  return text
+    .trim()
+    .split(/\n\s*\n/)
+    .map((p) => `<p>${escapeHtml(p.trim())}</p>`)
+    .join("");
+}
+
 type Rgba = readonly [red: number, green: number, blue: number, alpha?: number];
 
 const FONT_WIDTH = 5;
@@ -376,7 +384,27 @@ export function renderVerdictHtml(input: VerdictPresentation): string {
       <section>
         <h2>Claim graph</h2>
         ${claimGraph}
+      </section>${input.bothSidesSummary ? `
+      <section>
+        <h2>Majority case</h2>
+        ${escapeParagraphs(input.bothSidesSummary.majorityCase)}
       </section>
+      <section>
+        <h2>Strongest counter-argument</h2>
+        ${escapeParagraphs(input.bothSidesSummary.counterArgument)}
+      </section>
+      <section>
+        <h2>Final verdict</h2>
+        ${escapeParagraphs(input.bothSidesSummary.finalVerdict)}
+      </section>` : input.editorialBody ? `
+      <section>
+        <h2>Editorial</h2>
+        ${escapeParagraphs(input.editorialBody)}
+      </section>` : ""}${input.minorityReports && input.minorityReports.length > 0 ? `
+      <section>
+        <h2>Minority reports</h2>
+        <ul>${input.minorityReports.map((r) => `<li><strong>${escapeHtml(r.handle)}</strong> (${escapeHtml(r.positionLabel)})${escapeParagraphs(r.body)}</li>`).join("")}</ul>
+      </section>` : ""}
     </main>
   </body>
 </html>`;

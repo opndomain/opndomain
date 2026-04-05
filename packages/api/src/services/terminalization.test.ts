@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { runTerminalizationSequence } from "./terminalization.js";
+import {
+  runTerminalizationSequence,
+  extractMapRoundPositions,
+  extractWinningFinalArgument,
+  extractMinorityReports,
+  extractBothSidesSummary,
+} from "./terminalization.js";
 
 class FakePreparedStatement {
   constructor(
@@ -1313,5 +1319,197 @@ describe("terminalization service", () => {
     const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
     assert.ok(verdictInsert);
     assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
+  });
+});
+
+// --- Extraction function unit tests ---
+
+function makeContribution(overrides: Partial<{
+  id: string;
+  being_id: string;
+  being_handle: string;
+  round_id: string;
+  round_kind: string;
+  sequence_index: number;
+  final_score: number | null;
+  shadow_final_score: number | null;
+  body_clean: string | null;
+  visibility: string;
+  stance: string | null;
+  target_contribution_id: string | null;
+}> = {}) {
+  return {
+    id: overrides.id ?? "ctr_1",
+    being_id: overrides.being_id ?? "bng_1",
+    being_handle: overrides.being_handle ?? "agent-alpha",
+    round_id: overrides.round_id ?? "rnd_1",
+    round_kind: overrides.round_kind ?? "propose",
+    sequence_index: overrides.sequence_index ?? 0,
+    final_score: overrides.final_score ?? 50,
+    shadow_final_score: overrides.shadow_final_score ?? null,
+    body_clean: overrides.body_clean ?? "Test body",
+    visibility: overrides.visibility ?? "normal",
+    stance: overrides.stance ?? null,
+    target_contribution_id: overrides.target_contribution_id ?? null,
+  };
+}
+
+describe("extractMapRoundPositions", () => {
+  it("parses structured POSITION blocks from the best map contribution", () => {
+    const contributions = [
+      makeContribution({ id: "ctr_p1", being_id: "bng_1", being_handle: "alice", round_kind: "propose" }),
+      makeContribution({ id: "ctr_p2", being_id: "bng_2", being_handle: "bob", round_kind: "propose" }),
+      makeContribution({
+        id: "ctr_m1",
+        being_id: "bng_3",
+        being_handle: "mapper",
+        round_kind: "map",
+        final_score: 80,
+        body_clean:
+          "POSITION 1: Battery storage should be mandatory\nHELD BY: @alice\nCLASSIFICATION: majority\n\nStrong evidence supports this.\n\n" +
+          "POSITION 2: Storage is too expensive\nHELD BY: @bob\nCLASSIFICATION: minority\n\nCost concerns remain valid.",
+      }),
+    ];
+
+    const result = extractMapRoundPositions(contributions);
+    assert.ok(result);
+    assert.equal(result.positions.length, 2);
+    assert.equal(result.positions[0].classification, "majority");
+    assert.equal(result.positions[1].classification, "minority");
+    assert.ok(result.positionBeingMap.size >= 2);
+  });
+
+  it("returns null when fewer than 2 positions are parsed", () => {
+    const contributions = [
+      makeContribution({ id: "ctr_p1", being_id: "bng_1", being_handle: "alice", round_kind: "propose" }),
+      makeContribution({
+        id: "ctr_m1",
+        being_id: "bng_2",
+        round_kind: "map",
+        final_score: 80,
+        body_clean: "POSITION 1: Only one\nHELD BY: @alice\nCLASSIFICATION: majority\n\nOnly one position.",
+      }),
+    ];
+    assert.equal(extractMapRoundPositions(contributions), null);
+  });
+
+  it("normalizes runner-up classification", () => {
+    const contributions = [
+      makeContribution({ id: "ctr_p1", being_id: "bng_1", being_handle: "alice", round_kind: "propose" }),
+      makeContribution({ id: "ctr_p2", being_id: "bng_2", being_handle: "bob", round_kind: "propose" }),
+      makeContribution({
+        id: "ctr_m1",
+        being_id: "bng_3",
+        round_kind: "map",
+        final_score: 80,
+        body_clean:
+          "POSITION 1: First\nHELD BY: @alice\nCLASSIFICATION: majority\n\nAnalysis.\n\n" +
+          "POSITION 2: Second\nHELD BY: @bob\nCLASSIFICATION: runner-up\n\nAnalysis.",
+      }),
+    ];
+    const result = extractMapRoundPositions(contributions);
+    assert.ok(result);
+    assert.equal(result.positions[1].classification, "runner_up");
+  });
+
+  it("returns null when no map contributions exist", () => {
+    const contributions = [
+      makeContribution({ round_kind: "propose" }),
+    ];
+    assert.equal(extractMapRoundPositions(contributions), null);
+  });
+});
+
+describe("extractWinningFinalArgument", () => {
+  it("returns the highest-scored final_argument", () => {
+    const contributions = [
+      makeContribution({ id: "ctr_f1", round_kind: "final_argument", final_score: 60, body_clean: "Argument A" }),
+      makeContribution({ id: "ctr_f2", round_kind: "final_argument", final_score: 90, body_clean: "Argument B" }),
+    ];
+    const result = extractWinningFinalArgument(contributions);
+    assert.ok(result);
+    assert.equal(result.contributionId, "ctr_f2");
+    assert.equal(result.body, "Argument B");
+  });
+
+  it("returns null when no final_argument contributions exist", () => {
+    assert.equal(extractWinningFinalArgument([makeContribution({ round_kind: "propose" })]), null);
+  });
+
+  it("skips quarantined contributions", () => {
+    const contributions = [
+      makeContribution({ id: "ctr_f1", round_kind: "final_argument", final_score: 100, visibility: "quarantined", body_clean: "Bad" }),
+      makeContribution({ id: "ctr_f2", round_kind: "final_argument", final_score: 50, body_clean: "Good" }),
+    ];
+    const result = extractWinningFinalArgument(contributions);
+    assert.ok(result);
+    assert.equal(result.contributionId, "ctr_f2");
+  });
+});
+
+describe("extractBothSidesSummary", () => {
+  it("extracts all three sections from labeled body", () => {
+    const body =
+      "MAJORITY CASE: The evidence strongly supports X.\n\n" +
+      "COUNTER-ARGUMENT: However, Y remains unresolved.\n\n" +
+      "FINAL VERDICT: X is likely correct but Y needs further research.";
+    const result = extractBothSidesSummary(body);
+    assert.ok(result);
+    assert.match(result.majorityCase, /evidence strongly supports/);
+    assert.match(result.counterArgument, /Y remains unresolved/);
+    assert.match(result.finalVerdict, /X is likely correct/);
+  });
+
+  it("returns null when a section is missing", () => {
+    assert.equal(extractBothSidesSummary("MAJORITY CASE: Something.\nFINAL VERDICT: Done."), null);
+  });
+
+  it("returns null for empty body", () => {
+    assert.equal(extractBothSidesSummary(""), null);
+  });
+});
+
+describe("extractMinorityReports", () => {
+  it("returns minority reports from non-majority position authors", () => {
+    const positionBeingMap = new Map([
+      ["battery storage is good", ["bng_1"]],
+      ["too expensive", ["bng_2"]],
+    ]);
+    const classifiedPositions = [
+      { label: "Battery storage is good", contributionIds: ["ctr_p1"], aggregateScore: 80, stanceCounts: { support: 3, oppose: 0, neutral: 0 }, strength: 100, classification: "majority" as const },
+      { label: "Too expensive", contributionIds: ["ctr_p2"], aggregateScore: 40, stanceCounts: { support: 1, oppose: 2, neutral: 0 }, strength: 33, classification: "minority" as const },
+    ];
+    const contributions = [
+      makeContribution({ id: "ctr_f1", being_id: "bng_1", being_handle: "alice", round_kind: "final_argument", final_score: 90, body_clean: "Majority wins" }),
+      makeContribution({ id: "ctr_f2", being_id: "bng_2", being_handle: "bob", round_kind: "final_argument", final_score: 70, body_clean: "Cost concerns" }),
+    ];
+    const result = extractMinorityReports(contributions, positionBeingMap, classifiedPositions);
+    assert.equal(result.length, 1);
+    assert.equal(result[0].handle, "bob");
+    assert.equal(result[0].positionLabel, "Too expensive");
+  });
+
+  it("returns empty array when positionBeingMap is empty", () => {
+    const result = extractMinorityReports(
+      [makeContribution({ round_kind: "final_argument" })],
+      new Map(),
+      [],
+    );
+    assert.deepEqual(result, []);
+  });
+
+  it("excludes majority-position authors from minority reports", () => {
+    const positionBeingMap = new Map([
+      ["position a", ["bng_1", "bng_2"]],
+    ]);
+    const classifiedPositions = [
+      { label: "Position A", contributionIds: [], aggregateScore: 80, stanceCounts: { support: 3, oppose: 0, neutral: 0 }, strength: 100, classification: "majority" as const },
+    ];
+    const contributions = [
+      makeContribution({ id: "ctr_f1", being_id: "bng_1", round_kind: "final_argument", final_score: 90, body_clean: "Winner" }),
+      makeContribution({ id: "ctr_f2", being_id: "bng_2", round_kind: "final_argument", final_score: 70, body_clean: "Also majority" }),
+    ];
+    const result = extractMinorityReports(contributions, positionBeingMap, classifiedPositions);
+    assert.equal(result.length, 0);
   });
 });

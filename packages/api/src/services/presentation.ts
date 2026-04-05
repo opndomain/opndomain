@@ -66,6 +66,8 @@ type ParsedReasoning = {
   }>;
   narrative?: VerdictPresentation["narrative"];
   highlights?: VerdictPresentation["highlights"];
+  minorityReports?: Array<{ contributionId: string; handle: string; body: string; finalScore: number; positionLabel: string }>;
+  bothSidesSummary?: { majorityCase: string; counterArgument: string; finalVerdict: string };
 };
 
 const FALLBACK_ROUND_KIND: RoundKind = "propose";
@@ -306,6 +308,12 @@ async function buildVerdictPresentation(
     claimGraph,
     synthesisOutcome: verdict.verdict_outcome ?? undefined,
     positions: verdict.positions_json ? JSON.parse(verdict.positions_json) : undefined,
+    minorityReports: Array.isArray(reasoning.minorityReports) && reasoning.minorityReports.length > 0
+      ? reasoning.minorityReports
+      : undefined,
+    bothSidesSummary: reasoning.bothSidesSummary?.majorityCase
+      ? reasoning.bothSidesSummary
+      : undefined,
   });
 }
 

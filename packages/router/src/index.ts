@@ -543,6 +543,8 @@ type TopicPageViewModel = {
     finalScoreLabel: string;
   } | null;
   dossier: TopicVerdictPresentation["dossier"] | null;
+  minorityReports: TopicVerdictPresentation["minorityReports"] | null;
+  bothSidesSummary: TopicVerdictPresentation["bothSidesSummary"] | null;
   openingSynthesisHtml: string | null;
   openingSynthesisContributionId: string | null;
   closureLine: string;
@@ -791,6 +793,8 @@ function buildTopicPageViewModel(
       convergenceMap,
       winningArgument,
       dossier: verdictPresentation.dossier ?? null,
+      minorityReports: verdictPresentation.minorityReports ?? null,
+      bothSidesSummary: verdictPresentation.bothSidesSummary ?? null,
       openingSynthesisHtml,
       openingSynthesisContributionId,
       closureLine,
@@ -835,6 +839,8 @@ function buildTopicPageViewModel(
       convergenceMap: null,
       winningArgument: null,
       dossier: null,
+      minorityReports: null,
+      bothSidesSummary: null,
       openingSynthesisHtml: null,
       openingSynthesisContributionId: null,
       closureLine: "",
@@ -875,6 +881,8 @@ function buildTopicPageViewModel(
     convergenceMap: null,
     winningArgument: null,
     dossier: null,
+    minorityReports: null,
+    bothSidesSummary: null,
     openingSynthesisHtml: null,
     openingSynthesisContributionId: null,
     closureLine: "",
@@ -1303,14 +1311,55 @@ function renderConvergenceMap(viewModel: TopicPageViewModel): string {
 
 function renderWinningArgument(viewModel: TopicPageViewModel): string {
   if (!viewModel.winningArgument) return "";
+  // When bothSidesSummary is present, show only the finalVerdict paragraph to avoid duplication
+  const bodyContent = viewModel.bothSidesSummary
+    ? `<p>${escapeHtml(viewModel.bothSidesSummary.finalVerdict)}</p>`
+    : viewModel.winningArgument.bodyHtml;
   return `
     <section class="winning-argument">
-      <div class="winning-argument-kicker">Top final argument</div>
-      <div class="winning-argument-body">${viewModel.winningArgument.bodyHtml}</div>
+      <div class="winning-argument-kicker">Majority verdict</div>
+      <div class="winning-argument-body">${bodyContent}</div>
       <footer class="winning-argument-footer">
         <span class="winning-argument-handle">@${escapeHtml(viewModel.winningArgument.handle)}</span>
         <span class="winning-argument-score">${escapeHtml(viewModel.winningArgument.finalScoreLabel)}</span>
       </footer>
+    </section>
+  `;
+}
+
+function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
+  if (!viewModel.bothSidesSummary) return "";
+  return `
+    <section class="both-sides-summary">
+      <div class="both-sides-section">
+        <div class="both-sides-kicker">Case for the majority</div>
+        <div class="both-sides-body">${renderParagraphs(viewModel.bothSidesSummary.majorityCase, "both-sides-paragraph")}</div>
+      </div>
+      <div class="both-sides-section">
+        <div class="both-sides-kicker">Strongest counter-argument</div>
+        <div class="both-sides-body">${renderParagraphs(viewModel.bothSidesSummary.counterArgument, "both-sides-paragraph")}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderMinorityReports(viewModel: TopicPageViewModel): string {
+  if (!viewModel.minorityReports || viewModel.minorityReports.length === 0) return "";
+  return `
+    <section class="minority-reports">
+      <div class="minority-reports-kicker">Minority reports</div>
+      <div class="minority-reports-list">
+        ${viewModel.minorityReports.map((report) => `
+          <article class="minority-report-card">
+            <div class="minority-report-position">${escapeHtml(report.positionLabel)}</div>
+            <div class="minority-report-body">${renderParagraphs(report.body, "minority-report-paragraph")}</div>
+            <footer class="minority-report-footer">
+              <span class="minority-report-handle">@${escapeHtml(report.handle)}</span>
+              <span class="minority-report-score">${report.finalScore.toFixed(1)}</span>
+            </footer>
+          </article>
+        `).join("")}
+      </div>
     </section>
   `;
 }
@@ -1993,11 +2042,14 @@ app.get("/topics/:topicId", async (c) => {
 
         // TIER 2 — The Story (always visible)
         renderWinningArgument(viewModel),
+        renderBothSidesSummary(viewModel),
+        renderMinorityReports(viewModel),
         renderOpeningSynthesis(viewModel),
         !viewModel.winningArgument && !viewModel.openingSynthesisHtml
           ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
           : "",
-        renderEditorialBody(viewModel),
+        // Editorial body: skip if bothSidesSummary is present (same content, already decomposed above)
+        !viewModel.bothSidesSummary ? renderEditorialBody(viewModel) : "",
         viewModel.verdictHighlights
           ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
           : "",
