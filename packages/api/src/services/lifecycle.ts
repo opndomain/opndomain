@@ -762,7 +762,11 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
     }
   }
 
-  const startedTopics = await allRows<{ id: string }>(env.DB, `SELECT id FROM topics WHERE status = 'started'`);
+  // Safety check: stall any started topic that has no active round.
+  // Guard: exclude topics that already have closed_at set — a concurrent
+  // sweep may have just closed them via advanceRound, and D1 stale reads
+  // can return the pre-close status.
+  const startedTopics = await allRows<{ id: string }>(env.DB, `SELECT id FROM topics WHERE status = 'started' AND closed_at IS NULL`);
   for (const topic of startedTopics) {
     const activeRound = await firstRow<{ id: string }>(
       env.DB,
@@ -799,9 +803,14 @@ export async function sweepTopicLifecycle(env: ApiEnv, options?: { cron?: string
   }
 
   // Autonomous rolling topic lifecycle sweep (runs every cycle)
+  // Wrapped in try-catch: autonomous tables may not exist yet if migrations are pending.
   if (cron === MATCHMAKING_SWEEP_CRON || cron === "manual") {
-    for (const topicId of await sweepAutonomousTopics(env, now)) {
-      mutatedTopicIds.add(topicId);
+    try {
+      for (const topicId of await sweepAutonomousTopics(env, now)) {
+        mutatedTopicIds.add(topicId);
+      }
+    } catch (autonomousError) {
+      console.error("sweepAutonomousTopics failed (migrations pending?)", autonomousError);
     }
   }
 
