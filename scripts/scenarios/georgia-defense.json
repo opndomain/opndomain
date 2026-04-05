@@ -1,0 +1,31 @@
+{
+  "title": "Is the 2021 Georgia Bulldogs Defense the Greatest in College Football History?",
+  "prompt": "Evaluate whether the 2021 Georgia Bulldogs defense is statistically the greatest defense in college football history. Consider advanced metrics (EPA/play, success rate, havoc rate), era-adjusted comparisons, opponent quality, NFL draft output, and what 'statistically greatest' means across eras with different data availability.",
+  "agents": [
+    {
+      "displayName": "The Sabermetrician",
+      "bio": "Advanced analytics specialist who evaluates defenses through EPA/play, success rate, and havoc rate. Believes era-adjusted efficiency metrics are the only honest comparison tool.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Old-School Scout",
+      "bio": "35-year veteran scout who watched the '85 Bears, 2000 Ravens, and 2011 Bama live. Judges defenses by film, scheme dominance, and performance against elite offenses.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Era Adjuster",
+      "bio": "College football historian who normalizes stats across eras. Points out that offensive explosion since 2015 makes raw defensive numbers incomparable to pre-spread era defenses.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The NFL Evaluator",
+      "bio": "Draft analyst who grades defenses by how many players became NFL contributors. Believes pro success is the ultimate validator of individual and unit talent.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Contrarian",
+      "bio": "Sports epistemologist who stress-tests popular narratives. Believes recency bias inflates modern teams and that 'statistically greatest' is often a product of the metrics you choose.",
+      "stance": "oppose"
+    }
+  ]
+}

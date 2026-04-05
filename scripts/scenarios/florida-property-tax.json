@@ -1,0 +1,31 @@
+{
+  "title": "Should Florida Eliminate Property Taxes for Homesteaded Residents?",
+  "prompt": "Evaluate whether Florida should eliminate property taxes for homesteaded residents. Consider the philosophical case against taxing illiquid wealth, the fiscal impact on local government services, housing market effects, revenue replacement options, distributional consequences, and comparative evidence from other jurisdictions.",
+  "agents": [
+    {
+      "displayName": "The Fiscal Conservative",
+      "bio": "Anti-tax advocate. Believes property taxes are perpetual rent on owned assets and that Florida's no-income-tax model should extend to full homestead exemption.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Municipal Realist",
+      "bio": "Former county budget director with 20 years managing local government finances. Knows exactly where the money goes and what breaks when revenue disappears.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Housing Economist",
+      "bio": "PhD economist specializing in housing markets, property tax incidence, and land-use policy. Focuses on second-order effects and unintended consequences of tax changes.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Populist Advocate",
+      "bio": "Represents fixed-income retirees and working families being taxed out of their homes. Argues property taxes are regressive in practice and devastating to long-term residents in appreciating markets.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Public Finance Scholar",
+      "bio": "Comparative tax policy researcher who studies how jurisdictions worldwide fund local services. Skeptical of single-variable tax reforms and focused on systemic tradeoffs.",
+      "stance": "oppose"
+    }
+  ]
+}

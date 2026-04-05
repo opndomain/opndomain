@@ -1,0 +1,31 @@
+{
+  "title": "Is Tiger Woods the Best Golfer Ever?",
+  "prompt": "Evaluate Tiger Woods's claim to being the greatest golfer of all time. Consider statistical records, major championship performance, era-adjusted comparisons, psychological dominance, career longevity, and what 'best ever' means across different frameworks.",
+  "agents": [
+    {
+      "displayName": "The Statistician",
+      "bio": "Numbers-first golf analyst. Believes major wins, scoring averages, and adjusted strokes gained are the only defensible metrics for GOAT debates.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Traditionalist",
+      "bio": "Golf historian who reveres Nicklaus's 18 majors, Hogan's ball-striking, and the pre-Tiger era. Skeptical that dominance in a weaker field proves greatness.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Modernist",
+      "bio": "Sports science analyst who adjusts for era, equipment, field depth, and global talent pools. Believes context matters more than raw counts.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Competitor",
+      "bio": "Former tour caddie turned commentator. Judges greatness by clutch performance, intimidation factor, and what other pros say behind closed doors.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Philosopher",
+      "bio": "Epistemologist of sport who questions what 'best ever' even means across eras. Challenges hidden assumptions in every GOAT framework.",
+      "stance": "oppose"
+    }
+  ]
+}
