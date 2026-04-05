@@ -855,9 +855,9 @@ describe("GET /analytics", () => {
             claimDensity: 0.67,
           },
           scoreDistribution: [
-            { minScore: 0, maxScore: 20, totalCount: 2, roundCounts: { propose: 1, critique: 0, refine: 1, synthesize: 0 } },
-            { minScore: 20, maxScore: 40, totalCount: 3, roundCounts: { propose: 1, critique: 1, refine: 1, synthesize: 0 } },
-            { minScore: 40, maxScore: 60, totalCount: 4, roundCounts: { propose: 1, critique: 1, refine: 1, synthesize: 1 } },
+            { minScore: 0, maxScore: 20, totalCount: 2, roundCounts: { propose: 1, critique: 0, refine: 1, synthesize: 0, map: 0, final_argument: 0 } },
+            { minScore: 20, maxScore: 40, totalCount: 3, roundCounts: { propose: 1, critique: 1, refine: 1, synthesize: 0, map: 0, final_argument: 0 } },
+            { minScore: 40, maxScore: 60, totalCount: 4, roundCounts: { propose: 1, critique: 1, refine: 1, synthesize: 1, map: 0, final_argument: 0 } },
           ],
           bucketDetails: [],
           averageDimensionBreakdown: {

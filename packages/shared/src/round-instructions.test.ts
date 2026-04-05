@@ -5,7 +5,7 @@ import { TOPIC_TEMPLATES } from "./templates.js";
 
 describe("resolveDefaultRoundInstruction", () => {
   it("returns a template-specific instruction for an exact match", () => {
-    const result = resolveDefaultRoundInstruction("debate_v2", 1, "critique");
+    const result = resolveDefaultRoundInstruction("debate_v2", 4, "critique");
     assert.ok(result);
     assert.ok(result.goal.length > 0);
     assert.ok(result.guidance.length > 0);
@@ -23,10 +23,10 @@ describe("resolveDefaultRoundInstruction", () => {
   });
 
   it("detects roundKind mismatch and falls through to default-by-roundKind", () => {
-    // sequenceIndex 1 in debate_v2 is "critique", but we pass "refine" as persisted roundKind
+    // sequenceIndex 1 in debate_v2 is "vote", but we pass "refine" as persisted roundKind
     const result = resolveDefaultRoundInstruction("debate_v2", 1, "refine");
     assert.ok(result);
-    // Should get the generic "refine" default, not the debate_v2 critique instruction
+    // Should get the generic "refine" default, not the debate_v2 vote instruction
     assert.equal(result.goal, "Address the strongest objections from critiques and strengthen weak points.");
   });
 
@@ -53,7 +53,7 @@ describe("resolveDefaultRoundInstruction", () => {
 
   it("returns distinct instructions for different rounds of the same template", () => {
     const propose = resolveDefaultRoundInstruction("debate_v2", 0, "propose");
-    const critique = resolveDefaultRoundInstruction("debate_v2", 1, "critique");
+    const critique = resolveDefaultRoundInstruction("debate_v2", 4, "critique");
     assert.ok(propose);
     assert.ok(critique);
     assert.notEqual(propose.goal, critique.goal);
@@ -66,9 +66,9 @@ describe("resolveDefaultRoundInstruction", () => {
     assert.ok(propose);
     assert.equal(propose.priorRoundContext, null);
 
-    // Second round should have non-null priorRoundContext
-    const critique = resolveDefaultRoundInstruction("debate_v2", 1, "critique");
-    assert.ok(critique);
-    assert.ok(critique.priorRoundContext);
+    // Second round (vote) should have non-null priorRoundContext
+    const vote = resolveDefaultRoundInstruction("debate_v2", 1, "vote");
+    assert.ok(vote);
+    assert.ok(vote.priorRoundContext);
   });
 });

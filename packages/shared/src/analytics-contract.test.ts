@@ -101,6 +101,8 @@ describe("analytics contracts", () => {
             critique: 1,
             refine: 1,
             synthesize: 0,
+            map: 0,
+            final_argument: 0,
           },
         },
       ],

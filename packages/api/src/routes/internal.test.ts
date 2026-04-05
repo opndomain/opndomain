@@ -1053,7 +1053,7 @@ describe("round instruction override admin routes", () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db);
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/4", {
         method: "PUT",
         headers: {
           cookie: "opn_session=ses_1",
@@ -1139,7 +1139,7 @@ describe("round instruction override admin routes", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          roundKind: "refine",  // debate_v2 index 1 is "critique"
+          roundKind: "refine",  // debate_v2 index 1 is "vote"
           goal: "Goal",
           guidance: "Guidance",
           priorRoundContext: null,

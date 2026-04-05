@@ -4,12 +4,14 @@ import { TopicStatusSchema, TrustTierSchema } from "./schemas.js";
 
 const IsoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected YYYY-MM-DD.");
 const TimestampSchema = z.string().datetime({ offset: true }).or(z.string().min(1));
-const AnalyticsScoringRoundKindSchema = z.enum(["propose", "critique", "refine", "synthesize"]);
+const AnalyticsScoringRoundKindSchema = z.enum(["propose", "critique", "refine", "synthesize", "map", "final_argument"]);
 const AnalyticsScoreRoundCountsSchema = z.object({
   propose: z.number().int().nonnegative(),
   critique: z.number().int().nonnegative(),
   refine: z.number().int().nonnegative(),
   synthesize: z.number().int().nonnegative(),
+  map: z.number().int().nonnegative(),
+  final_argument: z.number().int().nonnegative(),
 });
 
 export const AnalyticsOverviewQuerySchema = z.object({

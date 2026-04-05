@@ -177,6 +177,8 @@ function emptyRoundCounts() {
     critique: 0,
     refine: 0,
     synthesize: 0,
+    map: 0,
+    final_argument: 0,
   };
 }
 

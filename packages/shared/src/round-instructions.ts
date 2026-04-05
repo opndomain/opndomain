@@ -94,6 +94,34 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
     ],
     votingGuidance: null,
   },
+  map: {
+    roundKind: "map",
+    goal: "Map the positions that emerged in the opening round.",
+    guidance:
+      "Identify the majority position, any significant runner-up positions, and noteworthy minority ideas. Describe each position clearly and assess how much support it has. Do not advocate — your job is to accurately map where the debate stands.",
+    priorRoundContext: "The opening proposals from all participants",
+    qualityCriteria: [
+      "Accurately identifies the majority position",
+      "Captures meaningful minority positions (not noise)",
+      "Distinguishes between popular and well-argued positions",
+      "Maps the landscape without advocating for a side",
+    ],
+    votingGuidance: null,
+  },
+  final_argument: {
+    roundKind: "final_argument",
+    goal: "Write your most compelling argument with rebuttals to the strongest counter-claims.",
+    guidance:
+      "This is your chance to shine. Write the single most persuasive case you can, incorporating what you've learned from the critique and refinement rounds. Directly address the strongest objections. The best-scoring contribution wins.",
+    priorRoundContext: "The full debate record including critiques and refined positions",
+    qualityCriteria: [
+      "Compelling, well-structured argument",
+      "Directly addresses strongest counter-claims",
+      "Incorporates insights from the full debate",
+      "Would make someone want to share this",
+    ],
+    votingGuidance: null,
+  },
   vote: {
     roundKind: "vote",
     goal: "Review contributions and cast your vote based on argument quality and evidence.",
@@ -213,7 +241,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "propose",
       goal: "Present your initial position in this focused debate.",
       guidance:
-        "State a clear thesis with supporting evidence. This is a compact 5-round debate — be precise and make your strongest case up front.",
+        "State a clear thesis with supporting evidence. This debate uses a 5-phase funnel — propose, map, critique, refine, final argument — each followed by a vote round. Make your strongest case up front.",
       priorRoundContext: null,
       qualityCriteria: [
         "Clear, debatable thesis",
@@ -223,56 +251,148 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       votingGuidance: null,
     },
     1: {
-      roundKind: "critique",
-      goal: "Challenge the strongest proposals from the opening round.",
+      roundKind: "vote",
+      goal: "Vote on the opening proposals.",
       guidance:
-        "Focus on the most compelling arguments. Identify unsupported assumptions, logical gaps, or alternative interpretations of the evidence presented.",
+        "Evaluate the proposals from the opening round. Vote based on argument quality, evidence strength, and intellectual honesty — not agreement with the conclusion.",
       priorRoundContext: "Initial positions from the propose round",
       qualityCriteria: [
-        "Targets strongest arguments",
+        "Vote reflects argument quality, not personal agreement",
+        "Considers evidence strength and logical coherence",
+        "Recognizes intellectual honesty and good-faith engagement",
+      ],
+      votingGuidance:
+        "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
+        "(1) most_interesting — the most novel and distinct position; " +
+        "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
+        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "Each vote must target a different contribution.",
+    },
+    2: {
+      roundKind: "map",
+      goal: "Map the positions that emerged in the opening round.",
+      guidance:
+        "Identify the majority position, any significant runner-up positions, and noteworthy minority ideas. Describe each position clearly and assess how much support it has. Do not advocate — your job is to accurately map where the debate stands.",
+      priorRoundContext: "The opening proposals and initial votes from all participants",
+      qualityCriteria: [
+        "Accurately identifies the majority position",
+        "Captures meaningful minority positions (not noise)",
+        "Distinguishes between popular and well-argued positions",
+        "Maps the landscape without advocating for a side",
+      ],
+      votingGuidance: null,
+    },
+    3: {
+      roundKind: "vote",
+      goal: "Vote on the position maps.",
+      guidance:
+        "Evaluate the mapping contributions. Vote based on accuracy and insight — which map best captures where the debate actually stands?",
+      priorRoundContext: "Position mapping contributions from the map round",
+      qualityCriteria: [
+        "Vote reflects mapping accuracy, not personal agreement",
+        "Considers how well the map captures the full landscape",
+        "Recognizes insightful identification of minority positions",
+      ],
+      votingGuidance:
+        "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
+        "(1) most_interesting — the most accurate and insightful mapping of where we stand; " +
+        "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
+        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "Each vote must target a different contribution.",
+    },
+    4: {
+      roundKind: "critique",
+      goal: "Challenge the strongest positions identified in the mapping round.",
+      guidance:
+        "Now that positions have been mapped, target the most compelling arguments. Identify unsupported assumptions, logical gaps, or alternative interpretations of the evidence. Steelmanning before critiquing signals rigor.",
+      priorRoundContext: "Position maps and the original proposals they describe",
+      qualityCriteria: [
+        "Targets the strongest arguments, not strawmen",
         "Identifies specific logical or evidential gaps",
         "Offers counter-evidence or alternative framings",
       ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+      votingGuidance: null,
     },
-    2: {
+    5: {
+      roundKind: "vote",
+      goal: "Vote on the critiques.",
+      guidance:
+        "Evaluate the critiques. Vote based on the strength and difficulty of the challenges raised — which critique is hardest to answer?",
+      priorRoundContext: "Critiques raised against the mapped positions",
+      qualityCriteria: [
+        "Vote reflects critique quality and difficulty",
+        "Considers whether critiques target strong arguments",
+        "Recognizes substantive challenges over superficial ones",
+      ],
+      votingGuidance:
+        "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
+        "(1) most_interesting — the critique that is hardest to answer; " +
+        "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
+        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "Each vote must target a different contribution.",
+    },
+    6: {
       roundKind: "refine",
-      goal: "Address critiques and strengthen your position.",
+      goal: "Address the strongest critiques and refine your position.",
       guidance:
-        "Respond directly to the critiques. Concede valid points and shore up surviving arguments with additional evidence. This is your one chance to refine before synthesis.",
-      priorRoundContext: "Critiques raised against initial proposals",
+        "Respond directly to the critiques. Concede valid points and shore up surviving arguments with additional evidence. Conceding ground on weak points strengthens your overall position.",
+      priorRoundContext: "Critiques raised against the mapped positions",
       qualityCriteria: [
-        "Addresses the strongest critiques directly",
+        "Directly addresses the strongest critiques",
         "Concedes where warranted",
-        "Strengthens remaining claims with new evidence",
-      ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
-    },
-    3: {
-      roundKind: "synthesize",
-      goal: "Synthesize the debate into a clear landscape.",
-      guidance:
-        "Map where participants converged and where genuine disagreements remain. Identify the arguments that survived critique and refinement versus those that were successfully challenged.",
-      priorRoundContext: "The full arc of proposals, critiques, and refinements",
-      qualityCriteria: [
-        "Tracks which claims survived the critique-refine cycle",
-        "Maps convergence and persistent disagreements",
-        "Fair to all positions represented in the debate",
-      ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
-    },
-    4: {
-      roundKind: "predict",
-      goal: "State your final prediction based on the debate.",
-      guidance:
-        "Make a concrete prediction with a confidence level. Ground it in the specific arguments and evidence from the debate record.",
-      priorRoundContext: "The synthesized debate record",
-      qualityCriteria: [
-        "Concrete, falsifiable prediction",
-        "Confidence level grounded in debate evidence",
-        "References surviving arguments from the debate",
+        "Strengthens remaining claims with new evidence or reasoning",
       ],
       votingGuidance: null,
+    },
+    7: {
+      roundKind: "vote",
+      goal: "Vote on the refined positions.",
+      guidance:
+        "Evaluate the refinements. Vote based on how effectively participants addressed critiques and strengthened their arguments.",
+      priorRoundContext: "Refined positions that addressed critiques",
+      qualityCriteria: [
+        "Vote reflects refinement quality",
+        "Considers how well critiques were addressed",
+        "Recognizes genuine evolution of position",
+      ],
+      votingGuidance:
+        "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
+        "(1) most_interesting — the refinement that most changed your thinking; " +
+        "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
+        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "Each vote must target a different contribution.",
+    },
+    8: {
+      roundKind: "final_argument",
+      goal: "Write your most compelling final argument with rebuttals.",
+      guidance:
+        "This is your chance to shine. Write the single most persuasive case you can, incorporating what you've learned from the critique and refinement rounds. Directly address the strongest objections. The best-scoring contribution wins.",
+      priorRoundContext: "The full debate record including critiques and refined positions",
+      qualityCriteria: [
+        "Compelling, well-structured argument",
+        "Directly addresses strongest counter-claims",
+        "Incorporates insights from the full debate",
+        "Would make someone want to share this",
+      ],
+      votingGuidance: null,
+    },
+    9: {
+      roundKind: "vote",
+      goal: "Cast your final votes on the closing arguments.",
+      guidance:
+        "This is the terminal vote. Evaluate the final arguments — which one would you share with others? Vote based on the full weight of argument quality, evidence, and persuasiveness.",
+      priorRoundContext: "Final arguments from all participants",
+      qualityCriteria: [
+        "Vote reflects overall argument quality and persuasiveness",
+        "Considers the full debate arc",
+        "Recognizes compelling, shareable arguments",
+      ],
+      votingGuidance:
+        "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
+        "(1) most_interesting — the argument you would share with others; " +
+        "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
+        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "Each vote must target a different contribution.",
     },
   },
 

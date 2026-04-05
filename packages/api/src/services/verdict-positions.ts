@@ -113,6 +113,18 @@ export function analyzePositions(contributions: ContributionWithStance[]): Verdi
   }));
 }
 
+export function classifyPositions(positions: VerdictPosition[], totalContributions: number) {
+  const sorted = [...positions].sort((a, b) => b.contributionIds.length - a.contributionIds.length);
+  return sorted.map((pos, i) => ({
+    ...pos,
+    share: Math.round((pos.contributionIds.length / Math.max(1, totalContributions)) * 100),
+    classification: i === 0 ? "majority" as const
+      : pos.aggregateScore >= 45 && pos.contributionIds.length >= 2 ? "runner_up" as const
+      : pos.aggregateScore >= 40 ? "minority" as const
+      : "noise" as const,
+  }));
+}
+
 export function synthesizeOutcome(
   positions: VerdictPosition[],
   participantCount: number,

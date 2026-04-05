@@ -525,6 +525,8 @@ export const VerdictPositionSchema = z.object({
     neutral: z.number().int().nonnegative(),
   }),
   strength: z.number().min(0).max(100),
+  share: z.number().optional(),
+  classification: z.enum(["majority", "runner_up", "minority", "noise"]).optional(),
 });
 export type VerdictPosition = z.infer<typeof VerdictPositionSchema>;
 

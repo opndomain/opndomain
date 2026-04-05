@@ -19,7 +19,7 @@ import {
 import { recomputeContributionFinalScore } from "./votes.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { evaluateTrustForTopicParticipants } from "./trust-promotion.js";
-import { analyzePositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
+import { analyzePositions, classifyPositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
 import { assembleDossier } from "./dossier.js";
 
 export async function backfillTopicClaims(
@@ -540,7 +540,9 @@ export async function runTerminalizationSequence(
 
   // D2: Structured synthesis — position analysis
   const positions = analyzePositions(refreshedContributions);
-  const verdictOutcome = synthesizeOutcome(positions, verdictPresentation.participantCount);
+  const totalContributions = refreshedContributions.length;
+  const classifiedPositions = classifyPositions(positions, totalContributions);
+  const verdictOutcome = synthesizeOutcome(classifiedPositions, verdictPresentation.participantCount);
 
   const verdictId = await writeVerdict(
     env,
@@ -561,7 +563,7 @@ export async function runTerminalizationSequence(
     },
     Boolean(options?.reterminalize),
     verdictOutcome,
-    positions.length > 0 ? JSON.stringify(positions) : null,
+    classifiedPositions.length > 0 ? JSON.stringify(classifiedPositions) : null,
   );
   if (!options?.reterminalize) {
     try {

@@ -23,8 +23,10 @@ type BaseWeightProfileKey = RoundKind | "default";
 
 export const LIVE_WEIGHT_PROFILES: Record<BaseWeightProfileKey, ScoreWeightProfile> = {
   propose: { relevance: 0.22, novelty: 0.18, reframe: 0.14, substance: 0.31, role: 0.15 },
+  map: { relevance: 0.24, novelty: 0.10, reframe: 0.22, substance: 0.28, role: 0.16 },
   critique: { relevance: 0.2, novelty: 0.12, reframe: 0.2, substance: 0.32, role: 0.16 },
   refine: { relevance: 0.23, novelty: 0.12, reframe: 0.22, substance: 0.27, role: 0.16 },
+  final_argument: { relevance: 0.20, novelty: 0.16, reframe: 0.16, substance: 0.33, role: 0.15 },
   synthesize: { relevance: 0.24, novelty: 0.1, reframe: 0.24, substance: 0.25, role: 0.17 },
   predict: { relevance: 0.21, novelty: 0.14, reframe: 0.18, substance: 0.29, role: 0.18 },
   vote: { relevance: 0.2, novelty: 0.16, reframe: 0.16, substance: 0.31, role: 0.17 },
@@ -34,8 +36,10 @@ export const LIVE_WEIGHT_PROFILES: Record<BaseWeightProfileKey, ScoreWeightProfi
 
 export const SHADOW_WEIGHT_PROFILES: Record<BaseWeightProfileKey, ScoreWeightProfile> = {
   propose: { relevance: 0.24, novelty: 0.18, reframe: 0.14, substance: 0.25, role: 0.19 },
+  map: { relevance: 0.26, novelty: 0.08, reframe: 0.24, substance: 0.24, role: 0.18 },
   critique: { relevance: 0.21, novelty: 0.1, reframe: 0.22, substance: 0.28, role: 0.19 },
   refine: { relevance: 0.24, novelty: 0.1, reframe: 0.24, substance: 0.23, role: 0.19 },
+  final_argument: { relevance: 0.22, novelty: 0.14, reframe: 0.14, substance: 0.30, role: 0.20 },
   synthesize: { relevance: 0.26, novelty: 0.08, reframe: 0.26, substance: 0.22, role: 0.18 },
   predict: { relevance: 0.23, novelty: 0.12, reframe: 0.2, substance: 0.26, role: 0.19 },
   vote: { relevance: 0.22, novelty: 0.14, reframe: 0.16, substance: 0.28, role: 0.2 },
@@ -91,8 +95,10 @@ export const SCORING_PROFILE_WEIGHT_ADJUSTMENTS: Record<
 
 export const STANDARD_ROLE_ALIGNMENT_MULTIPLIERS = {
   propose: { evidence: 1.08, claim: 1.08 },
+  map: { synthesis: 1.08, evidence: 1.04 },
   critique: { critique: 1.1 },
   refine: { synthesis: 1.08, evidence: 1.06 },
+  final_argument: { evidence: 1.10, claim: 1.08 },
   synthesize: { synthesis: 1.12 },
   predict: { question: 1.04, evidence: 1.04 },
   vote: { question: 1.02 },
@@ -102,8 +108,10 @@ export const STANDARD_ROLE_ALIGNMENT_MULTIPLIERS = {
 
 export const SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS = {
   propose: { question: 1.1, claim: 1.1 },
+  map: { synthesis: 1.10 },
   critique: { question: 1.12, critique: 1.12 },
   refine: { synthesis: 1.1, evidence: 1.1 },
+  final_argument: { evidence: 1.08, claim: 1.08 },
   synthesize: { synthesis: 1.15 },
   predict: { question: 1.06 },
   agreementOrEcho: 0.88,
@@ -163,11 +171,17 @@ export function getRoleAlignmentMultiplier(
       case "propose":
         return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.propose[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.propose] ??
           SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
+      case "map":
+        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.map[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.map] ??
+          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
       case "critique":
         return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.critique[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.critique] ??
           SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
       case "refine":
         return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.refine[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.refine] ??
+          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
+      case "final_argument":
+        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.final_argument[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.final_argument] ??
           SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
       case "synthesize":
         return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.synthesize[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.synthesize] ??
@@ -186,14 +200,20 @@ export function getRoleAlignmentMultiplier(
     case "propose":
       return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.propose[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.propose] ??
         STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
+    case "map":
+      return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.map[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.map] ??
+        STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
     case "critique":
       return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.critique[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.critique] ??
         STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
-    case "synthesize":
-      return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.synthesize[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.synthesize] ??
-        STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
     case "refine":
       return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.refine[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.refine] ??
+        STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
+    case "final_argument":
+      return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.final_argument[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.final_argument] ??
+        STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
+    case "synthesize":
+      return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.synthesize[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.synthesize] ??
         STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.default;
     case "predict":
       return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.predict[role as keyof typeof STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.predict] ??

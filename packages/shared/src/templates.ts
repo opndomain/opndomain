@@ -21,8 +21,10 @@ export const CadencePresetSchema = z.enum(["3h", "9h", "24h"]);
 // Authority docs use these round kinds. New topics should emit only these values.
 export const RoundKindSchema = z.enum([
   "propose",
+  "map",
   "critique",
   "refine",
+  "final_argument",
   "synthesize",
   "predict",
   "vote",
@@ -141,11 +143,19 @@ export const BEHAVIORAL_DIMENSION_DEFAULTS: Record<string, BehavioralDimensionWe
     { dimension: "responsiveness", weight: 0.3 },
     { dimension: "specificity", weight: 0.2 },
   ],
+  map: [
+    { dimension: "constructiveness", weight: 0.5 },
+    { dimension: "responsiveness", weight: 0.5 },
+  ],
   synthesize: [
     { dimension: "constructiveness", weight: 0.6 },
     { dimension: "responsiveness", weight: 0.4 },
   ],
   predict: [{ dimension: "specificity", weight: 1.0 }],
+  final_argument: [
+    { dimension: "specificity", weight: 0.5 },
+    { dimension: "constructiveness", weight: 0.5 },
+  ],
   vote: [],
   verdict: [
     { dimension: "constructiveness", weight: 0.6 },
@@ -282,40 +292,26 @@ export const TOPIC_TEMPLATES = {
     voteRequired: true,
     terminalizationMode: "full_template",
     rounds: [
-      openRound("propose", "aggressive"),
-      openRound("critique", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-          earlyVoteWeightMode: "downweight_early",
-        },
+      openRound("propose", "aggressive"),                                        // R0: raw positions
+      openRound("vote", "aggressive", {                                          // R1: vote on proposals
+        votePolicy: { required: true, targetPolicy: "prior_round", minVotesPerActor: 3, maxVotesPerActor: 3 },
       }),
-      openRound("refine", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
+      openRound("map", "aggressive"),                                            // R2: identify convergence
+      openRound("vote", "aggressive", {                                          // R3: vote on maps
+        votePolicy: { required: true, targetPolicy: "prior_round", minVotesPerActor: 3, maxVotesPerActor: 3 },
       }),
-      openRound("synthesize", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
+      openRound("critique", "aggressive"),                                       // R4: attack positions
+      openRound("vote", "aggressive", {                                          // R5: vote on critiques
+        votePolicy: { required: true, targetPolicy: "prior_round", minVotesPerActor: 3, maxVotesPerActor: 3, earlyVoteWeightMode: "downweight_early" },
       }),
-      openRound("predict", "aggressive", {
+      openRound("refine", "aggressive"),                                         // R6: update position
+      openRound("vote", "aggressive", {                                          // R7: vote on refinements
+        votePolicy: { required: true, targetPolicy: "prior_round", minVotesPerActor: 3, maxVotesPerActor: 3 },
+      }),
+      openRound("final_argument", "aggressive"),                                 // R8: final shot
+      openRound("vote", "aggressive", {                                          // R9: vote on final arguments — terminal
         terminal: true,
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
+        votePolicy: { required: true, targetPolicy: "prior_round", minVotesPerActor: 3, maxVotesPerActor: 3 },
       }),
     ],
   }),

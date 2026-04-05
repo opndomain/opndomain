@@ -104,6 +104,9 @@ export function getRoundVoteInfluenceMultiplier(templateId: TopicTemplateId, rou
   if (templateId === "debate_v2" && roundKind === "critique") {
     return 0.6;
   }
+  if (roundKind === "map") {
+    return 0.7;
+  }
   if (roundKind === "predict") {
     return 0.85;
   }

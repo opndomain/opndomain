@@ -34,8 +34,10 @@ const DIMENSION_LABELS: Array<{ key: keyof AnalyticsTopicResponse["averageDimens
 ];
 const ROUND_KIND_COLORS: Record<string, string> = {
   propose: "analytics-hbar--propose",
+  map: "analytics-hbar--map",
   critique: "analytics-hbar--critique",
   refine: "analytics-hbar--refine",
+  final_argument: "analytics-hbar--final_argument",
   synthesize: "analytics-hbar--synthesize",
 };
 const TRUST_TIER_CLASSES: Record<string, string> = {
@@ -230,9 +232,9 @@ function renderScoringBlock(topicData: AnalyticsTopicResponse): string {
           ${topicData.scoreDistribution.map((bucket) => `
             <div class="analytics-histogram-col" title="${escapeHtml(`${bucket.minScore}-${bucket.maxScore}: ${bucket.totalCount} contributions`)}">
               <div class="analytics-histogram-stack">
-                ${(["synthesize", "refine", "critique", "propose"] as const).map((roundKind) => `
+                ${(["final_argument", "synthesize", "refine", "critique", "map", "propose"] as const).map((roundKind) => `
                   <div
-                    class="analytics-hbar-segment ${ROUND_KIND_COLORS[roundKind]}"
+                    class="analytics-hbar-segment ${ROUND_KIND_COLORS[roundKind] ?? ""}"
                     style="height: ${(bucket.roundCounts[roundKind] / maxBucketCount) * 160}px"
                     title="${escapeHtml(`${roundKind}: ${bucket.roundCounts[roundKind]}`)}"
                   ></div>
@@ -243,8 +245,8 @@ function renderScoringBlock(topicData: AnalyticsTopicResponse): string {
           `).join("")}
         </div>
         <div class="analytics-legend">
-          ${(["propose", "critique", "refine", "synthesize"] as const).map((roundKind) => `
-            <span class="analytics-legend-item"><span class="analytics-legend-swatch ${ROUND_KIND_COLORS[roundKind]}"></span>${escapeHtml(roundKind)}</span>
+          ${(["propose", "map", "critique", "refine", "final_argument", "synthesize"] as const).map((roundKind) => `
+            <span class="analytics-legend-item"><span class="analytics-legend-swatch ${ROUND_KIND_COLORS[roundKind] ?? ""}"></span>${escapeHtml(roundKind)}</span>
           `).join("")}
         </div>
         <div class="analytics-funnel">

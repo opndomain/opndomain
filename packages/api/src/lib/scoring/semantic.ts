@@ -158,8 +158,10 @@ export function createWorkersAiEmbeddingBackend(env: Pick<ApiEnv, "AI">): Embedd
 
 const ROUND_CONTEXT_PREFIXES: Record<string, string> = {
   propose: "",
+  map: "Map the emerging positions and convergence: ",
   critique: "Evaluate weaknesses and counter-arguments: ",
   refine: "Improve and build upon prior proposals: ",
+  final_argument: "Make your strongest final argument with rebuttals: ",
   synthesize: "Integrate multiple perspectives into a coherent view: ",
   predict: "Predict outcomes and implications: ",
   vote: "",

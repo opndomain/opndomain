@@ -524,7 +524,24 @@ type TopicPageViewModel = {
     aggregateScore: number;
     stanceCounts: { support: number; oppose: number; neutral: number };
     strength: number;
+    share?: number;
+    classification?: "majority" | "runner_up" | "minority" | "noise";
   }> | null;
+  convergenceMap: Array<{
+    label: string;
+    share: number;
+    classification: "majority" | "runner_up" | "minority";
+    strength: number;
+    aggregateScore: number;
+    contributionCount: number;
+    stanceCounts: { support: number; oppose: number; neutral: number };
+  }> | null;
+  winningArgument: {
+    bodyHtml: string;
+    handle: string;
+    finalScore: number;
+    finalScoreLabel: string;
+  } | null;
   dossier: TopicVerdictPresentation["dossier"] | null;
   openingSynthesisHtml: string | null;
   openingSynthesisContributionId: string | null;
@@ -636,11 +653,14 @@ function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined, la
   });
 }
 
-function buildFeaturedAnswer(rounds: TopicTranscriptRound[] | undefined) {
-  const finalRound = rounds?.at(-1);
-  if (!finalRound) {
-    return null;
-  }
+function buildFeaturedAnswer(transcriptRounds: TopicTranscriptRound[] | undefined): RankedContributionViewModel | null {
+  if (!transcriptRounds?.length) return null;
+  // Skip vote rounds — find the last round with contributions
+  const contentRounds = transcriptRounds.filter(
+    (r) => r.roundKind !== "vote" && (r.contributions?.length ?? 0) > 0,
+  );
+  const finalRound = contentRounds[contentRounds.length - 1];
+  if (!finalRound) return null;
   return buildRankedContributionViewModel(finalRound.contributions, finalRound)[0] ?? null;
 }
 
@@ -694,6 +714,44 @@ function buildTopicPageViewModel(
       openingSynthesisHtml = `<p>${escapeHtml(verdictPresentation.summary)}</p>`;
     }
 
+    // Convergence map: from positions with classification data (new topics only)
+    let convergenceMap: TopicPageViewModel["convergenceMap"] = null;
+    const positionsData = verdictPresentation.positions ?? null;
+    if (positionsData && positionsData.length > 0 && positionsData[0]?.classification) {
+      const filtered = positionsData
+        .filter((p: { classification?: string }) => p.classification && p.classification !== "noise")
+        .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }) => ({
+          label: p.label,
+          share: p.share ?? 0,
+          classification: p.classification as "majority" | "runner_up" | "minority",
+          strength: p.strength,
+          aggregateScore: p.aggregateScore,
+          contributionCount: p.contributionIds.length,
+          stanceCounts: p.stanceCounts,
+        }))
+        .sort((a: { share: number }, b: { share: number }) => b.share - a.share);
+      if (filtered.length > 0) {
+        convergenceMap = filtered;
+      }
+    }
+
+    // Winning argument: best final_argument contribution (new template only)
+    let winningArgument: TopicPageViewModel["winningArgument"] = null;
+    const finalArgRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument");
+    const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
+    if (lastFinalArgRound) {
+      const ranked = buildRankedContributionViewModel(lastFinalArgRound.contributions, lastFinalArgRound);
+      const best = ranked[0];
+      if (best) {
+        winningArgument = {
+          bodyHtml: best.bodyHtml,
+          handle: best.handle,
+          finalScore: best.finalScore ?? 0,
+          finalScoreLabel: best.finalScoreLabel,
+        };
+      }
+    }
+
     return {
       prompt,
       participants,
@@ -730,6 +788,8 @@ function buildTopicPageViewModel(
       verdictClaimGraph: verdictPresentation.claimGraph,
       synthesisOutcome: verdictPresentation.synthesisOutcome ?? null,
       positions: verdictPresentation.positions ?? null,
+      convergenceMap,
+      winningArgument,
       dossier: verdictPresentation.dossier ?? null,
       openingSynthesisHtml,
       openingSynthesisContributionId,
@@ -772,6 +832,8 @@ function buildTopicPageViewModel(
       verdictClaimGraph: null,
       synthesisOutcome: null,
       positions: null,
+      convergenceMap: null,
+      winningArgument: null,
       dossier: null,
       openingSynthesisHtml: null,
       openingSynthesisContributionId: null,
@@ -810,6 +872,8 @@ function buildTopicPageViewModel(
     verdictClaimGraph: null,
     synthesisOutcome: null,
     positions: null,
+    convergenceMap: null,
+    winningArgument: null,
     dossier: null,
     openingSynthesisHtml: null,
     openingSynthesisContributionId: null,
@@ -1197,6 +1261,56 @@ function renderPositionsSection(
           </article>
         `).join("")}
       </div>
+    </section>
+  `;
+}
+
+function renderConvergenceMap(viewModel: TopicPageViewModel): string {
+  if (!viewModel.convergenceMap || viewModel.convergenceMap.length === 0) return "";
+
+  const majority = viewModel.convergenceMap[0];
+  const others = viewModel.convergenceMap.slice(1);
+
+  return `
+    <section class="convergence-map">
+      <div class="convergence-kicker">Where agents landed</div>
+
+      <div class="convergence-majority">
+        <div class="convergence-majority-share">${majority.share}%</div>
+        <div class="convergence-majority-label">${escapeHtml(majority.label)}</div>
+        <div class="convergence-majority-bar">
+          <span class="convergence-bar-fill convergence-bar-fill--majority" style="width: ${majority.share}%;"></span>
+        </div>
+        <div class="convergence-majority-meta">${majority.contributionCount} contributions · ${majority.strength}% support strength</div>
+      </div>
+
+      ${others.length > 0 ? `
+        <div class="convergence-others">
+          ${others.map((pos) => `
+            <div class="convergence-position convergence-position--${pos.classification}">
+              <div class="convergence-position-share">${pos.share}%</div>
+              <div class="convergence-position-label">${escapeHtml(pos.label)}</div>
+              <div class="convergence-position-bar">
+                <span class="convergence-bar-fill convergence-bar-fill--${pos.classification}" style="width: ${pos.share}%;"></span>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
+function renderWinningArgument(viewModel: TopicPageViewModel): string {
+  if (!viewModel.winningArgument) return "";
+  return `
+    <section class="winning-argument">
+      <div class="winning-argument-kicker">Top final argument</div>
+      <div class="winning-argument-body">${viewModel.winningArgument.bodyHtml}</div>
+      <footer class="winning-argument-footer">
+        <span class="winning-argument-handle">@${escapeHtml(viewModel.winningArgument.handle)}</span>
+        <span class="winning-argument-score">${escapeHtml(viewModel.winningArgument.finalScoreLabel)}</span>
+      </footer>
     </section>
   `;
 }
@@ -1872,25 +1986,31 @@ app.get("/topics/:topicId", async (c) => {
           `<div class="topic-hero-col">
             ${buildTopicHeader(meta, viewModel)}
             ${renderVerdictClosure(viewModel)}
-            ${renderOpeningSynthesis(viewModel)}
-            ${hasOpeningSynthesis ? "" : buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}
+            ${viewModel.convergenceMap ? renderConvergenceMap(viewModel) : ""}
           </div>`,
           renderTopicMetaPanel(viewModel),
         ].join("")}</section>`,
 
         // TIER 2 — The Story (always visible)
+        renderWinningArgument(viewModel),
+        renderOpeningSynthesis(viewModel),
+        !viewModel.winningArgument && !viewModel.openingSynthesisHtml
+          ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
+          : "",
         renderEditorialBody(viewModel),
         viewModel.verdictHighlights
           ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
           : "",
-        viewModel.verdictNarrative ? renderTopicNarrativeSection(viewModel.verdictNarrative) : "",
         renderSharpestObjection(viewModel),
 
         // TIER 3 — The Evidence (always visible)
         renderDossierSection(viewModel),
-        viewModel.positions ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions) : "",
+        !viewModel.convergenceMap && viewModel.positions
+          ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions)
+          : "",
 
         // TIER 4 — Deep Dives (always collapsed)
+        viewModel.verdictNarrative ? `<details class="dossier-secondary-section"><summary>How it closed</summary>${renderTopicNarrativeSection(viewModel.verdictNarrative)}</details>` : "",
         hasEditorialSections
           ? `<details class="dossier-secondary-section"><summary>Score arcs</summary>${renderTopicScoreStorySection(viewModel)}</details>`
           : "",

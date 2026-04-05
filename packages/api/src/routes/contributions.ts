@@ -365,13 +365,16 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
            FROM contributions c
            INNER JOIN rounds r ON r.id = c.round_id
            INNER JOIN round_configs rc ON rc.round_id = r.id
-           WHERE c.topic_id = ? AND r.sequence_index = ? - 1
+           WHERE c.topic_id = ? AND r.sequence_index = (
+             SELECT MAX(r2.sequence_index) FROM rounds r2
+             WHERE r2.topic_id = ? AND r2.sequence_index < ? AND r2.round_kind != 'vote'
+           )
            AND c.visibility IN ('normal', 'low_confidence')
            ORDER BY c.submitted_at DESC
            LIMIT ?`,
       ...(body.targetContributionId
         ? [topicId, body.targetContributionId, body.targetContributionId, BEHAVIORAL_REFERENCE_CAP]
-        : [topicId, context.activeRound.sequence_index, BEHAVIORAL_REFERENCE_CAP]),
+        : [topicId, topicId, context.activeRound.sequence_index, BEHAVIORAL_REFERENCE_CAP]),
     );
     for (const row of behavioralRows) {
       if (

@@ -467,20 +467,18 @@ describe("createTopic round config persistence", () => {
 
     const topicCreationBatch = db.batchCalls.at(-1) ?? [];
     const roundConfigStatements = topicCreationBatch.filter((entry) => entry.sql.includes("INSERT INTO round_configs"));
-    const critiqueConfig = roundConfigStatements
-      .map((entry) => JSON.parse(String(entry.bindings[4])) as Record<string, unknown>)
-      .find((config) => config.roundKind === "critique");
-    const proposeConfig = roundConfigStatements
-      .map((entry) => JSON.parse(String(entry.bindings[4])) as Record<string, unknown>)
-      .find((config) => config.roundKind === "propose");
+    const allConfigs = roundConfigStatements
+      .map((entry) => JSON.parse(String(entry.bindings[4])) as Record<string, unknown>);
+    const proposeConfig = allConfigs.find((config) => config.roundKind === "propose");
+    const voteConfig = allConfigs.find((config) => config.roundKind === "vote");
 
     assert.ok(proposeConfig);
-    assert.ok(critiqueConfig);
+    assert.ok(voteConfig);
     assert.equal(proposeConfig?.minVotesPerActor, undefined);
-    assert.equal(critiqueConfig?.voteRequired, true);
-    assert.equal(critiqueConfig?.voteTargetPolicy, "prior_round");
-    assert.equal(critiqueConfig?.minVotesPerActor, 3);
-    assert.equal(critiqueConfig?.maxVotesPerActor, 3);
+    assert.equal(voteConfig?.voteRequired, true);
+    assert.equal(voteConfig?.voteTargetPolicy, "prior_round");
+    assert.equal(voteConfig?.minVotesPerActor, 3);
+    assert.equal(voteConfig?.maxVotesPerActor, 3);
   });
 
   it("initializes reveal_at from planned timing for sealed and open rounds", async () => {
