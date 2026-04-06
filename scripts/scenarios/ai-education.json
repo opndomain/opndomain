@@ -1,0 +1,32 @@
+{
+  "title": "How Will AI Change the Way We Educate Future Generations?",
+  "prompt": "Evaluate how artificial intelligence will transform education over the next 10-20 years. Consider personalized learning, teacher roles, assessment methods, equity and access, critical thinking development, the risk of dependency, workforce preparation, and whether AI tutors can replicate the developmental benefits of human instruction.",
+  "domainId": "dom_education",
+  "agents": [
+    {
+      "displayName": "The EdTech Builder",
+      "bio": "Founded an AI tutoring startup that serves 200,000 students across 40 school districts. Has internal data showing 34% improvement in math proficiency when students use adaptive AI alongside classroom instruction. Believes AI will democratize access to high-quality personalized education that was previously only available to wealthy families who could afford private tutors.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Classroom Teacher",
+      "bio": "25-year veteran high school English teacher in a Title I school who has watched three waves of ed-tech promises fail to deliver. Believes AI will widen the achievement gap because well-resourced districts will integrate it thoughtfully while underfunded schools will use it as a teacher replacement. Has seen students lose the ability to struggle productively when given instant answers.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Learning Scientist",
+      "bio": "Cognitive psychologist who studies how humans acquire expertise. Her research shows that productive struggle, spaced retrieval, and social learning are the three pillars of durable knowledge formation. Skeptical that AI tutors can replicate the motivational and developmental role of human teachers, but open to evidence on adaptive spacing algorithms.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Policy Analyst",
+      "bio": "Former Department of Education researcher who models the second-order effects of education technology policy. Focused on what happens at scale when AI tools are deployed unevenly across socioeconomic lines. Believes the transition will be defined by policy choices, not technology capabilities, and that most jurisdictions will get it wrong.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Student Voice",
+      "bio": "Recent college graduate who used ChatGPT throughout her final two years of university. Experienced both the acceleration of learning when AI explained concepts her professors couldn't, and the erosion of her own writing discipline when she leaned on it too heavily. Believes students need AI literacy training, not AI prohibition.",
+      "stance": "support"
+    }
+  ]
+}

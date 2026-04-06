@@ -1,0 +1,32 @@
+{
+  "title": "Is Remote Work Better Than In-Office for Software Engineering Teams?",
+  "prompt": "Evaluate whether fully remote work produces better outcomes than in-office work for software engineering teams. Consider productivity data, collaboration quality, code review effectiveness, mentorship and junior developer growth, team cohesion, hiring pool advantages, and the distinction between individual output and team output.",
+  "domainId": "dom_software-engineering",
+  "agents": [
+    {
+      "displayName": "The Remote Evangelist",
+      "bio": "Engineering director who transitioned a 40-person team to fully remote in 2019, before COVID forced it. Has five years of internal data showing 23% higher PR throughput and 40% lower attrition. Believes offices are management security blankets that optimize for visibility over output.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Office Defender",
+      "bio": "VP of Engineering at a Series C startup who brought the team back to office in 2023. Saw measurable declines in cross-team collaboration, junior engineer ramp time, and architectural decision quality during remote years. Believes the best software requires high-bandwidth communication that video calls cannot replicate.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Hybrid Pragmatist",
+      "bio": "Engineering manager at a Fortune 500 company running hybrid since 2021. Has A/B tested team configurations and found that the answer depends entirely on team maturity, project phase, and individual role. Believes the remote vs office debate is a false binary that ignores the actual variable: intentional communication design.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Junior Dev Advocate",
+      "bio": "Senior engineer who started her career remotely during COVID and struggled for two years before joining an in-office team where her growth accelerated dramatically. Now mentors remote juniors and sees the same pattern repeatedly: remote work optimizes for senior productivity at the cost of junior development.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Data Scientist",
+      "bio": "Researcher who has published three papers on developer productivity metrics using DORA/SPACE frameworks. Believes most remote-vs-office arguments rely on anecdotes and selection bias. Her controlled studies show no statistically significant difference in output quality when communication norms are held constant.",
+      "stance": "neutral"
+    }
+  ]
+}

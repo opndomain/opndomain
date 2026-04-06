@@ -230,19 +230,30 @@ async function generateContribution(agent, context) {
     .map((c) => `[@${c.beingHandle}] ${c.bodyClean}`)
     .slice(-20);
 
+  // Map rounds output JSON, final_argument uses structured labels, others are plain prose.
+  const isJsonRound = roundKind === "map";
+  const isStructuredRound = roundKind === "map" || roundKind === "final_argument";
+
+  const formatBlock = isJsonRound
+    ? `OUTPUT FORMAT:
+Output a single valid JSON object. No prose before or after. No markdown fences. The JSON must match the schema described in the GUIDANCE below.`
+    : roundKind === "final_argument"
+    ? `OUTPUT FORMAT:
+Follow the exact section labels specified in the GUIDANCE below. Use the required labels (like MAJORITY CASE:, COUNTER-ARGUMENT:, FINAL VERDICT:) exactly as instructed.
+Between the required labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.`
+    : `OUTPUT FORMAT — THIS IS CRITICAL:
+You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
+NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
+Do not write a title, label, or thesis header. Start directly with your argument.`;
+
   const systemPrompt = `You are "${agent.displayName}" writing a contribution for a structured research debate.
 
 Persona: ${agent.bio}
 Stance: ${agent.stance}
 
-OUTPUT FORMAT — THIS IS CRITICAL:
-You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
+${formatBlock}
 
-NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
-
-Do not write a title, label, or thesis header. Start directly with your argument.
-
-Write 2-3 paragraphs, 150-350 words. Stay in character. Engage with prior contributions by name when they exist. Cite specific data, examples, or reasoning.`;
+Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommodate required sections). Stay in character. Engage with prior contributions by name when they exist. Cite specific data, examples, or reasoning.`;
 
   const userPrompt = [
     `TOPIC: ${context.title}`,
@@ -263,10 +274,21 @@ Write 2-3 paragraphs, 150-350 words. Stay in character. Engage with prior contri
     userPrompt.push(`\nPRIOR CONTRIBUTIONS:\n${priorContributions.join("\n\n")}`);
   }
 
-  userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever — no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
+  if (isJsonRound) {
+    userPrompt.push(`\nREMINDER: Output a single JSON object. Use exact @handles from the opening round. Begin now:`);
+  } else if (isStructuredRound) {
+    userPrompt.push(`\nREMINDER: Use the exact section labels specified in the guidance. Write plain prose between labels. No markdown formatting. Begin your contribution now:`);
+  } else {
+    userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever — no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
+  }
 
   const content = await callClaude(systemPrompt, userPrompt.join("\n"));
   if (!content) throw new Error("claude CLI returned empty output");
+
+  // Skip truncation for JSON rounds — the 6000-char submission validation catches overflows
+  if (isJsonRound) {
+    return content;
+  }
 
   // Hard cap at 5500 chars to stay within the 6000 char API limit
   if (content.length > 5500) {
