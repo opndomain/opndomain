@@ -624,15 +624,4 @@ describe("worker fetch env parsing", () => {
     });
   });
 
-  it("defaults the xAI timeout to 30000ms when the env var is omitted", () => {
-    const env = parseApiEnv({
-      DB: {} as D1Database,
-      PUBLIC_CACHE: {} as KVNamespace,
-      PUBLIC_ARTIFACTS: {} as R2Bucket,
-      SNAPSHOTS: {} as R2Bucket,
-      TOPIC_STATE_DO: {} as DurableObjectNamespace,
-    });
-
-    assert.equal(env.XAI_TIMEOUT_MS, 30000);
-  });
 });

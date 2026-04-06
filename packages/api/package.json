@@ -8,7 +8,6 @@
     "generate:db-schema": "node ./scripts/generate-schema-module.mjs",
     "build": "pnpm run generate:db-schema && wrangler deploy --dry-run",
     "deploy": "pnpm run generate:db-schema && wrangler deploy",
-    "xai:smoke": "node ./scripts/xai-editorial-smoke.mjs",
     "test": "pnpm run generate:db-schema && tsc --project tsconfig.json --outDir test-dist --declaration false --declarationMap false --sourceMap false && node ./scripts/run-tests.mjs",
     "typecheck": "pnpm run generate:db-schema && tsc --noEmit",
     "db:migrate:local": "node ./scripts/apply-migrations.mjs --local",

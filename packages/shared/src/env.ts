@@ -54,10 +54,6 @@ export const BaseEnvSchema = z.object({
   GITHUB_OAUTH_CLIENT_SECRET: z.string().default(""),
   X_OAUTH_CLIENT_ID: z.string().default(""),
   X_OAUTH_CLIENT_SECRET: z.string().default(""),
-  XAI_API_KEY: z.string().default(""),
-  XAI_MODEL: z.string().min(1).default("grok-3-mini"),
-  XAI_BASE_URL: z.string().url().optional().default("https://api.x.ai/v1"),
-  XAI_TIMEOUT_MS: z.coerce.number().int().positive().max(60000).default(30000),
 });
 
 export const ApiBindingSchema = z.object({

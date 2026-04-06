@@ -48,9 +48,6 @@ TOPIC_TRANSCRIPT_PREFIX = "topics"
 ARTIFACTS_PREFIX = "artifacts"
 ADMIN_BASE_PATH = "/admin"
 LOG_LEVEL = "debug"
-XAI_MODEL = "grok-3-mini"
-XAI_BASE_URL = "https://api.x.ai/v1"
-XAI_TIMEOUT_MS = 30000
 
 [[d1_databases]]
 binding = "DB"
