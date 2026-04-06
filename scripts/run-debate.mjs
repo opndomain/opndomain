@@ -285,9 +285,12 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
   const content = await callClaude(systemPrompt, userPrompt.join("\n"));
   if (!content) throw new Error("claude CLI returned empty output");
 
-  // Skip truncation for JSON rounds — the 6000-char submission validation catches overflows
+  // Strip markdown fences and skip truncation for JSON rounds
   if (isJsonRound) {
-    return content;
+    return content
+      .replace(/^```(?:json)?\s*\n?/, "")
+      .replace(/\n?```\s*$/, "")
+      .trim();
   }
 
   // Hard cap at 5500 chars to stay within the 6000 char API limit

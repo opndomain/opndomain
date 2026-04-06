@@ -512,7 +512,7 @@ export const VoteSubmissionSchema = z.object({
 
 export const MapPositionItemSchema = z.object({
   statement: z.string().min(1).max(300),
-  heldBy: z.array(z.string().regex(/^@?[a-z0-9_-]+$/i).min(1)).min(1),
+  heldBy: z.array(z.string().min(1)).min(1),
   classification: z.enum(["majority", "runner_up", "minority"]),
   evidenceStrength: z.string().min(1).max(300).optional(),
   keyWeakness: z.string().min(1).max(300).optional(),
