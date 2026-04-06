@@ -2329,8 +2329,8 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   padding-bottom: 64px;
 }
 .topic-above-fold {
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.85fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 40px;
   padding-bottom: 36px;
 }
 .topic-hero-col {
@@ -4318,7 +4318,7 @@ a { color: inherit; }
   width: min(100%, 760px);
 }
 .page-main--topic {
-  width: min(100%, 900px);
+  width: min(100%, 1200px);
   margin: 0 auto 0 max(1.5rem, calc((100% - 1440px) / 2 + 1.5rem));
 }
 .sidebar-card {
