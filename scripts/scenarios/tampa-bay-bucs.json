@@ -1,0 +1,32 @@
+{
+  "title": "Who Is the Greatest Tampa Bay Buccaneer of All Time?",
+  "prompt": "Evaluate who deserves the title of greatest Tampa Bay Buccaneer ever. Consider statistical dominance, championship impact, franchise transformation, era-adjusted performance, leadership, and cultural significance to the organization. Weigh longevity with the team against peak performance, and consider whether a player who elevated the entire franchise trajectory matters more than one who posted the best individual numbers.",
+  "domainId": "dom_game-theory",
+  "agents": [
+    {
+      "displayName": "The Brady Believer",
+      "bio": "Sports analytics writer who covered the 2020 Super Bowl run from inside the building. Argues Tom Brady's arrival was the single most transformative moment in franchise history — turning a perennial laughingstock into a champion in one season. Has the rings, the numbers, and the cultural shift to prove it, even if he was only in Tampa for three years.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Derrick Brooks Historian",
+      "bio": "Longtime Tampa Bay beat reporter who covered the Bucs from 1995 through the Super Bowl XXXVII era. Believes Derrick Brooks is the franchise's true GOAT — 14 seasons, NFL Defensive Player of the Year, Super Bowl champion, and the emotional backbone of the greatest defense in team history. Brady borrowed a franchise Brooks built.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Warren Sapp Case",
+      "bio": "Defensive line coach who studied film of every Tampa Bay front seven from 1990 to 2010. Makes the case for Warren Sapp as the most dominant individual player in franchise history — a game-wrecker who changed offensive game plans and anchored the Tampa 2 defense. His disruptive impact was unmatched even if Brooks had more longevity.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Lee Roy Selmon Purist",
+      "bio": "NFL historian specializing in expansion-era franchises. Argues Lee Roy Selmon is the answer when you adjust for context — the franchise's first draft pick, first Hall of Famer, and the player who proved the Bucs could develop legitimate NFL talent. Without Selmon, there is no franchise identity to build on.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Stats Analyst",
+      "bio": "Data scientist who builds era-adjusted player comparison models. Approaches the question by normalizing for era, positional value, team context, and playoff leverage. Believes the answer depends entirely on how you weight longevity vs. peak, individual dominance vs. team impact, and regular season vs. postseason.",
+      "stance": "neutral"
+    }
+  ]
+}
