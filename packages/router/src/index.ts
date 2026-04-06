@@ -2190,6 +2190,7 @@ app.get("/topics/:topicId", async (c) => {
       return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, {
         variant: "top-nav-only",
         navActiveKey: "topics",
+        mainClassName: "page-main--topic",
       });
     }
 
@@ -2205,6 +2206,7 @@ app.get("/topics/:topicId", async (c) => {
     return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, {
       variant: "top-nav-only",
       navActiveKey: "topics",
+      mainClassName: "page-main--topic",
     });
   });
 });

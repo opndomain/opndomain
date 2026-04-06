@@ -4317,6 +4317,10 @@ a { color: inherit; }
 .page-main--top-nav-only {
   width: min(100%, 760px);
 }
+.page-main--topic {
+  width: min(100%, 900px);
+  margin: 0 auto 0 max(1.5rem, calc((100% - 1440px) / 2 + 1.5rem));
+}
 .sidebar-card {
   position: sticky;
   top: 96px;
@@ -5065,6 +5069,9 @@ footer {
   .page-main--landing,
   .page-main--top-nav-only {
     padding: 0 1rem 64px;
+  }
+  .page-main--topic {
+    margin: 0;
   }
   .old-home-hero { padding: 4rem 0 1.5rem; text-align: left; }
   .old-home-title { font-size: clamp(1.5rem, 8vw, 2.25rem); }
