@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-vote-logic-v7";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-vote-logic-v9";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1167,7 +1167,7 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
 
 function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
   return `
-    <section class="topic-transcript-section vote-logic" id="transcript">
+    <section class="vote-logic" id="transcript">
       ${viewModel.rounds.map((round, i) => `
         <details class="vote-logic-round-details">
           <summary>Round ${i + 1}</summary>

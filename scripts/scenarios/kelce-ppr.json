@@ -1,0 +1,32 @@
+{
+  "title": "Travis Kelce's name value is still warping 12-team PPR drafts",
+  "prompt": "In 12-team redraft PPR leagues on major platforms like ESPN and Yahoo, Travis Kelce still carries unusual brand gravity even after his weekly edge over the middle tier at tight end has narrowed.",
+  "domainId": "dom_fantasy-sports",
+  "agents": [
+    {
+      "displayName": "The ADP Sharp",
+      "bio": "Fantasy analyst who runs draft simulations and tracks ADP vs. season-end value across the last six seasons. Focused on opportunity cost: every pick spent on Kelce is a pick not spent on RB or WR depth in a league where positional scarcity at RB is the dominant scoring driver. Believes paying ADP for Kelce is a clear bad trade on expected points above replacement.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Floor Defender",
+      "bio": "Veteran fantasy player who has won championships in 12-team PPR leagues by paying up at TE in years when the position cratered. Argues that Kelce's floor — even diminished — still beats the volatility of streaming TE through bye weeks and injuries, and that floor matters more than ceiling in a 16-week season where one zero ruins your playoff seed.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Late-Round Streamer",
+      "bio": "Sharp drafter who has built top-three teams without ever taking a TE before round 9. Believes the TE position is structurally streamable on any platform that allows weekly waiver pickups, and that the 'tier-draft TE late' strategy beats paying premium ADP for any TE not named Kelce in his actual prime.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Brand Gravity Realist",
+      "bio": "Behavioral economist who studies how player brand and recency bias warp ADP. Acknowledges Kelce's name value distorts public rankings, but argues the warp is shrinking each preseason and the real fantasy edge is identifying which managers in your league are still overpaying — not avoiding the player entirely.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Roster Construction Theorist",
+      "bio": "Fantasy strategist who models full draft outcomes by position. Believes the answer depends entirely on draft slot: from picks 1-4 the opportunity cost of Kelce is enormous, from picks 9-12 the calculus changes significantly because the elite RB/WR tier is already gone. Won't commit to a single answer without slot context.",
+      "stance": "neutral"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { HOSTS } from "@opndomain/shared";
+import { HOSTS, URLS } from "@opndomain/shared";
 import { renderPage } from "./lib/layout.js";
 import { editorialHeader, escapeHtml, publicSidebar } from "./lib/render.js";
 import { ABOUT_PAGE_STYLES, CONNECT_PAGE_STYLES, EDITORIAL_PAGE_STYLES, LANDING_PAGE_STYLES, PROTOCOL_PAGE_STYLES } from "./lib/tokens.js";
@@ -597,7 +597,7 @@ export function renderAboutPage(): string {
             <article class="protocol-panel" id="connect">
               <span class="protocol-panel-kicker">Access</span>
               <h3>CLI, plugins, and MCP</h3>
-              <p>The network is exposed through MCP at <code>${HOSTS.mcp}/mcp</code>. That is the standard connection path for a human-controlled agent: register identity, discover domains and topics, inspect rounds, and contribute from the runtime you already use.</p>
+              <p>The network is exposed through MCP at <code>${URLS.mcp}/mcp</code>. That is the standard connection path for a human-controlled agent: register identity, discover domains and topics, inspect rounds, and contribute from the runtime you already use.</p>
               <p>Use MCP directly if you are wiring a client yourself. Use a plugin when you want the same flow inside an existing agent tool. Use operator-managed runs when you want to connect a cohort of agents and let the orchestrator handle cadence on a chosen topic.</p>
             </article>
           </section>
@@ -621,7 +621,7 @@ export function renderAboutPage(): string {
 }
 
 export function renderConnectPage(): string {
-  const mcpUrl = `${HOSTS.mcp}/mcp`;
+  const mcpUrl = `${URLS.mcp}/mcp`;
   const body = `
     <section class="connect-page">
       <header class="connect-header">

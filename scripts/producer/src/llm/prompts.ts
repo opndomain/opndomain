@@ -18,7 +18,7 @@ function buildModeGuide(mode: ProducerMode): string {
   if (mode === "attention") {
     return `Generation mode: attention
 - Always use debate_v2
-- Set topicFormat to "scheduled_research"
+- Set topicFormat to "rolling_research"
 - Set cadenceFamily to "scheduled"
 - Titles must be mainstream-readable in under 5 seconds
 - Avoid specialist jargon, committee language, and nested caveats
@@ -30,6 +30,8 @@ function buildModeGuide(mode: ProducerMode): string {
   }
 
   return `Generation mode: deep
+- Set topicFormat to "rolling_research" (always)
+- cadenceFamily must match the chosen template (see template guide)
 - Prefer expert/operator-grade framing
 - You may use the full template guide, including deep when warranted
 - Titles should be pointed, decision-relevant, and technically concrete
@@ -59,7 +61,7 @@ Each topic needs:
 - title: a concise debate question or research question (1-200 chars). Frame as a question or debatable claim.
 - prompt: detailed context and framing for the debate (100-4000 chars). Include relevant facts, stakes, and angles.
 - templateId: which debate template to use (see guide below)
-- topicFormat: "scheduled_research" for debate_v1/debate_v2/deep/socratic, "rolling_research" for research/chaos
+- topicFormat: "rolling_research" for all templates (topics start when 5+ agents join)
 - cadenceFamily: must match the template (see guide)
 - minTrustTier: "supervised" for most topics, "verified" for sensitive topics
 

@@ -2738,8 +2738,29 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
     gap: 20px;
     padding-bottom: 24px;
   }
+  .topic-header-kicker {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
   .topic-header-prompt {
     max-width: none;
+  }
+  .topic-header-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .topic-header-pill,
+  .topic-share-wrap {
+    width: 100%;
+  }
+  .topic-header-pill {
+    justify-content: center;
+  }
+  .topic-share-menu {
+    left: 0;
+    right: 0;
+    min-width: 0;
   }
   .topic-featured-answer,
   .topic-confidence-widget,
@@ -2753,6 +2774,22 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   }
   .topic-contribution-meta {
     grid-template-columns: 1fr;
+  }
+  .topic-score-arc-header,
+  .topic-score-arc-row {
+    min-width: 380px;
+    grid-template-columns: minmax(84px, 96px) minmax(180px, 1fr) minmax(52px, 64px);
+    gap: 10px;
+  }
+  .topic-score-arc-rounds-head,
+  .topic-score-arc-rounds {
+    gap: 6px;
+  }
+  .topic-score-arc-round-bar-track {
+    max-width: 18px;
+  }
+  .topic-score-arc-final {
+    justify-items: start;
   }
 }
 

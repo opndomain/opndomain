@@ -63,6 +63,7 @@ const DOMAIN_ID = scenario.domainId ?? readFlag("--domain-id", "dom_game-theory"
 const TEMPLATE_ID = scenario.templateId ?? "debate_v2";
 const CADENCE_MINUTES = Number(readFlag("--cadence", scenario.cadenceMinutes ?? 2));
 const LLM_MODEL = readFlag("--model", "sonnet"); // sonnet follows formatting rules; haiku ignores no-markdown
+const EXISTING_TOPIC_ID = readFlag("--existing-topic", null);
 
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_DIR = path.resolve("logs");
@@ -357,34 +358,50 @@ async function main() {
     log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
   }
 
-  // Step 3: Create topic
-  logStep("Step 3: Create topic");
-  const topic = await api("/v1/internal/topics", {
-    method: "POST", token: adminToken, expectedStatus: 201,
-    body: {
-      domainId: DOMAIN_ID,
-      title: scenario.title,
-      prompt: scenario.prompt,
-      templateId: TEMPLATE_ID,
-      topicFormat: "scheduled_research",
-      cadenceOverrideMinutes: CADENCE_MINUTES,
-      topicSource: "cron_auto",
-      reason: `Debate — ${scenario.title}`,
-    },
-    logRequest: true, logLabel: "topic-create",
-  });
-  log("topic", { id: topic.id, status: topic.status, rounds: topic.rounds.length });
+  // Step 3: Create topic OR fetch existing
+  let topic;
+  if (EXISTING_TOPIC_ID) {
+    logStep("Step 3: Join existing topic");
+    const existing = await api(`/v1/topics/${EXISTING_TOPIC_ID}`, {
+      method: "GET", token: adminToken, logRequest: true, logLabel: "topic-fetch",
+    });
+    topic = existing;
+    log("topic", { id: topic.id, status: topic.status, rounds: topic.rounds?.length ?? 0, existing: true });
+  } else {
+    logStep("Step 3: Create topic");
+    topic = await api("/v1/internal/topics", {
+      method: "POST", token: adminToken, expectedStatus: 201,
+      body: {
+        domainId: DOMAIN_ID,
+        title: scenario.title,
+        prompt: scenario.prompt,
+        templateId: TEMPLATE_ID,
+        topicFormat: "scheduled_research",
+        cadenceOverrideMinutes: CADENCE_MINUTES,
+        topicSource: "cron_auto",
+        reason: `Debate — ${scenario.title}`,
+      },
+      logRequest: true, logLabel: "topic-create",
+    });
+    log("topic", { id: topic.id, status: topic.status, rounds: topic.rounds.length });
+  }
 
-  // Step 4: Set timing and join
+  // Step 4: Set timing and join (skip timing reset for existing topics)
   logStep("Step 4: Timing + join");
-  const joinUntil = new Date(Date.now() + 30_000).toISOString();
-  const startsAt = new Date(Date.now() + 45_000).toISOString();
-  await api(`/v1/topics/${topic.id}`, { method: "PATCH", token: adminToken, body: { startsAt, joinUntil } });
-  log("timing", { startsAt, joinUntil });
+  if (!EXISTING_TOPIC_ID) {
+    const joinUntil = new Date(Date.now() + 30_000).toISOString();
+    const startsAt = new Date(Date.now() + 45_000).toISOString();
+    await api(`/v1/topics/${topic.id}`, { method: "PATCH", token: adminToken, body: { startsAt, joinUntil } });
+    log("timing", { startsAt, joinUntil });
+  }
 
   for (const p of participants) {
-    await api(`/v1/topics/${topic.id}/join`, { method: "POST", token: p.accessToken, body: { beingId: p.beingId } });
-    log("joined", p.displayName);
+    try {
+      await api(`/v1/topics/${topic.id}/join`, { method: "POST", token: p.accessToken, body: { beingId: p.beingId } });
+      log("joined", p.displayName);
+    } catch (err) {
+      log("join-failed", { who: p.displayName, error: renderError(err) });
+    }
   }
 
   // Step 5: Drive debate loop

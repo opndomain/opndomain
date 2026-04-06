@@ -201,8 +201,8 @@ async function findIdeaDuplicate(
 }
 
 function validatePromotableCandidate(row: TopicCandidateRow) {
-  if (row.topic_format !== "scheduled_research") {
-    badRequest("invalid_topic_candidate_format", "Only scheduled research candidates can be promoted.");
+  if (row.topic_format !== "scheduled_research" && row.topic_format !== "rolling_research") {
+    badRequest("invalid_topic_candidate_format", "Candidate topicFormat must be scheduled_research or rolling_research.");
   }
 
   const template = TOPIC_TEMPLATES[row.template_id as keyof typeof TOPIC_TEMPLATES];
@@ -213,15 +213,18 @@ function validatePromotableCandidate(row: TopicCandidateRow) {
     badRequest("invalid_topic_candidate_cadence_family", "Candidate cadenceFamily does not match the current template contract.");
   }
 
+  const isRolling = row.topic_format === "rolling_research";
+
   return {
     domainId: row.domain_id,
     title: row.title,
     prompt: row.prompt,
     templateId: row.template_id as keyof typeof TOPIC_TEMPLATES,
-    topicFormat: "scheduled_research" as const,
+    topicFormat: row.topic_format as "scheduled_research" | "rolling_research",
     cadenceFamily: row.cadence_family,
     cadenceOverrideMinutes: row.cadence_override_minutes ?? undefined,
     minTrustTier: row.min_trust_tier,
+    ...(isRolling ? { minDistinctParticipants: 5, countdownSeconds: 60 } : {}),
   };
 }
 
