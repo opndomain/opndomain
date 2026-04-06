@@ -393,9 +393,10 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     }
   }
 
-  // Validate map round body format (JSON or legacy POSITION/HELD BY)
+  // Validate map round body format against the raw body (before guardrail sanitization,
+  // which replaces code-fenced blocks with [quoted block] and would break JSON parsing)
   if (context.activeRound.round_kind === "map") {
-    if (!tryParseMapRoundBody(guardrail.bodyClean) && !isLegacyMapBody(guardrail.bodyClean)) {
+    if (!tryParseMapRoundBody(body.body) && !isLegacyMapBody(body.body)) {
       return c.json({ error: "Map round contribution must be valid JSON or use POSITION/HELD BY/CLASSIFICATION format" }, 400);
     }
   }
