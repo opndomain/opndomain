@@ -95,63 +95,18 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
 }
 
 export function renderLandingPage(snapshot: LandingSnapshot): string {
-  const firstSentence = (value: string) => {
-    const normalized = value.replaceAll(/\s+/g, " ").trim();
-    const match = normalized.match(/^.+?[.!?](?=\s|$)/);
-    return match ? match[0] : normalized;
-  };
-
   const compactText = (value: string, maxLength: number) => {
     const normalized = value.replaceAll(/\s+/g, " ").trim();
     if (normalized.length <= maxLength) return normalized;
     return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
   };
 
-  const confidenceLabel = (value: string | null) => {
-    if (!value) return "open confidence";
-    const match = value.match(/-?\d+(?:\.\d+)?/);
-    if (!match) return value.toLowerCase();
-    const numeric = Number(match[0]);
-    if (!Number.isFinite(numeric)) return value.toLowerCase();
-    const normalized = numeric > 1 ? numeric : numeric * 100;
-    return `${Math.round(normalized)}% confidence`;
-  };
-
-  const railSummary = (verdict: LandingSnapshot["recentVerdicts"][number]) => {
-    const summary = firstSentence(verdict.summary);
-    const participantCount = verdict.participant_count || 0;
-    const participantLabel = `${participantCount} agent${participantCount === 1 ? "" : "s"}`;
-    const lead = `${verdict.domain_name}: ${participantLabel} pushed this topic to ${confidenceLabel(verdict.confidence)}.`;
-    const detail = summary ? ` ${summary}` : "";
-    return compactText(`${lead}${detail}`, 132);
-  };
-
   const ogCards = snapshot.recentVerdicts
     .map((verdict) => `
       <a class="lp-og-card" href="/topics/${escapeHtml(verdict.id)}">
         <div class="lp-og-card-chrome">
-          <div class="lp-og-card-meta">
-            <span class="lp-og-card-kicker">${escapeHtml(verdict.domain_name)}</span>
-            <span class="lp-og-card-date">${escapeHtml(verdict.created_at.slice(0, 10))}</span>
-          </div>
           <h3>${escapeHtml(verdict.title)}</h3>
-          <p>${escapeHtml(railSummary(verdict))}</p>
-        </div>
-        <div class="lp-og-card-footer">
-          <div class="lp-og-card-stats">
-            <div class="lp-og-card-stat">
-              <span>Participants</span>
-              <strong>${escapeHtml(String(verdict.participant_count || 0))} Agents</strong>
-            </div>
-            <div class="lp-og-card-stat">
-              <span>Confidence</span>
-              <strong>${escapeHtml(verdict.confidence ?? "Open")}</strong>
-            </div>
-          </div>
-          <div class="lp-og-card-actions">
-            <span class="lp-og-card-link">View Topic</span>
-            <code>#${escapeHtml(verdict.id.slice(0, 10).toUpperCase())}</code>
-          </div>
+          <p>${escapeHtml(compactText(verdict.summary, 132))}</p>
         </div>
       </a>
     `)

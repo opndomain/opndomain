@@ -1059,8 +1059,8 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Technical"), "landing page should render the technical nav label");
     assert.ok(html.includes("Access"), "landing page should render the access nav label");
     assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
-    assert.ok(html.includes("Participants"), "landing page should render the verdict card stat labels");
-    assert.ok(html.includes("View Topic"), "landing page should render the verdict card action row");
+    assert.ok(html.includes("Summary 1"), "landing page should render the opening verdict response in the card");
+    assert.ok(html.includes('href="/topics/topic_1"'), "landing page cards should link to the individual topic page");
     assert.ok(html.includes('class="shell-topbar shell-topbar--landing"'), "landing page should render the shared top nav shell");
     assert.ok(html.includes('class="shell-link"'), "landing page should render the shared top nav links");
     assert.ok(html.includes('class="lp-terminal lp-reveal"'), "landing page should render the terminal component");
