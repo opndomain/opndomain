@@ -2330,7 +2330,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 }
 .topic-above-fold {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
-  gap: 40px;
+  gap: 0;
   padding-bottom: 36px;
 }
 .topic-hero-col {
