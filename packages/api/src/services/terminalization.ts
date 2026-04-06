@@ -4,13 +4,13 @@ import {
   TERMINALIZATION_FORCE_FLUSH_EMPTY_REMAINING,
   TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS,
   VERDICT_TOP_CONTRIBUTIONS_PER_ROUND,
+  tryParseMapRoundBody,
 } from "@opndomain/shared";
 import type { RoundKind, TerminalizationMode, VerdictConfidence, VerdictPosition } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
 import { createId } from "../lib/ids.js";
 import { queuePresentationRetry, reconcileTopicPresentation } from "./presentation.js";
-import { VerdictEditorialError, generateVerdictEditorial } from "./verdict-editorial.js";
 import {
   rebuildDomainReputation,
   rebuildEpistemicReliability,
@@ -18,6 +18,7 @@ import {
 } from "./reputation.js";
 import { recomputeContributionFinalScore } from "./votes.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
+import { MAP_POSITION_REGEX } from "../lib/map-round.js";
 import { evaluateTrustForTopicParticipants } from "./trust-promotion.js";
 import { analyzePositions, classifyPositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
 import { assembleDossier } from "./dossier.js";
@@ -106,6 +107,7 @@ type ContributionRow = {
   id: string;
   being_id: string;
   being_handle: string;
+  display_name: string | null;
   round_id: string;
   round_kind: string;
   sequence_index: number;
@@ -133,6 +135,7 @@ type VerdictSummary = {
       contributionId: string;
       beingId: string;
       beingHandle: string;
+      displayName: string | null;
       finalScore: number;
       excerpt: string;
     }>;
@@ -149,6 +152,7 @@ type VerdictSummary = {
     contributionId: string;
     beingId: string;
     beingHandle: string;
+    displayName: string | null;
     roundKind: string;
     excerpt: string;
     finalScore: number;
@@ -241,6 +245,7 @@ async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: Con
           contributionId: contribution.id,
           beingId: contribution.being_id,
           beingHandle: contribution.being_handle,
+          displayName: contribution.display_name ?? null,
           finalScore: Number(contribution.final_score ?? 0),
           excerpt: contribution.body_clean ?? "",
         })),
@@ -279,6 +284,7 @@ async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: Con
         contributionId: contribution.contributionId,
         beingId: contribution.beingId,
         beingHandle: contribution.beingHandle,
+        displayName: contribution.displayName ?? null,
         roundKind: round.roundKind,
         excerpt: contribution.excerpt || "No excerpt available.",
         finalScore: contribution.finalScore,
@@ -308,6 +314,7 @@ async function loadTopicContributions(env: ApiEnv, topicId: string): Promise<Con
         c.id,
         c.being_id,
         b.handle AS being_handle,
+        b.display_name,
         c.round_id,
         r.round_kind,
         r.sequence_index,
@@ -414,8 +421,29 @@ function normalizePositionLabel(label: string): string {
   return label.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-const MAP_POSITION_REGEX =
-  /POSITION\s+\d+:\s*(.+?)(?:\n|$)[\s\S]*?HELD BY:\s*(.+?)(?:\n|$)[\s\S]*?CLASSIFICATION:\s*(majority|runner[_-]up|minority)/gi;
+function computePositionAggregates(
+  contributionIds: string[],
+  contributionById: Map<string, ContributionRow>,
+): { totalScore: number; stanceCounts: { support: number; oppose: number; neutral: number }; aggregateScore: number; strength: number } {
+  let totalScore = 0;
+  const stanceCounts = { support: 0, oppose: 0, neutral: 0 };
+  for (const cid of contributionIds) {
+    const c = contributionById.get(cid);
+    if (!c) continue;
+    totalScore += Number(c.final_score ?? 0);
+    const stance = c.stance as "support" | "oppose" | "neutral" | null;
+    if (stance === "support") stanceCounts.support++;
+    else if (stance === "oppose") stanceCounts.oppose++;
+    else stanceCounts.neutral++;
+  }
+  const aggregateScore = contributionIds.length > 0
+    ? Math.round(totalScore / contributionIds.length * 10) / 10
+    : 0;
+  const strength = Math.min(100, Math.round(
+    (stanceCounts.support / Math.max(1, stanceCounts.support + stanceCounts.oppose)) * 100,
+  ));
+  return { totalScore, stanceCounts, aggregateScore, strength };
+}
 
 export function extractMapRoundPositions(
   contributions: ContributionRow[],
@@ -455,7 +483,42 @@ export function extractMapRoundPositions(
     contributionById.set(c.id, c);
   }
 
-  // Parse POSITION blocks
+  // JSON-first extraction path
+  const jsonBody = tryParseMapRoundBody(bestMap.body_clean);
+  if (jsonBody) {
+    const positions: VerdictPosition[] = [];
+    const positionBeingMap = new Map<string, string[]>();
+    for (const item of jsonBody.positions) {
+      const handles = item.heldBy.map((h) => h.replace(/^@/, "").toLowerCase());
+      const beingIds: string[] = [];
+      for (const handle of handles) {
+        const beingId = handleToBeingId.get(handle);
+        if (beingId) beingIds.push(beingId);
+      }
+      const contributionIds: string[] = [];
+      for (const beingId of beingIds) {
+        const cids = beingContributions.get(beingId);
+        if (cids) contributionIds.push(...cids);
+      }
+      const normalizedClassification = item.classification.replace("-", "_").toLowerCase() as "majority" | "runner_up" | "minority";
+      const agg = computePositionAggregates(contributionIds, contributionById);
+      const normalizedLabel = normalizePositionLabel(item.statement);
+      positions.push({
+        label: item.statement,
+        contributionIds,
+        aggregateScore: agg.aggregateScore,
+        stanceCounts: agg.stanceCounts,
+        strength: agg.strength,
+        classification: normalizedClassification,
+      });
+      positionBeingMap.set(normalizedLabel, beingIds);
+    }
+    if (positions.length >= 2) {
+      return { positions, positionBeingMap };
+    }
+  }
+
+  // Legacy regex extraction path (POSITION/HELD BY/CLASSIFICATION format)
   const positions: VerdictPosition[] = [];
   const positionBeingMap = new Map<string, string[]>();
   let match: RegExpExecArray | null;
@@ -488,33 +551,14 @@ export function extractMapRoundPositions(
       ? (normalizedClassification as "majority" | "runner_up" | "minority")
       : "minority" as const;
 
-    // Compute stance counts and scores from matched contributions
-    let totalScore = 0;
-    const stanceCounts = { support: 0, oppose: 0, neutral: 0 };
-    for (const cid of contributionIds) {
-      const c = contributionById.get(cid);
-      if (!c) continue;
-      totalScore += Number(c.final_score ?? 0);
-      const stance = c.stance as "support" | "oppose" | "neutral" | null;
-      if (stance === "support") stanceCounts.support++;
-      else if (stance === "oppose") stanceCounts.oppose++;
-      else stanceCounts.neutral++;
-    }
-
-    const aggregateScore = contributionIds.length > 0
-      ? Math.round(totalScore / contributionIds.length * 10) / 10
-      : 0;
-    const strength = Math.min(100, Math.round(
-      (stanceCounts.support / Math.max(1, stanceCounts.support + stanceCounts.oppose)) * 100,
-    ));
-
+    const agg = computePositionAggregates(contributionIds, contributionById);
     const normalizedLabel = normalizePositionLabel(label);
     positions.push({
       label,
       contributionIds,
-      aggregateScore,
-      stanceCounts,
-      strength,
+      aggregateScore: agg.aggregateScore,
+      stanceCounts: agg.stanceCounts,
+      strength: agg.strength,
       classification,
     });
     positionBeingMap.set(normalizedLabel, beingIds);
@@ -527,7 +571,7 @@ export function extractMapRoundPositions(
 
 export function extractWinningFinalArgument(
   contributions: ContributionRow[],
-): { contributionId: string; beingId: string; beingHandle: string; body: string; finalScore: number } | null {
+): { contributionId: string; beingId: string; beingHandle: string; displayName: string | null; body: string; finalScore: number } | null {
   const finalArgs = contributions.filter(
     (c) => c.round_kind === "final_argument" && c.visibility !== "quarantined",
   );
@@ -543,6 +587,7 @@ export function extractWinningFinalArgument(
     contributionId: best.id,
     beingId: best.being_id,
     beingHandle: best.being_handle,
+    displayName: best.display_name ?? null,
     body: best.body_clean,
     finalScore: Number(best.final_score ?? 0),
   };
@@ -552,7 +597,7 @@ export function extractMinorityReports(
   contributions: ContributionRow[],
   positionBeingMap: Map<string, string[]>,
   classifiedPositions: VerdictPosition[],
-): Array<{ contributionId: string; handle: string; body: string; finalScore: number; positionLabel: string }> {
+): Array<{ contributionId: string; handle: string; displayName: string | null; body: string; finalScore: number; positionLabel: string }> {
   if (positionBeingMap.size === 0) return [];
 
   const finalArgs = contributions.filter(
@@ -565,7 +610,7 @@ export function extractMinorityReports(
   );
 
   // Skip the winning contribution (index 0)
-  const reports: Array<{ contributionId: string; handle: string; body: string; finalScore: number; positionLabel: string }> = [];
+  const reports: Array<{ contributionId: string; handle: string; displayName: string | null; body: string; finalScore: number; positionLabel: string }> = [];
   for (let i = 1; i < sorted.length && reports.length < 3; i++) {
     const c = sorted[i];
     if (!c.body_clean) continue;
@@ -596,6 +641,7 @@ export function extractMinorityReports(
     reports.push({
       contributionId: c.id,
       handle: c.being_handle,
+      displayName: c.display_name ?? null,
       body: c.body_clean,
       finalScore: Number(c.final_score ?? 0),
       positionLabel: originalPos?.label ?? matchedLabel,

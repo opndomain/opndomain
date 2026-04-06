@@ -44,6 +44,7 @@ type TranscriptRow = {
   round_id: string;
   being_id: string;
   being_handle: string;
+  display_name: string | null;
   body_clean: string | null;
   visibility: string;
   submitted_at: string;
@@ -52,6 +53,8 @@ type TranscriptRow = {
   final_score: number | null;
   reveal_at: string | null;
   round_visibility: string | null;
+  round_kind: string;
+  sequence_index: number;
 };
 
 type CountRow = {
@@ -162,6 +165,7 @@ export async function syncTopicSnapshots(
         c.round_id,
         c.being_id,
         b.handle AS being_handle,
+        b.display_name,
         c.body_clean,
         c.visibility,
         c.submitted_at,
@@ -169,6 +173,8 @@ export async function syncTopicSnapshots(
         cs.live_score,
         cs.final_score,
         r.reveal_at,
+        r.round_kind,
+        r.sequence_index,
         json_extract(rc.config_json, '$.visibility') AS round_visibility
       FROM contributions c
       INNER JOIN rounds r ON r.id = c.round_id
@@ -179,7 +185,6 @@ export async function syncTopicSnapshots(
         AND c.visibility IN ('normal', 'low_confidence')
       ORDER BY
         r.sequence_index ASC,
-        COALESCE(cs.final_score, cs.live_score, cs.heuristic_score, 0) DESC,
         c.submitted_at ASC,
         c.created_at ASC
     `,
@@ -221,28 +226,44 @@ export async function syncTopicSnapshots(
   const transcriptKey = transcriptSnapshotKey(env, topicId);
   const stateKey = stateSnapshotKey(env, topicId);
   const roundsWithContributions = rounds
-    .map((round) => ({
-      roundId: round.id,
-      sequenceIndex: round.sequence_index,
-      roundKind: round.round_kind,
-      status: round.status,
-      contributions: transcript
+    .map((round) => {
+      const roundContributions = transcript
         .filter((row) => isTranscriptVisibleContribution(row))
         .filter((row) => row.round_id === round.id)
-        .map((row) => ({
-          id: row.id,
-          beingId: row.being_id,
-          beingHandle: row.being_handle,
-          bodyClean: row.body_clean,
-          visibility: row.visibility,
-          submittedAt: row.submitted_at,
-          scores: {
-            heuristic: row.heuristic_score,
-            live: row.live_score,
-            final: row.final_score,
-          },
-        })),
-    }))
+        .map((row) => {
+          const isPending = row.final_score === null && row.round_kind !== "vote";
+          return {
+            id: row.id,
+            beingId: row.being_id,
+            beingHandle: row.being_handle,
+            displayName: row.display_name ?? null,
+            bodyClean: row.body_clean,
+            visibility: row.visibility,
+            submittedAt: row.submitted_at,
+            scores: isPending
+              ? { heuristic: null, live: null, final: null }
+              : { heuristic: row.heuristic_score, live: row.live_score, final: row.final_score },
+          };
+        });
+      // Round-scoped sort: if any non-vote contribution has null final_score, sort by time; otherwise by score
+      const hasNullScore = round.round_kind !== "vote" && roundContributions.some((c) => c.scores.final === null);
+      if (hasNullScore) {
+        roundContributions.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+      } else {
+        roundContributions.sort((a, b) => {
+          const sa = a.scores.final ?? a.scores.live ?? a.scores.heuristic ?? 0;
+          const sb = b.scores.final ?? b.scores.live ?? b.scores.heuristic ?? 0;
+          return sb - sa;
+        });
+      }
+      return {
+        roundId: round.id,
+        sequenceIndex: round.sequence_index,
+        roundKind: round.round_kind,
+        status: round.status,
+        contributions: roundContributions,
+      };
+    })
     .filter((round) => round.contributions.length > 0);
 
   await env.SNAPSHOTS.put(

@@ -60,13 +60,14 @@ type ParsedReasoning = {
       contributionId?: string;
       beingId?: string;
       beingHandle?: string;
+      displayName?: string | null;
       finalScore?: number;
       excerpt?: string;
     }>;
   }>;
   narrative?: VerdictPresentation["narrative"];
   highlights?: VerdictPresentation["highlights"];
-  minorityReports?: Array<{ contributionId: string; handle: string; body: string; finalScore: number; positionLabel: string }>;
+  minorityReports?: Array<{ contributionId: string; handle: string; displayName?: string | null; body: string; finalScore: number; positionLabel: string }>;
   bothSidesSummary?: { majorityCase: string; counterArgument: string; finalVerdict: string };
 };
 
@@ -163,6 +164,7 @@ function buildFallbackHighlights(reasoning: ParsedReasoning): VerdictPresentatio
         contributionId: contribution.contributionId,
         beingId: contribution.beingId,
         beingHandle: contribution.beingHandle ?? contribution.beingId,
+        displayName: contribution.displayName ?? null,
         roundKind: round.roundKind as RoundKind,
         excerpt: contribution.excerpt?.trim() || "No excerpt available.",
         finalScore: Number(contribution.finalScore ?? 0),
@@ -383,7 +385,17 @@ export async function reconcileTopicPresentation(
         artifactStatus = ARTIFACT_STATUS_SUPPRESSED;
       } else {
         const presentation = await buildVerdictPresentation(env, topic, verdict);
-        const dossierData = await getDossierData(env, topic.id);
+        let dossierData = null;
+        try {
+          dossierData = await getDossierData(env, topic.id);
+        } catch (dossierError) {
+          const message = dossierError instanceof Error ? dossierError.message : String(dossierError);
+          if (/no such table|no such column/i.test(message)) {
+            console.error("dossier data fetch failed (migrations pending?)", dossierError);
+          } else {
+            throw dossierError;
+          }
+        }
         if (dossierData) {
           presentation.dossier = dossierData;
         }

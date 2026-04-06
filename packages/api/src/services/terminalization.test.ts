@@ -124,18 +124,6 @@ class FakeCache {
   }
 }
 
-async function withMockFetch<T>(
-  implementation: typeof globalThis.fetch,
-  callback: () => Promise<T>,
-): Promise<T> {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = implementation;
-  try {
-    return await callback();
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-}
 
 function queueClosedTopicPresentationReads(db: FakeDb) {
   db.queueFirst("FROM topics", [
@@ -285,6 +273,7 @@ function queueTerminalizationSuccessPath(
       id: "cnt_1",
       being_id: "bng_1",
       being_handle: "alpha",
+      display_name: "Alpha Agent",
       round_id: "rnd_1",
       round_kind: "propose",
       sequence_index: 0,
@@ -1023,303 +1012,6 @@ describe("terminalization service", () => {
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"epistemic":\{"status":"unavailable"\}/);
   });
 
-  it("writes AI-backed verdict editorial fields when xAI generation succeeds", async () => {
-    const db = new FakeDb();
-    const snapshots = new FakeBucket();
-    const publicArtifacts = new FakeBucket();
-    const cache = new FakeCache();
-    queueTerminalizationSuccessPath(db, {
-      summary: "AI summary",
-      editorialBody: "AI editorial body",
-      narrative: [
-        {
-          roundIndex: 0,
-          roundKind: "propose",
-          title: "Opening pressure",
-          summary: "AI narrative beat",
-        },
-      ],
-      highlights: [
-        {
-          contributionId: "cnt_1",
-          beingId: "bng_1",
-          beingHandle: "alpha",
-          roundKind: "propose",
-          excerpt: "AI excerpt",
-          finalScore: 73,
-          reason: "AI reason",
-        },
-      ],
-    });
-
-    await withMockFetch(
-      (async (input, init) => {
-        assert.equal(String(input), "https://api.x.ai/v1/chat/completions");
-        assert.match(String((init?.headers as Record<string, string>).Authorization), /^Bearer /);
-        return Response.json({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                summary: "AI summary",
-                editorialBody: "AI editorial body",
-                narrative: [
-                  {
-                    roundIndex: 0,
-                    roundKind: "propose",
-                    title: "Opening pressure",
-                    summary: "AI narrative beat",
-                  },
-                ],
-                highlights: [
-                  {
-                    contributionId: "cnt_1",
-                    beingId: "bng_1",
-                    beingHandle: "alpha",
-                    roundKind: "propose",
-                    excerpt: "AI excerpt",
-                    finalScore: 73,
-                    reason: "AI reason",
-                  },
-                ],
-              }),
-            },
-          }],
-        });
-      }) as typeof globalThis.fetch,
-      async () => {
-        const result = await runTerminalizationSequence(
-          {
-            DB: db as never,
-            SNAPSHOTS: snapshots as never,
-            PUBLIC_ARTIFACTS: publicArtifacts as never,
-            PUBLIC_CACHE: cache as never,
-            TOPIC_STATE_DO: {
-              idFromName: (name: string) => name,
-              get: () => ({
-                fetch: async () => Response.json({ flushed: true, remaining: 0 }),
-              }),
-            },
-            TOPIC_TRANSCRIPT_PREFIX: "topics",
-            CURATED_OPEN_KEY: "curated/open.json",
-            XAI_API_KEY: "test-api-key",
-            XAI_MODEL: "grok-3-mini",
-            XAI_BASE_URL: "https://api.x.ai/v1",
-            XAI_TIMEOUT_MS: 30000,
-          } as never,
-          "top_1",
-        );
-
-        assert.equal(result.terminalized, true);
-      },
-    );
-
-    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
-    assert.ok(verdictInsert);
-    assert.match(String(verdictInsert?.bindings[4] ?? ""), /AI summary/);
-    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"editorialBody":"AI editorial body"/);
-    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"AI narrative beat"/);
-    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"AI excerpt"/);
-  });
-
-  it("falls back to template when xAI returns HTTP error", async () => {
-    const db = new FakeDb();
-    const snapshots = new FakeBucket();
-    const publicArtifacts = new FakeBucket();
-    const cache = new FakeCache();
-    queueTerminalizationSuccessPath(db);
-    const warnings: unknown[][] = [];
-    const originalConsoleWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args);
-    };
-
-    try {
-      await withMockFetch(
-        (async () => new Response("{\"error\":{\"message\":\"Rate limit reached\"}}", {
-          status: 429,
-          headers: { "x-request-id": "req_429" },
-        })) as typeof globalThis.fetch,
-        async () => {
-          await runTerminalizationSequence(
-            {
-              DB: db as never,
-              SNAPSHOTS: snapshots as never,
-              PUBLIC_ARTIFACTS: publicArtifacts as never,
-              PUBLIC_CACHE: cache as never,
-              TOPIC_STATE_DO: {
-                idFromName: (name: string) => name,
-                get: () => ({
-                  fetch: async () => Response.json({ flushed: true, remaining: 0 }),
-                }),
-              },
-              TOPIC_TRANSCRIPT_PREFIX: "topics",
-              CURATED_OPEN_KEY: "curated/open.json",
-              XAI_API_KEY: "test-api-key",
-              XAI_MODEL: "grok-3-mini",
-              XAI_TIMEOUT_MS: 30000,
-            } as never,
-            "top_1",
-          );
-        },
-      );
-    } finally {
-      console.warn = originalConsoleWarn;
-    }
-
-    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
-    assert.ok(verdictInsert);
-    assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
-    assert.equal(warnings.some(([message, payload]) =>
-      message === "xai_verdict_editorial_failure"
-      && typeof payload === "object"
-      && payload !== null
-      && "statusCode" in payload
-      && payload.statusCode === 429), true);
-  });
-
-  it("falls back when xAI output fails schema validation and logs the failure kind", async () => {
-    const db = new FakeDb();
-    const snapshots = new FakeBucket();
-    const publicArtifacts = new FakeBucket();
-    const cache = new FakeCache();
-    queueTerminalizationSuccessPath(db);
-    const warnings: unknown[][] = [];
-    const originalConsoleWarn = console.warn;
-    console.warn = (...args: unknown[]) => {
-      warnings.push(args);
-    };
-
-    try {
-      await withMockFetch(
-        (async () => Response.json({
-          choices: [{
-            message: {
-              content: JSON.stringify({
-                summary: "Broken response without required fields",
-              }),
-            },
-          }],
-        })) as typeof globalThis.fetch,
-        async () => {
-          await runTerminalizationSequence(
-            {
-              DB: db as never,
-              SNAPSHOTS: snapshots as never,
-              PUBLIC_ARTIFACTS: publicArtifacts as never,
-              PUBLIC_CACHE: cache as never,
-              TOPIC_STATE_DO: {
-                idFromName: (name: string) => name,
-                get: () => ({
-                  fetch: async () => Response.json({ flushed: true, remaining: 0 }),
-                }),
-              },
-              TOPIC_TRANSCRIPT_PREFIX: "topics",
-              CURATED_OPEN_KEY: "curated/open.json",
-              XAI_API_KEY: "test-api-key",
-              XAI_MODEL: "grok-3-mini",
-              XAI_TIMEOUT_MS: 30000,
-            } as never,
-            "top_1",
-          );
-        },
-      );
-    } finally {
-      console.warn = originalConsoleWarn;
-    }
-
-    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
-    assert.ok(verdictInsert);
-    assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
-    assert.match(String(verdictInsert?.bindings[5] ?? ""), /"editorialBody":"This topic closed after 2 completed rounds/);
-    assert.equal(warnings.some(([, payload]) =>
-      typeof payload === "object"
-      && payload !== null
-      && "failureKind" in payload
-      && payload.failureKind === "schema_validation_failure"), true);
-  });
-
-  it("falls back when the xAI request times out", async () => {
-    const db = new FakeDb();
-    const snapshots = new FakeBucket();
-    const publicArtifacts = new FakeBucket();
-    const cache = new FakeCache();
-    queueTerminalizationSuccessPath(db);
-
-    await withMockFetch(
-      (async () => {
-        throw new Error("xai_timeout");
-      }) as typeof globalThis.fetch,
-      async () => {
-        await runTerminalizationSequence(
-          {
-            DB: db as never,
-            SNAPSHOTS: snapshots as never,
-            PUBLIC_ARTIFACTS: publicArtifacts as never,
-            PUBLIC_CACHE: cache as never,
-            TOPIC_STATE_DO: {
-              idFromName: (name: string) => name,
-              get: () => ({
-                fetch: async () => Response.json({ flushed: true, remaining: 0 }),
-              }),
-            },
-            TOPIC_TRANSCRIPT_PREFIX: "topics",
-            CURATED_OPEN_KEY: "curated/open.json",
-            XAI_API_KEY: "test-api-key",
-            XAI_MODEL: "grok-3-mini",
-            XAI_TIMEOUT_MS: 1,
-          } as never,
-          "top_1",
-        );
-      },
-    );
-
-    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
-    assert.ok(verdictInsert);
-    assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
-  });
-
-  it("falls back without calling xAI when config is missing", async () => {
-    const db = new FakeDb();
-    const snapshots = new FakeBucket();
-    const publicArtifacts = new FakeBucket();
-    const cache = new FakeCache();
-    queueTerminalizationSuccessPath(db);
-    let fetchCalls = 0;
-
-    await withMockFetch(
-      (async () => {
-        fetchCalls += 1;
-        return Response.json({});
-      }) as typeof globalThis.fetch,
-      async () => {
-        await runTerminalizationSequence(
-          {
-            DB: db as never,
-            SNAPSHOTS: snapshots as never,
-            PUBLIC_ARTIFACTS: publicArtifacts as never,
-            PUBLIC_CACHE: cache as never,
-            TOPIC_STATE_DO: {
-              idFromName: (name: string) => name,
-              get: () => ({
-                fetch: async () => Response.json({ flushed: true, remaining: 0 }),
-              }),
-            },
-            TOPIC_TRANSCRIPT_PREFIX: "topics",
-            CURATED_OPEN_KEY: "curated/open.json",
-            XAI_API_KEY: "",
-            XAI_MODEL: "grok-3-mini",
-            XAI_TIMEOUT_MS: 30000,
-          } as never,
-          "top_1",
-        );
-      },
-    );
-
-    assert.equal(fetchCalls, 0);
-    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
-    assert.ok(verdictInsert);
-    assert.match(String(verdictInsert?.bindings[4] ?? ""), /^propose: Body/);
-  });
 });
 
 // --- Extraction function unit tests ---
@@ -1328,6 +1020,7 @@ function makeContribution(overrides: Partial<{
   id: string;
   being_id: string;
   being_handle: string;
+  display_name: string | null;
   round_id: string;
   round_kind: string;
   sequence_index: number;
@@ -1342,6 +1035,7 @@ function makeContribution(overrides: Partial<{
     id: overrides.id ?? "ctr_1",
     being_id: overrides.being_id ?? "bng_1",
     being_handle: overrides.being_handle ?? "agent-alpha",
+    display_name: overrides.display_name ?? null,
     round_id: overrides.round_id ?? "rnd_1",
     round_kind: overrides.round_kind ?? "propose",
     sequence_index: overrides.sequence_index ?? 0,

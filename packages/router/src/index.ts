@@ -18,8 +18,10 @@ import {
   parseBaseEnv,
   TOPIC_TEMPLATES,
   topicVerdictPresentationArtifactKey,
+  tryParseMapRoundBody,
   VerdictPresentationSchema,
 } from "@opndomain/shared";
+import type { MapRoundBody } from "@opndomain/shared";
 import type { AnalyticsOverviewResponse, AnalyticsTopicResponse, AnalyticsVoteReliabilityResponse } from "@opndomain/shared";
 import { analyticsRangeWindow, normalizeAnalyticsRange, renderAnalyticsPage } from "./lib/analytics.js";
 import { serveCachedHtml } from "./lib/cache.js";
@@ -88,7 +90,7 @@ type TopicPageMeta = {
 const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
-const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-frontend-unify";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
 const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const CANONICAL_TOPICS_PATH = "/topics";
@@ -456,6 +458,7 @@ type TopicStateSnapshot = {
 type TopicTranscriptContribution = {
   id?: string;
   beingHandle?: string;
+  displayName?: string | null;
   bodyClean?: string | null;
   scores?: {
     final?: number | null;
@@ -473,6 +476,7 @@ type TopicVerdictPresentation = NonNullable<Awaited<ReturnType<typeof readVerdic
 type RankedContributionViewModel = {
   id: string;
   handle: string;
+  displayName: string | null;
   bodyHtml: string;
   finalScore: number | null;
   finalScoreLabel: string;
@@ -484,12 +488,14 @@ type RankedContributionViewModel = {
 
 type TopicRoundViewModel = {
   sequenceIndex: number;
+  roundKind: string;
   roundLabel: string;
   roundTitle: string;
   contributionCount: number;
   topScoreLabel: string;
   rangeLabel: string;
   leaderHandle: string | null;
+  leaderDisplayName: string | null;
   openByDefault: boolean;
   contributions: RankedContributionViewModel[];
 };
@@ -540,6 +546,7 @@ type TopicPageViewModel = {
   winningArgument: {
     bodyHtml: string;
     handle: string;
+    displayName?: string | null;
     finalScore: number;
     finalScoreLabel: string;
     bodyCleanRaw: string | null;
@@ -585,6 +592,30 @@ function renderParagraphs(text: string | null | undefined, className: string) {
     .join("");
 }
 
+function renderMapPositionCards(body: MapRoundBody): string {
+  const cards = body.positions.map((pos, i) => {
+    const badge = pos.classification.replace("_", " ");
+    const handles = pos.heldBy.map((h) => h.startsWith("@") ? h : `@${h}`).join(", ");
+    let html = `<div class="map-position-card">`;
+    html += `<div class="map-position-header"><span class="map-position-number">${i + 1}</span><span class="map-classification-badge badge-${pos.classification}">${escapeHtml(badge)}</span></div>`;
+    html += `<p class="map-position-statement">${escapeHtml(pos.statement)}</p>`;
+    html += `<p class="map-position-held-by">Held by: ${escapeHtml(handles)}</p>`;
+    if (pos.evidenceStrength) {
+      html += `<p class="map-position-evidence">Evidence: ${escapeHtml(pos.evidenceStrength)}</p>`;
+    }
+    if (pos.keyWeakness) {
+      html += `<p class="map-position-weakness">Weakness: ${escapeHtml(pos.keyWeakness)}</p>`;
+    }
+    html += `</div>`;
+    return html;
+  });
+  let result = cards.join("");
+  if (body.analysis) {
+    result += `<p class="map-analysis">${escapeHtml(body.analysis)}</p>`;
+  }
+  return result;
+}
+
 const STRUCTURED_LABEL_PATTERN = /^([A-Z][A-Z\s\-]+):\s*/;
 
 function renderParagraphsWithStructuredLabels(text: string | null | undefined, className: string): string {
@@ -608,35 +639,41 @@ function renderParagraphsWithStructuredLabels(text: string | null | undefined, c
 }
 
 function formatScoreLabel(score: number | null) {
-  return score === null ? "n/a" : String(Math.round(score));
+  return score === null ? "Pending" : String(Math.round(score));
 }
 
 function buildRankedContributionViewModel(contributions: TopicTranscriptContribution[] | undefined, round: TopicTranscriptRound): RankedContributionViewModel[] {
-  return (contributions ?? [])
+  const items = contributions ?? [];
+  return items
     .map((contribution, index) => ({
       contribution,
       index,
       finalScore: numericFinalScore(contribution?.scores?.final),
     }))
     .sort((left, right) => {
-      if (left.finalScore === null && right.finalScore === null) {
+      const allPending = items.every((c) => numericFinalScore(c?.scores?.final) === null);
+      if (allPending) {
         return left.index - right.index;
       }
-      if (left.finalScore === null) {
-        return 1;
-      }
-      if (right.finalScore === null) {
-        return -1;
-      }
-      if (right.finalScore !== left.finalScore) {
-        return right.finalScore - left.finalScore;
-      }
+      if (left.finalScore === null && right.finalScore === null) return left.index - right.index;
+      if (left.finalScore === null) return 1;
+      if (right.finalScore === null) return -1;
+      if (right.finalScore !== left.finalScore) return right.finalScore - left.finalScore;
       return left.index - right.index;
     })
     .map(({ contribution, finalScore }, index) => ({
       id: contribution.id ?? `contribution-${index + 1}`,
       handle: contribution.beingHandle ?? "unknown",
-      bodyHtml: renderParagraphs(contribution.bodyClean, "topic-contribution-paragraph"),
+      displayName: contribution.displayName ?? null,
+      bodyHtml: (() => {
+        if (round.roundKind === "map" && contribution.bodyClean) {
+          const parsed = tryParseMapRoundBody(contribution.bodyClean);
+          if (parsed) {
+            return renderMapPositionCards(parsed);
+          }
+        }
+        return renderParagraphs(contribution.bodyClean, "topic-contribution-paragraph");
+      })(),
       finalScore,
       finalScoreLabel: formatScoreLabel(finalScore),
       finalScorePercent: Math.max(0, Math.min(100, Math.round(finalScore ?? 0))),
@@ -667,12 +704,14 @@ function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined, la
     const contributionScores = contributions.map((contribution) => contribution.finalScore);
     return {
       sequenceIndex,
+      roundKind: round.roundKind ?? "propose",
       roundLabel: `Round ${sequenceIndex + 1}`,
       roundTitle: titleCaseLabel(round.roundKind, "Unknown round"),
       contributionCount: contributions.length,
       topScoreLabel: contributions[0]?.finalScoreLabel ?? "n/a",
       rangeLabel: buildRangeLabel(contributionScores),
       leaderHandle: contributions[0]?.handle ?? null,
+      leaderDisplayName: contributions[0]?.displayName ?? null,
       openByDefault: latestRoundOpen && sequenceIndex === latestSequenceIndex,
       contributions,
     };
@@ -712,6 +751,7 @@ function extractWinningArgument(transcriptRounds: TopicTranscriptRound[] | undef
   return {
     bodyHtml: best.bodyHtml,
     handle: best.handle,
+    displayName: rawContribution?.displayName ?? null,
     finalScore: best.finalScore ?? 0,
     finalScoreLabel: best.finalScoreLabel,
     bodyCleanRaw: rawContribution?.bodyClean ?? null,
@@ -737,6 +777,8 @@ function buildTopicPageViewModel(
   ];
 
   if (meta.status === "closed" && verdictPresentation) {
+    const contentRounds = rounds.filter((r) => r.roundKind !== "vote");
+    const visibleRoundCountVerdict = contentRounds.length;
     const completedRounds = verdictPresentation.scoreBreakdown.completedRounds;
     const totalRounds = verdictPresentation.scoreBreakdown.totalRounds;
     const participantCount = verdictPresentation.scoreBreakdown.participantCount;
@@ -789,8 +831,13 @@ function buildTopicPageViewModel(
       prompt,
       participants,
       contributions,
-      visibleRoundCount,
-      headerMeta,
+      visibleRoundCount: visibleRoundCountVerdict,
+      headerMeta: [
+        { label: "Participants", value: String(participants) },
+        { label: "Contributions", value: String(contributions) },
+        { label: "Rounds", value: String(visibleRoundCountVerdict) },
+        { label: "Domain", value: meta.domain_name },
+      ],
       metaPanel: {
         kicker: "Status",
         primaryValue: "Completed",
@@ -811,7 +858,7 @@ function buildTopicPageViewModel(
         tone: "verdict",
       },
       featuredAnswer: buildFeaturedAnswer(transcriptRounds),
-      rounds,
+      rounds: contentRounds,
       editorialBody: verdictPresentation.editorialBody ?? null,
       headlineLabel: verdictPresentation.headline.label,
       headlineStance: verdictPresentation.headline.stance,
@@ -995,7 +1042,7 @@ function buildFeaturedAnswerMarkup(featured: RankedContributionViewModel | null)
         ${featured.bodyHtml}
       </blockquote>
       <footer class="topic-featured-footer">
-        <span class="topic-featured-handle">@${escapeHtml(featured.handle)}</span>
+        <span class="topic-featured-handle">${featured.displayName ? escapeHtml(featured.displayName) : `@${escapeHtml(featured.handle)}`}</span>
         <span class="topic-featured-round">${escapeHtml(featured.roundLabel)}</span>
         <span class="topic-featured-score-chip">
           <span class="topic-featured-score-num">${escapeHtml(featured.finalScoreLabel)}</span>
@@ -1035,7 +1082,7 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
         <div class="topic-round-summary-bar">
           <div class="topic-round-index">${escapeHtml(round.roundLabel)} &middot; ${escapeHtml(round.roundTitle)}</div>
           <div class="topic-round-stats-bar">
-            ${round.leaderHandle ? `<div class="topic-round-stat"><strong>Leader</strong> @${escapeHtml(round.leaderHandle)}</div>` : ""}
+            ${round.leaderHandle ? `<div class="topic-round-stat"><strong>Leader</strong> ${round.leaderDisplayName ? escapeHtml(round.leaderDisplayName) : `@${escapeHtml(round.leaderHandle)}`}</div>` : ""}
             <div class="topic-round-stat"><strong>Top</strong> ${escapeHtml(round.topScoreLabel)}</div>
             <div class="topic-round-stat"><strong>Range</strong> ${escapeHtml(round.rangeLabel)}</div>
             <div class="topic-round-stat"><strong>Contribs</strong> ${escapeHtml(String(round.contributionCount))}</div>
@@ -1050,7 +1097,7 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
               <div class="topic-contribution-meta">
                 <div class="topic-contribution-meta-left">
                   <div class="topic-contribution-rank">#${escapeHtml(String(contribution.rank))} &middot; ${escapeHtml(contribution.roleLabel)}</div>
-                  <div class="topic-contribution-handle">@${escapeHtml(contribution.handle)}</div>
+                  <div class="topic-contribution-handle">${contribution.displayName ? escapeHtml(contribution.displayName) : `@${escapeHtml(contribution.handle)}`}</div>
                 </div>
                 <div class="topic-score-chip">
                   <div class="topic-score-num">${escapeHtml(contribution.finalScoreLabel)}</div>
@@ -1145,6 +1192,7 @@ type TopicScoreArcRoundViewModel = {
 
 type TopicScoreArcRowViewModel = {
   handle: string;
+  displayName: string | null;
   rounds: TopicScoreArcRoundViewModel[];
   finalScoreLabel: string;
   finalRankLabel: string;
@@ -1153,7 +1201,7 @@ type TopicScoreArcRowViewModel = {
 
 function buildTopicScoreStory(rounds: TopicRoundViewModel[]): TopicScoreArcRowViewModel[] {
   const contributionOrder = new Map<string, number>();
-  const rows = new Map<string, { handle: string; order: number; finalScore: number | null; rounds: Array<number | null> }>();
+  const rows = new Map<string, { handle: string; displayName: string | null; order: number; finalScore: number | null; rounds: Array<number | null> }>();
 
   rounds.forEach((round, roundIndex) => {
     round.contributions.forEach((contribution) => {
@@ -1162,10 +1210,12 @@ function buildTopicScoreStory(rounds: TopicRoundViewModel[]): TopicScoreArcRowVi
       contributionOrder.set(contribution.handle, order);
       const row = rows.get(contribution.handle) ?? {
         handle: contribution.handle,
+        displayName: null,
         order,
         finalScore: null,
         rounds: Array.from({ length: rounds.length }, () => null),
       };
+      row.displayName = contribution.displayName ?? null;
       row.rounds[roundIndex] = contribution.finalScore;
       if (roundIndex === rounds.length - 1) {
         row.finalScore = contribution.finalScore;
@@ -1192,6 +1242,7 @@ function buildTopicScoreStory(rounds: TopicRoundViewModel[]): TopicScoreArcRowVi
     })
     .map((row, rowIndex) => ({
       handle: row.handle,
+      displayName: row.displayName,
       rounds: row.rounds.map((score, roundIndex) => ({
         roundLabel: `R${roundIndex + 1}`,
         scoreLabel: formatScoreLabel(score),
@@ -1228,7 +1279,7 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
         </div>
         ${rows.map((row) => `
           <div class="topic-score-arc-row${row.isTop ? " topic-score-arc-row--top" : ""}">
-            <div class="topic-score-arc-handle">@${escapeHtml(row.handle)}</div>
+            <div class="topic-score-arc-handle">${row.displayName ? escapeHtml(row.displayName) : `@${escapeHtml(row.handle)}`}</div>
             <div class="topic-score-arc-rounds" ${buildTopicScoreArcColumnsStyle(row.rounds.length)}>
               ${row.rounds.map((round) => `
                 <div class="topic-score-arc-round${round.isLeader ? " topic-score-arc-round--leader" : ""}">
@@ -1266,7 +1317,7 @@ function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel
         ${filtered.map((highlight) => `
           <article class="topic-highlight-card">
             <div class="topic-highlight-topline">
-              <div class="topic-highlight-meta">@${escapeHtml(highlight.beingHandle)} &middot; ${escapeHtml(titleCaseLabel(highlight.roundKind, "Unknown round"))}</div>
+              <div class="topic-highlight-meta">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`} &middot; ${escapeHtml(titleCaseLabel(highlight.roundKind, "Unknown round"))}</div>
               <div class="topic-highlight-score">${escapeHtml(String(Math.round(highlight.finalScore)))}</div>
             </div>
             <h4 class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</h4>
@@ -1361,7 +1412,7 @@ function renderWinningArgument(viewModel: TopicPageViewModel): string {
       <div class="winning-argument-kicker">Majority verdict</div>
       <div class="winning-argument-body">${bodyContent}</div>
       <footer class="winning-argument-footer">
-        <span class="winning-argument-handle">@${escapeHtml(viewModel.winningArgument.handle)}</span>
+        <span class="winning-argument-handle">${viewModel.winningArgument.displayName ? escapeHtml(viewModel.winningArgument.displayName) : `@${escapeHtml(viewModel.winningArgument.handle)}`}</span>
         <span class="winning-argument-score">${escapeHtml(viewModel.winningArgument.finalScoreLabel)}</span>
       </footer>
     </section>
@@ -1395,7 +1446,7 @@ function renderMinorityReports(viewModel: TopicPageViewModel): string {
             <div class="minority-report-position">${escapeHtml(report.positionLabel)}</div>
             <div class="minority-report-body">${renderParagraphs(report.body, "minority-report-paragraph")}</div>
             <footer class="minority-report-footer">
-              <span class="minority-report-handle">@${escapeHtml(report.handle)}</span>
+              <span class="minority-report-handle">${report.displayName ? escapeHtml(report.displayName) : `@${escapeHtml(report.handle)}`}</span>
               <span class="minority-report-score">${report.finalScore.toFixed(1)}</span>
             </footer>
           </article>
@@ -1923,8 +1974,23 @@ app.get("/topics", async (c) => {
         memberCount: number;
         roundCount: number;
       }>>(c.env, `${topicsPath.pathname}${topicsPath.search}`),
-      apiJson<Array<{ slug: string; name: string }>>(c.env, "/v1/domains"),
+      apiJson<Array<{ id: string; slug: string; name: string; parent_domain_id: string | null }>>(c.env, "/v1/domains"),
     ]);
+
+    // Build parent id -> name map from real ids
+    const parentIdToName = new Map<string, string>();
+    for (const d of domains) {
+      if (!d.parent_domain_id) {
+        parentIdToName.set(d.id, d.name);
+      }
+    }
+    const groupedDomainOptions = domains
+      .filter((d) => d.parent_domain_id !== null)
+      .map((d) => ({
+        value: d.slug,
+        label: d.name,
+        group: d.parent_domain_id ? (parentIdToName.get(d.parent_domain_id) ?? undefined) : undefined,
+      }));
 
     const topicCards = topics.map((topic) => ({
       id: topic.id,
@@ -1966,7 +2032,7 @@ app.get("/topics", async (c) => {
             status,
             domain,
             template,
-            domainOptions: domains.map((row) => ({ value: row.slug, label: row.name })),
+            domainOptions: groupedDomainOptions,
             templateOptions,
           })}
           <section class="topics-list">
@@ -2153,12 +2219,29 @@ app.get("/domains", async (c) =>
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
-    const domains = await c.env.DB.prepare(`
-      SELECT d.slug, d.name, d.description, (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id) AS topic_count
-      FROM domains d
-      ORDER BY d.slug ASC
-    `).all<{ slug: string; name: string; description: string | null; topic_count: number }>();
-    const rows = domains.results ?? [];
+    const [parentResult, childResult] = await Promise.all([
+      c.env.DB.prepare(`
+        SELECT d.id, d.slug, d.name, d.description
+        FROM domains d
+        WHERE d.parent_domain_id IS NULL
+        ORDER BY d.name ASC
+      `).all<{ id: string; slug: string; name: string; description: string | null }>(),
+      c.env.DB.prepare(`
+        SELECT d.slug, d.name, d.description, d.parent_domain_id,
+          (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id) AS topic_count
+        FROM domains d
+        WHERE d.parent_domain_id IS NOT NULL
+        ORDER BY d.slug ASC
+      `).all<{ slug: string; name: string; description: string | null; parent_domain_id: string; topic_count: number }>(),
+    ]);
+    const parents = parentResult.results ?? [];
+    const children = childResult.results ?? [];
+    const childrenByParent = new Map<string, typeof children>();
+    for (const child of children) {
+      const group = childrenByParent.get(child.parent_domain_id) ?? [];
+      group.push(child);
+      childrenByParent.set(child.parent_domain_id, group);
+    }
     return renderPage("Domains", rawHtml(`
       <section class="editorial-page domain-index-page">
         <div class="domain-index-shell">
@@ -2166,36 +2249,50 @@ app.get("/domains", async (c) =>
             <h1 class="editorial-title">Domains</h1>
             <p class="editorial-lede">Domains organize the protocol into durable fields of inquiry. Find the subject areas your agents operate in, track the topics each field has accumulated, and open the domain surface for current activity.</p>
           </header>
-          <section class="domain-index-grid" aria-label="Domains">
-            ${rows.map((row) => `
-              <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
-                <div class="lp-og-card-chrome">
-                  <div class="lp-og-card-meta">
-                    <span class="lp-og-card-kicker">Domain</span>
-                    <span class="lp-og-card-date">${escapeHtml(String(row.topic_count))} topics</span>
-                  </div>
-                  <h2><span>${escapeHtml(row.name)}</span></h2>
-                  <p>${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
+          ${parents.map((parent) => {
+            const group = childrenByParent.get(parent.id) ?? [];
+            const totalTopics = group.reduce((sum, c) => sum + c.topic_count, 0);
+            return `
+              <section class="domain-group" aria-label="${escapeHtml(parent.name)}">
+                <div class="domain-group-header">
+                  <a href="/domains/${escapeHtml(parent.slug)}" class="domain-group-link">
+                    <h2>${escapeHtml(parent.name)}</h2>
+                  </a>
+                  <span class="domain-group-count">${totalTopics} topics across ${group.length} subdomains</span>
                 </div>
-                <div class="lp-og-card-footer">
-                  <div class="lp-og-card-stats">
-                    <div class="lp-og-card-stat">
-                      <span>Purpose</span>
-                      <strong>Topic registry</strong>
-                    </div>
-                    <div class="lp-og-card-stat">
-                      <span>Access</span>
-                      <strong>Open domain</strong>
-                    </div>
-                  </div>
-                  <div class="lp-og-card-actions">
-                    <span class="lp-og-card-link">Open Domain</span>
-                    <code>${escapeHtml(row.slug)}</code>
-                  </div>
+                <div class="domain-group-grid">
+                  ${group.map((row) => `
+                    <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
+                      <div class="lp-og-card-chrome">
+                        <div class="lp-og-card-meta">
+                          <span class="lp-og-card-kicker">Domain</span>
+                          <span class="lp-og-card-date">${escapeHtml(String(row.topic_count))} topics</span>
+                        </div>
+                        <h2><span>${escapeHtml(row.name)}</span></h2>
+                        <p>${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
+                      </div>
+                      <div class="lp-og-card-footer">
+                        <div class="lp-og-card-stats">
+                          <div class="lp-og-card-stat">
+                            <span>Purpose</span>
+                            <strong>Topic registry</strong>
+                          </div>
+                          <div class="lp-og-card-stat">
+                            <span>Access</span>
+                            <strong>Open domain</strong>
+                          </div>
+                        </div>
+                        <div class="lp-og-card-actions">
+                          <span class="lp-og-card-link">Open Domain</span>
+                          <code>${escapeHtml(row.slug)}</code>
+                        </div>
+                      </div>
+                    </a>
+                  `).join("")}
                 </div>
-              </a>
-            `).join("")}
-          </section>
+              </section>
+            `;
+          }).join("")}
         </div>
       </section>
     `).__html, "Domain index for public protocol research fields and their topic history.", `${EDITORIAL_PAGE_STYLES}${DOMAIN_INDEX_PAGE_STYLES}`, undefined, {
@@ -2207,12 +2304,126 @@ app.get("/domains", async (c) =>
 
 app.get("/domains/:slug", async (c) => {
   const slug = c.req.param("slug");
-  const domain = await c.env.DB.prepare(`SELECT id, slug, name, description, (SELECT COUNT(*) FROM topics WHERE domain_id = d.id) AS topic_count FROM domains d WHERE slug = ?`).bind(slug).first<{ id: string; slug: string; name: string; description: string | null; topic_count: number }>();
+  const domain = await c.env.DB.prepare(
+    `SELECT d.id, d.slug, d.name, d.description, d.parent_domain_id,
+       (SELECT COUNT(*) FROM topics WHERE domain_id = d.id) AS topic_count,
+       p.slug AS parent_slug, p.name AS parent_name
+     FROM domains d
+     LEFT JOIN domains p ON p.id = d.parent_domain_id
+     WHERE d.slug = ?`,
+  ).bind(slug).first<{
+    id: string; slug: string; name: string; description: string | null;
+    parent_domain_id: string | null; topic_count: number;
+    parent_slug: string | null; parent_name: string | null;
+  }>();
   if (!domain) {
     return htmlResponse(renderPage("Missing Domain", hero("Missing", "Domain not found.", "No domain matched that slug.")), CACHE_CONTROL_NO_STORE, 404);
   }
+  const isParent = domain.parent_domain_id === null;
+
+  if (isParent) {
+    // Parent domain detail: show children grid + aggregated leaderboard
+    return serveCachedHtml(c, {
+      pageKey: `${pageHtmlDomainKey(slug)}:2026-04-domain-groups`,
+      generationKey: cacheGenerationDomainKey(domain.id),
+      cacheControl: CACHE_CONTROL_DIRECTORY,
+    }, async () => {
+      const [childResult, leaderboard] = await Promise.all([
+        c.env.DB.prepare(`
+          SELECT d.slug, d.name, d.description,
+            (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id) AS topic_count
+          FROM domains d
+          WHERE d.parent_domain_id = ?
+          ORDER BY d.slug ASC
+        `).bind(domain.id).all<{ slug: string; name: string; description: string | null; topic_count: number }>(),
+        c.env.DB.prepare(`
+          SELECT b.handle, b.display_name,
+            SUM(dr.decayed_score) AS decayed_score,
+            SUM(dr.sample_count) AS sample_count
+          FROM domain_reputation dr
+          INNER JOIN beings b ON b.id = dr.being_id
+          INNER JOIN domains d ON d.id = dr.domain_id
+          WHERE d.parent_domain_id = ?
+          GROUP BY dr.being_id
+          ORDER BY decayed_score DESC
+          LIMIT 12
+        `).bind(domain.id).all<{ handle: string; display_name: string; decayed_score: number; sample_count: number }>(),
+      ]);
+      const childRows = childResult.results ?? [];
+      const leaderRows = leaderboard.results ?? [];
+      const totalTopics = childRows.reduce((sum, c) => sum + c.topic_count, 0);
+      return renderPage(domain.name, `
+        <section class="domain-detail">
+          <nav class="domain-breadcrumb">
+            <a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}
+          </nav>
+          <section class="domain-detail-section">
+            <div class="domain-detail-section-head">
+              <span class="domain-detail-kicker">Subdomains</span>
+              <h2>${childRows.length} fields of inquiry</h2>
+            </div>
+            <div class="domain-group-grid">
+              ${childRows.map((row) => `
+                <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
+                  <div class="lp-og-card-chrome">
+                    <div class="lp-og-card-meta">
+                      <span class="lp-og-card-kicker">Domain</span>
+                      <span class="lp-og-card-date">${escapeHtml(String(row.topic_count))} topics</span>
+                    </div>
+                    <h2><span>${escapeHtml(row.name)}</span></h2>
+                    <p>${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
+                  </div>
+                  <div class="lp-og-card-footer">
+                    <div class="lp-og-card-stats">
+                      <div class="lp-og-card-stat">
+                        <span>Purpose</span>
+                        <strong>Topic registry</strong>
+                      </div>
+                      <div class="lp-og-card-stat">
+                        <span>Access</span>
+                        <strong>Open domain</strong>
+                      </div>
+                    </div>
+                    <div class="lp-og-card-actions">
+                      <span class="lp-og-card-link">Open Domain</span>
+                      <code>${escapeHtml(row.slug)}</code>
+                    </div>
+                  </div>
+                </a>
+              `).join("")}
+            </div>
+          </section>
+          <section class="domain-detail-section">
+            <div class="domain-detail-section-head">
+              <span class="domain-detail-kicker">Aggregated leaderboard</span>
+              <h2>Top agents</h2>
+            </div>
+            ${leaderRows.length ? leaderRows.map((row, i) => `
+              <div class="domain-leader-row">
+                <span class="domain-leader-rank">#${i + 1}</span>
+                <span class="domain-leader-name"><a href="/leaderboard/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a></span>
+                <span class="domain-leader-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
+                <span class="domain-leader-samples">${row.sample_count} samples</span>
+              </div>
+            `).join("") : `<p class="domain-detail-empty">No reputation signal yet.</p>`}
+          </section>
+        </section>
+      `, undefined, `${EDITORIAL_PAGE_STYLES}${DOMAIN_INDEX_PAGE_STYLES}${DOMAIN_DETAIL_PAGE_STYLES}`, undefined, sidebarShell("domains", {
+        eyebrow: "Parent domain",
+        title: domain.name,
+        detail: domain.description ?? `Parent domain grouping ${childRows.length} subdomains.`,
+        meta: [
+          { label: "Subdomains", value: String(childRows.length) },
+          { label: "Total topics", value: String(totalTopics) },
+        ],
+        action: { href: "/domains", label: "Back to domains" },
+      }));
+    });
+  }
+
+  // Subdomain detail: existing view with breadcrumb
   return serveCachedHtml(c, {
-    pageKey: `${pageHtmlDomainKey(slug)}:2026-04-frontend-unify`,
+    pageKey: `${pageHtmlDomainKey(slug)}:2026-04-domain-groups`,
     generationKey: cacheGenerationDomainKey(domain.id),
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
@@ -2235,8 +2446,12 @@ app.get("/domains/:slug", async (c) => {
     ]);
     const topicRows = topics.results ?? [];
     const leaderRows = leaderboard.results ?? [];
+    const breadcrumb = domain.parent_slug
+      ? `<nav class="domain-breadcrumb"><a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> <a href="/domains/${escapeHtml(domain.parent_slug)}">${escapeHtml(domain.parent_name!)}</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}</nav>`
+      : `<nav class="domain-breadcrumb"><a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}</nav>`;
     return renderPage(domain.name, `
       <section class="domain-detail">
+        ${breadcrumb}
         <section class="domain-detail-section">
           <div class="domain-detail-section-head">
             <span class="domain-detail-kicker">Recent topics</span>
@@ -2272,7 +2487,9 @@ app.get("/domains/:slug", async (c) => {
         { label: "Slug", value: domain.slug },
         { label: "Topics", value: String(domain.topic_count) },
       ],
-      action: { href: "/domains", label: "Back to domains" },
+      action: domain.parent_slug
+        ? { href: `/domains/${domain.parent_slug}`, label: `Back to ${domain.parent_name}` }
+        : { href: "/domains", label: "Back to domains" },
     }));
   });
 });

@@ -654,8 +654,10 @@ describe("GET /topics", () => {
     });
     api.set("/v1/domains", {
       data: overrides.domains ?? [
-        { id: "dom_1", slug: "ai-safety", name: "AI Safety" },
-        { id: "dom_2", slug: "energy", name: "Energy" },
+        { id: "dom_ai-machine-intelligence", slug: "ai-machine-intelligence", name: "AI & Machine Intelligence", parent_domain_id: null },
+        { id: "dom_1", slug: "ai-safety", name: "AI Safety", parent_domain_id: "dom_ai-machine-intelligence" },
+        { id: "dom_physical-sciences", slug: "physical-sciences", name: "Physical Sciences", parent_domain_id: null },
+        { id: "dom_2", slug: "energy", name: "Energy", parent_domain_id: "dom_physical-sciences" },
       ],
     });
   }
@@ -1066,10 +1068,13 @@ describe("GET / landing verdict highlighting", () => {
 });
 
 describe("SSR shell coverage for redesigned routes", () => {
-  it("renders the domains index as a centered domain archive", async () => {
+  it("renders the domains index with parent group headers", async () => {
     const db = new FakeDb();
-    db.queueResult("FROM domains d", [
-      { slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", topic_count: 4 },
+    db.queueResult("parent_domain_id IS NULL", [
+      { id: "dom_ai-machine-intelligence", slug: "ai-machine-intelligence", name: "AI & Machine Intelligence", description: "AI research." },
+    ]);
+    db.queueResult("parent_domain_id IS NOT NULL", [
+      { slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", parent_domain_id: "dom_ai-machine-intelligence", topic_count: 4 },
     ]);
 
     const response = await app.fetch(
@@ -1083,16 +1088,43 @@ describe("SSR shell coverage for redesigned routes", () => {
     assertTopNavShell(html);
     assert.ok(!html.includes('class="page-sidebar"'));
     assert.ok(html.includes("Domains"));
-    assert.ok(html.includes("AI Safety"));
+    assert.ok(html.includes("AI &amp; Machine Intelligence"), "should render parent group header");
+    assert.ok(html.includes("AI Safety"), "should render child domain card");
+    assert.ok(html.includes("domain-group"), "should use domain-group class");
     assert.ok(html.includes("Domains organize the protocol into durable fields of inquiry."));
-    assert.ok(!html.includes("Results"));
-    assert.ok(!html.includes("Scope"));
   });
 
-  it("renders the domain detail page in the sidebar shell", async () => {
+  it("renders the parent domain detail page with children grid", async () => {
     const db = new FakeDb();
-    db.queueResult("FROM domains d WHERE slug = ?", [
-      { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", topic_count: 3 },
+    db.queueResult("LEFT JOIN domains p ON p.id = d.parent_domain_id", [
+      { id: "dom_ai-machine-intelligence", slug: "ai-machine-intelligence", name: "AI & Machine Intelligence", description: "AI research.", parent_domain_id: null, topic_count: 0, parent_slug: null, parent_name: null },
+    ]);
+    db.queueResult("FROM domains d\n          WHERE d.parent_domain_id", [
+      { slug: "ai-safety", name: "AI Safety", description: "Model evaluations.", topic_count: 3 },
+    ]);
+    db.queueResult("SUM(dr.decayed_score)", [
+      { handle: "agent-alpha", display_name: "Agent Alpha", decayed_score: 82.4, sample_count: 11 },
+    ]);
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/domains/ai-machine-intelligence"),
+      buildEnv(db),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assertSidebarShell(html);
+    assert.ok(html.includes("AI Safety"), "parent detail should show child subdomain");
+    assert.ok(html.includes("Agent Alpha"), "parent detail should show aggregated leaderboard");
+    assert.ok(html.includes("Subdomains"), "parent detail should have subdomains section");
+    assert.ok(html.includes("domain-breadcrumb"), "parent detail should have breadcrumb");
+  });
+
+  it("renders the subdomain detail page with breadcrumb", async () => {
+    const db = new FakeDb();
+    db.queueResult("LEFT JOIN domains p ON p.id = d.parent_domain_id", [
+      { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", parent_domain_id: "dom_ai-machine-intelligence", topic_count: 3, parent_slug: "ai-machine-intelligence", parent_name: "AI & Machine Intelligence" },
     ]);
     db.queueResult("FROM topics", [
       { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate_v2" },
@@ -1112,6 +1144,8 @@ describe("SSR shell coverage for redesigned routes", () => {
     assertSidebarShell(html);
     assert.ok(html.includes("Should audits be mandatory?"));
     assert.ok(html.includes("Agent Alpha"));
+    assert.ok(html.includes("domain-breadcrumb"), "subdomain detail should have breadcrumb");
+    assert.ok(html.includes("ai-machine-intelligence"), "breadcrumb should link to parent");
   });
 
   it("redirects legacy beings and agents routes and renders leaderboard index/detail inside the sidebar shell", async () => {
