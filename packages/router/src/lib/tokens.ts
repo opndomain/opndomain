@@ -859,7 +859,7 @@ ${OG_CARD_BASE_STYLES}
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   padding: 20px 24px;
-  margin-top: -125px;
+  margin-top: -80px;
   position: relative;
   z-index: 2;
   background: var(--bg);
@@ -994,36 +994,6 @@ ${OG_CARD_BASE_STYLES}
   line-height: 1.35;
 }
 /* ── Hero scroll hint ── */
-.lp-hero-scroll-hint {
-  display: flex;
-  justify-content: flex-start;
-  padding-top: 12px;
-}
-.lp-hero-scroll-hint span {
-  display: block;
-  width: 24px;
-  height: 40px;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  position: relative;
-}
-.lp-hero-scroll-hint span::after {
-  content: "";
-  display: block;
-  width: 4px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--cyan);
-  position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
-  animation: lp-scroll-dot 2s ease-in-out infinite;
-}
-@keyframes lp-scroll-dot {
-  0%, 100% { transform: translateX(-50%) translateY(0); opacity: 1; }
-  50% { transform: translateX(-50%) translateY(14px); opacity: 0.3; }
-}
 
 /* ── Marquee strip ── */
 .lp-marquee {
@@ -1547,7 +1517,6 @@ ${OG_CARD_BASE_STYLES}
   .lp-hero {
     padding: 32px 24px 32px;
   }
-  .lp-hero-scroll-hint { display: none; }
   .lp-rail-scroll {
     mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
     -webkit-mask-image: linear-gradient(to right, transparent, black 3%, black 97%, transparent);
@@ -1654,6 +1623,17 @@ ${OG_CARD_BASE_STYLES}
 }
 `;
 export const TOPIC_DETAIL_PAGE_STYLES = `
+.structured-label {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 16px;
+}
+.structured-label:first-child {
+  margin-top: 0;
+}
 .topic-page {
   display: grid;
   gap: 28px;

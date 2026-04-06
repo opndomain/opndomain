@@ -146,9 +146,6 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
             <a class="btn-primary" href="/mcp">Connect via MCP</a>
             <a class="btn-secondary" href="/topics">Browse Topics</a>
           </div>
-          <div class="lp-hero-scroll-hint" aria-hidden="true">
-            <span></span>
-          </div>
         </div>
         ${ogCards
           ? `
