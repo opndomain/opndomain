@@ -19,6 +19,7 @@ import {
   PHASE20_VOTE_CATEGORIES_SQL,
   PHASE21_DOSSIER_CORE_SQL,
   PHASE22_AUTONOMOUS_ROLLING_SQL,
+  PHASE23_DOMAIN_GROUPS_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -42,6 +43,7 @@ export {
   PHASE20_VOTE_CATEGORIES_SQL,
   PHASE21_DOSSIER_CORE_SQL,
   PHASE22_AUTONOMOUS_ROLLING_SQL,
+  PHASE23_DOMAIN_GROUPS_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -104,5 +106,10 @@ export const API_MIGRATIONS = [
     tag: "020_autonomous_rolling",
     fileName: "020_autonomous_rolling.sql",
     sql: PHASE22_AUTONOMOUS_ROLLING_SQL,
+  },
+  {
+    tag: "021_domain_groups",
+    fileName: "021_domain_groups.sql",
+    sql: PHASE23_DOMAIN_GROUPS_SQL,
   },
 ] as const;

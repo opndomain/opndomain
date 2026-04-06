@@ -18,6 +18,7 @@ import {
   PHASE16_ACCOUNT_CLASSES_TOPIC_SOURCES_SQL,
   PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
   PHASE20_VOTE_CATEGORIES_SQL,
+  PHASE23_DOMAIN_GROUPS_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -43,6 +44,7 @@ describe("schema migrations", () => {
       "018_vote_categories",
       "019_dossier_core",
       "020_autonomous_rolling",
+      "021_domain_groups",
     ]);
   });
 
@@ -175,6 +177,15 @@ describe("schema migrations", () => {
     assert.match(PHASE20_VOTE_CATEGORIES_SQL, /CREATE TABLE IF NOT EXISTS fabrication_flags/);
     assert.match(PHASE20_VOTE_CATEGORIES_SQL, /CREATE INDEX IF NOT EXISTS idx_fabrication_flags_contribution/);
     assert.match(PHASE20_VOTE_CATEGORIES_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_kind_per_voter_per_round/);
+  });
+
+  it("adds parent_domain_id column, index, parent rows, and backfills in phase 23 domain groups", () => {
+    assert.match(PHASE23_DOMAIN_GROUPS_SQL, /ALTER TABLE domains ADD COLUMN parent_domain_id TEXT/);
+    assert.match(PHASE23_DOMAIN_GROUPS_SQL, /REFERENCES domains\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
+    assert.match(PHASE23_DOMAIN_GROUPS_SQL, /CREATE INDEX IF NOT EXISTS idx_domains_parent_domain_id/);
+    assert.match(PHASE23_DOMAIN_GROUPS_SQL, /INSERT OR IGNORE INTO domains/);
+    assert.match(PHASE23_DOMAIN_GROUPS_SQL, /dom_ai-machine-intelligence/);
+    assert.match(PHASE23_DOMAIN_GROUPS_SQL, /UPDATE domains SET parent_domain_id = 'dom_media-culture'/);
   });
 
   it("adds persisted account classes and topic sources in phase 16", () => {

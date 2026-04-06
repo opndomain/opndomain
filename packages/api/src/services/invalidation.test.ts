@@ -21,6 +21,22 @@ class FakeCache {
   }
 }
 
+class FakeDb {
+  private parentDomainId: string | null;
+  constructor(parentDomainId: string | null = null) {
+    this.parentDomainId = parentDomainId;
+  }
+  prepare(_sql: string) {
+    const self = this;
+    return {
+      bind(..._args: unknown[]) { return this; },
+      async first<T>(): Promise<T | null> {
+        return { parent_domain_id: self.parentDomainId } as T;
+      },
+    };
+  }
+}
+
 describe("public cache invalidation", () => {
   it("bumps all generations and records the reason and timestamp", async () => {
     const cache = new FakeCache();
@@ -30,7 +46,7 @@ describe("public cache invalidation", () => {
     cache.values.set(cacheGenerationVerdictKey("top_1"), "2");
 
     const keys = await invalidateTopicPublicSurfaces(
-      { PUBLIC_CACHE: cache as never } as never,
+      { PUBLIC_CACHE: cache as never, DB: new FakeDb() as never } as never,
       {
         topicId: "top_1",
         domainId: "dom_1",

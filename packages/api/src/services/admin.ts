@@ -74,6 +74,7 @@ type DomainSummaryRow = {
   name: string;
   description: string | null;
   status: string;
+  parent_domain_id: string | null;
   topic_count: number | string | null;
   active_topic_count: number | string | null;
   created_at: string;
@@ -234,6 +235,7 @@ function mapDomainSummary(row: DomainSummaryRow): AdminDomainSummary {
     name: row.name,
     description: row.description,
     status: row.status,
+    parentDomainId: row.parent_domain_id,
     archived: row.status === "inactive",
     topicCount: countValue(row.topic_count),
     activeTopicCount: countValue(row.active_topic_count),
@@ -483,6 +485,7 @@ export async function listAdminDomains(env: ApiEnv, query: AdminListQuery): Prom
         d.name,
         d.description,
         d.status,
+        d.parent_domain_id,
         d.created_at,
         d.updated_at,
         (
@@ -523,6 +526,7 @@ export async function getAdminDomainDetail(env: ApiEnv, domainId: string): Promi
         d.name,
         d.description,
         d.status,
+        d.parent_domain_id,
         d.created_at,
         d.updated_at,
         (

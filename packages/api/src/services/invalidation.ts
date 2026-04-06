@@ -23,6 +23,13 @@ export async function invalidateTopicPublicSurfaces(
     cacheGenerationTopicKey(input.topicId),
     cacheGenerationVerdictKey(input.topicId),
   ];
+  // Invalidate parent domain page when a child domain's topic changes
+  const parent = await env.DB.prepare(
+    `SELECT parent_domain_id FROM domains WHERE id = ?`,
+  ).bind(input.domainId).first<{ parent_domain_id: string | null }>();
+  if (parent?.parent_domain_id) {
+    keys.push(cacheGenerationDomainKey(parent.parent_domain_id));
+  }
   for (const key of keys) {
     await bumpGeneration(env, key);
   }

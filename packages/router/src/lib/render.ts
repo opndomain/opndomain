@@ -297,6 +297,7 @@ type TopicsHeaderOptions = {
 type TopicsFilterOption = {
   value: string;
   label: string;
+  group?: string;
 };
 
 type TopicsFilterBarOptions = {
@@ -444,7 +445,25 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
         <input class="topics-search-input" name="q" type="search" value="${esc(options.q)}" placeholder="Search topics...">
         <select class="topics-filter-select" name="domain">
           ${topicsFilterOption("", "All domains", options.domain)}
-          ${options.domainOptions.map((option) => topicsFilterOption(option.value, option.label, options.domain)).join("")}
+          ${(() => {
+            const grouped = new Map<string, TopicsFilterOption[]>();
+            const ungrouped: TopicsFilterOption[] = [];
+            for (const opt of options.domainOptions) {
+              if (opt.group) {
+                const g = grouped.get(opt.group) ?? [];
+                g.push(opt);
+                grouped.set(opt.group, g);
+              } else {
+                ungrouped.push(opt);
+              }
+            }
+            const parts: string[] = [];
+            for (const [groupLabel, opts] of grouped) {
+              parts.push(`<optgroup label="${esc(groupLabel)}">${opts.map((o) => topicsFilterOption(o.value, o.label, options.domain)).join("")}</optgroup>`);
+            }
+            parts.push(...ungrouped.map((o) => topicsFilterOption(o.value, o.label, options.domain)));
+            return parts.join("");
+          })()}
         </select>
         <select class="topics-filter-select" name="template">
           ${topicsFilterOption("", "All templates", options.template)}

@@ -25,6 +25,9 @@ const migrationFiles = [
   { tag: "016_behavioral_and_trust", fileName: "016_behavioral_and_trust.sql" },
   { tag: "017_round_instruction_overrides", fileName: "017_round_instruction_overrides.sql" },
   { tag: "018_vote_categories", fileName: "018_vote_categories.sql" },
+  { tag: "019_dossier_core", fileName: "019_dossier_core.sql" },
+  { tag: "020_autonomous_rolling", fileName: "020_autonomous_rolling.sql" },
+  { tag: "021_domain_groups", fileName: "021_domain_groups.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -143,6 +146,18 @@ async function triggerExists(name) {
     mode,
     "--command",
     `SELECT name FROM sqlite_master WHERE type = 'trigger' AND name = ${sqlLiteral(name)} LIMIT 1`,
+  ], { captureJson: true });
+  return (payload?.[0]?.results ?? []).length > 0;
+}
+
+async function rowExists(query) {
+  const payload = await runWrangler([
+    "d1",
+    "execute",
+    databaseName,
+    mode,
+    "--command",
+    query,
   ], { captureJson: true });
   return (payload?.[0]?.results ?? []).length > 0;
 }
@@ -268,6 +283,23 @@ async function bootstrapKnownMigrations() {
       tag: "018_vote_categories",
       fileName: "018_vote_categories.sql",
       applied: async () => await columnExists("votes", "vote_kind") && await tableExists("fabrication_flags"),
+    },
+    {
+      tag: "019_dossier_core",
+      fileName: "019_dossier_core.sql",
+      applied: () => tableExists("dossier_snapshots"),
+    },
+    {
+      tag: "020_autonomous_rolling",
+      fileName: "020_autonomous_rolling.sql",
+      applied: () => columnExists("topics", "autonomous_config_json"),
+    },
+    {
+      tag: "021_domain_groups",
+      fileName: "021_domain_groups.sql",
+      applied: async () =>
+        await columnExists("domains", "parent_domain_id")
+        && await rowExists(`SELECT id FROM domains WHERE id = 'dom_ai-machine-intelligence' AND parent_domain_id IS NULL LIMIT 1`),
     },
   ];
 

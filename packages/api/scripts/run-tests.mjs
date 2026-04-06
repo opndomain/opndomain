@@ -29,6 +29,7 @@ function testSchemaContracts() {
   const phase20Sql = readFileSync(new URL("../src/db/018_vote_categories.sql", import.meta.url), "utf8");
   const phase21Sql = readFileSync(new URL("../src/db/019_dossier_core.sql", import.meta.url), "utf8");
   const phase22Sql = readFileSync(new URL("../src/db/020_autonomous_rolling.sql", import.meta.url), "utf8");
+  const phase23Sql = readFileSync(new URL("../src/db/021_domain_groups.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -52,6 +53,7 @@ function testSchemaContracts() {
       "018_vote_categories",
       "019_dossier_core",
       "020_autonomous_rolling",
+      "021_domain_groups",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -333,6 +335,10 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/020_autonomous_rolling.sql", import.meta.url)),
     join(targetDir, "020_autonomous_rolling.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/021_domain_groups.sql", import.meta.url)),
+    join(targetDir, "021_domain_groups.sql"),
   );
 }
 

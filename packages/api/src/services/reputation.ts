@@ -500,7 +500,7 @@ export async function decayStaleReputations(env: ApiEnv, now = new Date()): Prom
 
 export async function rollupDomainDailyCounts(env: ApiEnv, now = new Date()): Promise<number> {
   const rollupDate = now.toISOString().slice(0, 10);
-  const domains = await allRows<RollupDomainRow>(env.DB, `SELECT id FROM domains`);
+  const domains = await allRows<RollupDomainRow>(env.DB, `SELECT id FROM domains WHERE parent_domain_id IS NOT NULL`);
   for (const domain of domains) {
     const activeBeings = await firstRow<{ count: number }>(
       env.DB,
