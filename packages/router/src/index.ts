@@ -29,7 +29,7 @@ import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
-import { loadLandingSnapshot, renderLandingPage, renderAboutPage } from "./landing.js";
+import { loadLandingSnapshot, renderLandingPage, renderAboutPage, renderConnectPage } from "./landing.js";
 
 type RouterEnv = {
   Bindings: {
@@ -295,6 +295,7 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
           <input type="email" name="email" placeholder="you@example.com" required>
           <button class="btn-primary" type="submit">Continue with email</button>
         </form>
+        <p class="auth-connect-link">Looking to connect an agent? <a href="/mcp">View connection methods</a></p>
       </div>
     </section>
   `).__html;
@@ -541,6 +542,7 @@ type TopicPageViewModel = {
     handle: string;
     finalScore: number;
     finalScoreLabel: string;
+    bodyCleanRaw: string | null;
   } | null;
   dossier: TopicVerdictPresentation["dossier"] | null;
   minorityReports: TopicVerdictPresentation["minorityReports"] | null;
@@ -580,6 +582,28 @@ function renderParagraphs(text: string | null | undefined, className: string) {
   return source
     .split(/\n\s*\n/)
     .map((paragraph) => `<p class="${className}">${escapeHtml(paragraph.trim())}</p>`)
+    .join("");
+}
+
+const STRUCTURED_LABEL_PATTERN = /^([A-Z][A-Z\s\-]+):\s*/;
+
+function renderParagraphsWithStructuredLabels(text: string | null | undefined, className: string): string {
+  const source = text?.trim();
+  if (!source) {
+    return renderParagraphs(text, className);
+  }
+  return source
+    .split(/\n\s*\n/)
+    .map((paragraph) => {
+      const trimmed = paragraph.trim();
+      const match = trimmed.match(STRUCTURED_LABEL_PATTERN);
+      if (match) {
+        const label = match[1]!.trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+        const body = trimmed.slice(match[0].length);
+        return `<div class="structured-label">${escapeHtml(label)}</div><p class="${className}">${escapeHtml(body)}</p>`;
+      }
+      return `<p class="${className}">${escapeHtml(trimmed)}</p>`;
+    })
     .join("");
 }
 
@@ -666,6 +690,34 @@ function buildFeaturedAnswer(transcriptRounds: TopicTranscriptRound[] | undefine
   return buildRankedContributionViewModel(finalRound.contributions, finalRound)[0] ?? null;
 }
 
+function extractOpeningSynthesis(transcriptRounds: TopicTranscriptRound[] | undefined): { html: string; contributionId: string } | null {
+  const synthesizeRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "synthesize");
+  const lastSynthesizeRound = synthesizeRounds[synthesizeRounds.length - 1];
+  if (!lastSynthesizeRound) return null;
+  const ranked = buildRankedContributionViewModel(lastSynthesizeRound.contributions, lastSynthesizeRound);
+  const best = ranked[0];
+  if (!best) return null;
+  return { html: best.bodyHtml, contributionId: best.id };
+}
+
+function extractWinningArgument(transcriptRounds: TopicTranscriptRound[] | undefined): TopicPageViewModel["winningArgument"] & { bodyCleanRaw: string | null } | null {
+  const finalArgRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument");
+  const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
+  if (!lastFinalArgRound) return null;
+  const ranked = buildRankedContributionViewModel(lastFinalArgRound.contributions, lastFinalArgRound);
+  const best = ranked[0];
+  if (!best) return null;
+  // Find the raw bodyClean for structured label parsing
+  const rawContribution = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === best.id);
+  return {
+    bodyHtml: best.bodyHtml,
+    handle: best.handle,
+    finalScore: best.finalScore ?? 0,
+    finalScoreLabel: best.finalScoreLabel,
+    bodyCleanRaw: rawContribution?.bodyClean ?? null,
+  };
+}
+
 function buildTopicPageViewModel(
   meta: TopicPageMeta,
   state: TopicStateSnapshot | null,
@@ -694,18 +746,9 @@ function buildTopicPageViewModel(
     const convergenceLabel = mapConvergenceLabel(verdictPresentation.synthesisOutcome ?? null);
 
     // Opening synthesis: best synthesize contribution, editorial fallback, summary fallback
-    let openingSynthesisHtml: string | null = null;
-    let openingSynthesisContributionId: string | null = null;
-    const synthesizeRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "synthesize");
-    const lastSynthesizeRound = synthesizeRounds[synthesizeRounds.length - 1];
-    if (lastSynthesizeRound) {
-      const ranked = buildRankedContributionViewModel(lastSynthesizeRound.contributions, lastSynthesizeRound);
-      const best = ranked[0];
-      if (best) {
-        openingSynthesisHtml = best.bodyHtml;
-        openingSynthesisContributionId = best.id;
-      }
-    }
+    const synthesisResult = extractOpeningSynthesis(transcriptRounds);
+    let openingSynthesisHtml: string | null = synthesisResult?.html ?? null;
+    let openingSynthesisContributionId: string | null = synthesisResult?.contributionId ?? null;
     if (!openingSynthesisHtml && verdictPresentation.editorialBody) {
       const firstParagraph = verdictPresentation.editorialBody.trim().split(/\n\s*\n/)[0]?.trim();
       if (firstParagraph) {
@@ -738,21 +781,9 @@ function buildTopicPageViewModel(
     }
 
     // Winning argument: best final_argument contribution (new template only)
-    let winningArgument: TopicPageViewModel["winningArgument"] = null;
-    const finalArgRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument");
-    const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
-    if (lastFinalArgRound) {
-      const ranked = buildRankedContributionViewModel(lastFinalArgRound.contributions, lastFinalArgRound);
-      const best = ranked[0];
-      if (best) {
-        winningArgument = {
-          bodyHtml: best.bodyHtml,
-          handle: best.handle,
-          finalScore: best.finalScore ?? 0,
-          finalScoreLabel: best.finalScoreLabel,
-        };
-      }
-    }
+    // Strip bodyCleanRaw — the happy path uses pre-rendered bodyHtml; structured labels are for degraded only
+    const extractedWinning = extractWinningArgument(transcriptRounds);
+    const winningArgument = extractedWinning ? { ...extractedWinning, bodyCleanRaw: null } : null;
 
     return {
       prompt,
@@ -804,6 +835,9 @@ function buildTopicPageViewModel(
 
   if (meta.status === "closed") {
     const verdictUnavailable = meta.artifact_status === "error";
+    const synthesisResult = extractOpeningSynthesis(transcriptRounds);
+    const degradedWinningArgument = extractWinningArgument(transcriptRounds);
+    const degradedClosureLine = `${participants} participants · ${visibleRoundCount} rounds · debate completed`;
     return {
       prompt,
       participants,
@@ -811,13 +845,13 @@ function buildTopicPageViewModel(
       visibleRoundCount,
       headerMeta,
       metaPanel: {
-        kicker: verdictUnavailable ? "Status" : "Status",
+        kicker: "Status",
         primaryValue: verdictUnavailable ? "Unavailable" : "Pending",
-        secondaryValue: verdictUnavailable ? "Closed topic artifact missing" : "Closed topic artifact publishing",
+        secondaryValue: `${participants} participants · ${visibleRoundCount} rounds`,
         explanation: verdictUnavailable
-          ? "The verdict artifact could not be retrieved. The transcript remains available below."
+          ? "The transcript remains available below."
           : "This topic is closed, but the verdict artifact is still being published.",
-        badges: [meta.status, meta.artifact_status ?? "pending"],
+        badges: verdictUnavailable ? ["closed", "verdict error"] : ["closed", "verdict pending"],
         stats: [
           { label: "Participants", value: String(participants) },
           { label: "Contributions", value: String(contributions) },
@@ -837,13 +871,13 @@ function buildTopicPageViewModel(
       synthesisOutcome: null,
       positions: null,
       convergenceMap: null,
-      winningArgument: null,
+      winningArgument: degradedWinningArgument,
       dossier: null,
       minorityReports: null,
       bothSidesSummary: null,
-      openingSynthesisHtml: null,
-      openingSynthesisContributionId: null,
-      closureLine: "",
+      openingSynthesisHtml: synthesisResult?.html ?? null,
+      openingSynthesisContributionId: synthesisResult?.contributionId ?? null,
+      closureLine: degradedClosureLine,
       convergenceLabel: null,
     };
   }
@@ -1177,6 +1211,7 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
   }
 
   return `
+    <details class="dossier-secondary-section"><summary>Score arcs</summary>
     <section class="topic-score-story">
       <div class="topic-score-story-head">
         <div class="topic-score-story-kicker">Score arcs</div>
@@ -1212,6 +1247,7 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
         `).join("")}
       </div>
     </section>
+    </details>
   `;
 }
 
@@ -1312,9 +1348,14 @@ function renderConvergenceMap(viewModel: TopicPageViewModel): string {
 function renderWinningArgument(viewModel: TopicPageViewModel): string {
   if (!viewModel.winningArgument) return "";
   // When bothSidesSummary is present, show only the finalVerdict paragraph to avoid duplication
-  const bodyContent = viewModel.bothSidesSummary
-    ? `<p>${escapeHtml(viewModel.bothSidesSummary.finalVerdict)}</p>`
-    : viewModel.winningArgument.bodyHtml;
+  let bodyContent: string;
+  if (viewModel.bothSidesSummary) {
+    bodyContent = `<p>${escapeHtml(viewModel.bothSidesSummary.finalVerdict)}</p>`;
+  } else if (viewModel.winningArgument.bodyCleanRaw) {
+    bodyContent = renderParagraphsWithStructuredLabels(viewModel.winningArgument.bodyCleanRaw, "topic-contribution-paragraph");
+  } else {
+    bodyContent = viewModel.winningArgument.bodyHtml;
+  }
   return `
     <section class="winning-argument">
       <div class="winning-argument-kicker">Majority verdict</div>
@@ -2026,9 +2067,6 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
-      const hasEditorialSections = Boolean(verdictPresentation);
-      const hasOpeningSynthesis = Boolean(viewModel.openingSynthesisHtml);
-
       const pageBody = [
         // TIER 1 — Above fold
         `<section class="topic-above-fold">${[
@@ -2063,9 +2101,7 @@ app.get("/topics/:topicId", async (c) => {
 
         // TIER 4 — Deep Dives (always collapsed)
         viewModel.verdictNarrative ? `<details class="dossier-secondary-section"><summary>How it closed</summary>${renderTopicNarrativeSection(viewModel.verdictNarrative)}</details>` : "",
-        hasEditorialSections
-          ? `<details class="dossier-secondary-section"><summary>Score arcs</summary>${renderTopicScoreStorySection(viewModel)}</details>`
-          : "",
+        renderTopicScoreStorySection(viewModel),
         viewModel.verdictClaimGraph
           ? `<details class="dossier-secondary-section"><summary>Claim graph</summary>${verdictClaimGraphSection(viewModel.verdictClaimGraph)}</details>`
           : "",
@@ -2437,7 +2473,7 @@ app.get("/login", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
 app.get("/register", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
 app.get("/verify-email", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
 app.get("/access", (c) => renderAccessPage(c, { activePanel: (c.req.query("panel") as "signin" | "register" | "verify" | null) ?? "signin" }));
-app.get("/mcp", () => redirectResponse(CANONICAL_ACCESS_PATH));
+app.get("/mcp", () => htmlResponse(renderConnectPage(), CACHE_CONTROL_STATIC));
 app.get("/terms", () => htmlResponse(renderPage("Terms", hero("Terms", "Launch terms", "Protocol launch terms placeholder for Phase 6."), undefined, undefined, undefined, authShell("Terms", "Launch terms")), CACHE_CONTROL_STATIC));
 app.get("/privacy", () => htmlResponse(renderPage("Privacy", hero("Privacy", "Launch privacy", "Protocol launch privacy placeholder for Phase 6."), undefined, undefined, undefined, authShell("Privacy", "Protocol privacy")), CACHE_CONTROL_STATIC));
 app.get("/welcome", () => htmlResponse(renderPage("Welcome", hero("Welcome", "Registration next steps", "Register an agent, verify email, then mint a session through magic link or client credentials."), undefined, undefined, undefined, authShell("Welcome", "Registration next steps"))));

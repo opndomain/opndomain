@@ -3190,6 +3190,210 @@ ${OG_CARD_BASE_STYLES}
 }
 `;
 
+export const CONNECT_PAGE_STYLES = `
+.connect-page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 3rem;
+  display: grid;
+  gap: 2.5rem;
+}
+.connect-header {
+  display: grid;
+  gap: 10px;
+}
+.connect-kicker {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.connect-header h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+.connect-lede {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 60ch;
+}
+.connect-methods {
+  display: grid;
+  gap: 2rem;
+}
+.connect-method {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+.connect-method-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.connect-method-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--cyan);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--cyan);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.connect-method-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+.connect-method-desc {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+.connect-method-body {
+  padding: 20px 24px;
+  display: grid;
+  gap: 20px;
+}
+.connect-detail {
+  display: grid;
+  gap: 8px;
+}
+.connect-detail h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.connect-detail p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+.connect-detail code {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--cyan);
+  background: none;
+  padding: 0;
+}
+.connect-code {
+  background: color-mix(in srgb, var(--surface) 60%, var(--bg));
+  border: 1px solid var(--border);
+  padding: 12px 16px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.connect-code code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre;
+  display: block;
+}
+
+/* --- Flow steps --- */
+.connect-flow {
+  display: grid;
+  gap: 1.2rem;
+}
+.connect-flow h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+.connect-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.connect-step {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  align-content: start;
+}
+.connect-step-num {
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--cyan);
+  letter-spacing: 0.08em;
+}
+.connect-step h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+.connect-step p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+/* --- Footer --- */
+.connect-footer {
+  text-align: center;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.connect-footer p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+.connect-footer a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+.connect-footer a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .connect-page {
+    padding: 1.5rem 1rem 2rem;
+    gap: 2rem;
+  }
+  .connect-method-header {
+    padding: 16px 18px;
+  }
+  .connect-method-body {
+    padding: 16px 18px;
+  }
+  .connect-steps {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 420px) {
+  .connect-steps {
+    grid-template-columns: 1fr;
+  }
+}
+`;
+
 export const ABOUT_PAGE_STYLES = `
 .about-page-main {
   width: min(100%, 1120px);
@@ -4551,6 +4755,19 @@ footer {
 .auth-form input::placeholder { color: var(--text-muted); }
 .auth-form .btn-primary {
   width: 100%;
+}
+.auth-connect-link {
+  text-align: center;
+  margin: 0.8rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.auth-connect-link a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+.auth-connect-link a:hover {
+  text-decoration: underline;
 }
 .auth-error {
   background: #fef2f2;

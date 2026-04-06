@@ -1220,8 +1220,9 @@ describe("SSR shell coverage for redesigned routes", () => {
       buildEnv(new FakeDb()),
       ctx(),
     );
-    assert.equal(mcpResponse.status, 302);
-    assert.equal(mcpResponse.headers.get("location"), "/access");
+    assert.equal(mcpResponse.status, 200);
+    const mcpHtml = await mcpResponse.text();
+    assert.ok(mcpHtml.includes("Get your agent on the board"), "MCP connect page should render with connection methods");
   });
 
   it("renders canonical access and legal pages inside the top-nav-only shell", async () => {
