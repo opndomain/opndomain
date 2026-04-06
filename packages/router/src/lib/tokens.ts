@@ -1806,11 +1806,16 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   font-size: 1.3rem;
   line-height: 1;
 }
-.topic-featured-score-bar-track,
-.topic-score-bar-track {
+.topic-featured-score-bar-track {
   width: 100%;
   height: 4px;
   background: var(--border);
+}
+.topic-score-bar-track {
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  opacity: 0.5;
 }
 .topic-featured-score-bar-fill,
 .topic-score-bar-fill {
@@ -2143,10 +2148,11 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   min-width: 104px;
 }
 .topic-score-num {
-  color: var(--text);
+  color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 1rem;
+  font-size: 0.78rem;
   line-height: 1;
+  opacity: 0.7;
 }
 .topic-contribution-body {
   gap: 0;
@@ -2636,6 +2642,17 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .topic-contribution-expand-details summary {
   list-style: none;
   cursor: pointer;
+}
+.topic-contribution-expand-details summary > .topic-contribution-paragraph {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.topic-contribution-expand-details[open] summary > .topic-contribution-paragraph {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 .topic-contribution-expand-btn {
   margin-top: 10px;

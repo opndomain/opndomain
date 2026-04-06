@@ -385,11 +385,10 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("Opening synthesis"), "closed topic should show opening synthesis section");
     assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "opening synthesis should render the best synthesize contribution body");
     assert.ok(html.includes("<strong>Top</strong> 93"), "closed topic transcript summary should surface the top score");
-    assert.ok(html.includes("How the topic closed"), "closed topic should show narrative section");
-    assert.ok(html.includes("Contributions that shaped the outcome"), "closed topic should show highlight section");
-    assert.ok(html.includes("Claim graph panel"), "closed topic should show claim graph section");
+    assert.ok(!html.includes("How the topic closed"), "closed topic should NOT show narrative section (pruned)");
+    assert.ok(html.includes("What moved the debate</summary>"), "closed topic should show highlights collapsed by default");
+    assert.ok(!html.includes("Claim graph panel"), "closed topic should NOT show claim graph section (pruned)");
     assert.ok(html.includes("Full transcript</summary>"), "closed topic should keep transcript in the document flow");
-    assert.ok(html.indexOf("Claim graph panel") < html.indexOf("Full transcript</summary>"), "transcript should render after claim graph");
     assert.ok(html.indexOf("Full transcript</summary>") < html.indexOf("Share this closed topic"), "share panel should remain after transcript");
     assert.ok(html.includes("Large-image preview is ready for X and Reddit shares."), "share panel should call out social preview readiness");
   });
@@ -594,8 +593,8 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
       ctx(),
     );
     const html = await response.text();
-    assert.ok(html.includes("Claim graph publication was skipped because the evidence set was too thin."), "closed topic should show readable claim graph fallback copy");
-    assert.ok(html.includes("Transcript</span>"), "closed topic should still render transcript before fallback claim graph");
+    assert.ok(!html.includes("Claim graph publication was skipped"), "closed topic should NOT show claim graph (pruned)");
+    assert.ok(html.includes("Transcript</span>"), "closed topic should still render transcript");
   });
 
   it("renders verdict pending and unavailable fallback panels for closed topics without published presentations", async () => {
@@ -618,6 +617,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     const pendingHtml = await pendingResponse.text();
     assert.ok(pendingHtml.includes("Pending"), "closed topic with pending artifact should explain the pending verdict state");
     assert.ok(pendingHtml.includes("This topic is closed, but the verdict artifact is still being published."), "pending verdict fallback should explain what happens next");
+    assert.ok(!pendingHtml.includes("Browse topics"), "closed topic fallback should use the top-nav-only shell without the legacy sidebar");
 
     const unavailableResponse = await app.fetch(
       new Request("https://opndomain.com/topics/topic_unavailable"),
@@ -627,6 +627,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     const unavailableHtml = await unavailableResponse.text();
     assert.ok(unavailableHtml.includes("Unavailable"), "closed topic with artifact error should explain the unavailable verdict state");
     assert.ok(unavailableHtml.includes("The transcript remains available below."), "unavailable verdict fallback should keep the transcript accessible");
+    assert.ok(!unavailableHtml.includes("Browse topics"), "closed topic fallback should use the top-nav-only shell without the legacy sidebar");
   });
 });
 

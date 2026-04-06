@@ -777,14 +777,16 @@ function buildTopicPageViewModel(
   ];
 
   if (meta.status === "closed" && verdictPresentation) {
-    const contentRounds = rounds.filter((r) => r.roundKind !== "vote");
+    const contentRounds = rounds
+      .filter((r) => r.roundKind !== "vote")
+      .map((r, i) => ({ ...r, sequenceIndex: i, roundLabel: `Round ${i + 1}` }));
     const visibleRoundCountVerdict = contentRounds.length;
+    const contentContributions = contentRounds.reduce((sum, r) => sum + r.contributionCount, 0);
     const completedRounds = verdictPresentation.scoreBreakdown.completedRounds;
     const totalRounds = verdictPresentation.scoreBreakdown.totalRounds;
     const participantCount = verdictPresentation.scoreBreakdown.participantCount;
-    const contributionCount = verdictPresentation.scoreBreakdown.contributionCount;
     const terminalizationMode = verdictPresentation.scoreBreakdown.terminalizationMode ?? "standard";
-    const closureLine = `${participantCount} participants · ${completedRounds} rounds · debate completed`;
+    const closureLine = `${participantCount} participants · ${visibleRoundCountVerdict} rounds · debate completed`;
     const convergenceLabel = mapConvergenceLabel(verdictPresentation.synthesisOutcome ?? null);
 
     // Opening synthesis: best synthesize contribution, editorial fallback, summary fallback
@@ -827,14 +829,23 @@ function buildTopicPageViewModel(
     const extractedWinning = extractWinningArgument(transcriptRounds);
     const winningArgument = extractedWinning ? { ...extractedWinning, bodyCleanRaw: null } : null;
 
+    // Closed-topic null score fallback: replace "Pending" with "n/a"
+    for (const round of contentRounds) {
+      for (const contribution of round.contributions) {
+        if (contribution.finalScoreLabel === "Pending") {
+          contribution.finalScoreLabel = "n/a";
+        }
+      }
+    }
+
     return {
       prompt,
       participants,
-      contributions,
+      contributions: contentContributions,
       visibleRoundCount: visibleRoundCountVerdict,
       headerMeta: [
         { label: "Participants", value: String(participants) },
-        { label: "Contributions", value: String(contributions) },
+        { label: "Contributions", value: String(contentContributions) },
         { label: "Rounds", value: String(visibleRoundCountVerdict) },
         { label: "Domain", value: meta.domain_name },
       ],
@@ -842,9 +853,7 @@ function buildTopicPageViewModel(
         kicker: "Status",
         primaryValue: "Completed",
         secondaryValue: closureLine,
-        explanation: convergenceLabel
-          ? `${convergenceLabel}. ${completedRounds}/${totalRounds} rounds under ${terminalizationMode}.`
-          : `${completedRounds}/${totalRounds} rounds under ${terminalizationMode}.`,
+        explanation: convergenceLabel ?? "Debate completed.",
         badges: [
           verdictPresentation.domain,
           meta.template_id,
@@ -853,7 +862,7 @@ function buildTopicPageViewModel(
         stats: [
           { label: "Completed rounds", value: `${completedRounds}/${totalRounds}` },
           { label: "Participants", value: String(participantCount) },
-          { label: "Contributions", value: String(contributionCount) },
+          { label: "Contributions", value: String(contentContributions) },
         ],
         tone: "verdict",
       },
@@ -2114,12 +2123,16 @@ app.get("/topics/:topicId", async (c) => {
         ? await readVerdictPresentation(c, topicId)
         : null;
     const verdictPresentation = verdictPresentationObject;
-    const description = buildTopicShareDescription(meta, verdictPresentation?.summary);
+    const viewModel = buildTopicPageViewModel(meta, state, transcript?.rounds, verdictPresentation);
+    // Use viewModel contributions for closed topics (content-round-derived), meta for open
+    const descriptionMeta = meta.status === "closed"
+      ? { ...meta, contribution_count: viewModel.contributions }
+      : meta;
+    const description = buildTopicShareDescription(descriptionMeta, verdictPresentation?.summary);
     const head = buildTopicHeadMetadata(c.env, meta, description);
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
     const hasPublishedOgCard = meta.status === "closed" && meta.artifact_status === "published" && Boolean(meta.og_image_key);
-    const viewModel = buildTopicPageViewModel(meta, state, transcript?.rounds, verdictPresentation);
     const sharePanel = meta.status === "closed"
       ? topicSharePanel({
           url: canonicalUrl,
@@ -2147,47 +2160,37 @@ app.get("/topics/:topicId", async (c) => {
         // TIER 2 — The Story (always visible)
         renderWinningArgument(viewModel),
         renderBothSidesSummary(viewModel),
-        renderMinorityReports(viewModel),
         renderOpeningSynthesis(viewModel),
         !viewModel.winningArgument && !viewModel.openingSynthesisHtml
           ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
           : "",
         // Editorial body: skip if bothSidesSummary is present (same content, already decomposed above)
         !viewModel.bothSidesSummary ? renderEditorialBody(viewModel) : "",
-        viewModel.verdictHighlights
-          ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
-          : "",
         renderSharpestObjection(viewModel),
 
-        // TIER 3 — The Evidence (always visible)
-        renderDossierSection(viewModel),
+        // TIER 3 — Supporting (collapsed by default)
+        viewModel.verdictHighlights
+          ? `<details class="dossier-secondary-section"><summary>What moved the debate</summary>${renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)}</details>`
+          : "",
+        renderMinorityReports(viewModel)
+          ? `<details class="dossier-secondary-section"><summary>Minority reports</summary>${renderMinorityReports(viewModel)}</details>`
+          : "",
         !viewModel.convergenceMap && viewModel.positions
           ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions)
           : "",
 
         // TIER 4 — Deep Dives (always collapsed)
-        viewModel.verdictNarrative ? `<details class="dossier-secondary-section"><summary>How it closed</summary>${renderTopicNarrativeSection(viewModel.verdictNarrative)}</details>` : "",
         renderTopicScoreStorySection(viewModel),
-        viewModel.verdictClaimGraph
-          ? `<details class="dossier-secondary-section"><summary>Claim graph</summary>${verdictClaimGraphSection(viewModel.verdictClaimGraph)}</details>`
-          : "",
         `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
 
         sharePanel,
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
 
-      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("topics", {
-        eyebrow: "Topics",
-        title: meta.domain_name,
-        detail: meta.title,
-        meta: [
-          { label: "Status", value: meta.status },
-          { label: "Participants", value: String(meta.member_count) },
-          { label: "Contributions", value: String(meta.contribution_count) },
-        ],
-        action: { href: "/topics", label: "Browse topics" },
-      }));
+      return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, {
+        variant: "top-nav-only",
+        navActiveKey: "topics",
+      });
     }
 
     const pageBody = [
@@ -2199,17 +2202,10 @@ app.get("/topics/:topicId", async (c) => {
       renderTopicViewBeacon(c.env, topicId),
     ].join("");
 
-    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, sidebarShell("topics", {
-      eyebrow: "Topics",
-      title: meta.domain_name,
-      detail: meta.title,
-      meta: [
-        { label: "Status", value: meta.status },
-        { label: "Participants", value: String(meta.member_count) },
-        { label: "Contributions", value: String(meta.contribution_count) },
-      ],
-      action: { href: "/topics", label: "Browse topics" },
-    }));
+    return renderPage(meta.title, `<section class="topic-page">${pageBody}</section>`, description, TOPIC_DETAIL_PAGE_STYLES, head, {
+      variant: "top-nav-only",
+      navActiveKey: "topics",
+    });
   });
 });
 
