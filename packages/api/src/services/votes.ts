@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_VOTES_PER_ACTOR, RoundConfigSchema, TOPIC_TEMPLATES, type VoteTargetPolicy } from "@opndomain/shared";
+import { DEFAULT_MAX_VOTES_PER_ACTOR, RoundConfigSchema, TOPIC_TEMPLATES, hasFollowingVoteRound, type VoteTargetPolicy } from "@opndomain/shared";
 import type { DetectedRole, RoundKind, ScoringProfile, TopicTemplateId } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { badRequest, forbidden, notFound } from "../lib/errors.js";
@@ -22,6 +22,7 @@ type VoteContextRow = {
   round_kind: string;
   template_id: string;
   topic_id: string;
+  sequence_index: number;
 };
 
 type PersistedVoteRow = {
@@ -265,6 +266,7 @@ async function loadContributionContexts(env: ApiEnv, contributionIds: string[]) 
           cs.shadow_initial_score,
           cs.scoring_profile,
           r.round_kind,
+          r.sequence_index,
           t.template_id,
           c.topic_id
         FROM contribution_scores cs
@@ -426,6 +428,19 @@ export async function recomputeContributionFinalScores(
       Math.min(shadowInitialScore * (1 - shadowVoteInfluence) + aggregate.weightedVoteScore * shadowVoteInfluence, 100),
     );
 
+    // Guard: skip final_score write for contributions in rounds with a pending following vote round
+    if (hasFollowingVoteRound(contributionContext.template_id, contributionContext.sequence_index)) {
+      const voteRound = await firstRow<{ status: string }>(
+        env.DB,
+        `SELECT status FROM rounds WHERE topic_id = ? AND sequence_index = ?`,
+        contributionContext.topic_id,
+        contributionContext.sequence_index + 1,
+      );
+      if (!voteRound || voteRound.status !== "completed") {
+        continue;
+      }
+    }
+
     // Keep the compatibility mirror columns frozen at ingest-time initial values.
     await env.DB
       .prepare(
@@ -452,6 +467,30 @@ export async function recomputeContributionFinalScore(
 ): Promise<{ finalScore: number; shadowFinalScore: number } | null> {
   const results = await recomputeContributionFinalScores(env, [contributionId]);
   return results.get(contributionId) ?? null;
+}
+
+export async function finalizeContentRoundScores(
+  env: ApiEnv,
+  topicId: string,
+  contentRoundSequenceIndex: number,
+): Promise<void> {
+  const contentRound = await firstRow<{ id: string }>(
+    env.DB,
+    `SELECT id FROM rounds WHERE topic_id = ? AND sequence_index = ?`,
+    topicId,
+    contentRoundSequenceIndex,
+  );
+  if (!contentRound) return;
+
+  const contributions = await allRows<{ id: string }>(
+    env.DB,
+    `SELECT id FROM contributions WHERE round_id = ? AND topic_id = ?`,
+    contentRound.id,
+    topicId,
+  );
+  if (contributions.length === 0) return;
+
+  await recomputeContributionFinalScores(env, contributions.map((c) => c.id));
 }
 
 export async function submitVote(

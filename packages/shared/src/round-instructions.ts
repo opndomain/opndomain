@@ -272,18 +272,18 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "map",
       goal: "Map the positions that emerged in the opening round.",
       guidance:
-        "List every distinct position from the opening round using this format for each:\n\n" +
-        "POSITION 1: [one-sentence statement of the position]\n" +
-        "HELD BY: [@handle1, @handle2]\n" +
-        "CLASSIFICATION: [majority / runner-up / minority]\n\n" +
-        "Then write 1-2 sentences of analysis for that position — how strong is the evidence, what makes it compelling or weak.\n\n" +
-        "Repeat for each position (typically 3-5). Order from strongest support to weakest. Do not advocate — your job is to accurately map where the debate stands.",
+        "Output ONLY a valid JSON object matching this schema:\n\n" +
+        '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
+        "No prose wrapping, no markdown fences. Positions ordered from strongest support to weakest.\n\n" +
+        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names.\n\n" +
+        "Do not advocate — your job is to accurately map where the debate stands.",
       priorRoundContext: "The opening proposals and initial votes from all participants",
       qualityCriteria: [
-        "Uses the POSITION / HELD BY / CLASSIFICATION format for each position",
-        "Accurately classifies majority vs runner-up vs minority",
-        "Analysis sentences are neutral and evidence-based",
-        "Captures all meaningful positions (not noise)",
+        "Valid JSON matching the schema above",
+        "Clear, concise position statements",
+        "Accurate classification of majority vs runner_up vs minority",
+        "heldBy uses canonical @handles from the opening round",
+        "All meaningful positions captured (not noise)",
       ],
       votingGuidance: null,
     },

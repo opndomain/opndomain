@@ -19,6 +19,7 @@ import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
 import { sweepAutonomousTopics } from "./autonomous-lifecycle.js";
+import { finalizeContentRoundScores } from "./votes.js";
 
 type TopicSweepRow = {
   id: string;
@@ -515,11 +516,15 @@ async function shouldCompleteRound(env: ApiEnv, round: ActiveRoundRow, now: Date
     QUALITY_GATED_MIN_SCORE_FLOOR,
     median(
       priorScores
-        .filter((row) => isTranscriptVisibleContribution(row, now))
-        .map((row) => Number(row.final_score ?? 0))
+        .filter((row) => isTranscriptVisibleContribution(row, now) && row.final_score !== null)
+        .map((row) => Number(row.final_score))
         .filter((score) => Number.isFinite(score)),
     ),
   );
+  // If all visible contributions have NULL final_score (deferred scoring), skip
+  // the quality gate — the round can advance on count + contributor thresholds alone.
+  const hasAnyFinalScore = visibleContributions.some((row) => row.final_score !== null);
+  if (!hasAnyFinalScore) return true;
   return visibleContributions.some((row) => Number(row.final_score ?? 0) >= threshold);
 }
 
@@ -678,6 +683,29 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
     }
   }
 
+  // Deferred score finalization: when a vote round completes, finalize the paired content round
+  const completingRoundKind = round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown");
+  if (completingRoundKind === "vote" && round.sequence_index > 0) {
+    try {
+      const namespaceId = env.TOPIC_STATE_DO.idFromName(round.topic_id);
+      const stub = env.TOPIC_STATE_DO.get(namespaceId);
+      const flushResponse = await stub.fetch("https://topic-state.internal/force-flush", { method: "POST" });
+      const flushResult = (await flushResponse.json()) as { flushed: boolean; remaining: number };
+
+      if (flushResult.flushed && flushResult.remaining === 0) {
+        await finalizeContentRoundScores(env, round.topic_id, round.sequence_index - 1);
+      } else {
+        console.warn("deferred-score flush incomplete, deferring finalization", {
+          topicId: round.topic_id,
+          roundId: round.id,
+          remaining: flushResult.remaining,
+        });
+      }
+    } catch (err) {
+      console.error("deferred-score finalization failed", err);
+    }
+  }
+
   const rounds = await allRows<RoundPlanRow>(
     env.DB,
     `
@@ -786,6 +814,43 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
   return mutatedTopicIds;
 }
 
+async function retryPendingFinalizations(env: ApiEnv): Promise<Set<string>> {
+  const mutated = new Set<string>();
+  const pending = await allRows<{ topic_id: string; sequence_index: number }>(
+    env.DB,
+    `SELECT DISTINCT r.topic_id, r.sequence_index
+     FROM rounds r
+     WHERE r.round_kind = 'vote'
+       AND r.status = 'completed'
+       AND r.sequence_index > 0
+       AND EXISTS (
+         SELECT 1 FROM contributions c
+         INNER JOIN contribution_scores cs ON cs.contribution_id = c.id
+         INNER JOIN rounds cr ON cr.id = c.round_id
+         WHERE cr.topic_id = r.topic_id
+           AND cr.sequence_index = r.sequence_index - 1
+           AND cs.final_score IS NULL
+           AND cr.round_kind != 'vote'
+       )
+     LIMIT 20`,
+  );
+  for (const row of pending) {
+    try {
+      const namespaceId = env.TOPIC_STATE_DO.idFromName(row.topic_id);
+      const stub = env.TOPIC_STATE_DO.get(namespaceId);
+      const flushResponse = await stub.fetch("https://topic-state.internal/force-flush", { method: "POST" });
+      const flushResult = (await flushResponse.json()) as { flushed: boolean; remaining: number };
+      if (flushResult.flushed && flushResult.remaining === 0) {
+        await finalizeContentRoundScores(env, row.topic_id, row.sequence_index - 1);
+        mutated.add(row.topic_id);
+      }
+    } catch (err) {
+      console.error("retryPendingFinalizations failed", { topicId: row.topic_id, err });
+    }
+  }
+  return mutated;
+}
+
 export async function sweepTopicLifecycle(env: ApiEnv, options?: { cron?: string; now?: Date }) {
   const now = options?.now ?? new Date();
   const cron = options?.cron ?? "manual";
@@ -798,6 +863,9 @@ export async function sweepTopicLifecycle(env: ApiEnv, options?: { cron?: string
   }
   if (cron === ROUND_AUTO_ADVANCE_SWEEP_CRON || cron === "manual") {
     for (const topicId of await autoAdvanceRounds(env, now)) {
+      mutatedTopicIds.add(topicId);
+    }
+    for (const topicId of await retryPendingFinalizations(env)) {
       mutatedTopicIds.add(topicId);
     }
   }

@@ -391,6 +391,7 @@ export const CreateDomainSchema = z.object({
   slug: z.string().min(2).max(64).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
   name: z.string().min(1).max(160),
   description: z.string().max(400).optional(),
+  parentDomainId: z.string().min(1).optional(),
 });
 
 export const CreateTopicSchema = z.object({
@@ -506,6 +507,39 @@ export const VoteSubmissionSchema = z.object({
   voteKind: VoteKindSchema.exclude(["legacy"]),
   idempotencyKey: z.string().min(8).max(120),
 });
+
+// --- Map round structured extraction schemas ---
+
+export const MapPositionItemSchema = z.object({
+  statement: z.string().min(1).max(300),
+  heldBy: z.array(z.string().regex(/^@?[a-z0-9_-]+$/i).min(1)).min(1),
+  classification: z.enum(["majority", "runner_up", "minority"]),
+  evidenceStrength: z.string().min(1).max(300).optional(),
+  keyWeakness: z.string().min(1).max(300).optional(),
+});
+
+export const MapRoundBodySchema = z.object({
+  positions: z.array(MapPositionItemSchema).min(2).max(10),
+  analysis: z.string().max(500).optional(),
+});
+
+export type MapPositionItem = z.infer<typeof MapPositionItemSchema>;
+export type MapRoundBody = z.infer<typeof MapRoundBodySchema>;
+
+/** Strip markdown code fences and attempt JSON → Zod parse of a map round body. */
+export function tryParseMapRoundBody(text: string): MapRoundBody | null {
+  try {
+    const stripped = text
+      .replace(/^```(?:json)?\s*\n?/, "")
+      .replace(/\n?```\s*$/, "")
+      .trim();
+    const parsed = JSON.parse(stripped);
+    const result = MapRoundBodySchema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
 
 export const VerdictOutcomeSchema = z.enum([
   "clear_synthesis",
@@ -638,6 +672,7 @@ export const AdminDomainSummarySchema = z.object({
   name: z.string().min(1),
   description: z.string().nullable(),
   status: z.string().min(1),
+  parentDomainId: z.string().nullable(),
   archived: z.boolean(),
   topicCount: z.number().int().nonnegative(),
   activeTopicCount: z.number().int().nonnegative(),
@@ -920,6 +955,7 @@ export const TranscriptRoundContributionSchema = z.object({
   id: z.string().min(1),
   beingId: z.string().min(1),
   beingHandle: z.string().min(1),
+  displayName: z.string().nullable().optional(),
   bodyClean: z.string().nullable(),
   visibility: ContributionVisibilitySchema,
   submittedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
@@ -980,6 +1016,7 @@ export const VerdictHighlightSchema = z.object({
   contributionId: z.string().min(1),
   beingId: z.string().min(1),
   beingHandle: z.string().min(1),
+  displayName: z.string().nullable().optional(),
   roundKind: RoundKindSchema,
   excerpt: z.string().min(1),
   finalScore: z.number().finite(),
@@ -1093,6 +1130,7 @@ export const VerdictPresentationSchema = z.object({
   minorityReports: z.array(z.object({
     contributionId: z.string().min(1),
     handle: z.string().min(1),
+    displayName: z.string().nullable().optional(),
     body: z.string().min(1),
     finalScore: z.number(),
     positionLabel: z.string().min(1),

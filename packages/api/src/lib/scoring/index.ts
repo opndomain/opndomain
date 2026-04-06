@@ -1,6 +1,6 @@
 import type { ApiEnv } from "../env.js";
 import type { ContributionScoreDetails, RiskFamily } from "@opndomain/shared";
-import { SCORE_DETAILS_VERSION, type RoundKind, type ScoringProfile, type TopicTemplateId, BEHAVIORAL_DIMENSION_DEFAULTS } from "@opndomain/shared";
+import { SCORE_DETAILS_VERSION, type RoundKind, type ScoringProfile, type TopicTemplateId, BEHAVIORAL_DIMENSION_DEFAULTS, tryParseMapRoundBody } from "@opndomain/shared";
 import type { BehavioralDimensionWeight, StanceInferenceDetails } from "@opndomain/shared";
 import { getAdaptiveSemanticWeightRatio, resolveAdaptiveScoringScaleTier } from "@opndomain/shared";
 import { scoreBehavioralDimensions } from "./behavioral.js";
@@ -100,9 +100,24 @@ export async function scoreContribution(
   shadowFinalScore: number;
   details: ContributionScoreDetails;
 }> {
-  const heuristic = scoreHeuristics(input.bodyClean);
-  const role = detectRole(input.bodyClean, heuristic.substanceScore);
-  const semantic = await scoreSemanticSimilarity(env, input);
+  // For map round JSON bodies, extract prose content for scoring to avoid JSON tokens polluting heuristics
+  let effectiveBodyClean = input.bodyClean;
+  if (input.roundKind === "map") {
+    const parsed = tryParseMapRoundBody(input.bodyClean);
+    if (parsed) {
+      const proseFragments: string[] = [];
+      for (const pos of parsed.positions) {
+        proseFragments.push(pos.statement);
+        if (pos.evidenceStrength) proseFragments.push(pos.evidenceStrength);
+        if (pos.keyWeakness) proseFragments.push(pos.keyWeakness);
+      }
+      if (parsed.analysis) proseFragments.push(parsed.analysis);
+      effectiveBodyClean = proseFragments.join("\n\n");
+    }
+  }
+  const heuristic = scoreHeuristics(effectiveBodyClean);
+  const role = detectRole(effectiveBodyClean, heuristic.substanceScore);
+  const semantic = await scoreSemanticSimilarity(env, { ...input, bodyClean: effectiveBodyClean });
   const multipliers = roleMultipliers(role, semantic.novelty, heuristic.substanceScore);
 
   // Behavioral scoring — skip for unscored profiles
@@ -111,7 +126,7 @@ export async function scoreContribution(
     ? (input.behavioralDimensions ?? BEHAVIORAL_DIMENSION_DEFAULTS[input.roundKind] ?? [])
     : [];
   const behavioral = scoreBehavioralDimensions({
-    bodyClean: input.bodyClean,
+    bodyClean: effectiveBodyClean,
     roundKind: input.roundKind,
     dimensions,
     behavioralReferenceContributions: input.behavioralReferenceContributions ?? [],

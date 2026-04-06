@@ -444,6 +444,14 @@ export const TOPIC_TEMPLATES = {
   }),
 } as const;
 
+/** Returns true if the round at sequenceIndex is followed by a vote round in the template. */
+export function hasFollowingVoteRound(templateId: string, sequenceIndex: number): boolean {
+  const template = TOPIC_TEMPLATES[templateId as keyof typeof TOPIC_TEMPLATES];
+  if (!template) return false;
+  const next = template.roundSequence[sequenceIndex + 1];
+  return next === "vote";
+}
+
 export type TopicTemplateId = z.infer<typeof TopicTemplateIdSchema>;
 export type TopicFormat = z.infer<typeof TopicFormatSchema>;
 export type CadenceFamily = z.infer<typeof CadenceFamilySchema>;

@@ -87,6 +87,7 @@ type TranscriptContextRow = {
   final_score: number | null;
   reveal_at: string | null;
   round_visibility: string | null;
+  round_kind: string;
 };
 
 type TranscriptReadRow = TranscriptContextRow & {
@@ -215,61 +216,22 @@ export function capTranscriptByBudget(
     return { transcript: visibleTranscript, capped: false };
   }
 
-  // Group by roundId, preserving original indices
-  const roundGroups = new Map<string, number[]>();
-  for (let i = 0; i < visibleTranscript.length; i++) {
-    const roundId = visibleTranscript[i]!.roundId;
-    let group = roundGroups.get(roundId);
-    if (!group) {
-      group = [];
-      roundGroups.set(roundId, group);
-    }
-    group.push(i);
+  function isPending(item: TranscriptItem): boolean {
+    return item.scores.heuristic === null && item.scores.live === null && item.scores.final === null;
   }
 
-  const roundCount = roundGroups.size;
-  const base = Math.floor(budget / roundCount);
-  const survivingIndices = new Set<number>();
+  const pending = visibleTranscript.filter(isPending);
+  const finalized = visibleTranscript.filter((item) => !isPending(item));
+  const remainingBudget = Math.max(0, budget - pending.length);
 
-  if (base >= 1) {
-    // Floor-then-fill strategy
-    let totalAllocated = 0;
-
-    // First pass: allocate base per round, score-sorted
-    for (const indices of roundGroups.values()) {
-      const sorted = [...indices].sort((a, b) => scoreOf(visibleTranscript[b]!) - scoreOf(visibleTranscript[a]!));
-      const take = Math.min(base, sorted.length);
-      for (let i = 0; i < take; i++) {
-        survivingIndices.add(sorted[i]!);
-      }
-      totalAllocated += take;
-    }
-
-    // Second pass: fill remaining slots from unselected, globally score-sorted
-    const remaining = budget - totalAllocated;
-    if (remaining > 0) {
-      const unselected: number[] = [];
-      for (let i = 0; i < visibleTranscript.length; i++) {
-        if (!survivingIndices.has(i)) {
-          unselected.push(i);
-        }
-      }
-      unselected.sort((a, b) => scoreOf(visibleTranscript[b]!) - scoreOf(visibleTranscript[a]!));
-      for (let i = 0; i < Math.min(remaining, unselected.length); i++) {
-        survivingIndices.add(unselected[i]!);
-      }
-    }
-  } else {
-    // Global pool strategy (roundCount > budget)
-    const allIndices = Array.from({ length: visibleTranscript.length }, (_, i) => i);
-    allIndices.sort((a, b) => scoreOf(visibleTranscript[b]!) - scoreOf(visibleTranscript[a]!));
-    for (let i = 0; i < Math.min(budget, allIndices.length); i++) {
-      survivingIndices.add(allIndices[i]!);
-    }
+  if (finalized.length <= remainingBudget) {
+    return { transcript: visibleTranscript, capped: false };
   }
 
-  // Filter preserves original array order
-  const transcript = visibleTranscript.filter((_, i) => survivingIndices.has(i));
+  // Trim finalized by score, keep all pending, re-merge in original order
+  const sortedFinalized = [...finalized].sort((a, b) => scoreOf(b) - scoreOf(a));
+  const keptFinalized = new Set(sortedFinalized.slice(0, remainingBudget));
+  const transcript = visibleTranscript.filter((item) => isPending(item) || keptFinalized.has(item));
   return { transcript, capped: true };
 }
 
@@ -833,21 +795,21 @@ function buildTranscriptRounds(rows: Array<{ sequence: number; row: TranscriptRe
   >();
 
   for (const entry of rows) {
+    const isPending = entry.row.final_score === null && entry.row.round_kind !== "vote";
+    const contribution = {
+      id: entry.row.id,
+      beingId: entry.row.being_id,
+      beingHandle: entry.row.being_handle,
+      bodyClean: entry.row.body_clean,
+      visibility: entry.row.visibility,
+      submittedAt: entry.row.submitted_at,
+      scores: isPending
+        ? { heuristic: null, live: null, final: null }
+        : { heuristic: entry.row.heuristic_score, live: entry.row.live_score, final: entry.row.final_score },
+    };
     const current = rounds.get(entry.row.round_id);
     if (current) {
-      current.contributions.push({
-        id: entry.row.id,
-        beingId: entry.row.being_id,
-        beingHandle: entry.row.being_handle,
-        bodyClean: entry.row.body_clean,
-        visibility: entry.row.visibility,
-        submittedAt: entry.row.submitted_at,
-        scores: {
-          heuristic: entry.row.heuristic_score,
-          live: entry.row.live_score,
-          final: entry.row.final_score,
-        },
-      });
+      current.contributions.push(contribution);
       continue;
     }
 
@@ -856,20 +818,22 @@ function buildTranscriptRounds(rows: Array<{ sequence: number; row: TranscriptRe
       sequenceIndex: entry.row.sequence_index,
       roundKind: entry.row.round_kind,
       status: entry.row.round_status,
-      contributions: [{
-        id: entry.row.id,
-        beingId: entry.row.being_id,
-        beingHandle: entry.row.being_handle,
-        bodyClean: entry.row.body_clean,
-        visibility: entry.row.visibility,
-        submittedAt: entry.row.submitted_at,
-        scores: {
-          heuristic: entry.row.heuristic_score,
-          live: entry.row.live_score,
-          final: entry.row.final_score,
-        },
-      }],
+      contributions: [contribution],
     });
+  }
+
+  // Round-scoped sort: if any non-vote contribution in a round has null final_score, sort by submitted_at ASC; otherwise by score DESC
+  for (const round of rounds.values()) {
+    const hasNullScore = round.roundKind !== "vote" && round.contributions.some((c) => c.scores.final === null);
+    if (hasNullScore) {
+      round.contributions.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
+    } else {
+      round.contributions.sort((a, b) => {
+        const sa = a.scores.final ?? a.scores.live ?? a.scores.heuristic ?? 0;
+        const sb = b.scores.final ?? b.scores.live ?? b.scores.heuristic ?? 0;
+        return sb - sa;
+      });
+    }
   }
 
   return Array.from(rounds.values()).sort((left, right) => left.sequenceIndex - right.sequenceIndex);
@@ -1109,6 +1073,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
         cs.live_score,
         cs.final_score,
         r.reveal_at,
+        r.round_kind,
         json_extract(rc.config_json, '$.visibility') AS round_visibility
       FROM contributions c
       INNER JOIN beings b ON b.id = c.being_id
@@ -1122,20 +1087,21 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
   );
   const unfilteredTranscript = transcript
     .filter((row) => isTranscriptVisibleContribution(row))
-    .map((row) => ({
-      id: row.id,
-      roundId: row.round_id,
-      beingId: row.being_id,
-      beingHandle: row.being_handle,
-      bodyClean: row.body_clean,
-      visibility: row.visibility,
-      submittedAt: row.submitted_at,
-      scores: {
-        heuristic: row.heuristic_score,
-        live: row.live_score,
-        final: row.final_score,
-      },
-    }));
+    .map((row) => {
+      const isPending = row.final_score === null && row.round_kind !== "vote";
+      return {
+        id: row.id,
+        roundId: row.round_id,
+        beingId: row.being_id,
+        beingHandle: row.being_handle,
+        bodyClean: row.body_clean,
+        visibility: row.visibility,
+        submittedAt: row.submitted_at,
+        scores: isPending
+          ? { heuristic: null, live: null, final: null }
+          : { heuristic: row.heuristic_score, live: row.live_score, final: row.final_score },
+      };
+    });
   const { transcript: visibleTranscript, capped: transcriptCapped } = capTranscriptByBudget(
     unfilteredTranscript,
     TRANSCRIPT_QUERY_DEFAULT_LIMIT,

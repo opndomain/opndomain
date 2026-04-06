@@ -640,23 +640,23 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
         startsAt: r.starts_at,
         endsAt: r.ends_at,
       })),
-      transcript: transcript.map((row) => ({
-        contributionId: row.id,
-        roundId: row.round_id,
-        roundKind: row.round_kind,
-        sequenceIndex: row.sequence_index,
-        beingId: row.being_id,
-        beingHandle: row.being_handle,
-        bodyClean: row.body_clean,
-        visibility: row.visibility,
-        submittedAt: row.submitted_at,
-        scores: {
-          heuristic: row.heuristic_score,
-          semantic: row.semantic_score,
-          live: row.live_score,
-          final: row.final_score,
-        },
-      })),
+      transcript: transcript.map((row) => {
+        const isPending = row.final_score === null && row.round_kind !== "vote";
+        return {
+          contributionId: row.id,
+          roundId: row.round_id,
+          roundKind: row.round_kind,
+          sequenceIndex: row.sequence_index,
+          beingId: row.being_id,
+          beingHandle: row.being_handle,
+          bodyClean: row.body_clean,
+          visibility: row.visibility,
+          submittedAt: row.submitted_at,
+          scores: isPending
+            ? { heuristic: null, semantic: null, live: null, final: null }
+            : { heuristic: row.heuristic_score, semantic: row.semantic_score, live: row.live_score, final: row.final_score },
+        };
+      }),
       verdict: verdict
         ? {
             confidence: verdict.confidence,

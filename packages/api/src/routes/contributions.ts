@@ -6,6 +6,8 @@ import {
   SCORE_VERSION_SHADOW,
   SEMANTIC_COMPARISON_WINDOW_SIZE,
   TOPIC_TEMPLATES,
+  hasFollowingVoteRound,
+  tryParseMapRoundBody,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
@@ -18,6 +20,7 @@ import { extractClaims } from "../lib/epistemic/claim-extraction.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { scoreContribution } from "../lib/scoring/index.js";
 import { inferStance } from "../lib/scoring/stance.js";
+import { isLegacyMapBody } from "../lib/map-round.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import type { AuthenticatedAgent } from "../services/auth.js";
 import { authenticateRequest } from "../services/auth.js";
@@ -390,6 +393,13 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     }
   }
 
+  // Validate map round body format (JSON or legacy POSITION/HELD BY)
+  if (context.activeRound.round_kind === "map") {
+    if (!tryParseMapRoundBody(guardrail.bodyClean) && !isLegacyMapBody(guardrail.bodyClean)) {
+      return c.json({ error: "Map round contribution must be valid JSON or use POSITION/HELD BY/CLASSIFICATION format" }, 400);
+    }
+  }
+
   const namespaceId = c.env.TOPIC_STATE_DO.idFromName(topicId);
   const stub = c.env.TOPIC_STATE_DO.get(namespaceId);
   const scoringProfile = TOPIC_TEMPLATES[context.topic.template_id]?.scoringProfile ?? "adversarial";
@@ -410,6 +420,11 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
     behavioralReferenceContributions,
     targetContributionId: body.targetContributionId,
   });
+  // Deferred scoring: null out final scores for content rounds with a following vote round
+  if (context.activeRound.round_kind !== "vote" && hasFollowingVoteRound(context.topic.template_id, context.activeRound.sequence_index)) {
+    (score as { finalScore: number | null }).finalScore = null;
+    (score as { shadowFinalScore: number | null }).shadowFinalScore = null;
+  }
   // B4: Effective stance assignment
   const stanceResult = inferStance(
     guardrail.bodyClean,

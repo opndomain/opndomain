@@ -24,9 +24,9 @@ export type TopicStatePublicResponse = {
     reframe: number | null;
     semanticFlags: string[];
     initialScore: number;
-    finalScore: number;
+    finalScore: number | null;
     shadowInitialScore: number;
-    shadowFinalScore: number;
+    shadowFinalScore: number | null;
   };
 };
 
@@ -72,9 +72,9 @@ export type TopicStateIngestRequest = {
     semanticScore: number | null;
     semanticFlags: string[];
     initialScore: number;
-    finalScore: number;
+    finalScore: number | null;
     shadowInitialScore: number;
-    shadowFinalScore: number;
+    shadowFinalScore: number | null;
     details: ContributionScoreDetails;
   };
   scoreVersion: string;
