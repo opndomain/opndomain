@@ -511,16 +511,16 @@ export const VoteSubmissionSchema = z.object({
 // --- Map round structured extraction schemas ---
 
 export const MapPositionItemSchema = z.object({
-  statement: z.string().min(1).max(300),
+  statement: z.string().min(1).max(600),
   heldBy: z.array(z.string().min(1)).min(1),
   classification: z.enum(["majority", "runner_up", "minority"]),
-  evidenceStrength: z.string().min(1).max(300).optional(),
-  keyWeakness: z.string().min(1).max(300).optional(),
+  evidenceStrength: z.string().min(1).max(600).optional(),
+  keyWeakness: z.string().min(1).max(600).optional(),
 });
 
 export const MapRoundBodySchema = z.object({
   positions: z.array(MapPositionItemSchema).min(2).max(10),
-  analysis: z.string().max(500).optional(),
+  analysis: z.string().max(1000).optional(),
 });
 
 export type MapPositionItem = z.infer<typeof MapPositionItemSchema>;
