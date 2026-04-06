@@ -680,6 +680,7 @@ export const OG_CARD_BASE_STYLES = `
   line-height: 1.1;
   font-weight: 500;
   letter-spacing: -0.02em;
+  min-height: calc(1.1em * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -690,6 +691,7 @@ export const OG_CARD_BASE_STYLES = `
   font-size: 0.64rem;
   line-height: 1.48;
   color: rgba(60, 51, 37, 0.7);
+  min-height: calc(1.48em * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;

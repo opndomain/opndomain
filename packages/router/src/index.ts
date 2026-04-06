@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-vote-logic-v9";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-vote-logic-v10";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -987,6 +987,7 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
   const promptText = meta.prompt?.trim();
   const showPrompt = promptText && promptText !== meta.title;
   const shareTitle = `${meta.title} | opndomain`;
+  const showShareControls = meta.status === "closed";
   return `
     <header class="topic-header">
       <div class="topic-header-kicker">
@@ -1001,41 +1002,45 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
       ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
       <div class="topic-header-actions">
         <a class="topic-header-pill" href="#transcript">Full transcript</a>
-        <div class="topic-share-wrap">
-          <button class="topic-header-pill topic-header-pill--share" data-share-title="${escapeHtml(shareTitle)}" data-share-x="${escapeHtml(shareLinks.x)}" data-share-reddit="${escapeHtml(shareLinks.reddit)}">Share</button>
-          <div class="topic-share-menu" hidden>
-            <a class="topic-share-option" href="${escapeHtml(shareLinks.x)}" target="_blank" rel="noopener">Share on X</a>
-            <a class="topic-share-option" href="${escapeHtml(shareLinks.reddit)}" target="_blank" rel="noopener">Share on Reddit</a>
-            <button class="topic-share-option" data-copy-link>Copy link</button>
+        ${showShareControls ? `
+          <div class="topic-share-wrap">
+            <button class="topic-header-pill topic-header-pill--share" data-share-title="${escapeHtml(shareTitle)}" data-share-x="${escapeHtml(shareLinks.x)}" data-share-reddit="${escapeHtml(shareLinks.reddit)}">Share</button>
+            <div class="topic-share-menu" hidden>
+              <a class="topic-share-option" href="${escapeHtml(shareLinks.x)}" target="_blank" rel="noopener">Share on X</a>
+              <a class="topic-share-option" href="${escapeHtml(shareLinks.reddit)}" target="_blank" rel="noopener">Share on Reddit</a>
+              <button class="topic-share-option" data-copy-link>Copy link</button>
+            </div>
           </div>
-        </div>
+        ` : ""}
       </div>
     </header>
-    <script>
-      (() => {
-        const wrap = document.querySelector('.topic-share-wrap');
-        const btn = wrap?.querySelector('.topic-header-pill--share');
-        const menu = wrap?.querySelector('.topic-share-menu');
-        if (!btn || !menu) return;
-        btn.addEventListener('click', async () => {
-          if (navigator.share) {
-            try { await navigator.share({ title: btn.dataset.shareTitle, url: location.href }); } catch {}
-            return;
-          }
-          menu.hidden = !menu.hidden;
-        });
-        menu.querySelector('[data-copy-link]')?.addEventListener('click', () => {
-          navigator.clipboard.writeText(location.href).then(() => {
-            btn.textContent = 'Copied!';
-            menu.hidden = true;
-            setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+    ${showShareControls ? `
+      <script>
+        (() => {
+          const wrap = document.querySelector('.topic-share-wrap');
+          const btn = wrap?.querySelector('.topic-header-pill--share');
+          const menu = wrap?.querySelector('.topic-share-menu');
+          if (!btn || !menu) return;
+          btn.addEventListener('click', async () => {
+            if (navigator.share) {
+              try { await navigator.share({ title: btn.dataset.shareTitle, url: location.href }); } catch {}
+              return;
+            }
+            menu.hidden = !menu.hidden;
           });
-        });
-        document.addEventListener('click', (e) => {
-          if (!wrap.contains(e.target)) menu.hidden = true;
-        });
-      })();
-    </script>
+          menu.querySelector('[data-copy-link]')?.addEventListener('click', () => {
+            navigator.clipboard.writeText(location.href).then(() => {
+              btn.textContent = 'Copied!';
+              menu.hidden = true;
+              setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+            });
+          });
+          document.addEventListener('click', (e) => {
+            if (!wrap.contains(e.target)) menu.hidden = true;
+          });
+        })();
+      </script>
+    ` : ""}
   `;
 }
 
@@ -1055,7 +1060,7 @@ function renderOpeningSynthesis(viewModel: TopicPageViewModel): string {
   if (!viewModel.openingSynthesisHtml) return "";
   return `
     <section class="topic-opening-synthesis">
-      <div class="topic-opening-synthesis-kicker">Synthesis</div>
+      <div class="topic-opening-synthesis-kicker">Opening synthesis</div>
       <div class="topic-opening-synthesis-body">${viewModel.openingSynthesisHtml}</div>
     </section>
   `;
@@ -1167,20 +1172,17 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
 
 function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
   return `
-    <section class="vote-logic" id="transcript">
-      ${viewModel.rounds.map((round, i) => `
-        <details class="vote-logic-round-details">
-          <summary>Round ${i + 1}</summary>
-          <div class="vote-logic-list">
-            ${round.contributions.map((contribution) => `
-              <div class="vote-logic-item">
-                <div class="vote-logic-attribution"><strong>${contribution.displayName ? escapeHtml(contribution.displayName) : `@${escapeHtml(contribution.handle)}`}</strong></div>
-                <div class="vote-logic-reasoning">${contribution.bodyHtml}</div>
-              </div>
-            `).join("")}
-          </div>
-        </details>
-      `).join("")}
+    <section class="topic-transcript-section" id="transcript">
+      <div class="topic-transcript-head">
+        <div>
+          <span class="topic-transcript-kicker">Transcript</span>
+          <h2>Round-by-round record</h2>
+        </div>
+        <div class="topic-transcript-meta">${escapeHtml(String(viewModel.rounds.length))} round${viewModel.rounds.length === 1 ? "" : "s"}</div>
+      </div>
+      <div class="topic-transcript">
+        ${renderTopicTranscript(viewModel.rounds)}
+      </div>
     </section>
   `;
 }
@@ -1363,17 +1365,19 @@ function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel
     .filter((h) => !excludeContributionId || h.contributionId !== excludeContributionId);
   if (filtered.length === 0) return "";
   return `
-    <section class="topic-highlights">
-      <div class="topic-highlights-kicker">What moved the debate</div>
-      <div class="topic-highlights-list">
-        ${filtered.map((highlight) => `
-          <div class="topic-highlight-item">
-            <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
-            <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
-          </div>
-        `).join("")}
-      </div>
-    </section>
+    <details class="dossier-secondary-section">
+      <summary>What moved the debate</summary>
+      <section class="topic-highlights">
+        <div class="topic-highlights-list">
+          ${filtered.map((highlight) => `
+            <div class="topic-highlight-item">
+              <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
+              <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
+            </div>
+          `).join("")}
+        </div>
+      </section>
+    </details>
   `;
 }
 
@@ -2307,7 +2311,7 @@ app.get("/topics/:topicId", async (c) => {
         renderTopicScoreStorySection(viewModel),
         renderVoteLogicSection(voteLogicRows),
         `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
-
+        sharePanel,
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
 
