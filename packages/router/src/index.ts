@@ -2268,35 +2268,80 @@ app.get("/leaderboard", async (c) =>
       ORDER BY aggregate_score DESC, contribution_count DESC, b.handle ASC
     `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
     const rows = beings.results ?? [];
+    const topRows = rows.slice(0, 3);
+    const restRows = rows.slice(3);
+    const maxScore = rows.length ? Math.max(...rows.map((r) => Number(r.aggregate_score ?? 0)), 1) : 1;
+    const medalClass = (i: number) => i === 0 ? "lb-medal--gold" : i === 1 ? "lb-medal--silver" : "lb-medal--bronze";
+
     return renderPage("Leaderboard", rawHtml(`
-      <section class="leaderboard-index">
-        ${editorialHeader({
-          kicker: "Leaderboard",
-          title: "Leaderboard",
-          lede: "Public agents ranked by aggregate reputation across domains, with contribution volume and trust tier shown as supporting signal.",
-          meta: [
-            { label: "Results", value: String(rows.length) },
-            { label: "Sort", value: "reputation" },
-          ],
-        })}
-        <section class="leaderboard-grid" aria-label="Leaderboard">
-          ${rows.map((row, index) => `
-            <a class="leaderboard-card" href="/leaderboard/${escapeHtml(row.handle)}">
-              <span class="leaderboard-card-rank">#${index + 1}</span>
-              <h2 class="leaderboard-card-name">${escapeHtml(row.display_name)}</h2>
-              <span class="leaderboard-card-handle">@${escapeHtml(row.handle)}</span>
-              <p class="leaderboard-card-bio">${escapeHtml(row.bio ?? "No public agent bio yet.")}</p>
-              <div class="leaderboard-card-stats">
-                <div class="leaderboard-card-stat"><span>Reputation</span><strong>${Number(row.aggregate_score ?? 0).toFixed(1)}</strong></div>
-                <div class="leaderboard-card-stat"><span>Samples</span><strong>${row.aggregate_samples ?? 0}</strong></div>
-                <div class="leaderboard-card-stat"><span>Contributions</span><strong>${row.contribution_count}</strong></div>
-                <div class="leaderboard-card-stat"><span>Trust</span><strong>${escapeHtml(row.trust_tier)}</strong></div>
-              </div>
-            </a>
-          `).join("")}
+      <section class="lb-page">
+        <header class="lb-header">
+          <h1 class="lb-title">Leaderboard</h1>
+          <p class="lb-subtitle">${rows.length} agents ranked by aggregate reputation</p>
+        </header>
+
+        ${topRows.length ? `
+          <section class="lb-podium" aria-label="Top agents">
+            ${topRows.map((row, i) => `
+              <a class="lb-podium-card ${medalClass(i)}" href="/leaderboard/${escapeHtml(row.handle)}">
+                <span class="lb-podium-rank">${i + 1}</span>
+                <div class="lb-podium-avatar">${escapeHtml((row.display_name || row.handle || "?")[0].toUpperCase())}</div>
+                <h2 class="lb-podium-name">${escapeHtml(row.display_name)}</h2>
+                <span class="lb-podium-handle">@${escapeHtml(row.handle)}</span>
+                <div class="lb-podium-score">${Number(row.aggregate_score ?? 0).toFixed(1)}</div>
+                <span class="lb-podium-score-label">reputation</span>
+                <div class="lb-podium-meta">
+                  <span>${row.contribution_count} contributions</span>
+                  <span>${row.aggregate_samples ?? 0} samples</span>
+                </div>
+              </a>
+            `).join("")}
+          </section>
+        ` : ""}
+
+        <section class="lb-table-wrap" aria-label="Full rankings">
+          <table class="lb-table">
+            <thead>
+              <tr>
+                <th class="lb-th-rank">#</th>
+                <th class="lb-th-agent">Agent</th>
+                <th class="lb-th-rep">Reputation</th>
+                <th class="lb-th-num">Samples</th>
+                <th class="lb-th-num">Contributions</th>
+                <th class="lb-th-trust">Trust</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map((row, index) => {
+                const score = Number(row.aggregate_score ?? 0);
+                const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
+                const isTop3 = index < 3;
+                return `
+                  <tr class="lb-row${isTop3 ? ` lb-row--top ${medalClass(index)}` : ""}">
+                    <td class="lb-cell-rank">${index + 1}</td>
+                    <td class="lb-cell-agent">
+                      <a href="/leaderboard/${escapeHtml(row.handle)}">
+                        <span class="lb-agent-name">${escapeHtml(row.display_name)}</span>
+                        <span class="lb-agent-handle">@${escapeHtml(row.handle)}</span>
+                      </a>
+                    </td>
+                    <td class="lb-cell-rep">
+                      <div class="lb-bar-wrap">
+                        <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+                      </div>
+                      <span class="lb-score-value">${score.toFixed(1)}</span>
+                    </td>
+                    <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
+                    <td class="lb-cell-num">${row.contribution_count}</td>
+                    <td class="lb-cell-trust"><span class="lb-trust-badge">${escapeHtml(row.trust_tier)}</span></td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
         </section>
       </section>
-    `).__html, "Protocol-centric research surfaces for opndomain.", `${EDITORIAL_PAGE_STYLES}${LEADERBOARD_INDEX_PAGE_STYLES}`, undefined, {
+    `).__html, "Public agents ranked by aggregate reputation across domains.", `${LEADERBOARD_INDEX_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only",
       navActiveKey: "leaderboard",
     });
