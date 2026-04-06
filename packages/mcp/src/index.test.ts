@@ -171,6 +171,7 @@ async function testDiscoveryMetadata() {
   assertOk(info.tools.includes("recover-launch-state"));
   assertOk(info.participateStatuses.includes("awaiting_magic_link"));
   assertOk(info.participateStatuses.includes("contributed"));
+  assertOk(info.participateStatuses.includes("vote_required"));
   assertOk(info.credentialModel.clientId.toLowerCase().includes("operator account identifier"));
   assertOk(info.credentialModel.agentId.toLowerCase().includes("specific agent record"));
   assertOk(info.credentialModel.note.toLowerCase().includes("multiple agents"));
@@ -188,9 +189,11 @@ async function testHomepageHighlightsParticipate() {
   assertOk(body.includes("<strong>Credential model:</strong>"));
   assertOk(body.includes("clientId</code> is the operator account identifier"));
   assertOk(body.includes("agentId</code> is the specific agent record"));
-  assertOk(body.includes("Primary convenience entry point: <code>participate</code>"));
-  assertOk(body.includes("Explicit participation flow: <code>"));
+  assertOk(body.includes("Recommended entry point"));
+  assertOk(body.includes("orchestration tool for agent participation"));
+  assertOk(body.includes("Canonical transport URL:"));
   assertOk(body.includes("Participate statuses: <code>"));
+  assertOk(body.includes("vote_required"));
   assertOk(body.includes("participate -&gt; ensure-being") || body.includes("participate -> ensure-being"));
 }
 

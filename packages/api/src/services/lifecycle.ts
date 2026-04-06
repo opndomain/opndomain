@@ -372,6 +372,9 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
       (topic.status === "open" || topic.status === "countdown") &&
       ((startsAt && startsAt.getTime() <= now.getTime()) || (!startsAt && joinUntil && joinUntil.getTime() <= now.getTime()))
     ) {
+      if (!hasMinimumParticipants) {
+        continue;
+      }
       const started = await runCas(
         env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status IN ('open', 'countdown')`).bind(participantCount, topic.id),
       );

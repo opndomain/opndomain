@@ -78,6 +78,9 @@ type TopicPageMeta = {
   prompt: string;
   template_id: string;
   domain_name: string;
+  domain_slug: string;
+  parent_domain_name: string | null;
+  parent_domain_slug: string | null;
   artifact_status: string | null;
   verdict_html_key: string | null;
   og_image_key: string | null;
@@ -92,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-layout-nogap";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-vote-logic-v7";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -980,26 +983,59 @@ function buildTopicPageViewModel(
   };
 }
 
-function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel) {
+function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, shareLinks: { x: string; reddit: string }) {
   const promptText = meta.prompt?.trim();
   const showPrompt = promptText && promptText !== meta.title;
+  const shareTitle = `${meta.title} | opndomain`;
   return `
     <header class="topic-header">
       <div class="topic-header-kicker">
-        <span class="topic-kicker-domain">${escapeHtml(meta.domain_name)}</span>
-        <span class="topic-kicker-sep">&middot;</span>
-        <span class="topic-kicker-template">${escapeHtml(meta.template_id)}</span>
-        <span class="topic-kicker-sep">&middot;</span>
-        <span class="topic-kicker-status">${escapeHtml(meta.status)}</span>
+        ${meta.parent_domain_name && meta.parent_domain_slug
+          ? `<a class="topic-kicker-domain" href="/domains/${escapeHtml(meta.parent_domain_slug)}">${escapeHtml(meta.parent_domain_name)}</a>
+             <span class="topic-kicker-sep">/</span>
+             <a class="topic-kicker-domain" href="/domains/${escapeHtml(meta.domain_slug)}">${escapeHtml(meta.domain_name)}</a>`
+          : `<a class="topic-kicker-domain" href="/domains/${escapeHtml(meta.domain_slug)}">${escapeHtml(meta.domain_name)}</a>`
+        }
       </div>
       <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
       ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
-      <div class="topic-header-meta">
-        ${viewModel.headerMeta.map((item) => `
-          <span class="topic-header-meta-item"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.value)}</span></span>
-        `).join("")}
+      <div class="topic-header-actions">
+        <a class="topic-header-pill" href="#transcript">Full transcript</a>
+        <div class="topic-share-wrap">
+          <button class="topic-header-pill topic-header-pill--share" data-share-title="${escapeHtml(shareTitle)}" data-share-x="${escapeHtml(shareLinks.x)}" data-share-reddit="${escapeHtml(shareLinks.reddit)}">Share</button>
+          <div class="topic-share-menu" hidden>
+            <a class="topic-share-option" href="${escapeHtml(shareLinks.x)}" target="_blank" rel="noopener">Share on X</a>
+            <a class="topic-share-option" href="${escapeHtml(shareLinks.reddit)}" target="_blank" rel="noopener">Share on Reddit</a>
+            <button class="topic-share-option" data-copy-link>Copy link</button>
+          </div>
+        </div>
       </div>
     </header>
+    <script>
+      (() => {
+        const wrap = document.querySelector('.topic-share-wrap');
+        const btn = wrap?.querySelector('.topic-header-pill--share');
+        const menu = wrap?.querySelector('.topic-share-menu');
+        if (!btn || !menu) return;
+        btn.addEventListener('click', async () => {
+          if (navigator.share) {
+            try { await navigator.share({ title: btn.dataset.shareTitle, url: location.href }); } catch {}
+            return;
+          }
+          menu.hidden = !menu.hidden;
+        });
+        menu.querySelector('[data-copy-link]')?.addEventListener('click', () => {
+          navigator.clipboard.writeText(location.href).then(() => {
+            btn.textContent = 'Copied!';
+            menu.hidden = true;
+            setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+          });
+        });
+        document.addEventListener('click', (e) => {
+          if (!wrap.contains(e.target)) menu.hidden = true;
+        });
+      })();
+    </script>
   `;
 }
 
@@ -1019,20 +1055,24 @@ function renderOpeningSynthesis(viewModel: TopicPageViewModel): string {
   if (!viewModel.openingSynthesisHtml) return "";
   return `
     <section class="topic-opening-synthesis">
-      <div class="topic-opening-synthesis-kicker">Opening synthesis</div>
+      <div class="topic-opening-synthesis-kicker">Synthesis</div>
       <div class="topic-opening-synthesis-body">${viewModel.openingSynthesisHtml}</div>
     </section>
   `;
 }
 
-function renderSharpestObjection(viewModel: TopicPageViewModel): string {
-  const objection = viewModel.dossier?.mostContestedClaims[0]?.strongestContradiction;
-  if (!objection || objection.confidence < 0.5) return "";
+function renderSharpestObservation(viewModel: TopicPageViewModel): string {
+  const critiqueHighlight = viewModel.verdictHighlights?.find((h) => h.roundKind === "critique");
+  if (!critiqueHighlight) return "";
+  const name = critiqueHighlight.displayName
+    ? escapeHtml(critiqueHighlight.displayName)
+    : `@${escapeHtml(critiqueHighlight.beingHandle)}`;
   return `
-    <section class="topic-sharpest-objection">
-      <div class="topic-sharpest-objection-kicker">Sharpest objection</div>
-      <blockquote class="topic-sharpest-objection-body">${escapeHtml(objection.body)}</blockquote>
-    </section>
+    <div class="topic-sharpest-observation">
+      <div class="topic-sharpest-observation-kicker">Sharpest observation</div>
+      <blockquote class="topic-sharpest-observation-body">${escapeHtml(critiqueHighlight.excerpt)}</blockquote>
+      <div class="topic-sharpest-observation-attribution">${name}</div>
+    </div>
   `;
 }
 
@@ -1127,15 +1167,20 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
 
 function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
   return `
-    <section class="topic-transcript-section">
-      <div class="topic-transcript-head">
-        <div>
-          <span class="topic-transcript-kicker">Transcript</span>
-          <h2>${escapeHtml(String(viewModel.contributions))} contribution${viewModel.contributions === 1 ? "" : "s"} across ${escapeHtml(String(viewModel.visibleRoundCount))} round${viewModel.visibleRoundCount === 1 ? "" : "s"}</h2>
-        </div>
-        <span class="topic-transcript-meta">${viewModel.metaPanel.tone === "open" ? "Updates live" : "Round-by-round record"}</span>
-      </div>
-      <div class="topic-transcript">${renderTopicTranscript(viewModel.rounds)}</div>
+    <section class="topic-transcript-section vote-logic" id="transcript">
+      ${viewModel.rounds.map((round, i) => `
+        <details class="vote-logic-round-details">
+          <summary>Round ${i + 1}</summary>
+          <div class="vote-logic-list">
+            ${round.contributions.map((contribution) => `
+              <div class="vote-logic-item">
+                <div class="vote-logic-attribution"><strong>${contribution.displayName ? escapeHtml(contribution.displayName) : `@${escapeHtml(contribution.handle)}`}</strong></div>
+                <div class="vote-logic-reasoning">${contribution.bodyHtml}</div>
+              </div>
+            `).join("")}
+          </div>
+        </details>
+      `).join("")}
     </section>
   `;
 }
@@ -1184,6 +1229,7 @@ function renderTopicMetaPanel(viewModel: TopicPageViewModel) {
       <div class="topic-meta-badges">
         ${viewModel.metaPanel.badges.map((badge) => dataBadge(badge)).join("")}
       </div>
+      ${renderSharpestObservation(viewModel)}
     </aside>
   `;
 }
@@ -1312,26 +1358,19 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
 }
 
 function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>, excludeContributionId: string | null) {
-  const filtered = excludeContributionId
-    ? highlights.filter((h) => h.contributionId !== excludeContributionId)
-    : highlights;
+  const filtered = highlights
+    .filter((h) => h.roundKind !== "vote" && h.roundKind !== "map")
+    .filter((h) => !excludeContributionId || h.contributionId !== excludeContributionId);
   if (filtered.length === 0) return "";
   return `
     <section class="topic-highlights">
-      <div class="topic-highlights-head">
-        <div class="topic-highlights-kicker">What moved the debate</div>
-        <h3>Contributions that shaped the outcome</h3>
-      </div>
-      <div class="topic-highlights-grid">
+      <div class="topic-highlights-kicker">What moved the debate</div>
+      <div class="topic-highlights-list">
         ${filtered.map((highlight) => `
-          <article class="topic-highlight-card">
-            <div class="topic-highlight-topline">
-              <div class="topic-highlight-meta">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`} &middot; ${escapeHtml(titleCaseLabel(highlight.roundKind, "Unknown round"))}</div>
-              <div class="topic-highlight-score">${escapeHtml(String(Math.round(highlight.finalScore)))}</div>
-            </div>
-            <h4 class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</h4>
-            <p class="topic-highlight-reason">${escapeHtml(highlight.reason)}</p>
-          </article>
+          <div class="topic-highlight-item">
+            <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
+            <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
+          </div>
         `).join("")}
       </div>
     </section>
@@ -1385,7 +1424,6 @@ function renderConvergenceMap(viewModel: TopicPageViewModel): string {
         <div class="convergence-majority-bar">
           <span class="convergence-bar-fill convergence-bar-fill--majority" style="width: ${majority.share}%;"></span>
         </div>
-        <div class="convergence-majority-meta">${majority.contributionCount} contributions · ${majority.strength}% support strength</div>
       </div>
 
       ${others.length > 0 ? `
@@ -1433,10 +1471,6 @@ function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
   return `
     <section class="both-sides-summary">
       <div class="both-sides-section">
-        <div class="both-sides-kicker">Case for the majority</div>
-        <div class="both-sides-body">${renderParagraphs(viewModel.bothSidesSummary.majorityCase, "both-sides-paragraph")}</div>
-      </div>
-      <div class="both-sides-section">
         <div class="both-sides-kicker">Strongest counter-argument</div>
         <div class="both-sides-body">${renderParagraphs(viewModel.bothSidesSummary.counterArgument, "both-sides-paragraph")}</div>
       </div>
@@ -1444,22 +1478,78 @@ function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
   `;
 }
 
-function renderMinorityReports(viewModel: TopicPageViewModel): string {
+type VoteLogicRow = {
+  voter_handle: string;
+  voter_display_name: string | null;
+  target_handle: string;
+  target_display_name: string | null;
+  reasoning: string | null;
+  round_index: number;
+  round_kind: string;
+};
+
+function renderVoteLogicSection(rows: VoteLogicRow[]): string {
+  if (!rows.length) return "";
+  // Group by round
+  const byRound = new Map<number, { kind: string; entries: VoteLogicRow[] }>();
+  for (const row of rows) {
+    const existing = byRound.get(row.round_index);
+    if (existing) {
+      existing.entries.push(row);
+    } else {
+      byRound.set(row.round_index, { kind: row.round_kind, entries: [row] });
+    }
+  }
+  const sortedRounds = [...byRound.entries()].sort((a, b) => a[0] - b[0]);
+  return `
+    <details class="dossier-secondary-section"><summary>Vote logic</summary>
+    <section class="vote-logic">
+      ${sortedRounds.map(([roundIdx, group], i) => `
+        <details class="vote-logic-round-details">
+          <summary>Round ${i + 1}</summary>
+          <div class="vote-logic-list">
+            ${group.entries.map((entry) => {
+              const voter = entry.voter_display_name ? escapeHtml(entry.voter_display_name) : `@${escapeHtml(entry.voter_handle)}`;
+              const target = entry.target_display_name ? escapeHtml(entry.target_display_name) : `@${escapeHtml(entry.target_handle)}`;
+              const reasoning = entry.reasoning?.trim() ?? "";
+              return `
+                <div class="vote-logic-item">
+                  <div class="vote-logic-attribution"><strong>${voter}</strong> voted for <strong>${target}</strong></div>
+                  ${reasoning ? `<div class="vote-logic-reasoning">${renderParagraphs(reasoning, "vote-logic-paragraph")}</div>` : ""}
+                </div>
+              `;
+            }).join("")}
+          </div>
+        </details>
+      `).join("")}
+    </section>
+    </details>
+  `;
+}
+
+function extractDissentingVerdict(body: string): string {
+  const verdictMatch = /FINAL VERDICT:\s*([\s\S]*?)$/i.exec(body);
+  if (verdictMatch?.[1]?.trim()) return verdictMatch[1].trim();
+  const counterMatch = /COUNTER-ARGUMENT:\s*([\s\S]*?)(?=FINAL VERDICT:|$)/i.exec(body);
+  if (counterMatch?.[1]?.trim()) return counterMatch[1].trim();
+  return body;
+}
+
+function renderDissentingViews(viewModel: TopicPageViewModel): string {
   if (!viewModel.minorityReports || viewModel.minorityReports.length === 0) return "";
   return `
-    <section class="minority-reports">
-      <div class="minority-reports-kicker">Minority reports</div>
-      <div class="minority-reports-list">
-        ${viewModel.minorityReports.map((report) => `
-          <article class="minority-report-card">
-            <div class="minority-report-position">${escapeHtml(report.positionLabel)}</div>
-            <div class="minority-report-body">${renderParagraphs(report.body, "minority-report-paragraph")}</div>
-            <footer class="minority-report-footer">
-              <span class="minority-report-handle">${report.displayName ? escapeHtml(report.displayName) : `@${escapeHtml(report.handle)}`}</span>
-              <span class="minority-report-score">${report.finalScore.toFixed(1)}</span>
-            </footer>
-          </article>
-        `).join("")}
+    <section class="dissenting-views">
+      <div class="dissenting-views-kicker">Dissenting views</div>
+      <div class="dissenting-views-list">
+        ${viewModel.minorityReports.map((report) => {
+          const name = report.displayName ? escapeHtml(report.displayName) : `@${escapeHtml(report.handle)}`;
+          const cleanBody = extractDissentingVerdict(report.body);
+          return `
+          <div class="dissenting-view-item">
+            <div class="dissenting-view-attribution">${name}</div>
+            <div class="dissenting-view-body">${renderParagraphs(cleanBody, "dissenting-view-paragraph")}</div>
+          </div>`;
+        }).join("")}
       </div>
     </section>
   `;
@@ -2101,6 +2191,9 @@ app.get("/topics/:topicId", async (c) => {
           t.prompt,
           t.template_id,
           d.name AS domain_name,
+          d.slug AS domain_slug,
+          pd.name AS parent_domain_name,
+          pd.slug AS parent_domain_slug,
           ta.artifact_status,
           ta.verdict_html_key,
           ta.og_image_key,
@@ -2110,6 +2203,7 @@ app.get("/topics/:topicId", async (c) => {
           (SELECT COUNT(*) FROM contributions c2 WHERE c2.topic_id = t.id) AS contribution_count
         FROM topics t
         INNER JOIN domains d ON d.id = t.domain_id
+        LEFT JOIN domains pd ON pd.id = d.parent_domain_id
         LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
         LEFT JOIN verdicts v ON v.topic_id = t.id
         WHERE t.id = ?
@@ -2118,6 +2212,37 @@ app.get("/topics/:topicId", async (c) => {
     if (!meta) {
       return renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier."));
     }
+    const voteLogicRows = meta.status === "closed"
+      ? (await c.env.DB.prepare(`
+          SELECT
+            voter_b.handle AS voter_handle,
+            voter_b.display_name AS voter_display_name,
+            target_b.handle AS target_handle,
+            target_b.display_name AS target_display_name,
+            voter_c.body_clean AS reasoning,
+            r.sequence_index AS round_index,
+            r.round_kind AS round_kind
+          FROM votes v
+          INNER JOIN beings voter_b ON voter_b.id = v.voter_being_id
+          INNER JOIN contributions target_c ON target_c.id = v.contribution_id
+          INNER JOIN beings target_b ON target_b.id = target_c.being_id
+          INNER JOIN rounds r ON r.id = v.round_id
+          LEFT JOIN contributions voter_c
+            ON voter_c.round_id = v.round_id
+            AND voter_c.being_id = v.voter_being_id
+          WHERE v.topic_id = ?
+            AND v.vote_kind = 'most_correct'
+          ORDER BY r.sequence_index ASC, voter_b.handle ASC
+        `).bind(topicId).all<{
+          voter_handle: string;
+          voter_display_name: string | null;
+          target_handle: string;
+          target_display_name: string | null;
+          reasoning: string | null;
+          round_index: number;
+          round_kind: string;
+        }>())?.results ?? []
+      : [];
     const verdictPresentationObject =
       meta.status === "closed" && meta.artifact_status === "published"
         ? await readVerdictPresentation(c, topicId)
@@ -2128,7 +2253,11 @@ app.get("/topics/:topicId", async (c) => {
     const descriptionMeta = meta.status === "closed"
       ? { ...meta, contribution_count: viewModel.contributions }
       : meta;
-    const description = buildTopicShareDescription(descriptionMeta, verdictPresentation?.summary);
+    const topPosition = viewModel.convergenceMap?.[0]?.label ?? null;
+    const shareDescriptionText = topPosition
+      ? `${topPosition}`
+      : verdictPresentation?.summary ?? null;
+    const description = buildTopicShareDescription(descriptionMeta, shareDescriptionText);
     const head = buildTopicHeadMetadata(c.env, meta, description);
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
@@ -2150,8 +2279,7 @@ app.get("/topics/:topicId", async (c) => {
         // TIER 1 — Above fold
         `<section class="topic-above-fold">${[
           `<div class="topic-hero-col">
-            ${buildTopicHeader(meta, viewModel)}
-            ${renderVerdictClosure(viewModel)}
+            ${buildTopicHeader(meta, viewModel, shareLinks)}
             ${viewModel.convergenceMap ? renderConvergenceMap(viewModel) : ""}
           </div>`,
           renderTopicMetaPanel(viewModel),
@@ -2166,24 +2294,20 @@ app.get("/topics/:topicId", async (c) => {
           : "",
         // Editorial body: skip if bothSidesSummary is present (same content, already decomposed above)
         !viewModel.bothSidesSummary ? renderEditorialBody(viewModel) : "",
-        renderSharpestObjection(viewModel),
-
         // TIER 3 — Supporting (collapsed by default)
         viewModel.verdictHighlights
-          ? `<details class="dossier-secondary-section"><summary>What moved the debate</summary>${renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)}</details>`
+          ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
           : "",
-        renderMinorityReports(viewModel)
-          ? `<details class="dossier-secondary-section"><summary>Minority reports</summary>${renderMinorityReports(viewModel)}</details>`
-          : "",
+        renderDissentingViews(viewModel),
         !viewModel.convergenceMap && viewModel.positions
           ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions)
           : "",
 
         // TIER 4 — Deep Dives (always collapsed)
         renderTopicScoreStorySection(viewModel),
+        renderVoteLogicSection(voteLogicRows),
         `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
 
-        sharePanel,
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
 
@@ -2196,7 +2320,7 @@ app.get("/topics/:topicId", async (c) => {
 
     const pageBody = [
       `<section class="topic-above-fold">${[
-        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
+        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel, shareLinks)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
       renderTopicTranscriptSection(viewModel),

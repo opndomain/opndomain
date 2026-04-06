@@ -335,6 +335,38 @@ describe("topic lifecycle sweeps", () => {
     ]);
   });
 
+  it("does not start scheduled topics before minimum participants join", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
+      {
+        id: "top_underfilled",
+        domain_id: "dom_1",
+        status: "open",
+        topic_format: "scheduled_research",
+        cadence_family: "scheduled",
+        min_distinct_participants: 3,
+        countdown_seconds: null,
+        starts_at: "2026-03-24T11:45:00.000Z",
+        join_until: "2026-03-24T11:30:00.000Z",
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 0 }]);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", []);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:00:00.000Z"),
+    });
+
+    assert.deepEqual(result.mutatedTopicIds, []);
+    assert.equal(db.runs.some((run) => run.sql.includes("UPDATE topics SET status = 'started', current_round_index = 0")), false);
+  });
+
   it("records cron heartbeats in KV", async () => {
     const writes: Array<{ key: string; value: string }> = [];
     const env = {
