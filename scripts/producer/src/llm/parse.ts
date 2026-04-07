@@ -113,9 +113,12 @@ export function validateCandidate(
     domainId: c.domainId,
     title: c.title,
     prompt: c.prompt,
-    templateId: c.templateId,
-    topicFormat: c.topicFormat,
-    cadenceFamily: c.cadenceFamily,
+    // Force every producer-generated candidate onto the debate_v2 +
+    // rolling_research path. The LLM is encouraged to suggest a templateId
+    // but we override it because all production debates run debate_v2.
+    templateId: "debate_v2",
+    topicFormat: "rolling_research",
+    cadenceFamily: "scheduled",
     cadenceOverrideMinutes: null,
     minTrustTier: c.minTrustTier,
     priorityScore,

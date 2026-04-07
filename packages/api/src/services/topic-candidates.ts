@@ -416,7 +416,7 @@ export async function promoteTopicCandidates(env: ApiEnv, options?: { cron?: str
         SELECT 1
         FROM topics t
         WHERE t.domain_id = d.id
-          AND t.topic_format = 'scheduled_research'
+          AND t.topic_format IN ('scheduled_research', 'rolling_research')
           AND t.status IN ('open', 'countdown', 'started')
       )
       ORDER BY d.created_at ASC
@@ -431,7 +431,7 @@ export async function promoteTopicCandidates(env: ApiEnv, options?: { cron?: str
         FROM topic_candidates
         WHERE domain_id = ?
           AND status = 'approved'
-          AND topic_format = 'scheduled_research'
+          AND topic_format IN ('scheduled_research', 'rolling_research')
         ORDER BY priority_score DESC, created_at DESC
         LIMIT 1
       `,
