@@ -3105,6 +3105,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .winning-argument,
 .both-sides-summary,
 .topic-opening-synthesis,
+.topic-featured-answer,
 .topic-highlights,
 .dissenting-views,
 .dossier-secondary-section {
