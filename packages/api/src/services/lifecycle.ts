@@ -16,6 +16,7 @@ import { nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
+import { syncTopicSnapshots } from "../lib/snapshot-sync.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
 import { sweepAutonomousTopics } from "./autonomous-lifecycle.js";
@@ -744,6 +745,15 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
     }
   }
 
+  // Refresh R2 transcript/state snapshot so the router reads current data
+  // after the cache is invalidated below. Cron-only path: bounded by sweep
+  // frequency, not per-contribution, so write amplification stays flat.
+  try {
+    await syncTopicSnapshots(env, round.topic_id, "round_completion");
+  } catch (snapshotError) {
+    console.error("snapshot sync after round advance failed", round.id, snapshotError);
+  }
+
   await invalidateTopicPublicSurfaces(env, {
     topicId: round.topic_id,
     domainId: round.domain_id,
@@ -782,6 +792,36 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
   for (const round of activeRounds) {
     if (!(await shouldCompleteRound(env, round, now))) {
       continue;
+    }
+    // Phantom-round guard: if a content round's timer expired with zero
+    // visible contributions, the topic has lost its participants. Stall it
+    // instead of marching through empty rounds and producing fake verdicts.
+    // Vote rounds are exempt — they can legitimately have zero visible rows.
+    if (round.round_kind && round.round_kind !== "vote") {
+      const contributionCount = await firstRow<{ c: number }>(
+        env.DB,
+        `SELECT COUNT(*) AS c FROM contributions WHERE round_id = ? AND visibility IN ('normal', 'low_confidence')`,
+        round.id,
+      );
+      if ((contributionCount?.c ?? 0) === 0) {
+        try {
+          const stalled = await runCas(
+            env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'started'`).bind(nowIso(now), round.topic_id),
+          );
+          if (stalled) {
+            await invalidateTopicPublicSurfaces(env, {
+              topicId: round.topic_id,
+              domainId: round.domain_id,
+              reason: "topic_stalled",
+              occurredAt: nowIso(now),
+            });
+            mutatedTopicIds.add(round.topic_id);
+          }
+        } catch (stallError) {
+          console.error("phantom-round stall failed for topic", round.topic_id, stallError);
+        }
+        continue;
+      }
     }
     try {
       const advanced = await advanceRound(env, round, now);
