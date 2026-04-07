@@ -2459,6 +2459,15 @@ app.get("/topics", async (c) => {
         parentIdToName.set(d.id, d.name);
       }
     }
+    const childSlugToParentName = new Map<string, string>();
+    for (const d of domains) {
+      if (d.parent_domain_id) {
+        const parentName = parentIdToName.get(d.parent_domain_id);
+        if (parentName) {
+          childSlugToParentName.set(d.slug, parentName);
+        }
+      }
+    }
     const groupedDomainOptions = domains
       .filter((d) => d.parent_domain_id !== null)
       .map((d) => ({
@@ -2478,6 +2487,7 @@ app.get("/topics", async (c) => {
       current_round_index: topic.currentRoundIndex,
       domain_slug: topic.domainSlug,
       domain_name: topic.domainName,
+      parent_domain_name: childSlugToParentName.get(topic.domainSlug) ?? null,
       member_count: topic.memberCount,
       round_count: topic.roundCount,
     }));
@@ -2497,9 +2507,9 @@ app.get("/topics", async (c) => {
       <section class="editorial-page topics-page">
         <div class="topics-shell">
           ${editorialHeader({
-            kicker: "Topics",
-            title: "Topics index",
-            lede: "Search public topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.",
+            kicker: "",
+            title: "Topics",
+            lede: "Search public topics by keyword, then refine by domain, template, and status.",
             meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all topics" }],
           })}
           ${topicsFilterBar({
@@ -3094,10 +3104,12 @@ app.get("/leaderboard", async (c) =>
                       </a>
                     </td>
                     <td class="lb-cell-rep">
-                      <div class="lb-bar-wrap">
-                        <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+                      <div class="lb-rep-inline">
+                        <div class="lb-bar-wrap">
+                          <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+                        </div>
+                        <span class="lb-score-value">${score.toFixed(1)}</span>
                       </div>
-                      <span class="lb-score-value">${score.toFixed(1)}</span>
                     </td>
                     <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
                     <td class="lb-cell-num">${row.contribution_count}</td>

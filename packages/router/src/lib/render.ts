@@ -316,6 +316,7 @@ type TopicCardData = {
   template_id: string;
   domain_slug: string;
   domain_name: string;
+  parent_domain_name?: string | null;
   member_count: number;
   round_count: number;
   current_round_index: number | null;
@@ -393,7 +394,7 @@ export function editorialHeader(options: EditorialHeaderOptions) {
 
   return `
     <section class="editorial-header">
-      <span class="editorial-kicker">${esc(options.kicker)}</span>
+      ${options.kicker ? `<span class="editorial-kicker">${esc(options.kicker)}</span>` : ""}
       <div>
         <h1 class="editorial-title">${esc(options.title)}</h1>
         <p class="editorial-lede">${esc(options.lede)}</p>
@@ -443,7 +444,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
     <section class="topics-filterbar">
       <form class="topics-filter-row" method="get" action="/topics">
         <input class="topics-search-input" name="q" type="search" value="${esc(options.q)}" placeholder="Search topics...">
-        <select class="topics-filter-select" name="domain">
+        <select class="topics-filter-select" name="domain" onchange="this.form.requestSubmit()">
           ${topicsFilterOption("", "All domains", options.domain)}
           ${(() => {
             const grouped = new Map<string, TopicsFilterOption[]>();
@@ -465,7 +466,7 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
             return parts.join("");
           })()}
         </select>
-        <select class="topics-filter-select" name="template">
+        <select class="topics-filter-select" name="template" onchange="this.form.requestSubmit()">
           ${topicsFilterOption("", "All templates", options.template)}
           ${options.templateOptions.map((option) => topicsFilterOption(option.value, option.label, options.template)).join("")}
         </select>
@@ -474,8 +475,6 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
           <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
           <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
         </div>
-        ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
-        <button class="topics-filter-btn" type="submit">Search</button>
         ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear</a>` : ""}
       </form>
     </section>
@@ -483,20 +482,20 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
 }
 
 export function topicCard(topic: TopicCardData) {
+  const domainLabel = topic.parent_domain_name
+    ? `${topic.parent_domain_name} / ${topic.domain_name}`
+    : topic.domain_name;
+  const stateLabel = topic.status === "closed" ? "Consensus" : "Contested";
   return `
     <article class="topics-card">
-      <div class="topics-card-head">
-        <div class="topics-card-copy">
-          <span class="topics-card-eyebrow">${esc(topic.template_id)}</span>
-          <h2><a href="/topics/${esc(topic.id)}">${esc(topic.title)}</a></h2>
-        </div>
-        <span class="topics-card-status">${esc(topic.status)}</span>
+      <div class="topics-card-copy">
+        <h2><a href="/topics/${esc(topic.id)}">${esc(topic.title)}</a></h2>
+        ${topic.prompt ? `<p class="topics-card-preview">${esc(topic.prompt)}</p>` : ""}
       </div>
       <div class="topics-card-meta">
-        ${topicCardStat("Domain", rawHtml(`<a href="/domains/${esc(topic.domain_slug)}">${esc(topic.domain_name)}</a>`))}
+        ${topicCardStat("Domain", rawHtml(`<a href="/domains/${esc(topic.domain_slug)}">${esc(domainLabel)}</a>`))}
         ${topicCardStat("Participants", String(topic.member_count))}
-        ${topicCardStat("Rounds", String(topic.round_count))}
-        ${topicCardStat("Date", formatDate(topic.created_at))}
+        ${topicCardStat("State", stateLabel)}
       </div>
     </article>
   `;
