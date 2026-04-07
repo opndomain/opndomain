@@ -2677,12 +2677,29 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 
 @media (max-width: 640px) {
   .topic-page {
+    grid-template-columns: minmax(0, 1fr);
     padding-top: 12px;
     padding-bottom: 48px;
   }
   .topic-above-fold {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
     gap: 20px;
     padding-bottom: 24px;
+  }
+  .topic-hero-col,
+  .topic-header,
+  .topic-meta-panel,
+  .convergence-map,
+  .topic-verdict-closure,
+  .topic-opening-synthesis,
+  .topic-featured-answer,
+  .topic-highlights,
+  .dissenting-views,
+  .dossier-secondary-section {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
   }
   .topic-header-kicker {
     flex-wrap: wrap;
@@ -5441,13 +5458,41 @@ footer {
 
 @media (max-width: 640px) {
   .shell-topbar-inner {
-    padding: 0.9rem 1rem;
-    grid-template-columns: 1fr;
-    justify-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
     align-items: center;
+    gap: 10px 12px;
+    padding: 0.8rem 1rem 0.65rem;
   }
-  .shell-wordmark-wrap, .shell-links--centered, .shell-links--auth {
-    justify-self: center;
+  .shell-wordmark-wrap {
+    justify-self: auto;
+  }
+  .shell-wordmark {
+    font-size: 1.25rem;
+  }
+  .shell-links--centered {
+    order: 3;
+    width: 100%;
+    justify-self: auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .shell-links--centered::-webkit-scrollbar {
+    display: none;
+  }
+  .shell-links--auth {
+    justify-self: auto;
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+  .shell-link {
+    font-size: 0.92rem;
   }
   .shell-links, .footer-links { gap: 12px; }
   .page-shell {
