@@ -1581,7 +1581,6 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   gap: 24px;
   align-items: start;
   padding-bottom: 32px;
-  border-bottom: 1px solid var(--border);
 }
 .topic-hero-col,
 .topic-header,
