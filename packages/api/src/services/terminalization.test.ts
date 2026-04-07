@@ -143,7 +143,7 @@ function queueClosedTopicPresentationReads(db: FakeDb) {
       domain_id: "dom_1",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "closed",
       current_round_index: 1,
@@ -219,8 +219,8 @@ function queueTerminalizationSuccessPath(
   },
 ) {
   db.queueFirst("FROM topics WHERE id = ?", [
-    { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
-    { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+    { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+    { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
   ]);
   // Verdict queue: 1st consumed by runTerminalizationSequence initial check (null = no existing verdict),
   // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
@@ -295,7 +295,7 @@ function queueTerminalizationSuccessPath(
     shadow_initial_score: 67,
     scoring_profile: "adversarial",
     round_kind: "propose",
-    template_id: "debate_v2",
+    template_id: "debate",
     topic_id: "top_1",
   }]);
   db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -311,8 +311,8 @@ describe("terminalization service", () => {
   it("forces a DO flush before checking for prior terminalization", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM topics WHERE id = ?", [
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
     ]);
     db.queueFirst("FROM verdicts WHERE topic_id = ?", [{ id: "vrd_1" }]);
     const calls: string[] = [];
@@ -339,7 +339,7 @@ describe("terminalization service", () => {
 
   it("skips non-closed topics after the flush barrier", async () => {
     const db = new FakeDb();
-    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "started" }]);
+    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate", status: "started" }]);
     let flushCalls = 0;
 
     const result = await runTerminalizationSequence(
@@ -392,7 +392,7 @@ describe("terminalization service", () => {
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
-    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
+    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" }]);
     // Verdict queue: 1st consumed by runTerminalizationSequence initial check,
     // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
     const flushVerdictRow = {
@@ -444,7 +444,7 @@ describe("terminalization service", () => {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "propose",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     }]);
     db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -498,8 +498,8 @@ describe("terminalization service", () => {
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
     db.queueFirst("FROM topics WHERE id = ?", [
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
     ]);
     // Verdict queue: 1st consumed by runTerminalizationSequence initial check (null = no existing verdict),
     // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
@@ -553,7 +553,7 @@ describe("terminalization service", () => {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "propose",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     }]);
     db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -608,7 +608,7 @@ describe("terminalization service", () => {
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
-    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
+    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" }]);
     const retermVerdictRow = {
       id: "vrd_1",
       confidence: "moderate",
@@ -658,7 +658,7 @@ describe("terminalization service", () => {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "propose",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     }]);
     db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -713,7 +713,7 @@ describe("terminalization service", () => {
     const snapshots = new FakeBucket();
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
-    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" }]);
+    db.queueFirst("FROM topics WHERE id = ?", [{ id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" }]);
     // Verdict queue: 1st consumed by runTerminalizationSequence initial check (null = backfill),
     // 2nd by syncTopicSnapshots, 3rd by reconcileTopicPresentation
     const backfillVerdictRow = {
@@ -764,7 +764,7 @@ describe("terminalization service", () => {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "propose",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     }]);
     db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -822,8 +822,8 @@ describe("terminalization service", () => {
     const publicArtifacts = new FakeBucket();
     const cache = new FakeCache();
     db.queueFirst("FROM topics WHERE id = ?", [
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
     ]);
     const epistemicVerdictRow = {
       confidence: "moderate",
@@ -873,7 +873,7 @@ describe("terminalization service", () => {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "propose",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     }]);
     db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -914,8 +914,8 @@ describe("terminalization service", () => {
     const cache = new FakeCache();
     db.throwOnRunMatch = /INSERT INTO epistemic_reliability/;
     db.queueFirst("FROM topics WHERE id = ?", [
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
-      { id: "top_1", domain_id: "dom_1", template_id: "debate_v2", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
     ]);
     const failOpenVerdictRow = {
       confidence: "moderate",
@@ -966,7 +966,7 @@ describe("terminalization service", () => {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "propose",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     }]);
     db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
@@ -1160,6 +1160,48 @@ describe("extractBothSidesSummary", () => {
 
   it("returns null for empty body", () => {
     assert.equal(extractBothSidesSummary(""), null);
+  });
+
+  it("extracts PART B impartial synthesis when all three new labels are present", () => {
+    const body =
+      "PART A — MY POSITION\n\n" +
+      "MAP_POSITION: 2\n\n" +
+      "MY THESIS: X is the best answer.\n\n" +
+      "WHY I HOLD IT: Reasoning here.\n\n" +
+      "STRONGEST OBJECTION I CAN'T FULLY ANSWER: Y is hard.\n\n" +
+      "PART B — IMPARTIAL SYNTHESIS\n\n" +
+      "WHAT THIS DEBATE SETTLED: The room agreed on Z.\n\n" +
+      "WHAT REMAINS CONTESTED: Whether W applies.\n\n" +
+      "NEUTRAL VERDICT: The evidence leans toward X but W is unresolved.\n\n" +
+      "KICKER: X wins on points.";
+    const result = extractBothSidesSummary(body);
+    assert.ok(result);
+    assert.match(result.majorityCase, /room agreed on Z/);
+    assert.match(result.counterArgument, /Whether W applies/);
+    assert.match(result.finalVerdict, /evidence leans toward X/);
+  });
+
+  it("returns null when new format is partial (missing CONTESTED)", () => {
+    const body =
+      "PART B — IMPARTIAL SYNTHESIS\n\n" +
+      "WHAT THIS DEBATE SETTLED: Something.\n\n" +
+      "NEUTRAL VERDICT: Done.";
+    assert.equal(extractBothSidesSummary(body), null);
+  });
+
+  it("returns null when new format is partial (only SETTLED populated)", () => {
+    const body = "WHAT THIS DEBATE SETTLED: Just one section.";
+    assert.equal(extractBothSidesSummary(body), null);
+  });
+
+  it("falls through to legacy format when new labels absent", () => {
+    const body =
+      "MAJORITY CASE: Legacy majority.\n\n" +
+      "COUNTER-ARGUMENT: Legacy counter.\n\n" +
+      "FINAL VERDICT: Legacy verdict.";
+    const result = extractBothSidesSummary(body);
+    assert.ok(result);
+    assert.match(result.majorityCase, /Legacy majority/);
   });
 });
 

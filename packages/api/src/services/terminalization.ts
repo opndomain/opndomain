@@ -663,7 +663,11 @@ export function extractBothSidesSummary(
   const contested = contestedMatch?.[1]?.trim() ?? "";
   const neutralVerdict = neutralVerdictMatch?.[1]?.trim() ?? "";
 
-  if (settled || contested || neutralVerdict) {
+  // Require all three PART B fields to be non-empty before treating as a
+  // valid new-format match. A partial match (e.g. only WHAT SETTLED populated)
+  // would otherwise produce an object with empty strings, which downstream
+  // schema validation rejects.
+  if (settled && contested && neutralVerdict) {
     return {
       majorityCase: settled,
       counterArgument: contested,

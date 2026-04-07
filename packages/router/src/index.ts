@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v9";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v10";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -772,6 +772,14 @@ function termSetOverlap(a: Set<string>, b: Set<string>): number {
   return shared / Math.max(a.size, b.size);
 }
 
+function parseMapPosition(body: string | null | undefined): number | null {
+  if (!body) return null;
+  const m = /MAP_POSITION:\s*(\d+)/i.exec(body);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
 function extractStrongestCounter(
   transcriptRounds: TopicTranscriptRound[] | undefined,
   excludeContributionId: string | null,
@@ -780,16 +788,42 @@ function extractStrongestCounter(
   const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
   if (!lastFinalArgRound) return null;
   const ranked = buildRankedContributionViewModel(lastFinalArgRound.contributions, lastFinalArgRound);
-  // Pick highest-scored final_argument that is NOT the winning one.
-  const counter = ranked.find((r) => r.id && r.id !== excludeContributionId);
-  if (!counter) return null;
-  const raw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === counter.id);
-  if (!raw?.bodyClean) return null;
+
+  // Read the winner's MAP_POSITION so we can require the counter to endorse a
+  // different position. If the winner has no MAP_POSITION (legacy topic), we
+  // fall back to "highest-scored non-winner" without the constraint.
+  const winnerRaw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === excludeContributionId);
+  const winnerMapPos = parseMapPosition(winnerRaw?.bodyClean);
+
+  // Walk ranked list highest-score-first and pick the first one that endorses
+  // a DIFFERENT MAP_POSITION. If none qualify, fall back to highest-scored
+  // non-winner — better to show same-side advocacy than nothing.
+  let counter: typeof ranked[number] | null = null;
+  let counterRaw: TopicTranscriptContribution | undefined;
+  if (winnerMapPos !== null) {
+    for (const r of ranked) {
+      if (!r.id || r.id === excludeContributionId) continue;
+      const raw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === r.id);
+      const candidateMapPos = parseMapPosition(raw?.bodyClean);
+      if (candidateMapPos !== null && candidateMapPos !== winnerMapPos && raw?.bodyClean) {
+        counter = r;
+        counterRaw = raw;
+        break;
+      }
+    }
+  }
+  if (!counter) {
+    counter = ranked.find((r) => r.id && r.id !== excludeContributionId) ?? null;
+    if (counter) {
+      counterRaw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === counter!.id);
+    }
+  }
+  if (!counter || !counterRaw?.bodyClean) return null;
   return {
     contributionId: counter.id ?? "",
-    bodyCleanRaw: raw.bodyClean,
+    bodyCleanRaw: counterRaw.bodyClean,
     handle: counter.handle,
-    displayName: raw.displayName ?? null,
+    displayName: counterRaw.displayName ?? null,
     finalScore: counter.finalScore ?? 0,
   };
 }
@@ -878,48 +912,46 @@ function buildTopicPageViewModel(
       const eligiblePositions = positionsData.filter(
         (p: { classification?: string }) => p.classification && p.classification !== "noise",
       );
-      const declaredCounts = new Array(eligiblePositions.length).fill(0);
-      let declaredTotal = 0;
+      const counts = new Array(eligiblePositions.length).fill(0);
+      const claimedFinalArgIds = new Set<string>();
+      // Pass 1: explicit MAP_POSITION declarations win.
       for (const fa of finalArgContribs) {
         const body = fa.bodyClean ?? "";
         const m = /MAP_POSITION:\s*(\d+)/i.exec(body);
         if (!m) continue;
         const idx = Number(m[1]) - 1;
-        if (idx >= 0 && idx < declaredCounts.length) {
-          declaredCounts[idx]++;
-          declaredTotal++;
+        if (idx >= 0 && idx < counts.length && fa.id) {
+          counts[idx]++;
+          claimedFinalArgIds.add(fa.id);
         }
       }
 
-      // Fallback path for old topics: greedy dedupe of map-round heldBy
-      // intersected with final_argument ids (used only if no agents declared
-      // a MAP_POSITION).
+      // Pass 2: greedy heldBy fallback for any final_args that did NOT declare
+      // a MAP_POSITION. Walk positions in classification priority order so
+      // each unclaimed final_arg lands in its highest-priority available
+      // bucket. This makes mixed declared/undeclared topics behave correctly
+      // and degrades cleanly to pure heldBy for legacy topics.
       const priority = { majority: 0, runner_up: 1, minority: 2 } as const;
-      const ordered = [...eligiblePositions].sort((a: any, b: any) =>
-        (priority[a.classification as keyof typeof priority] ?? 9) -
-        (priority[b.classification as keyof typeof priority] ?? 9),
-      );
-      const claimed = new Set<string>();
-      const dedupedCounts = new Map<string, number>();
-      for (const p of ordered as any[]) {
-        let count = 0;
+      const orderedIdxs = eligiblePositions
+        .map((p: any, i: number) => ({ p, i }))
+        .sort((a: any, b: any) =>
+          (priority[a.p.classification as keyof typeof priority] ?? 9) -
+          (priority[b.p.classification as keyof typeof priority] ?? 9),
+        );
+      for (const { p, i } of orderedIdxs as Array<{ p: any; i: number }>) {
         for (const id of p.contributionIds as string[]) {
-          if (finalArgIds.has(id) && !claimed.has(id)) {
-            claimed.add(id);
-            count++;
+          if (finalArgIds.has(id) && !claimedFinalArgIds.has(id)) {
+            counts[i]++;
+            claimedFinalArgIds.add(id);
           }
         }
-        dedupedCounts.set(p.label, count);
       }
-
-      const useDeclared = declaredTotal > 0;
 
       const filtered = eligiblePositions
         .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }, idx: number) => {
-          const finalArgsHere = useDeclared ? declaredCounts[idx] : (dedupedCounts.get(p.label) ?? 0);
-          const denom = useDeclared ? declaredTotal : totalFinalArgs;
-          const landingShare = denom > 0
-            ? Math.round((finalArgsHere / denom) * 100)
+          const finalArgsHere = counts[idx];
+          const landingShare = totalFinalArgs > 0
+            ? Math.round((finalArgsHere / totalFinalArgs) * 100)
             : (p.share ?? 0);
           return {
             label: p.label,
