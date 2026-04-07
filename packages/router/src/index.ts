@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v3";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v4";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -553,6 +553,14 @@ type TopicPageViewModel = {
     finalScore: number;
     finalScoreLabel: string;
     bodyCleanRaw: string | null;
+    contributionId?: string | null;
+  } | null;
+  strongestCounter: {
+    contributionId: string;
+    bodyCleanRaw: string;
+    handle: string;
+    displayName: string | null;
+    finalScore: number;
   } | null;
   dossier: TopicVerdictPresentation["dossier"] | null;
   minorityReports: TopicVerdictPresentation["minorityReports"] | null;
@@ -744,7 +752,29 @@ function extractOpeningSynthesis(transcriptRounds: TopicTranscriptRound[] | unde
   return { html: best.bodyHtml, contributionId: best.id };
 }
 
-function extractWinningArgument(transcriptRounds: TopicTranscriptRound[] | undefined): TopicPageViewModel["winningArgument"] & { bodyCleanRaw: string | null } | null {
+function extractStrongestCounter(
+  transcriptRounds: TopicTranscriptRound[] | undefined,
+  excludeContributionId: string | null,
+): { contributionId: string; bodyCleanRaw: string; handle: string; displayName: string | null; finalScore: number } | null {
+  const finalArgRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument");
+  const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
+  if (!lastFinalArgRound) return null;
+  const ranked = buildRankedContributionViewModel(lastFinalArgRound.contributions, lastFinalArgRound);
+  // Pick highest-scored final_argument that is NOT the winning one.
+  const counter = ranked.find((r) => r.id && r.id !== excludeContributionId);
+  if (!counter) return null;
+  const raw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === counter.id);
+  if (!raw?.bodyClean) return null;
+  return {
+    contributionId: counter.id ?? "",
+    bodyCleanRaw: raw.bodyClean,
+    handle: counter.handle,
+    displayName: raw.displayName ?? null,
+    finalScore: counter.finalScore ?? 0,
+  };
+}
+
+function extractWinningArgument(transcriptRounds: TopicTranscriptRound[] | undefined): TopicPageViewModel["winningArgument"] & { bodyCleanRaw: string | null; contributionId: string | null } | null {
   const finalArgRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument");
   const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
   if (!lastFinalArgRound) return null;
@@ -760,6 +790,7 @@ function extractWinningArgument(transcriptRounds: TopicTranscriptRound[] | undef
     finalScore: best.finalScore ?? 0,
     finalScoreLabel: best.finalScoreLabel,
     bodyCleanRaw: rawContribution?.bodyClean ?? null,
+    contributionId: best.id ?? null,
   };
 }
 
@@ -833,6 +864,7 @@ function buildTopicPageViewModel(
     // Keep bodyCleanRaw so the verdict box can render the full structured argument
     // (MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT) with inline subheadings.
     const winningArgument = extractWinningArgument(transcriptRounds);
+    const strongestCounter = extractStrongestCounter(transcriptRounds, winningArgument?.contributionId ?? null);
 
     // Closed-topic null score fallback: replace "Pending" with "n/a"
     for (const round of contentRounds) {
@@ -887,6 +919,7 @@ function buildTopicPageViewModel(
       dossier: verdictPresentation.dossier ?? null,
       minorityReports: verdictPresentation.minorityReports ?? null,
       bothSidesSummary: verdictPresentation.bothSidesSummary ?? null,
+      strongestCounter,
       openingSynthesisHtml,
       openingSynthesisContributionId,
       closureLine,
@@ -936,6 +969,7 @@ function buildTopicPageViewModel(
       dossier: null,
       minorityReports: null,
       bothSidesSummary: null,
+      strongestCounter: null,
       openingSynthesisHtml: synthesisResult?.html ?? null,
       openingSynthesisContributionId: synthesisResult?.contributionId ?? null,
       closureLine: degradedClosureLine,
@@ -975,6 +1009,7 @@ function buildTopicPageViewModel(
     positions: null,
     convergenceMap: null,
     winningArgument: null,
+    strongestCounter: null,
     dossier: null,
     minorityReports: null,
     bothSidesSummary: null,
@@ -1441,16 +1476,28 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
   `;
 }
 
-function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>, excludeContributionId: string | null) {
-  const filtered = highlights
+function renderTopicHighlightsSection(
+  highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>,
+  excludeContributionIds: Set<string>,
+) {
+  // Drop vote/map rounds, anything already shown elsewhere on the page,
+  // then take top 2 by score forcing two different agents.
+  const candidates = highlights
     .filter((h) => h.roundKind !== "vote" && h.roundKind !== "map")
-    .filter((h) => !excludeContributionId || h.contributionId !== excludeContributionId);
-  if (filtered.length === 0) return "";
+    .filter((h) => !excludeContributionIds.has(h.contributionId))
+    .sort((a, b) => (b.finalScore ?? 0) - (a.finalScore ?? 0));
+  const picks: typeof candidates = [];
+  for (const h of candidates) {
+    if (picks.length >= 2) break;
+    if (picks.some((p) => p.beingHandle === h.beingHandle)) continue;
+    picks.push(h);
+  }
+  if (picks.length === 0) return "";
   return `
     <section class="topic-highlights">
       <div class="topic-highlights-kicker">What moved the debate</div>
       <div class="topic-highlights-list">
-        ${filtered.map((highlight) => `
+        ${picks.map((highlight) => `
           <div class="topic-highlight-item">
             <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
             <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
@@ -1552,12 +1599,22 @@ function renderWinningArgument(viewModel: TopicPageViewModel): string {
 }
 
 function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
-  if (!viewModel.bothSidesSummary) return "";
+  // Pull from a different agent's final_argument (the second-best closing essay),
+  // not from the winner's own steelman. Strip the COUNTER-ARGUMENT and FINAL VERDICT
+  // sub-sections — we want the opposing case, which is that agent's MAJORITY CASE.
+  if (!viewModel.strongestCounter) return "";
+  const body = viewModel.strongestCounter.bodyCleanRaw;
+  const majorityMatch = /MAJORITY CASE:\s*([\s\S]*?)(?=COUNTER-ARGUMENT:|FINAL VERDICT:|$)/i.exec(body);
+  const display = (majorityMatch?.[1]?.trim()) || body;
+  const name = viewModel.strongestCounter.displayName
+    ? escapeHtml(viewModel.strongestCounter.displayName)
+    : `@${escapeHtml(viewModel.strongestCounter.handle)}`;
   return `
     <section class="both-sides-summary">
       <div class="both-sides-section">
         <div class="both-sides-kicker">Strongest counter-argument</div>
-        <div class="both-sides-body">${renderParagraphs(viewModel.bothSidesSummary.counterArgument, "both-sides-paragraph")}</div>
+        <div class="both-sides-body">${renderParagraphs(display, "both-sides-paragraph")}</div>
+        <div class="both-sides-attribution">${name}</div>
       </div>
     </section>
   `;
@@ -2376,7 +2433,20 @@ app.get("/topics/:topicId", async (c) => {
         // Highlights (top-scoring quote per round) — promoted out of dropdown,
         // sits between the verdict and the dissenting views as a "what mattered most" section.
         viewModel.verdictHighlights
-          ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
+          ? (() => {
+              // Build exclusion set: anything already featured above the fold.
+              const excluded = new Set<string>();
+              if (viewModel.openingSynthesisContributionId) excluded.add(viewModel.openingSynthesisContributionId);
+              if (viewModel.winningArgument?.contributionId) excluded.add(viewModel.winningArgument.contributionId);
+              if (viewModel.strongestCounter?.contributionId) excluded.add(viewModel.strongestCounter.contributionId);
+              for (const r of viewModel.minorityReports ?? []) {
+                if (r.contributionId) excluded.add(r.contributionId);
+              }
+              // Sharpest observation pulls the first critique-round highlight.
+              const sharpest = viewModel.verdictHighlights.find((h) => h.roundKind === "critique");
+              if (sharpest) excluded.add(sharpest.contributionId);
+              return renderTopicHighlightsSection(viewModel.verdictHighlights, excluded);
+            })()
           : "",
         renderDissentingViews(viewModel),
         !viewModel.winningArgument

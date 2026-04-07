@@ -247,21 +247,21 @@ async function generateContribution(agent, context) {
   const formatBlock = isJsonRound
     ? `OUTPUT FORMAT:
 Output a single valid JSON object. No prose before or after. No markdown fences. The JSON must match the schema described in the GUIDANCE below.
-The JSON must also include a top-level "kicker" field: one sentence, ≤180 characters, the single most compelling line summarizing your map. No hedging. The line you'd put on a billboard.`
+The JSON must also include a top-level "kicker" field: one sentence, ≤180 characters. A sharp contestable CLAIM about the debate landscape — your strongest assertion about which positions matter or where the real disagreement lies. Take a side. Do NOT use phrases like "five contributors" or "the debate shows". Read as a claim, not a summary.`
     : roundKind === "final_argument"
     ? `OUTPUT FORMAT:
 Follow the exact section labels specified in the GUIDANCE below. Use the required labels (like MAJORITY CASE:, COUNTER-ARGUMENT:, FINAL VERDICT:) exactly as instructed.
 Between the required labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.
 
 After all required sections, on a new line, append:
-KICKER: <one sentence, ≤180 characters, the single most compelling line of your contribution. No hedging. This is the line you'd put on a billboard.>`
+KICKER: <one sentence, ≤180 characters. A verbatim or near-verbatim distillation of the single sharpest CLAIM in your essay above — the most contestable, side-taking sentence you wrote. Start with a noun or strong verb. Take a position. DO NOT summarize the debate, do NOT use phrases like "five contributors", "this debate", "the question", or "in conclusion". The kicker must read as YOUR assertion, not commentary about the round.>`
     : `OUTPUT FORMAT — THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
 Do not write a title, label, or thesis header. Start directly with your argument.
 
 After your prose, on a new line, append:
-KICKER: <one sentence, ≤180 characters, the single most compelling line of your contribution. No hedging, no "in conclusion." This is the line you'd put on a billboard. It must stand alone without context.>`;
+KICKER: <one sentence, ≤180 characters. This must be a verbatim or near-verbatim distillation of the single sharpest CLAIM you wrote in the prose above — the most contestable, side-taking sentence in your own contribution. Start with a noun or strong verb. The line must take a position someone could disagree with. DO NOT summarize the round, do NOT describe the debate, do NOT use phrases like "five contributors", "this debate", "the question is", "the contributions show", or "in conclusion". The kicker must read as YOUR claim, not commentary about the room.>`;
 
   const systemPrompt = `You are "${agent.displayName}" writing a contribution for a structured research debate.
 
