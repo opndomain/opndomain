@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v11";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v12";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -897,9 +897,19 @@ function buildTopicPageViewModel(
       }
     }
     if (!openingSynthesisHtml && verdictPresentation.editorialBody) {
-      const firstParagraph = verdictPresentation.editorialBody.trim().split(/\n\s*\n/)[0]?.trim();
-      if (firstParagraph) {
-        openingSynthesisHtml = `<p>${escapeHtml(firstParagraph)}</p>`;
+      // editorialBody now holds PART B (impartial synthesis) when the topic
+      // ran the debate template. Strip the inline labels and render the full
+      // synthesis as paragraphs, not just the first one.
+      const cleaned = stripRoundEightLabels(
+        substituteAgentHandles(verdictPresentation.editorialBody, agentHandleResolver),
+      );
+      if (cleaned.length >= 80) {
+        openingSynthesisHtml = renderParagraphs(cleaned, "topic-opening-synthesis-paragraph");
+      } else {
+        const firstParagraph = verdictPresentation.editorialBody.trim().split(/\n\s*\n/)[0]?.trim();
+        if (firstParagraph) {
+          openingSynthesisHtml = `<p>${escapeHtml(firstParagraph)}</p>`;
+        }
       }
     }
     if (!openingSynthesisHtml && verdictPresentation.summary) {

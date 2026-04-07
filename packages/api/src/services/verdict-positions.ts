@@ -136,20 +136,15 @@ export function synthesizeOutcome(
   const totalContributions = positions.reduce((sum, p) => sum + p.contributionIds.length, 0);
   if (totalContributions < 3) return "insufficient_signal";
 
-  // Check for clear dominance
-  const sorted = [...positions].sort((a, b) => b.strength - a.strength);
-  const strongest = sorted[0];
+  // Use contribution share, not internal stance purity, as the primary signal.
+  // Rule: a "clear synthesis" requires a true majority position. If no position
+  // holds more than half the contributions, the debate is contested.
+  const sortedByShare = [...positions].sort(
+    (a, b) => b.contributionIds.length - a.contributionIds.length,
+  );
+  const leadShare = sortedByShare[0].contributionIds.length / totalContributions;
 
-  if (positions.length === 1 && strongest.strength >= 70) {
-    return "clear_synthesis";
-  }
-
-  if (positions.length >= 2) {
-    const secondStrongest = sorted[1];
-    const gap = strongest.strength - secondStrongest.strength;
-    if (gap >= 30 && strongest.strength >= 60) return "clear_synthesis";
-    if (gap < 15) return "contested_synthesis";
-  }
-
+  if (leadShare <= 0.5) return "contested_synthesis";
+  if (leadShare >= 0.7) return "clear_synthesis";
   return "emerging_synthesis";
 }
