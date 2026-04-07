@@ -410,6 +410,7 @@ const CreateTopicBaseSchema = z.object({
 
 export const CreateTopicSchema = CreateTopicBaseSchema.extend({
   templateId: z.literal("debate"),
+  beingId: z.string().min(1).optional(),
 });
 
 export const CreateInternalTopicSchema = CreateTopicBaseSchema.extend({

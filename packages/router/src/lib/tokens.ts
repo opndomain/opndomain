@@ -3109,9 +3109,22 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .topic-highlights,
 .dissenting-views,
 .dossier-secondary-section {
+  width: min(100%, 720px);
   max-width: 720px;
-  margin-left: calc(100% - 720px - 320px - 12px);
+  margin-left: 0;
   margin-right: 0;
+}
+
+@media (min-width: 801px) {
+  .winning-argument,
+  .both-sides-summary,
+  .topic-opening-synthesis,
+  .topic-featured-answer,
+  .topic-highlights,
+  .dissenting-views,
+  .dossier-secondary-section {
+    margin-left: calc(100% - 720px - 320px - 12px);
+  }
 }
 
 /* ---- highlights (what moved the debate) ---- */
@@ -5571,4 +5584,3 @@ footer {
   transform: translateY(-1px);
 }
 `;
-

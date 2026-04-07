@@ -1,5 +1,5 @@
 import { mcpBootstrapKey, mcpSessionKey } from "@opndomain/shared";
-import { MCP_TOOL_NAMES, createMcpApp, createToolHandlers, type McpBindings } from "./index.js";
+import { MCP_PUBLIC_TOOL_NAMES, MCP_TOOL_NAMES, createMcpApp, createToolHandlers, type McpBindings } from "./index.js";
 
 class FakeKv {
   values = new Map<string, string>();
@@ -144,7 +144,7 @@ async function testStableToolsList() {
   const response = await createMcpApp().request("http://mcp.local/tools");
   assertEqual(response.status, 200);
   const payload = await response.json() as { tools: string[] };
-  assertDeepEqual(payload.tools, [...MCP_TOOL_NAMES]);
+  assertDeepEqual(payload.tools, [...MCP_PUBLIC_TOOL_NAMES]);
 }
 
 async function testDiscoveryMetadata() {
@@ -158,7 +158,9 @@ async function testDiscoveryMetadata() {
   const info = await infoResponse.json() as {
     mcpUrl: string;
     tools: string[];
-    primaryBootstrapFlow: string[];
+    onboardOptions: string[];
+    actOptions: string[];
+    readOptions: string[];
     participateStatuses: string[];
     credentialModel: {
       clientId: string;
@@ -167,11 +169,16 @@ async function testDiscoveryMetadata() {
     };
   };
   assertEqual(info.mcpUrl, "https://mcp.opndomain.com/mcp");
-  assertDeepEqual(info.primaryBootstrapFlow, ["register", "verify-email", "establish-launch-state"]);
-  assertOk(info.tools.includes("recover-launch-state"));
+  assertDeepEqual(info.onboardOptions, ["continue-as-guest", "register", "initiate-oauth"]);
+  assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate"]);
+  assertDeepEqual(info.readOptions, ["get-topic-context", "get-verdict"]);
+  assertEqual(info.tools.length, 10);
+  assertOk(info.tools.includes("participate"));
+  assertOk(!info.tools.includes("recover-launch-state"));
   assertOk(info.participateStatuses.includes("awaiting_magic_link"));
   assertOk(info.participateStatuses.includes("contributed"));
   assertOk(info.participateStatuses.includes("vote_required"));
+  assertOk(info.participateStatuses.includes("body_required"));
   assertOk(info.credentialModel.clientId.toLowerCase().includes("operator account identifier"));
   assertOk(info.credentialModel.agentId.toLowerCase().includes("specific agent record"));
   assertOk(info.credentialModel.note.toLowerCase().includes("multiple agents"));
@@ -194,7 +201,8 @@ async function testHomepageHighlightsParticipate() {
   assertOk(body.includes("Canonical transport URL:"));
   assertOk(body.includes("Participate statuses: <code>"));
   assertOk(body.includes("vote_required"));
-  assertOk(body.includes("participate -&gt; ensure-being") || body.includes("participate -> ensure-being"));
+  assertOk(body.includes("Onboard:"));
+  assertOk(body.includes("continue-as-guest"));
 }
 
 async function testJoinableTopicsMerge() {
@@ -518,7 +526,7 @@ async function testAwaitingVerificationBranch() {
     body: "hello world",
   }));
   assertEqual(result.status, "awaiting_verification");
-  assertEqual((result.nextAction as { tool: string }).tool, "request-magic-link");
+  assertEqual((result.nextAction as { tool: string }).tool, "initiate-oauth");
 }
 
 async function testLoginRequiredBranch() {
@@ -541,7 +549,7 @@ async function testLoginRequiredBranch() {
     body: "hello world",
   }));
   assertEqual(result.status, "login_required");
-  assertEqual((result.nextAction as { tool: string }).tool, "request-magic-link");
+  assertEqual((result.nextAction as { tool: string }).tool, "initiate-oauth");
 }
 
 async function testContinueAsGuest() {
@@ -1040,6 +1048,44 @@ async function testBeingHandleBackfilledOnExistingState() {
   assertEqual(persisted.beingHandle, "existing-handle");
 }
 
+async function testParticipateBodyRequired() {
+  const { env, kv, fetcher } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/topics" && !url.search) {
+      return jsonResponse([{ id: "top_started", status: "started", title: "Started Topic" }]);
+    }
+    if (method === "GET" && url.pathname === "/v1/topics/top_started/context") {
+      return jsonResponse({
+        members: [{ beingId: "bng_1", status: "active" }],
+        currentRound: { status: "active" },
+      });
+    }
+    if (method === "GET" && url.pathname === "/v1/beings") {
+      return jsonResponse([{ id: "bng_1", handle: "alpha" }]);
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_1",
+    beingHandle: "alpha",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  const result = structured(await createToolHandlers(env).participate({
+    clientId: "cli_1",
+    topicId: "top_started",
+  }));
+  assertEqual(result.status, "body_required");
+  // No POST to /contributions
+  assertEqual(fetcher.requests.filter((r) => r.method === "POST" && r.pathname === "/v1/topics/top_started/contributions").length, 0);
+}
+
+// Note: tests below exercise handlers directly via createToolHandlers — this remains valid because
+// non-public tools (lookup-account, ensure-being, list-topics, vote, etc.) still exist as internal
+// handlers used by participate; only their MCP registration is gated by MCP_PUBLIC_TOOL_NAMES.
 export async function runAllTests() {
   await testStableToolsList();
   await testDiscoveryMetadata();
@@ -1066,6 +1112,7 @@ export async function runAllTests() {
   await testStartedTopicNotJoinable();
   await testStartedTopicAwaitingRound();
   await testStartedTopicContribution();
+  await testParticipateBodyRequired();
   await testExplicitHandleResolvesExistingOwnedBeing();
   await testExplicitHandleCreatesWhenNotOwned();
   await testHandleResolutionInReadOnlyToolRejectsUnknownHandle();

@@ -1,7 +1,7 @@
 import { DEFAULT_BEING_CAPABILITIES, DEFAULT_VOTE_RELIABILITY, containsBlockedSubstring, type TrustTier } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow, runStatement } from "../lib/db.js";
-import { badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
+import { ApiError, badRequest, conflict, forbidden, notFound } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import { meetsTrustTier } from "../lib/trust.js";
 import type { AgentRecord } from "./auth.js";
@@ -235,7 +235,10 @@ export async function findActingBeingForTopicCreation(env: ApiEnv, agent: AgentR
       FROM beings b
       INNER JOIN being_capabilities bc ON bc.being_id = b.id
       WHERE b.agent_id = ? AND b.status = 'active'
-      ORDER BY bc.can_open_topics DESC, b.created_at ASC
+      ORDER BY
+        bc.can_open_topics DESC,
+        CASE WHEN b.trust_tier IN ('verified', 'established', 'trusted') THEN 0 ELSE 1 END,
+        b.created_at ASC
       LIMIT 1
     `,
     agent.id,
@@ -248,6 +251,40 @@ export async function findActingBeingForTopicCreation(env: ApiEnv, agent: AgentR
   }
   if (!meetsTrustTier(row.trust_tier as TrustTier, "verified")) {
     forbidden("Only verified-trust beings can open user-created topics.");
+  }
+  return mapBeing(row);
+}
+
+export async function validateBeingForTopicCreation(env: ApiEnv, agent: AgentRecord, beingId: string) {
+  const effectiveAccountClass = (agent as AgentRecord & { effectiveAccountClass?: string }).effectiveAccountClass ?? agent.accountClass;
+  if (effectiveAccountClass !== "verified_participant" && effectiveAccountClass !== "admin_operator") {
+    throw new ApiError(403, "being_not_eligible", "This account class cannot open user-created topics.");
+  }
+  const row = await firstRow<BeingRow & { can_open_topics: number }>(
+    env.DB,
+    `
+      SELECT b.id, b.agent_id, b.handle, b.display_name, b.bio, b.trust_tier, b.status, b.created_at, b.updated_at, bc.can_open_topics
+      FROM beings b
+      INNER JOIN being_capabilities bc ON bc.being_id = b.id
+      WHERE b.id = ?
+      LIMIT 1
+    `,
+    beingId,
+  );
+  if (!row) {
+    throw new ApiError(403, "being_not_eligible", "Specified being was not found.");
+  }
+  if (row.agent_id !== agent.id) {
+    throw new ApiError(403, "being_not_eligible", "Specified being is not owned by this agent.");
+  }
+  if (row.status !== "active") {
+    throw new ApiError(403, "being_not_eligible", "Specified being is not active.");
+  }
+  if (!row.can_open_topics) {
+    throw new ApiError(403, "being_not_eligible", "Specified being cannot open topics.");
+  }
+  if (!meetsTrustTier(row.trust_tier as TrustTier, "verified")) {
+    throw new ApiError(403, "being_not_eligible", "Only verified-trust beings can open user-created topics.");
   }
   return mapBeing(row);
 }

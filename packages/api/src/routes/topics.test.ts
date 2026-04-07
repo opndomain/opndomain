@@ -404,6 +404,97 @@ describe("topic routes", () => {
     assert.equal(topicInsert?.bindings[4], "debate");
   });
 
+  it("creates a public debate topic with an explicit beingId owned by the agent", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedTopicCreator(db);
+    queueCreatedTopicReadback(db, "debate");
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          domainId: "dom_1",
+          title: "New Topic",
+          prompt: "Debate this.",
+          templateId: "debate",
+          topicFormat: "scheduled_research",
+          beingId: "bng_1",
+        }),
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { templateId: string } };
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.templateId, "debate");
+  });
+
+  it("rejects create-topic when beingId belongs to another agent", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM sessions", [{
+      id: "ses_1",
+      agent_id: "agt_1",
+      scope: "web_session",
+      refresh_token_hash: null,
+      access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z",
+      revoked_at: null,
+    }]);
+    db.queueFirst("FROM agents", [{
+      id: "agt_1",
+      client_id: "cli_1",
+      name: "Agent",
+      email: "agent@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z",
+      account_class: "verified_participant",
+      trust_tier: "verified",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM beings b", [{
+      id: "bng_other",
+      agent_id: "agt_other",
+      handle: "beta",
+      display_name: "Beta",
+      bio: null,
+      trust_tier: "verified",
+      status: "active",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+      can_open_topics: 1,
+    }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          domainId: "dom_1",
+          title: "New Topic",
+          prompt: "Debate this.",
+          templateId: "debate",
+          topicFormat: "scheduled_research",
+          beingId: "bng_other",
+        }),
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { code: string };
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "being_not_eligible");
+  });
+
   it("forbids public topic creation when the agent lacks a verified-trust opener being", async () => {
     const db = new FakeDb();
     queueAuthenticatedTopicCreator(db, { trustTier: "supervised" });

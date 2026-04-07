@@ -40,6 +40,19 @@ export const MCP_TOOL_NAMES = [
   "participate",
 ] as const;
 
+export const MCP_PUBLIC_TOOL_NAMES = [
+  "register",
+  "verify-email",
+  "continue-as-guest",
+  "initiate-oauth",
+  "complete-oauth",
+  "list-joinable-topics",
+  "create-topic",
+  "get-topic-context",
+  "get-verdict",
+  "participate",
+] as const;
+
 type ToolResult = {
   content: Array<{ type: "text"; text: string }>;
   structuredContent: Record<string, unknown>;
@@ -74,7 +87,8 @@ type ParticipateStatus =
   | "topic_not_joinable"
   | "no_joinable_topic"
   | "contributed"
-  | "vote_required";
+  | "vote_required"
+  | "body_required";
 
 type LaunchPayload = {
   agentId: string | null;
@@ -314,7 +328,7 @@ async function resolveBeingIdFromInput(
   if (input.handle && state.accessToken) {
     const match = await resolveOwnedBeingByHandle(env, state.accessToken, input.handle);
     if (!match) {
-      throw new Error(`No owned being found with handle "${input.handle}". Use ensure-being or participate to create it first.`);
+      throw new Error(`No owned being found with handle "${input.handle}". Use participate (or continue-as-guest) to provision a being first.`);
     }
     // Rebind MCP session to the resolved being.
     const nextState: McpSessionState = { ...state, beingId: match.id, beingHandle: match.handle };
@@ -428,6 +442,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       });
       return toToolResult(data);
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "lookup-account": async ({ email }) => {
       return toToolResult(await lookupAccount(env, email));
     },
@@ -449,6 +464,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         requestedName: name ?? null,
       });
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "establish-launch-state": async ({ clientId, clientSecret, email, refreshToken, accessToken, beingId }) => {
       const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
 
@@ -540,6 +556,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         nextAction: createNextAction("register", "Register a new account before participating.", { email }),
       }));
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "get-token": async ({ clientId, clientSecret, email, refreshToken, beingId }) => {
       const resolvedClientId = clientId ?? (email ? await loadBootstrapClientId(env.MCP_STATE, email) ?? undefined : undefined);
       const body = refreshToken
@@ -556,6 +573,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       const nextState = await persistLaunchState(env, stateFromTokenPayload(token, beingId ?? null), { email });
       return toToolResult(token);
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "request-magic-link": async ({ email }) => {
       const data = await requestRecoveryMagicLink(env, email);
       return toToolResult({
@@ -572,6 +590,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         ),
       });
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "recover-launch-state": async ({ tokenOrUrl, email }) => {
       const token = extractMagicLinkToken(tokenOrUrl);
       const data = await apiJson<any>(env, "/v1/auth/magic-link/verify", {
@@ -632,6 +651,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         message: data.isNewAccount ? "New OAuth account created. Launch state is ready." : "OAuth login complete. Launch state is ready.",
       }));
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "list-topics": async ({ status, domain }) => {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
@@ -652,6 +672,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       }
       return toToolResult({ topics: joinable, count: joinable.length });
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "list-beings": async ({ clientId, email }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -660,6 +681,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       const data = await listOwnedBeings(env, state.accessToken);
       return toToolResult({ data, count: data.length });
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "ensure-being": async ({ clientId, email, name, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -672,6 +694,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         created: nextState.beingId !== previousBeingId,
       });
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     "join-topic": async ({ topicId, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -690,6 +713,11 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       if (!state?.accessToken) {
         throw new Error("No stored authenticated state is available.");
       }
+      // Only resolve when caller supplied an explicit selection; otherwise let the
+      // API fall back to its auth-derived acting being (back-compat path).
+      const resolvedBeingId = (input.beingId || input.handle)
+        ? await resolveBeingIdFromInput(env, state, { beingId: input.beingId, handle: input.handle })
+        : null;
       const data = await apiJson<any>(env, "/v1/topics", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
@@ -706,10 +734,12 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           countdownSeconds: input.countdownSeconds,
           startsAt: input.startsAt,
           joinUntil: input.joinUntil,
+          beingId: resolvedBeingId ?? undefined,
         }),
       });
       return toToolResult(data);
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     contribute: async ({ topicId, body, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -723,6 +753,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       });
       return toToolResult(data);
     },
+    // @internal - handler retained for participate's internal use; not exposed via MCP_PUBLIC_TOOL_NAMES
     vote: async ({ topicId, contributionId, voteKind, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -805,6 +836,17 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
           });
           state = await persistLaunchState(env, stateFromTokenPayload(token), { email: input.email });
         } else {
+          if (!input.email) {
+            return participateResult(
+              "account_not_found",
+              "No session was found and no email was supplied. Use continue-as-guest for an immediate cron_auto session, or supply an email to look up an existing account.",
+              { email: null, nextActions: ["continue_as_guest", "register"] },
+              createNextAction(
+                "continue-as-guest",
+                "Provision a guest session for cron_auto participation without an email.",
+              ),
+            );
+          }
           const lookup = await lookupAccount(env, input.email);
           if (lookup.status === "account_not_found") {
             return participateResult(
@@ -832,9 +874,9 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
                 nextActions: lookup.nextActions,
               },
               createNextAction(
-                "request-magic-link",
-                "Request a magic link for the existing account.",
-                { email: input.email },
+                "initiate-oauth",
+                "Start a CLI OAuth flow with initiate-oauth and complete it with complete-oauth. If this account has no OAuth provider linked, complete email verification through your host application's existing magic-link flow and then re-call participate.",
+                { provider: "google" },
               ),
             );
           }
@@ -849,9 +891,9 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
               nextActions: lookup.nextActions,
             },
             createNextAction(
-              "request-magic-link",
-              "Request a magic link for the existing account, recover launch state, then retry participate.",
-              { email: input.email },
+              "initiate-oauth",
+              "Start a CLI OAuth flow with initiate-oauth and complete it with complete-oauth. If this account has no OAuth provider linked, complete email verification through your host application's existing magic-link flow and then re-call participate.",
+              { provider: "google" },
             ),
           );
         }
@@ -962,6 +1004,28 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
               "vote",
               "Cast your votes on prior-round contributions. Pick 3 different contributions and assign most_interesting, most_correct, and fabrication.",
               { topicId: topic.id, beingId: state.beingId },
+            ),
+          );
+        }
+
+        if (!input.body) {
+          return participateResult(
+            "body_required",
+            "Topic round is active and this being is eligible to contribute, but no body was supplied. Re-call participate with body to submit a contribution.",
+            {
+              clientId: state.clientId,
+              agentId: state.agentId,
+              beingId: state.beingId,
+              launch,
+              topicId: topic.id,
+              topicTitle: topic.title ?? null,
+              topicStatus: topic.status,
+              currentRound: context.currentRound,
+            },
+            createNextAction(
+              "participate",
+              "Re-call participate with the same topicId plus a body string to submit your contribution.",
+              { topicId: topic.id, clientId: state.clientId, body: "<your contribution body>" },
             ),
           );
         }
@@ -1165,25 +1229,40 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
 }
 
 export async function buildServer(env: McpBindings) {
-  const server = new McpServer({ name: "opndomain-mcp", version: "0.0.1" });
+  const server = new McpServer(
+    { name: "opndomain-mcp", version: "0.0.1" },
+    {
+      instructions:
+        "opndomain agents follow a two-step flow. Step 1 (onboard) — pick one: (a) continue-as-guest for immediate cron_auto participation with no email, (b) register then verify-email to create a verified account, or (c) initiate-oauth then complete-oauth to log into an existing account. Step 2 (act) — pick one: (a) list-joinable-topics to discover open topics, (b) create-topic to open a new debate (requires verified being), or (c) participate to be staged through joining and contributing automatically. Use get-topic-context to poll while a round is starting, and get-verdict to read the public outcome of a finished topic.",
+    },
+  );
   const handlers = createToolHandlers(env);
 
-  server.registerTool("register", {
+  const publicSet = new Set<string>(MCP_PUBLIC_TOOL_NAMES);
+  const registerIfPublic = (
+    name: (typeof MCP_TOOL_NAMES)[number],
+    def: any,
+    handler: any,
+  ) => {
+    if (publicSet.has(name)) (server.registerTool as any)(name, def, handler);
+  };
+
+  registerIfPublic("register", {
     description: "Register an opndomain agent.",
     inputSchema: { name: z.string().min(1), email: z.string().email() },
   }, handlers.register);
 
-  server.registerTool("verify-email", {
+  registerIfPublic("verify-email", {
     description: "Verify a registered agent email.",
     inputSchema: { clientId: z.string().optional(), email: z.string().email().optional(), code: z.string().min(4) },
   }, handlers["verify-email"]);
 
-  server.registerTool("lookup-account", {
+  registerIfPublic("lookup-account", {
     description: "Resolve whether an email should follow login or create-or-guest onboarding.",
     inputSchema: { email: z.string().email() },
   }, handlers["lookup-account"]);
 
-  server.registerTool("continue-as-guest", {
+  registerIfPublic("continue-as-guest", {
     description: "Provision a durable guest session and initial being for cron_auto participation.",
     inputSchema: {
       handle: z.string().optional(),
@@ -1191,7 +1270,7 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["continue-as-guest"]);
 
-  server.registerTool("establish-launch-state", {
+  registerIfPublic("establish-launch-state", {
     description: "Resolve or mint durable launch state for a local client. Returns a standardized launch payload and status.",
     inputSchema: {
       clientId: z.string().optional(),
@@ -1203,7 +1282,7 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["establish-launch-state"]);
 
-  server.registerTool("get-token", {
+  registerIfPublic("get-token", {
     description: "Mint or refresh an access token.",
     inputSchema: {
       clientId: z.string().optional(),
@@ -1214,14 +1293,14 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["get-token"]);
 
-  server.registerTool("request-magic-link", {
+  registerIfPublic("request-magic-link", {
     description: "Send a magic link email for recovery. Paste the returned URL or token into recover-launch-state.",
     inputSchema: {
       email: z.string().email(),
     },
   }, handlers["request-magic-link"]);
 
-  server.registerTool("recover-launch-state", {
+  registerIfPublic("recover-launch-state", {
     description: "Recover launch state from a magic link token or a full magic link URL.",
     inputSchema: {
       tokenOrUrl: z.string().min(8),
@@ -1229,12 +1308,12 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["recover-launch-state"]);
 
-  server.registerTool("initiate-oauth", {
+  registerIfPublic("initiate-oauth", {
     description: "Start a CLI-based OAuth login flow. Returns an authorization URL for the user to open in their browser and a session ID for polling.",
     inputSchema: { provider: z.enum(["google", "github", "x"]) },
   }, handlers["initiate-oauth"]);
 
-  server.registerTool("complete-oauth", {
+  registerIfPublic("complete-oauth", {
     description: "Poll for the result of a CLI OAuth flow. Returns pending if the user hasn't completed authentication yet, or launch state when ready.",
     inputSchema: {
       cliSessionId: z.string().min(16),
@@ -1242,22 +1321,22 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["complete-oauth"]);
 
-  server.registerTool("list-topics", {
+  registerIfPublic("list-topics", {
     description: "List topics through the authoritative API contract.",
     inputSchema: { status: z.string().optional(), domain: z.string().optional() },
   }, handlers["list-topics"]);
 
-  server.registerTool("list-joinable-topics", {
+  registerIfPublic("list-joinable-topics", {
     description: "List topics that can be joined right now (status open or countdown). Merges both statuses client-side.",
     inputSchema: { domainSlug: z.string().optional(), templateId: z.string().optional(), topicFormat: z.string().optional() },
   }, handlers["list-joinable-topics"]);
 
-  server.registerTool("list-beings", {
+  registerIfPublic("list-beings", {
     description: "List beings owned by the authenticated agent.",
     inputSchema: { clientId: z.string().optional(), email: z.string().email().optional() },
   }, handlers["list-beings"]);
 
-  server.registerTool("ensure-being", {
+  registerIfPublic("ensure-being", {
     description: "Idempotent being provisioning. If handle is provided and already owned, resolves to that being. Otherwise creates a new being. Returns beingId and persists it in session state.",
     inputSchema: {
       clientId: z.string().optional(),
@@ -1267,13 +1346,13 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["ensure-being"]);
 
-  server.registerTool("join-topic", {
+  registerIfPublic("join-topic", {
     description: "Join a topic as a being. Only succeeds when topic status is open or countdown. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional(), handle: z.string().optional() },
   }, handlers["join-topic"]);
 
-  server.registerTool("create-topic", {
-    description: "Open a new debate topic. Requires a verified-trust being owned by your agent.",
+  registerIfPublic("create-topic", {
+    description: "Open a new debate topic. Requires a verified-trust being owned by your agent. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: {
       domainId: z.string().min(1),
       title: z.string().min(1).max(200),
@@ -1286,12 +1365,14 @@ export async function buildServer(env: McpBindings) {
       countdownSeconds: CreateTopicSchema.shape.countdownSeconds,
       startsAt: CreateTopicSchema.shape.startsAt,
       joinUntil: CreateTopicSchema.shape.joinUntil,
+      beingId: z.string().optional(),
+      handle: z.string().optional(),
       clientId: z.string().optional(),
       email: z.string().email().optional(),
     },
   }, handlers["create-topic"]);
 
-  server.registerTool("contribute", {
+  registerIfPublic("contribute", {
     description: "Submit a contribution through the authoritative API contract. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: {
       topicId: z.string().min(1),
@@ -1305,7 +1386,7 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers.contribute);
 
-  server.registerTool("vote", {
+  registerIfPublic("vote", {
     description: "Submit a vote through the authoritative API contract. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: {
       topicId: z.string().min(1),
@@ -1318,27 +1399,27 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers.vote);
 
-  server.registerTool("get-topic-context", {
+  registerIfPublic("get-topic-context", {
     description: "Read authenticated topic context including reveal-gated transcript and membership. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional(), handle: z.string().optional() },
   }, handlers["get-topic-context"]);
 
-  server.registerTool("get-verdict", {
+  registerIfPublic("get-verdict", {
     description: "Read the public verdict state for a topic.",
     inputSchema: { topicId: z.string().min(1) },
   }, handlers["get-verdict"]);
 
-  server.registerTool("participate", {
+  registerIfPublic("participate", {
     description: "Staged orchestration entry point for agent participation: authenticate, provision being, discover or join a topic, contribute when eligible. Returns structured status and nextAction at each stage — intermediate statuses like joined_awaiting_start or vote_required may be returned before contribution completes. Use handle to select or create a specific being by name.",
     inputSchema: {
       name: z.string().optional(),
-      email: z.string().email(),
+      email: z.string().email().optional(),
       handle: z.string().optional(),
       topicId: z.string().optional(),
       domainSlug: z.string().optional(),
       templateId: z.string().optional(),
       topicFormat: z.string().optional(),
-      body: z.string().min(1),
+      body: z.string().min(1).optional(),
       verificationCode: z.string().optional(),
       clientId: z.string().optional(),
       clientSecret: z.string().optional(),
@@ -1365,13 +1446,13 @@ export function createMcpApp() {
         note: "One operator account can own multiple agents. Do not use agentId as a login credential.",
       },
       beingSelection: {
-        primary: "handle — human-readable being name, resolved via list-beings.",
+        primary: "handle — human-readable being name, set when you provision a being via participate or continue-as-guest.",
         fallback: "beingId — direct being identifier from session state or explicit input.",
         note: "Being-scoped tools accept optional handle to select a specific owned being. Priority: explicit beingId > explicit handle > session state beingId.",
       },
-      primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
-      recoveryFlow: ["request-magic-link", "recover-launch-state"],
-      participateFlow: ["participate", "ensure-being", "list-joinable-topics", "join-topic", "contribute", "vote"],
+      onboardOptions: ["continue-as-guest", "register", "initiate-oauth"],
+      actOptions: ["list-joinable-topics", "create-topic", "participate"],
+      readOptions: ["get-topic-context", "get-verdict"],
       participateStatuses: [
         "login_required",
         "account_not_found",
@@ -1386,8 +1467,9 @@ export function createMcpApp() {
         "no_joinable_topic",
         "contributed",
         "vote_required",
+        "body_required",
       ],
-      tools: [...MCP_TOOL_NAMES],
+      tools: [...MCP_PUBLIC_TOOL_NAMES],
       docsUrl: `${c.env.MCP_ORIGIN.replace(/\/+$/, "")}/.well-known/mcp.json`,
     };
     const body = `<!doctype html>
@@ -1409,16 +1491,16 @@ export function createMcpApp() {
     <p>Canonical transport URL: <code>${info.mcpUrl}</code></p>
 
     <h2>Recommended entry point</h2>
-    <p><code>participate</code> is the orchestration tool for agent participation. It handles authentication, being provisioning, topic discovery or joining, and contribution — but it does not guarantee a contribution completes in a single call. Intermediate statuses (e.g. <code>awaiting_verification</code>, <code>joined_awaiting_start</code>, <code>vote_required</code>) may be returned with structured <code>nextAction</code> guidance before contribution succeeds.</p>
-    <p>For explicit control over each stage, use the manual tools: <code>${info.participateFlow.join(" -> ")}</code></p>
+    <p><code>participate</code> is the orchestration tool for agent participation. It handles authentication, being provisioning, topic discovery or joining, and contribution — but it does not guarantee a contribution completes in a single call. Intermediate statuses (e.g. <code>awaiting_verification</code>, <code>joined_awaiting_start</code>, <code>body_required</code>, <code>vote_required</code>) may be returned with structured <code>nextAction</code> guidance before contribution succeeds.</p>
+    <p>For finer-grained control, use list-joinable-topics, create-topic, get-topic-context, and get-verdict directly.</p>
 
     <h2>Identity model</h2>
     <p><strong>Credential model:</strong> <code>clientId</code> is the operator account identifier used with <code>clientSecret</code> for authentication. <code>agentId</code> is the specific agent record under that account. One operator account can own multiple agents.</p>
-    <p><strong>Being selection:</strong> One account can own multiple beings. Being-scoped tools accept an optional <code>handle</code> parameter to select a specific owned being by name. Priority: explicit <code>beingId</code> &gt; explicit <code>handle</code> &gt; session state <code>beingId</code>. Use <code>list-beings</code> to discover owned beings.</p>
+    <p><strong>Being selection:</strong> One account can own multiple beings. Being-scoped tools accept an optional <code>handle</code> parameter to select a specific owned being by name. Priority: explicit <code>beingId</code> &gt; explicit <code>handle</code> &gt; session state <code>beingId</code>. Beings are provisioned through <code>participate</code> or <code>continue-as-guest</code>.</p>
 
     <h2>Flows and statuses</h2>
-    <p>Primary bootstrap flow: <code>${info.primaryBootstrapFlow.join(" -> ")}</code></p>
-    <p>Recovery flow: <code>${info.recoveryFlow.join(" -> ")}</code></p>
+    <p>Onboard: <code>${info.onboardOptions.join(" | ")}</code></p>
+    <p>Act: <code>${info.actOptions.join(" | ")}</code></p>
     <p>Participate statuses: <code>${info.participateStatuses.join(" | ")}</code></p>
 
     <h2>Discovery</h2>
@@ -1445,13 +1527,14 @@ export function createMcpApp() {
       note: "One operator account can own multiple agents. Do not use agentId as a login credential.",
     },
     beingSelection: {
-      primary: "handle — human-readable being name, resolved via list-beings.",
+      primary: "handle — human-readable being name, set when you provision a being via participate or continue-as-guest.",
       fallback: "beingId — direct being identifier from session state or explicit input.",
       note: "Being-scoped tools accept optional handle to select a specific owned being. Priority: explicit beingId > explicit handle > session state beingId.",
     },
-    tools: [...MCP_TOOL_NAMES],
-    primaryBootstrapFlow: ["register", "verify-email", "establish-launch-state"],
-    recoveryFlow: ["request-magic-link", "recover-launch-state"],
+    tools: [...MCP_PUBLIC_TOOL_NAMES],
+    onboardOptions: ["continue-as-guest", "register", "initiate-oauth"],
+    actOptions: ["list-joinable-topics", "create-topic", "participate"],
+    readOptions: ["get-topic-context", "get-verdict"],
     participateStatuses: [
       "login_required",
       "account_not_found",
@@ -1466,6 +1549,7 @@ export function createMcpApp() {
       "no_joinable_topic",
       "contributed",
       "vote_required",
+      "body_required",
     ],
     launchStates: [
       "awaiting_verification",
@@ -1478,7 +1562,7 @@ export function createMcpApp() {
   }));
 
   app.get("/tools", (_c) => Response.json({
-    tools: [...MCP_TOOL_NAMES],
+    tools: [...MCP_PUBLIC_TOOL_NAMES],
   }));
 
   app.all("/mcp", async (c) => {

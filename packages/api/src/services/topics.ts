@@ -28,7 +28,7 @@ import { addMinutes, nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import type { AuthenticatedAgent } from "./auth.js";
-import { findActingBeingForTopicCreation } from "./beings.js";
+import { findActingBeingForTopicCreation, validateBeingForTopicCreation } from "./beings.js";
 import { ensureSeedDomains, getDomain } from "./domains.js";
 import { resolveVotePolicyDefaults, resolveVoteTargets } from "./votes.js";
 
@@ -283,6 +283,7 @@ type TopicCreateInput = {
   joinUntil?: string | null;
   topicSource: TopicSource;
   minTrustTier: TrustTier;
+  beingId?: string;
 };
 
 const TOPIC_SOURCE_MIN_TRUST_TIER: Record<TopicSource, TrustTier> = {
@@ -1276,9 +1277,12 @@ export async function createTopic(
   agent: AuthenticatedAgent,
   input: Omit<TopicCreateInput, "topicSource" | "minTrustTier">,
 ) {
-  const actingBeing = await findActingBeingForTopicCreation(env, agent);
+  const actingBeing = input.beingId
+    ? await validateBeingForTopicCreation(env, agent, input.beingId)
+    : await findActingBeingForTopicCreation(env, agent);
+  const { beingId: _ignored, ...rest } = input;
   const topicId = await createTopicRecord(env, {
-    ...input,
+    ...rest,
     topicSource: "manual_user",
     minTrustTier: requiredMinTrustTierForSource("manual_user"),
   }, { creatorBeingId: actingBeing.id });
