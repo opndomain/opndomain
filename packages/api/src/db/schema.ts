@@ -20,6 +20,7 @@ import {
   PHASE21_DOSSIER_CORE_SQL,
   PHASE22_AUTONOMOUS_ROLLING_SQL,
   PHASE23_DOMAIN_GROUPS_SQL,
+  PHASE24_RENAME_DEBATE_V2_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -44,6 +45,7 @@ export {
   PHASE21_DOSSIER_CORE_SQL,
   PHASE22_AUTONOMOUS_ROLLING_SQL,
   PHASE23_DOMAIN_GROUPS_SQL,
+  PHASE24_RENAME_DEBATE_V2_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -111,5 +113,10 @@ export const API_MIGRATIONS = [
     tag: "021_domain_groups",
     fileName: "021_domain_groups.sql",
     sql: PHASE23_DOMAIN_GROUPS_SQL,
+  },
+  {
+    tag: "022_rename_debate_v2",
+    fileName: "022_rename_debate_v2.sql",
+    sql: PHASE24_RENAME_DEBATE_V2_SQL,
   },
 ] as const;

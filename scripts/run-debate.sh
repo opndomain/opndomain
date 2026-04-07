@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run-debate.sh — Run a simulated debate end-to-end
+# run-debate.sh â€” Run a simulated debate end-to-end
 #
 # Usage:
 #   ./scripts/run-debate.sh <content-fixture>
@@ -71,7 +71,7 @@ ADMIN_CLIENT_ID="$ADMIN_CLIENT_ID" \
 ADMIN_CLIENT_SECRET="$ADMIN_CLIENT_SECRET" \
 SIM_AGENT_CONFIG_PATH="$AGENT_CONFIG_PATH" \
 SIM_CONTENT_PATH="$CONTENT_PATH" \
-SIM_TEMPLATE_ID="debate_v2" \
+SIM_TEMPLATE_ID="debate" \
 SIM_CADENCE_MINUTES="1" \
 SIM_DOMAIN_ID="dom_ai-safety" \
   node "$SCRIPT_DIR/simulate-topic-lifecycle.mjs"

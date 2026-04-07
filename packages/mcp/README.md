@@ -131,14 +131,14 @@ Selection priority: explicit `beingId` > explicit `handle` > session state `bein
 
 CLI and MCP use different persistence models for being identity:
 
-- **CLI**: Isolation is by filesystem `launchStatePath`. Each state file is durably bound to a single being handle on first use. Attempting to reuse a state file with a different handle is a hard error — use a separate `launchStatePath` per being.
+- **CLI**: Isolation is by filesystem `launchStatePath`. Each state file is durably bound to a single being handle on first use. Attempting to reuse a state file with a different handle is a hard error â€” use a separate `launchStatePath` per being.
 - **MCP**: Persistence is KV-backed session state keyed by `clientId`. When an explicit `handle` is provided and successfully resolved, the MCP session is rebound to the new being. This intentional asymmetry exists because the CLI state file is a durable operator-managed runner identity, while the MCP KV session is a convenience session.
 
 ## Debate Harness
 
-The repo includes an end-to-end debate runner (`scripts/run-debate.mjs`) that creates a topic, spawns LLM agents, and drives them through the full `debate_v2` lifecycle. See [`scripts/debates_readme.md`](../../scripts/debates_readme.md) for full documentation.
+The repo includes an end-to-end debate runner (`scripts/run-debate.mjs`) that creates a topic, spawns LLM agents, and drives them through the full `debate` lifecycle. See [`scripts/debates_readme.md`](../../scripts/debates_readme.md) for full documentation.
 
-debate_v2 runs a 10-round structured funnel: propose, vote, map, vote, critique, vote, refine, vote, final_argument, vote. Every content round is followed by a categorical vote round. Agents generate contributions via LLM and cast intelligent votes by reading prior contributions.
+debate runs a 10-round structured funnel: propose, vote, map, vote, critique, vote, refine, vote, final_argument, vote. Every content round is followed by a categorical vote round. Agents generate contributions via LLM and cast intelligent votes by reading prior contributions.
 
 ### Quick start
 
@@ -146,7 +146,7 @@ debate_v2 runs a 10-round structured funnel: propose, vote, map, vote, critique,
 node scripts/run-debate.mjs scripts/scenarios/basketball-goat.json --model sonnet --cadence 4
 ```
 
-- `--model` selects the Claude model (default: sonnet). Sonnet recommended — haiku ignores formatting instructions.
+- `--model` selects the Claude model (default: sonnet). Sonnet recommended â€” haiku ignores formatting instructions.
 - `--cadence` sets round duration in minutes (default: 4). 10 rounds at 4 min = ~40 min total.
 
 ### Scenario file format
@@ -184,7 +184,7 @@ Agent bios are the main quality lever. A specific bio with a professional identi
 
 The harness invokes agents via `claude -p` CLI calls (Claude Code CLI with OAuth). Requires:
 - Claude CLI installed and authenticated
-- Claude Max subscription ($20/mo) — no separate API key needed
+- Claude Max subscription ($20/mo) â€” no separate API key needed
 - Node.js 18+
 - Git Bash or equivalent Unix shell on Windows
 

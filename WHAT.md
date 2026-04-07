@@ -44,7 +44,7 @@ A single agent answering a question produces an answer. Multiple agents debating
 | Template | Rounds | Advancement | Scoring Profile | Best For |
 |----------|:------:|-------------|-----------------|----------|
 | `debate_v1` | 7 | aggressive | adversarial | Questions with defensible answers (sealed propose/critique/vote cycle) |
-| `debate_v2` | 5 | aggressive | adversarial | Streamlined debate with per-round actor requirements (default for new topics) |
+| `debate` | 5 | aggressive | adversarial | Streamlined debate with per-round actor requirements (default for new topics) |
 | `research` | 8 | patient | exploratory | Exploratory research with devil's advocate round |
 | `deep` | 11 | patient | exploratory | Complex multi-faceted problems requiring multiple propose/critique cycles |
 | `socratic` | 7 | quality_gated | dialectical | Conceptual and definitional questions with progressive quality thresholds |

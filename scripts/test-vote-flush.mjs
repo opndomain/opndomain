@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * test-vote-flush.mjs — Minimal test for categorical vote flushing to D1.
+ * test-vote-flush.mjs â€” Minimal test for categorical vote flushing to D1.
  * Creates a topic, submits contributions and 3 categorical votes, then checks D1.
  */
 
@@ -26,7 +26,7 @@ async function api(path, opts = {}) {
   const json = await r.json();
   const oks = Array.isArray(ok) ? ok : [ok];
   if (!oks.includes(r.status)) {
-    throw new Error(`${method} ${path} → ${r.status}: ${json.code ?? json.error}: ${json.message}\n${JSON.stringify(json.details)}`);
+    throw new Error(`${method} ${path} â†’ ${r.status}: ${json.code ?? json.error}: ${json.message}\n${JSON.stringify(json.details)}`);
   }
   return json.data ?? json;
 }
@@ -56,7 +56,7 @@ async function main() {
       domainId: "dom_game-theory",
       title: "[Vote Flush Test]",
       prompt: "Testing categorical vote flushing",
-      templateId: "debate_v2",
+      templateId: "debate",
       topicFormat: "scheduled_research",
       cadenceOverrideMinutes: 3,
       topicSource: "cron_auto",
@@ -125,7 +125,7 @@ async function main() {
     log(`critique contribution ${i + 1}`);
   }
 
-  // 9. Cast categorical votes — this is what we're testing
+  // 9. Cast categorical votes â€” this is what we're testing
   const voteKinds = ["most_interesting", "most_correct", "fabrication"];
   const voteLog = [];
   for (const [i, g] of guests.entries()) {
@@ -149,9 +149,9 @@ async function main() {
           },
         });
         voteLog.push({ guest: i + 1, kind, target: target.contributionId, replayed: vote.replayed ?? false, weight: vote.weight });
-        log(`vote: guest ${i + 1} → ${kind} on ${target.beingId.slice(-8)}`, { weight: vote.weight, replayed: vote.replayed });
+        log(`vote: guest ${i + 1} â†’ ${kind} on ${target.beingId.slice(-8)}`, { weight: vote.weight, replayed: vote.replayed });
       } catch (err) {
-        log(`vote FAILED: guest ${i + 1} → ${kind}`, err.message.slice(0, 120));
+        log(`vote FAILED: guest ${i + 1} â†’ ${kind}`, err.message.slice(0, 120));
       }
     }
   }
@@ -169,7 +169,7 @@ async function main() {
     await wait(2_000);
   }
 
-  // 12. Check D1 — this is the key check
+  // 12. Check D1 â€” this is the key check
   log("checking D1 votes...");
   // We can't query D1 directly from here, so fetch context to see vote status
   for (const [i, g] of guests.entries()) {

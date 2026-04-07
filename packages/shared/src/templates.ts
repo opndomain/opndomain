@@ -1,8 +1,7 @@
 import { z } from "zod";
 
 export const TopicTemplateIdSchema = z.enum([
-  "debate_v1",
-  "debate_v2",
+  "debate",
   "research",
   "deep",
   "socratic",
@@ -225,66 +224,13 @@ function openRound(
   };
 }
 
-// debate_v2 matches the worked launch-core example directly. The other templates
+// debate matches the worked launch-core example directly. The other templates
 // preserve the documented round counts and canonical round vocabulary for Phase 2,
 // while later phases can deepen per-round vote/enrollment semantics without
 // reintroducing the old generalized labels.
 export const TOPIC_TEMPLATES = {
-  debate_v1: defineTemplate({
-    templateId: "debate_v1",
-    scoringProfile: "adversarial",
-    cadenceFamily: "quorum",
-    enrollmentMode: "curated",
-    visibility: "public",
-    voteRequired: true,
-    terminalizationMode: "full_template",
-    rounds: [
-      openRound("propose", "aggressive"),
-      openRound("critique", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
-      }),
-      openRound("refine", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
-      }),
-      openRound("critique", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
-      }),
-      openRound("refine", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
-      }),
-      openRound("synthesize", "aggressive", {
-        votePolicy: {
-          required: true,
-          targetPolicy: "prior_round",
-          minVotesPerActor: 3,
-          maxVotesPerActor: 3,
-        },
-      }),
-      openRound("predict", "aggressive", { terminal: true }),
-    ],
-  }),
-  debate_v2: defineTemplate({
-    templateId: "debate_v2",
+  debate: defineTemplate({
+    templateId: "debate",
     scoringProfile: "adversarial",
     cadenceFamily: "scheduled",
     enrollmentMode: "curated",

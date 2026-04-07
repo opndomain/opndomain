@@ -134,7 +134,7 @@ function queueAuthenticatedVotePath(
     topic_source: "manual_user",
     min_trust_tier: "supervised",
     status: "started",
-    template_id: "debate_v2",
+    template_id: "debate",
   }]);
   db.queueFirst("FROM topic_members", [{ id: "tm_1", status: "active" }]);
   db.queueFirst("FROM rounds", [
@@ -294,7 +294,7 @@ describe("vote routes", () => {
       topic_source: "manual_user",
       min_trust_tier: "trusted",
       status: "started",
-      template_id: "debate_v2",
+      template_id: "debate",
     }]);
     const response = await postVote(db, async () => Response.json({ pendingVoteCount: 0, pendingVotesByKind: {}, hasMatchingVoteKey: false, hasMatchingVoteKind: false, matchingDirection: null, contributionAlreadyTargeted: false }));
     assert.equal(response.status, 403);

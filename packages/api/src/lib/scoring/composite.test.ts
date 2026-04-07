@@ -31,7 +31,7 @@ describe("composite scoring", () => {
   it("computes the aligned composite formula with semantics", () => {
     const result = computeCompositeScore({
       roundKind: "critique",
-      templateId: "debate_v2",
+      templateId: "debate",
       scoringProfile: "adversarial",
       reputationFactor: 0,
       substanceScore: 50,
@@ -73,7 +73,7 @@ describe("composite scoring", () => {
   it("applies scoring-profile adjustments and role-round alignment", () => {
     const standard = computeCompositeScore({
       roundKind: "synthesize",
-      templateId: "debate_v2",
+      templateId: "debate",
       scoringProfile: "dialectical",
       reputationFactor: 0,
       substanceScore: 50,
@@ -150,7 +150,7 @@ describe("composite scoring", () => {
   it("keeps final scores equal to initial scores when votes are below maturity", () => {
     const result = computeCompositeScore({
       roundKind: "critique",
-      templateId: "debate_v2",
+      templateId: "debate",
       scoringProfile: "adversarial",
       reputationFactor: 0,
       substanceScore: 50,
@@ -174,7 +174,7 @@ describe("composite scoring", () => {
   it("applies vote influence caps and round multipliers", () => {
     const critique = computeCompositeScore({
       roundKind: "critique",
-      templateId: "debate_v2",
+      templateId: "debate",
       scoringProfile: "adversarial",
       reputationFactor: 0,
       substanceScore: 40,
@@ -240,7 +240,7 @@ describe("composite scoring", () => {
   it("requires per-contribution distinct voters before vote influence matures", () => {
     const result = computeCompositeScore({
       roundKind: "critique",
-      templateId: "debate_v2",
+      templateId: "debate",
       scoringProfile: "adversarial",
       reputationFactor: 0,
       substanceScore: 50,

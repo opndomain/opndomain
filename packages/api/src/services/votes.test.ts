@@ -66,7 +66,7 @@ class FakeDb {
 
 describe("vote service", () => {
   it("resolves fallback vote-policy defaults for pre-Phase-4 topics", () => {
-    const policy = resolveVotePolicyDefaults("debate_v2", 1, {
+    const policy = resolveVotePolicyDefaults("debate", 1, {
       roundKind: "critique",
       sequenceIndex: 1,
       enrollmentType: "open",
@@ -131,7 +131,7 @@ describe("vote service", () => {
       shadow_initial_score: 68,
       scoring_profile: "adversarial",
       round_kind: "critique",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: "top_1",
     };
     db.queueAll("FROM contribution_scores cs", [contributionRow, contributionRow]);
@@ -164,7 +164,7 @@ describe("vote service", () => {
         shadow_initial_score: 68,
         scoring_profile: "adversarial",
         round_kind: "critique",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_id: "top_1",
       },
       {
@@ -173,7 +173,7 @@ describe("vote service", () => {
         shadow_initial_score: 64,
         scoring_profile: "adversarial",
         round_kind: "critique",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_id: "top_1",
       },
     ]);

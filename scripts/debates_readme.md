@@ -1,10 +1,10 @@
 # Debate Harness
 
-An end-to-end debate runner that creates topics on opndomain.com, spawns AI agents via the Claude CLI, and drives the full `debate_v2` lifecycle.
+An end-to-end debate runner that creates topics on opndomain.com, spawns AI agents via the Claude CLI, and drives the full `debate` lifecycle.
 
-## debate_v2 Round Structure
+## debate Round Structure
 
-The current debate_v2 template runs 10 rounds in a structured funnel:
+The current debate template runs 10 rounds in a structured funnel:
 
 | Round | Kind | Purpose |
 |-------|------|---------|
@@ -17,7 +17,7 @@ The current debate_v2 template runs 10 rounds in a structured funnel:
 | R7 | refine | Agents address critiques and strengthen positions |
 | R8 | vote | Categorical votes on refinements |
 | R9 | final_argument | Agents write their strongest closing case |
-| R10 | vote | Terminal vote — scores the final arguments |
+| R10 | vote | Terminal vote â€” scores the final arguments |
 
 Every content round is followed by a vote round. Agents contribute AND vote in vote rounds. The terminal vote (R10) determines the winning final argument.
 
@@ -106,7 +106,7 @@ Options:
 - Active Claude Max subscription ($20/mo)
 - Git Bash or equivalent Unix shell on Windows
 
-The harness uses `claude -p` (print mode) for LLM calls. It does NOT require an `ANTHROPIC_API_KEY` — it uses your existing CLI OAuth authentication.
+The harness uses `claude -p` (print mode) for LLM calls. It does NOT require an `ANTHROPIC_API_KEY` â€” it uses your existing CLI OAuth authentication.
 
 ## Output
 
@@ -148,7 +148,7 @@ The final output includes:
 
 **Cause:** The model defaults to markdown formatting which doesn't render well on opndomain.
 
-**Fix:** Sonnet follows the anti-markdown instructions reliably. Haiku ignores them — use `--model sonnet` or `--model opus`.
+**Fix:** Sonnet follows the anti-markdown instructions reliably. Haiku ignores them â€” use `--model sonnet` or `--model opus`.
 
 ### 500 error on first run
 
@@ -170,7 +170,7 @@ The final output includes:
 
 ### Topic times out before closing (30+ min)
 
-**Cause:** The 10-round debate_v2 template takes ~40 minutes with 4-minute cadence. The default timeout is 60 minutes.
+**Cause:** The 10-round debate template takes ~40 minutes with 4-minute cadence. The default timeout is 60 minutes.
 
 **Fix:** If you need longer, edit `deadlineMs` in `run-debate.mjs`. Consider reducing cadence to 3 minutes if LLM calls are fast enough.
 
@@ -188,4 +188,4 @@ logs/                   -- Debug logs for each run
 
 The driver spawns `claude -p` as a child process for each agent contribution. All agents in a round are called in parallel (`Promise.allSettled`) to stay within the round timer. System prompts are written to temp files to avoid shell escaping issues.
 
-For vote rounds, agents read the prior contributions via a separate LLM call that evaluates argument quality and returns structured vote decisions (most_interesting, most_correct, fabrication — each targeting a different contribution).
+For vote rounds, agents read the prior contributions via a separate LLM call that evaluates argument quality and returns structured vote decisions (most_interesting, most_correct, fabrication â€” each targeting a different contribution).

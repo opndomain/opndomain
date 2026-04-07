@@ -1,8 +1,8 @@
-# AGENTS.md — Debate Simulator
+# AGENTS.md â€” Debate Simulator
 
 ## Session Startup
 
-1. Your identity and boundaries are defined in SOUL.md (already loaded by Paperclip — do not search for the file)
+1. Your identity and boundaries are defined in SOUL.md (already loaded by Paperclip â€” do not search for the file)
 2. Check for assigned tasks from the CEO or CTO
 3. If you have a task, read the task spec before doing anything else
 
@@ -10,7 +10,7 @@
 
 ### Quick Start
 
-Use the wrapper script — no env setup needed:
+Use the wrapper script â€” no env setup needed:
 
 ```bash
 # List available fixtures
@@ -37,7 +37,7 @@ Fixtures live in `scripts/content-*.json`. Run `./scripts/run-debate.sh` with no
     "title": "The debate question",
     "prompt": "Detailed prompt for the debate",
     "domainId": "dom_ai-safety",
-    "templateId": "debate_v2",
+    "templateId": "debate",
     "cadenceMinutes": 1
   },
   "rounds": {
@@ -55,16 +55,16 @@ Each round array must have exactly one entry per participant (3 participants in 
 ### Writing Good Content Fixtures
 
 When creating content for a new debate:
-- **3 distinct positions** — each participant argues a genuinely different perspective
+- **3 distinct positions** â€” each participant argues a genuinely different perspective
 - **150-300 words** per contribution in propose/critique/refine rounds
-- **Substantive arguments** — specific evidence, reasoning, examples. No vague or generic text.
+- **Substantive arguments** â€” specific evidence, reasoning, examples. No vague or generic text.
 - **Round-appropriate content:**
   - Propose: clear positions with reasoning
   - Critique: engage with and challenge other positions by name ("Participant 1 claims...")
   - Refine: incorporate valid critiques, concede where appropriate
   - Synthesize: identify convergence and remaining disagreement
   - Predict: forward-looking predictions based on the debate
-- **Reference other participants** — critiques should name "Participant 1/2/3" and address specific claims
+- **Reference other participants** â€” critiques should name "Participant 1/2/3" and address specific claims
 
 ### Available Domains
 
@@ -73,12 +73,12 @@ Common domains for testing: `dom_ai-safety`, `dom_ai-ethics`, `dom_computer-scie
 ## Reporting Results
 
 Every run report must include:
-- **Topic metadata** — ID, title, domain, template, status, duration
-- **Completion stats** — rounds completed, contributions, votes, failures
-- **Score table** — all contributions with heuristic, semantic, live, and final scores
-- **Verdict** — confidence level, terminalization mode, artifact status
-- **Anomalies** — null scores, unexpected patterns, scoring drops, pipeline errors
-- **Comparison** — how scores compare to previous runs (especially semantic scoring patterns)
+- **Topic metadata** â€” ID, title, domain, template, status, duration
+- **Completion stats** â€” rounds completed, contributions, votes, failures
+- **Score table** â€” all contributions with heuristic, semantic, live, and final scores
+- **Verdict** â€” confidence level, terminalization mode, artifact status
+- **Anomalies** â€” null scores, unexpected patterns, scoring drops, pipeline errors
+- **Comparison** â€” how scores compare to previous runs (especially semantic scoring patterns)
 
 Report results to CEO via task comments.
 
@@ -89,7 +89,7 @@ Report results to CEO via task comments.
 
 ## Red Lines
 
-- Never modify scoring pipeline or API code — you test, you don't fix
+- Never modify scoring pipeline or API code â€” you test, you don't fix
 - Never fabricate or modify score data in reports
 - Never run untested harness changes against production
 - Never add features beyond what was tasked

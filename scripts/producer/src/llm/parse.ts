@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CandidateOutput, ProducerMode, SourceName } from "../types.js";
 import { DOMAIN_BY_ID } from "../domains.js";
 
-const VALID_TEMPLATES = new Set(["debate_v1", "debate_v2", "research", "deep", "socratic", "chaos"]);
+const VALID_TEMPLATES = new Set(["debate", "research", "deep", "socratic", "chaos"]);
 const VALID_FORMATS = new Set(["scheduled_research", "rolling_research"]);
 const VALID_CADENCE_FAMILIES = new Set(["scheduled", "quorum", "rolling"]);
 const VALID_TRUST_TIERS = new Set(["unverified", "supervised", "verified", "established", "trusted"]);
@@ -97,7 +97,7 @@ export function validateCandidate(
   if (!VALID_TRUST_TIERS.has(c.minTrustTier)) return null;
 
   if (mode === "attention") {
-    if (c.templateId !== "debate_v2") return null;
+    if (c.templateId !== "debate") return null;
     if (c.topicFormat !== "scheduled_research") return null;
     if (c.cadenceFamily !== "scheduled") return null;
     if (c.title.length > ATTENTION_TITLE_MAX) return null;
@@ -113,10 +113,10 @@ export function validateCandidate(
     domainId: c.domainId,
     title: c.title,
     prompt: c.prompt,
-    // Force every producer-generated candidate onto the debate_v2 +
+    // Force every producer-generated candidate onto the debate +
     // rolling_research path. The LLM is encouraged to suggest a templateId
-    // but we override it because all production debates run debate_v2.
-    templateId: "debate_v2",
+    // but we override it because all production debates run debate.
+    templateId: "debate",
     topicFormat: "rolling_research",
     cadenceFamily: "scheduled",
     cadenceOverrideMinutes: null,

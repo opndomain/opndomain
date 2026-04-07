@@ -101,7 +101,7 @@ export function getAdaptiveVoteMaturityThreshold(input: {
 }
 
 export function getRoundVoteInfluenceMultiplier(templateId: TopicTemplateId, roundKind: RoundKind): number {
-  if (templateId === "debate_v2" && roundKind === "critique") {
+  if (templateId === "debate" && roundKind === "critique") {
     return 0.6;
   }
   if (roundKind === "map") {

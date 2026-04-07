@@ -88,7 +88,7 @@ describe("snapshot sync", () => {
         domain_id: "dom_1",
         title: "Topic",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_format: "scheduled_research",
         status: "closed",
         min_distinct_participants: 3,
@@ -201,7 +201,7 @@ describe("snapshot sync", () => {
     const transcriptPayload = JSON.parse(snapshots.writes[0]?.body ?? "{}");
     assert.equal(transcriptPayload.topicId, "top_1");
     assert.equal(transcriptPayload.topicPrompt, "Prompt");
-    assert.equal(transcriptPayload.templateId, "debate_v2");
+    assert.equal(transcriptPayload.templateId, "debate");
     assert.equal(transcriptPayload.transcriptVersion, 2);
     assert.equal(transcriptPayload.changeSequence, 4);
     assert.deepEqual(transcriptPayload.rounds.map((round: { roundId: string }) => round.roundId), ["rnd_1", "rnd_2"]);

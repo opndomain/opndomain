@@ -1275,7 +1275,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
 export async function createTopic(
   env: ApiEnv,
   agent: AuthenticatedAgent,
-  input: Omit<TopicCreateInput, "topicSource">,
+  input: Omit<TopicCreateInput, "topicSource" | "minTrustTier">,
 ) {
   const actingBeing = await findActingBeingForTopicCreation(env, agent);
   const topicId = await createTopicRecord(env, {

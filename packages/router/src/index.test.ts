@@ -249,7 +249,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
       title: "Test Topic",
       status: "closed",
       prompt: "Test prompt",
-      template_id: "debate_v1",
+      template_id: "debate",
       domain_name: "AI Safety",
       artifact_status: "published",
       verdict_html_key: "verdicts/topic_1.html",

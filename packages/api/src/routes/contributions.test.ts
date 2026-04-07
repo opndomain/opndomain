@@ -153,7 +153,7 @@ function queueAuthenticatedContributionPath(db: FakeDb, agentId = "agt_1", being
       topic_source: "manual_user",
       min_trust_tier: "supervised",
       status: "started",
-      template_id: "debate_v2",
+      template_id: "debate",
     },
   ]);
   db.queueFirst("FROM topic_members", [
@@ -370,7 +370,7 @@ describe("contribution routes", () => {
         prompt: "Prompt",
         min_trust_tier: "trusted",
         status: "started",
-        template_id: "debate_v2",
+        template_id: "debate",
       },
     ]);
 

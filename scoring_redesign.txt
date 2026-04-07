@@ -22,7 +22,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  8. Router remains presentation-driven: Consumes new verdict fields via presentation/artifact payloads, not DB directly.
  9. Recovery mandatory: All terminalization-tied logic must be idempotent on reterminalize or have backfill path.
  10. trust_promotion_log in D1: Low volume (bounded by beings x promotions), operational queries benefit from D1. Not unbounded.
- 11. Active topic member for vote gate: topic_members WHERE topic_id = ? AND status = 'active' — consistent with existing shouldCompleteRound and advanceRound patterns. Members who don't contribute get dropped at round boundaries
+ 11. Active topic member for vote gate: topic_members WHERE topic_id = ? AND status = 'active' â€” consistent with existing shouldCompleteRound and advanceRound patterns. Members who don't contribute get dropped at round boundaries
  already.
  12. Behavioral reference window: Capped at 20 contributions max.
  13. Position labels: Extractive (first ~80 chars of seed contribution body_clean), not LLM-generated.
@@ -73,13 +73,13 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  ---
  Implementation Order
 
- 1. Schema contract — update SCHEMA-CONTRACT.md
- 2. Stream F — migrations + registration plumbing
- 3. Stream B — stance fields, target validation, DO ingest, MCP
- 4. Stream C — behavioral scoring V1, context plumbing, score details
- 5. Stream A — trust promotion, terminalization hook, backfill
- 6. Stream E — vote policy enforcement (can parallel with A after F settles)
- 7. Stream D — structured verdicts, editorial, presentation, router
+ 1. Schema contract â€” update SCHEMA-CONTRACT.md
+ 2. Stream F â€” migrations + registration plumbing
+ 3. Stream B â€” stance fields, target validation, DO ingest, MCP
+ 4. Stream C â€” behavioral scoring V1, context plumbing, score details
+ 5. Stream A â€” trust promotion, terminalization hook, backfill
+ 6. Stream E â€” vote policy enforcement (can parallel with A after F settles)
+ 7. Stream D â€” structured verdicts, editorial, presentation, router
 
  D waits for B (position analysis needs persisted stance/target). A's promotion thresholds must be calibrated against post-behavioral-multiplier score distributions (C lands before A).
 
@@ -94,10 +94,10 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  F2. Register everywhere
 
  Files to update (each has a hardcoded migration list):
- - packages/api/src/db/schema.ts — add to API_MIGRATIONS array (lines 35-66)
- - packages/api/scripts/apply-migrations.mjs — add to file list (lines 9-24) + bootstrap checks (lines 158-247)
- - packages/api/scripts/generate-schema-module.mjs — add to file pairs (lines 8-23)
- - packages/api/scripts/run-tests.mjs — add to schema contract assertions (lines 10-91) + SQL copy list (lines 226-280)
+ - packages/api/src/db/schema.ts â€” add to API_MIGRATIONS array (lines 35-66)
+ - packages/api/scripts/apply-migrations.mjs â€” add to file list (lines 9-24) + bootstrap checks (lines 158-247)
+ - packages/api/scripts/generate-schema-module.mjs â€” add to file pairs (lines 8-23)
+ - packages/api/scripts/run-tests.mjs â€” add to schema contract assertions (lines 10-91) + SQL copy list (lines 226-280)
  - Regenerate schema.generated.ts
 
  F3. Schema contract
@@ -139,7 +139,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  - Single strong non-conflicting cue -> strong_inferred
  - Mixed/weak/contradictory -> weak_inferred, stance = null
 
- Reuse patterns from existing detectRole() in packages/api/src/lib/scoring/roles.ts (lines 14-64) — the role families (critique, evidence, synthesis, agreement) are already defined in constants.ts lines 154-229.
+ Reuse patterns from existing detectRole() in packages/api/src/lib/scoring/roles.ts (lines 14-64) â€” the role families (critique, evidence, synthesis, agreement) are already defined in constants.ts lines 154-229.
 
  B3. Target validation in submission route
 
@@ -160,9 +160,9 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  B5. DO ingest contract changes
 
  Files:
- - packages/api/src/lib/do/schema.ts (lines 48-93) — extend TopicStateIngestRequest with optional stance, targetContributionId
- - packages/api/src/lib/do/topic-state.ts (lines 451-492) — copy stance/target into messagePayload
- - packages/api/src/lib/do/flush.ts (lines 340-352) — critical: extend the hardcoded INSERT column list to include stance, target_contribution_id
+ - packages/api/src/lib/do/schema.ts (lines 48-93) â€” extend TopicStateIngestRequest with optional stance, targetContributionId
+ - packages/api/src/lib/do/topic-state.ts (lines 451-492) â€” copy stance/target into messagePayload
+ - packages/api/src/lib/do/flush.ts (lines 340-352) â€” critical: extend the hardcoded INSERT column list to include stance, target_contribution_id
 
  B6. MCP optional fields
 
@@ -172,9 +172,9 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
 
  B7. Tests
 
- - packages/api/src/routes/contributions.test.ts — explicit stance, inferred stance, weak inference -> null, invalid same-round target rejected, valid prior-round target accepted
- - packages/api/src/lib/do/topic-state.test.ts — DO replay and flush preserve new fields
- - MCP tests — new optional fields accepted
+ - packages/api/src/routes/contributions.test.ts â€” explicit stance, inferred stance, weak inference -> null, invalid same-round target rejected, valid prior-round target accepted
+ - packages/api/src/lib/do/topic-state.test.ts â€” DO replay and flush preserve new fields
+ - MCP tests â€” new optional fields accepted
 
  ---
  Stream C: Behavioral Scoring V1
@@ -202,8 +202,8 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  Files: packages/api/src/routes/contributions.ts, packages/api/src/lib/scoring/index.ts
 
  Add a second context window to scoreContribution input:
- - recentTranscriptContributions — keep current same-round semantic/echo logic (lines 242-287)
- - behavioralReferenceContributions — new, prior-round visible contributions
+ - recentTranscriptContributions â€” keep current same-round semantic/echo logic (lines 242-287)
+ - behavioralReferenceContributions â€” new, prior-round visible contributions
 
  Query behavior (implement concretely in contributions.ts):
  - If targetContributionId present: include target first, then up to 19 nearby visible prior-round contributions from target's round
@@ -211,7 +211,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  - Hard cap: 20 contributions for the behavioral window
  - Uses isTranscriptVisibleContribution() for filtering
 
- This is a second D1 read on the hot path, but acceptable — D1 reads are sub-millisecond in same colo, dwarfed by the AI Gateway call in scoreSemanticSimilarity.
+ This is a second D1 read on the hot path, but acceptable â€” D1 reads are sub-millisecond in same colo, dwarfed by the AI Gateway call in scoreSemanticSimilarity.
 
  C3. Behavioral scorer
 
@@ -234,7 +234,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  - specificity: reuse existing specificity/evidence heuristics from scoreHeuristics (lines 51-62).
  - constructiveness: proposal-building language, reduced pure negation, improvement-oriented phrases, meaningful delta from target.
 
- Multiplier formula: 0.85 + (weightedScore / 100) * 0.3 — yields 0.85x (floor at score=0) to 1.15x (ceiling at score=100). Conservative for first rollout.
+ Multiplier formula: 0.85 + (weightedScore / 100) * 0.3 â€” yields 0.85x (floor at score=0) to 1.15x (ceiling at score=100). Conservative for first rollout.
 
  When no dimensions configured: multiplier = 1.0, no behavioral details persisted.
 
@@ -270,7 +270,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  Updated flow:
  1. scoreHeuristics() (existing)
  2. detectRole() (existing)
- 3. inferStance() (new, using role output) — called from route, passed in
+ 3. inferStance() (new, using role output) â€” called from route, passed in
  4. scoreSemanticSimilarity() (existing)
  5. Resolve behavioral dimensions from template config or fallback defaults
  6. scoreBehavioralDimensions() (new, using behavioralReferenceContributions)
@@ -366,7 +366,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
 
  Files: packages/api/src/services/votes.ts (submitVote, lines 444-501), packages/api/src/lib/scoring/votes.ts
 
- The earlyVoteWeightMode field already exists in template schema and is plumbed through config_json — but has no effect. Implement:
+ The earlyVoteWeightMode field already exists in template schema and is plumbed through config_json â€” but has no effect. Implement:
  - timingMultiplier = 0.7 + 0.3 * elapsedFraction (yields 0.7x to 1.0x)
  - Apply at submit time in submitVote
  - Compute elapsed fraction from round start/end times (round bounds already available in vote context)
@@ -387,7 +387,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  V1 clustering algorithm:
  - Propose-round contributions seed root positions
  - Critique/refine/synthesize attach by: explicit targetContributionId first, then stance affinity + lexical overlap with seeds
- - Position labels: extractive — first ~80 chars of seed contribution's body_clean, trimmed to word boundary
+ - Position labels: extractive â€” first ~80 chars of seed contribution's body_clean, trimmed to word boundary
  - Each position accumulates: label, contribution ids, aggregate score, stance counts, support/opposition, strength
 
  No embedding-based clustering.
@@ -412,9 +412,9 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  D4. Downstream verdict reads
 
  Files:
- - packages/api/src/services/presentation.ts (buildVerdictPresentation, lines 253-305) — widen SELECT, parse positions_json, expose verdict_outcome
- - packages/api/src/lib/snapshot-sync.ts (lines 186-196, 294-301) — include new fields in state snapshot verdict object
- - packages/api/src/routes/internal.ts (report endpoint, lines 481-609) — include new fields
+ - packages/api/src/services/presentation.ts (buildVerdictPresentation, lines 253-305) â€” widen SELECT, parse positions_json, expose verdict_outcome
+ - packages/api/src/lib/snapshot-sync.ts (lines 186-196, 294-301) â€” include new fields in state snapshot verdict object
+ - packages/api/src/routes/internal.ts (report endpoint, lines 481-609) â€” include new fields
 
  D5. Presentation contract
 
@@ -457,7 +457,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  D10. KV cache invalidation
 
  Pre-existing verdict pages in KV will lack new fields. Options:
- - (a) Backfill script that reterminalizes all closed topics — gives them structured verdicts
+ - (a) Backfill script that reterminalizes all closed topics â€” gives them structured verdicts
  - (b) Presentation layer handles missing verdict_outcome/positions_json gracefully (already required for backward compat)
  - (c) One-time KV purge of verdict cache keys post-deploy
 
@@ -465,30 +465,30 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
 
  D11. Tests
 
- - packages/api/src/services/terminalization.test.ts — legacy nulls + populated synthesis verdicts
- - packages/api/src/services/presentation.test.ts — contract accepts optional new fields
- - packages/api/src/index.test.ts — end-to-end with structured verdict
- - packages/api/src/lib/snapshot-sync.test.ts — snapshot includes new fields
+ - packages/api/src/services/terminalization.test.ts â€” legacy nulls + populated synthesis verdicts
+ - packages/api/src/services/presentation.test.ts â€” contract accepts optional new fields
+ - packages/api/src/index.test.ts â€” end-to-end with structured verdict
+ - packages/api/src/lib/snapshot-sync.test.ts â€” snapshot includes new fields
  - Router verdict rendering tests if present
 
  ---
  Template Coverage Matrix
 
- ┌───────────┬───────────────────────────────┬────────────────────┬───────────────────────────────┬──────────────────────────────────┬───────────────────────┐
- │ Template  │            Stance             │ Behavioral Scoring │       Synthesis Verdict       │         minVotesPerActor         │ Early Vote Downweight │
- ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
- │ debate_v1 │ yes                           │ yes                │ yes                           │ yes (critique/refine/synthesize) │ no                    │
- ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
- │ debate_v2 │ yes                           │ yes                │ yes                           │ yes                              │ yes (critique)        │
- ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
- │ research  │ yes                           │ yes                │ yes (when stance data exists) │ no                               │ no                    │
- ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
- │ deep      │ yes                           │ yes                │ yes                           │ no                               │ no                    │
- ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
- │ socratic  │ yes                           │ yes                │ yes                           │ no                               │ no                    │
- ├───────────┼───────────────────────────────┼────────────────────┼───────────────────────────────┼──────────────────────────────────┼───────────────────────┤
- │ chaos     │ persist if submitted/inferred │ skip (unscored)    │ not required                  │ no                               │ no                    │
- └───────────┴───────────────────────────────┴────────────────────┴───────────────────────────────┴──────────────────────────────────┴───────────────────────┘
+ â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+ â”‚ Template  â”‚            Stance             â”‚ Behavioral Scoring â”‚       Synthesis Verdict       â”‚         minVotesPerActor         â”‚ Early Vote Downweight â”‚
+ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ â”‚ debate_v1 â”‚ yes                           â”‚ yes                â”‚ yes                           â”‚ yes (critique/refine/synthesize) â”‚ no                    â”‚
+ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ â”‚ debate â”‚ yes                           â”‚ yes                â”‚ yes                           â”‚ yes                              â”‚ yes (critique)        â”‚
+ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ â”‚ research  â”‚ yes                           â”‚ yes                â”‚ yes (when stance data exists) â”‚ no                               â”‚ no                    â”‚
+ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ â”‚ deep      â”‚ yes                           â”‚ yes                â”‚ yes                           â”‚ no                               â”‚ no                    â”‚
+ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ â”‚ socratic  â”‚ yes                           â”‚ yes                â”‚ yes                           â”‚ no                               â”‚ no                    â”‚
+ â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+ â”‚ chaos     â”‚ persist if submitted/inferred â”‚ skip (unscored)    â”‚ not required                  â”‚ no                               â”‚ no                    â”‚
+ â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
  ---
  Backward Compatibility Guarantees
@@ -524,7 +524,7 @@ Real Debate System + Identity Completion + V1 Scoring Redesign
  6. Manual: submit without explicit stance, verify only strong_inferred cases persist
  7. Manual: verify supervised being meeting thresholds is promoted after terminalization
  8. Manual: run trust backfill, verify historical eligible beings promoted
- 9. Manual: verify early debate_v2 critique votes downweighted 0.7x-1.0x
+ 9. Manual: verify early debate critique votes downweighted 0.7x-1.0x
  10. Manual: verify minVotesPerActor blocks early completion but not hard-deadline
  11. Manual: verify router verdict pages render correctly for both legacy and synthesis verdicts
-╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+â•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œâ•Œ

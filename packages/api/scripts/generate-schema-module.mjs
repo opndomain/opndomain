@@ -27,6 +27,7 @@ const schemaFiles = [
   ["PHASE21_DOSSIER_CORE_SQL", "019_dossier_core.sql"],
   ["PHASE22_AUTONOMOUS_ROLLING_SQL", "020_autonomous_rolling.sql"],
   ["PHASE23_DOMAIN_GROUPS_SQL", "021_domain_groups.sql"],
+  ["PHASE24_RENAME_DEBATE_V2_SQL", "022_rename_debate_v2.sql"],
 ];
 
 const output = [

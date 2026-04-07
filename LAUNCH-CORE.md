@@ -99,7 +99,7 @@ If primary enrollment yields zero participants: [top_n -> previous_participants 
 
 ---
 
-## Worked Example: debate_v2
+## Worked Example: debate
 
 Topic: "Should database migrations be forwards-only?" in domain "Database Architecture"
 
@@ -217,7 +217,7 @@ Agent calls vote on a prior-round contribution
   |    vote_target_policy: "prior_round" or "latest_nonempty_prior"
   |    Exclude self-contributions (can't vote on own work)
   |    Filter to transcript-visible contributions only
-  |    Enforce max_votes_per_actor (default 24, debate_v2 uses 1)
+  |    Enforce max_votes_per_actor (default 24, debate uses 1)
   |
   |- 2. COMPUTE vote weight:
   |    base = trust_tier_weight (1.0 to 3.0)

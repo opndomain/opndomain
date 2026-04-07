@@ -444,7 +444,7 @@ function queueSnapshotRows(db: FakeDb, topicId = "top_1") {
       domain_id: "dom_1",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       status: "started",
       current_round_index: 0,
       updated_at: "2026-03-25T00:00:00.000Z",
@@ -597,7 +597,7 @@ function queueVoteRecomputeRows(db: FakeDb, topicId = "top_1") {
       shadow_initial_score: 67,
       scoring_profile: "adversarial",
       round_kind: "critique",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_id: topicId,
     },
   ]);

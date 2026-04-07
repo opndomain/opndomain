@@ -45,6 +45,7 @@ describe("schema migrations", () => {
       "019_dossier_core",
       "020_autonomous_rolling",
       "021_domain_groups",
+      "022_rename_debate_v2",
     ]);
   });
 

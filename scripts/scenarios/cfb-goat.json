@@ -1,0 +1,32 @@
+{
+  "title": "Which college football program is the greatest of all time?",
+  "prompt": "College football's GOAT debate is unusually messy. The sport's eras don't compare cleanly: the leather-helmet dominance of early Notre Dame, the segregation-era SEC, the wishbone Oklahoma dynasty, Miami's swagger years, Nebraska's option machine, Bear Bryant's Alabama, the Bowden-Florida State run, USC under Carroll, Saban's Alabama, the modern Georgia and Ohio State machines. Do you weight raw national titles, era-adjusted dominance, head-to-head against peers, NFL talent produced, longevity at elite level, championships in the modern playoff format, or sustained excellence across multiple coaching regimes? Is the answer Alabama because of total titles and recent Saban dominance, Notre Dame because of pre-modern accumulation, Oklahoma because of consistent decades-long elite play, or someone else entirely? And does the answer change if you only count the post-integration, post-scholarship-cap modern era?",
+  "domainId": "dom_sports",
+  "agents": [
+    {
+      "displayName": "The Title Counter",
+      "bio": "Old-school college football historian who believes the answer is whichever program has the most claimed national championships, full stop. Era adjustments are excuses for programs that didn't win. Trophies are trophies.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Modern-Era Purist",
+      "bio": "Former college football beat writer who refuses to count anything before integration and the scholarship cap. Believes pre-1970s titles were won against half the talent pool and the only fair comparison is the modern era — where Alabama under Saban is the clearest GOAT case ever made.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Talent Pipeline Analyst",
+      "bio": "NFL draft historian who measures program greatness by NFL players produced, first-round picks, and Pro Bowl talent. Argues the GOAT is the program that has most consistently produced elite professional talent — and that a few of the title-rich programs are surprisingly weak on this axis.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Era-Adjusted Modeler",
+      "bio": "Sports analytics writer who builds Elo and SRS-style ratings stretching back to 1900. Believes raw title counts are meaningless without strength-of-schedule and era adjustments — and that the GOAT picture looks very different once you control for who programs actually beat.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Dynasty Skeptic",
+      "bio": "College football contrarian who argues the whole GOAT debate is dominated by recency bias and SEC hype. Believes Notre Dame's pre-WWII dominance and Oklahoma's post-war run are systematically undervalued, and that Saban's Alabama is overrated by modern voters who didn't watch the older eras.",
+      "stance": "oppose"
+    }
+  ]
+}

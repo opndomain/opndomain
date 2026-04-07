@@ -228,7 +228,7 @@ describe("updateTopic schedule rewrites", () => {
         domain_id: "dom_1",
         title: "Topic",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_format: "scheduled_research",
         topic_source: "manual_user",
         status: "open",
@@ -253,7 +253,7 @@ describe("updateTopic schedule rewrites", () => {
         domain_id: "dom_1",
         title: "Topic",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_format: "scheduled_research",
         topic_source: "manual_user",
         status: "open",
@@ -353,7 +353,7 @@ describe("updateTopic schedule rewrites", () => {
       domain_id: "dom_1",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       topic_source: "manual_user",
       status: "open",
@@ -420,7 +420,7 @@ describe("createTopic round config persistence", () => {
         domain_id: "dom_1",
         title: "Topic",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_format: "scheduled_research",
         topic_source: "manual_user",
         status: "open",
@@ -460,9 +460,8 @@ describe("createTopic round config persistence", () => {
       domainId: "dom_1",
       title: "Topic",
       prompt: "Prompt",
-      templateId: "debate_v2",
+      templateId: "debate",
       topicFormat: "scheduled_research",
-      minTrustTier: "supervised",
     });
 
     const topicCreationBatch = db.batchCalls.at(-1) ?? [];
@@ -535,7 +534,7 @@ describe("createTopic round config persistence", () => {
         domain_id: "dom_1",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "open",
       cadence_family: "scheduled",
@@ -586,9 +585,8 @@ describe("createTopic round config persistence", () => {
       domainId: "dom_1",
       title: "Sealed Topic",
       prompt: "Prompt",
-      templateId: "debate_v2",
+      templateId: "debate",
       topicFormat: "scheduled_research",
-      minTrustTier: "supervised",
     });
 
     await createTopic(buildEnv(db), agent as never, {
@@ -598,7 +596,6 @@ describe("createTopic round config persistence", () => {
       templateId: "chaos",
       topicFormat: "rolling_research",
       countdownSeconds: 120,
-      minTrustTier: "supervised",
     });
 
     const sealedRoundInsert = db.batchCalls[0]?.find((entry) => entry.sql.includes("INSERT INTO rounds"));
@@ -650,7 +647,7 @@ describe("topic read contracts", () => {
         status: "closed",
         topic_source: "manual_user",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         domain_slug: "policy",
         domain_name: "Policy",
         member_count: 7,
@@ -677,7 +674,7 @@ describe("topic read contracts", () => {
       title: "Topic",
       status: "started",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       domain_slug: "ai-safety",
       domain_name: "AI Safety",
       member_count: 9,
@@ -690,17 +687,17 @@ describe("topic read contracts", () => {
     const topics = await listTopics(buildEnv(db), {
       status: "started",
       domainSlug: "ai-safety",
-      templateId: "debate_v2",
+      templateId: "debate",
     });
 
     assert.equal(topics.length, 1);
     assert.equal(topics[0]?.domainSlug, "ai-safety");
-    assert.equal(topics[0]?.templateId, "debate_v2");
+    assert.equal(topics[0]?.templateId, "debate");
     assert.equal(topics[0]?.memberCount, 9);
     assert.equal(topics[0]?.roundCount, 4);
     const query = db.allCalls.at(-1);
     assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ? AND t.template_id = ?"));
-    assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate_v2"]);
+    assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate"]);
   });
 
   it("lists open topics through the read path without requiring transcript sequence columns", async () => {
@@ -890,7 +887,7 @@ describe("topic read contracts", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quality_gated",
@@ -990,7 +987,7 @@ describe("topic read contracts", () => {
     assert.equal(currentRoundConfig.voteRequired, true);
     assert.equal(currentRoundConfig.voteTargetPolicy, "prior_round");
 
-    // roundInstruction should be present and valid for debate_v2 critique round
+    // roundInstruction should be present and valid for debate critique round
     assert.ok(currentRoundConfig.roundInstruction);
     const instruction = RoundInstructionSchema.parse(currentRoundConfig.roundInstruction);
     assert.ok(instruction.goal.length > 0);
@@ -1015,7 +1012,7 @@ describe("topic read contracts", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quality_gated",
@@ -1089,8 +1086,8 @@ describe("topic read contracts", () => {
         },
       }),
     }]);
-    // ownContributionStatus — empty (not contributed yet)
-    // ownVoteRows — one vote cast
+    // ownContributionStatus â€” empty (not contributed yet)
+    // ownVoteRows â€” one vote cast
     db.queueAll("FROM votes\n            WHERE round_id = ? AND voter_being_id = ?", [
       { id: "vot_1", contribution_id: "cnt_2", direction: 1, vote_kind: "most_interesting", created_at: "2026-03-25T01:10:00.000Z" },
     ]);
@@ -1139,7 +1136,7 @@ describe("topic read contracts", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "quality_gated",
@@ -1213,7 +1210,7 @@ describe("topic read contracts", () => {
         },
       }),
     }]);
-    // ownVoteRows — no votes cast
+    // ownVoteRows â€” no votes cast
     db.queueAll("FROM votes\n            WHERE round_id = ? AND voter_being_id = ?", []);
     // vote targets resolution
     db.queueFirst("WHERE topic_id = ? AND sequence_index = ?", [{
@@ -1256,7 +1253,7 @@ describe("topic transcript reads", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "scheduled",
@@ -1331,7 +1328,7 @@ describe("topic transcript reads", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       topic_source: "manual_admin",
       status: "started",
@@ -1368,7 +1365,7 @@ describe("topic transcript reads", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "scheduled",
@@ -1443,7 +1440,7 @@ describe("topic transcript reads", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "scheduled",
@@ -1496,7 +1493,7 @@ describe("topic transcript reads", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "scheduled",
@@ -1608,7 +1605,7 @@ describe("capTranscriptByBudget", () => {
   });
 
   it("distributes budget across rounds with floor-then-fill", () => {
-    // 2 rounds, 100 items each, budget 50 → each round gets at least 25
+    // 2 rounds, 100 items each, budget 50 â†’ each round gets at least 25
     const round1Items = Array.from({ length: 100 }, (_, i) => makeItem("rnd_0", i));
     const round2Items = Array.from({ length: 100 }, (_, i) => makeItem("rnd_1", i));
     const items = [...round1Items, ...round2Items];
@@ -1646,7 +1643,7 @@ describe("topic context round instruction with D1 override", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       topic_source: "manual_user",
       status: "started",
@@ -1712,7 +1709,7 @@ describe("topic context round instruction with D1 override", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       topic_source: "manual_user",
       status: "started",
@@ -1764,7 +1761,7 @@ describe("topic context round instruction with D1 override", () => {
     const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
     const config = TopicContextCurrentRoundConfigSchema.parse(topic.currentRoundConfig);
     assert.ok(config.roundInstruction);
-    // Should get the shared default for debate_v2 critique, not the D1 override
+    // Should get the shared default for debate critique, not the D1 override
     assert.notEqual(config.roundInstruction.goal, "This should be skipped");
     assert.ok(config.roundInstruction.goal.length > 0);
   });
@@ -1778,7 +1775,7 @@ describe("topic context round instruction with D1 override", () => {
       domain_name: "Test",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       topic_source: "manual_user",
       status: "started",

@@ -28,6 +28,7 @@ const migrationFiles = [
   { tag: "019_dossier_core", fileName: "019_dossier_core.sql" },
   { tag: "020_autonomous_rolling", fileName: "020_autonomous_rolling.sql" },
   { tag: "021_domain_groups", fileName: "021_domain_groups.sql" },
+  { tag: "022_rename_debate_v2", fileName: "022_rename_debate_v2.sql" },
 ];
 const migrationsTable = "schema_migrations";
 

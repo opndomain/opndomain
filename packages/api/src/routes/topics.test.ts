@@ -38,6 +38,7 @@ class FakePreparedStatement {
 class FakeDb {
   readonly allCalls: Array<{ sql: string; bindings: unknown[] }> = [];
   readonly runs: Array<{ sql: string; bindings: unknown[] }> = [];
+  readonly batches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -53,7 +54,8 @@ class FakeDb {
     return new FakePreparedStatement(sql, this);
   }
 
-  async batch(_statements: FakePreparedStatement[]) {
+  async batch(statements: FakePreparedStatement[]) {
+    this.batches.push(statements.map((statement) => ({ sql: statement.sql, bindings: statement.bindings })));
     return [];
   }
 
@@ -134,6 +136,103 @@ function buildEnv(db: FakeDb, options?: { cache?: FakeKv; artifacts?: FakeR2Buck
   } as never;
 }
 
+function queueAuthenticatedTopicCreator(db: FakeDb, options?: {
+  accountClass?: string;
+  canOpenTopics?: number;
+  trustTier?: string;
+  requestCount?: number;
+}) {
+  const requestCount = options?.requestCount ?? 1;
+  db.queueFirst("FROM sessions", Array.from({ length: requestCount }, () => ({
+    id: "ses_1",
+    agent_id: "agt_1",
+    scope: "web_session",
+    refresh_token_hash: null,
+    access_token_id: "atk_1",
+    expires_at: "3026-01-01T00:00:00.000Z",
+    revoked_at: null,
+  })));
+  db.queueFirst("FROM agents", Array.from({ length: requestCount }, () => ({
+    id: "agt_1",
+    client_id: "cli_1",
+    name: "Agent",
+    email: "agent@example.com",
+    email_verified_at: "2026-03-25T00:00:00.000Z",
+    account_class: options?.accountClass ?? "verified_participant",
+    trust_tier: "verified",
+    status: "active",
+    created_at: "2026-03-25T00:00:00.000Z",
+    updated_at: "2026-03-25T00:00:00.000Z",
+  })));
+  db.queueFirst("FROM beings b", [{
+    id: "bng_1",
+    agent_id: "agt_1",
+    handle: "alpha",
+    display_name: "Alpha",
+    bio: null,
+    trust_tier: options?.trustTier ?? "verified",
+    status: "active",
+    created_at: "2026-03-25T00:00:00.000Z",
+    updated_at: "2026-03-25T00:00:00.000Z",
+    can_open_topics: options?.canOpenTopics ?? 1,
+  }]);
+}
+
+function queueCreatedTopicReadback(db: FakeDb, templateId: string) {
+  db.queueFirst("FROM domains\n     WHERE id = ?", [{
+    id: "dom_1",
+    slug: "ai-safety",
+    name: "AI Safety",
+    description: null,
+    status: "active",
+    parent_domain_id: null,
+    created_at: "2026-03-25T00:00:00.000Z",
+    updated_at: "2026-03-25T00:00:00.000Z",
+  }]);
+  db.queueFirst("FROM topics t\n      INNER JOIN domains d ON d.id = t.domain_id", [{
+    id: "top_created",
+    domain_id: "dom_1",
+    domain_slug: "ai-safety",
+    domain_name: "AI Safety",
+    title: "New Topic",
+    prompt: "Debate this.",
+    template_id: templateId,
+    topic_format: "scheduled_research",
+    topic_source: "manual_user",
+    status: "open",
+    cadence_family: "scheduled",
+    cadence_preset: null,
+    cadence_override_minutes: 60,
+    min_distinct_participants: 3,
+    countdown_seconds: null,
+    min_trust_tier: "supervised",
+    visibility: "public",
+    current_round_index: 0,
+    starts_at: "2026-03-25T01:00:00.000Z",
+    join_until: "2026-03-25T00:45:00.000Z",
+    countdown_started_at: null,
+    stalled_at: null,
+    closed_at: null,
+    change_sequence: 0,
+    created_at: "2026-03-25T00:00:00.000Z",
+    updated_at: "2026-03-25T00:00:00.000Z",
+  }]);
+  db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+    {
+      id: "rnd_1",
+      topic_id: "top_created",
+      sequence_index: 0,
+      round_kind: "propose",
+      status: "pending",
+      starts_at: "2026-03-25T01:00:00.000Z",
+      ends_at: "2026-03-25T02:00:00.000Z",
+      reveal_at: "2026-03-25T02:00:00.000Z",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    },
+  ]);
+}
+
 describe("topic routes", () => {
   it("passes validated status and domain filters into listTopics", async () => {
     const db = new FakeDb();
@@ -143,7 +242,7 @@ describe("topic routes", () => {
       status: "started",
       topic_source: "manual_user",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       domain_slug: "ai-safety",
       domain_name: "AI Safety",
       member_count: 7,
@@ -154,7 +253,7 @@ describe("topic routes", () => {
     }]);
 
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/topics?status=started&domain=ai-safety&templateId=debate_v2"),
+      new Request("https://api.opndomain.com/v1/topics?status=started&domain=ai-safety&templateId=debate"),
       buildEnv(db),
       {} as never,
     );
@@ -162,11 +261,11 @@ describe("topic routes", () => {
 
     assert.equal(response.status, 200);
     assert.equal(payload.data.length, 1);
-    assert.equal(payload.data[0]?.templateId, "debate_v2");
+    assert.equal(payload.data[0]?.templateId, "debate");
     assert.equal(payload.data[0]?.memberCount, 7);
     const query = db.allCalls.at(-1);
     assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ? AND t.template_id = ?"));
-    assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate_v2"]);
+    assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate"]);
   });
 
   it("lists open topics without transcript fields and applies the open status filter", async () => {
@@ -249,6 +348,91 @@ describe("topic routes", () => {
     assert.equal(db.allCalls.length, 0);
   });
 
+  it("rejects public topic creation for non-debate templates", async () => {
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          domainId: "dom_1",
+          title: "New Topic",
+          prompt: "Debate this.",
+          templateId: "research",
+          topicFormat: "scheduled_research",
+        }),
+      }),
+      buildEnv(new FakeDb()),
+      {} as never,
+    );
+    const payload = await response.json() as { code: string };
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "invalid_request");
+  });
+
+  it("creates public debate topics for authorized agents", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedTopicCreator(db);
+    queueCreatedTopicReadback(db, "debate");
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          domainId: "dom_1",
+          title: "New Topic",
+          prompt: "Debate this.",
+          templateId: "debate",
+          topicFormat: "scheduled_research",
+          cadenceOverrideMinutes: 60,
+          startsAt: "2026-03-25T01:00:00.000Z",
+          joinUntil: "2026-03-25T00:45:00.000Z",
+        }),
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { templateId: string } };
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.templateId, "debate");
+    const topicInsert = db.batches.flat().find((entry) => entry.sql.includes("INSERT INTO topics"));
+    assert.equal(topicInsert?.bindings[4], "debate");
+  });
+
+  it("forbids public topic creation when the agent lacks a verified-trust opener being", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedTopicCreator(db, { trustTier: "supervised" });
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          domainId: "dom_1",
+          title: "New Topic",
+          prompt: "Debate this.",
+          templateId: "debate",
+          topicFormat: "scheduled_research",
+        }),
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { code: string; message: string };
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "forbidden");
+    assert.match(payload.message, /verified-trust beings/i);
+  });
+
   it("records a topic view only on the explicit beacon endpoint", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM topics t", [{
@@ -258,7 +442,7 @@ describe("topic routes", () => {
       domain_name: "AI Safety",
       title: "Topic",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       status: "started",
       cadence_family: "scheduled",
@@ -358,7 +542,7 @@ describe("topic routes", () => {
         domain_name: "AI Safety",
         title: "Topic",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_format: "scheduled_research",
         topic_source: "manual_user",
         status: "started",
@@ -386,7 +570,7 @@ describe("topic routes", () => {
         domain_name: "AI Safety",
         title: "Topic",
         prompt: "Prompt",
-        template_id: "debate_v2",
+        template_id: "debate",
         topic_format: "scheduled_research",
         topic_source: "manual_user",
         status: "started",

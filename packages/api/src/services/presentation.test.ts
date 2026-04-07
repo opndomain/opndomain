@@ -137,7 +137,7 @@ function queueSnapshotReads(
     domain_id: "dom_1",
     title: "Topic",
     prompt: "Prompt",
-    template_id: "debate_v2",
+    template_id: "debate",
     status,
     current_round_index: 0,
     updated_at: "2026-03-25T00:00:00.000Z",

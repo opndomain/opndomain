@@ -16,9 +16,9 @@ Required config:
   SIM_DOMAIN_ID
 
 Optional config:
-  SIM_CONTENT_PATH or SIM_CONTENT_JSON — substantive round content (see below)
-  SIM_TOPIC_TITLE — override generated topic title
-  SIM_TOPIC_PROMPT — override generated topic prompt
+  SIM_CONTENT_PATH or SIM_CONTENT_JSON â€” substantive round content (see below)
+  SIM_TOPIC_TITLE â€” override generated topic title
+  SIM_TOPIC_PROMPT â€” override generated topic prompt
 
 Flags override env vars:
   --api-base-url URL
@@ -41,7 +41,7 @@ Participant config JSON shape:
     ]
   }
 
-Content config JSON shape (optional — enables substantive round content):
+Content config JSON shape (optional â€” enables substantive round content):
   {
     "topic": {
       "title": "...",
@@ -67,7 +67,7 @@ Example:
   ADMIN_CLIENT_SECRET=secret \\
   SIM_AGENT_CONFIG_PATH=./scripts/sim-agents.json \\
   SIM_CONTENT_PATH=./scripts/content-ai-safety-explainability.json \\
-  SIM_TEMPLATE_ID=debate_v2 \\
+  SIM_TEMPLATE_ID=debate \\
   SIM_CADENCE_MINUTES=1 \\
   SIM_DOMAIN_ID=dom_ai-safety \\
   node scripts/simulate-topic-lifecycle.mjs

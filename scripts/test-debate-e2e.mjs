@@ -4,11 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * test-debate-e2e.mjs — End-to-end debate test with 5 distinct agent personalities.
+ * test-debate-e2e.mjs â€” End-to-end debate test with 5 distinct agent personalities.
  *
  * Creates guest accounts, gives them personality profiles, creates a topic
- * with 1-minute cadence, and drives the full debate_v2 lifecycle:
- *   propose → critique → refine → synthesize → predict
+ * with 1-minute cadence, and drives the full debate lifecycle:
+ *   propose â†’ critique â†’ refine â†’ synthesize â†’ predict
  *
  * Tests: round instructions, categorical votes (most_interesting, most_correct,
  * fabrication), contribution stances, and round progression via sweep.
@@ -71,49 +71,49 @@ const PERSONALITIES = [
 const CONTRIBUTION_TEMPLATES = {
   propose: {
     empirical:
-      "The evidence on centralized school matching shows a systematic gap between theoretical strategy-proofness and observed family behavior. Data from Boston's school choice reform (Abdulkadiroğlu et al., 2005) found that even under a theoretically strategy-proof mechanism, 19% of families still ranked strategically based on perceived admission probabilities. A lottery-weighted system reduces the cognitive load and levels the information asymmetry, which in turn improves participation rates among lower-income families by approximately 12% according to NYC DOE data from 2018–2022.",
+      "The evidence on centralized school matching shows a systematic gap between theoretical strategy-proofness and observed family behavior. Data from Boston's school choice reform (AbdulkadiroÄŸlu et al., 2005) found that even under a theoretically strategy-proof mechanism, 19% of families still ranked strategically based on perceived admission probabilities. A lottery-weighted system reduces the cognitive load and levels the information asymmetry, which in turn improves participation rates among lower-income families by approximately 12% according to NYC DOE data from 2018â€“2022.",
     contrarian:
-      "The premise that lottery-based matching is 'simpler' deserves scrutiny. Randomness is not simplicity — it's merely a different kind of complexity that's harder for families to plan around. The optimal assignment mechanisms have decades of theoretical backing. Abandoning them because some families game the system is like removing traffic lights because some drivers run them. The real question is whether we're willing to invest in better information dissemination rather than retreating to randomness.",
+      "The premise that lottery-based matching is 'simpler' deserves scrutiny. Randomness is not simplicity â€” it's merely a different kind of complexity that's harder for families to plan around. The optimal assignment mechanisms have decades of theoretical backing. Abandoning them because some families game the system is like removing traffic lights because some drivers run them. The real question is whether we're willing to invest in better information dissemination rather than retreating to randomness.",
     synthesis:
-      "Both sides of this debate contain important truths that point to a hybrid approach. Complex assignment mechanisms genuinely improve match quality when participants understand them, but the assumption of universal comprehension fails in practice. The key insight is that mechanism design and information equity are not substitutes — they're complements. A phased approach that retains some optimization while increasing transparency could capture gains from both positions.",
+      "Both sides of this debate contain important truths that point to a hybrid approach. Complex assignment mechanisms genuinely improve match quality when participants understand them, but the assumption of universal comprehension fails in practice. The key insight is that mechanism design and information equity are not substitutes â€” they're complements. A phased approach that retains some optimization while increasing transparency could capture gains from both positions.",
     pragmatic:
-      "Having worked with three different school districts during matching redesigns, I can tell you the theoretical debate misses the operational reality. In Cleveland's 2019 transition to a simplified lottery-plus-priority system, parent satisfaction scores rose 23% and the appeals process volume dropped by 40%. The practical lesson: families don't need optimal assignments — they need assignments they understand and trust. Trust drives participation more than efficiency.",
+      "Having worked with three different school districts during matching redesigns, I can tell you the theoretical debate misses the operational reality. In Cleveland's 2019 transition to a simplified lottery-plus-priority system, parent satisfaction scores rose 23% and the appeals process volume dropped by 40%. The practical lesson: families don't need optimal assignments â€” they need assignments they understand and trust. Trust drives participation more than efficiency.",
     skeptical:
-      "Before debating lottery vs. optimization, we should question the framing itself. The premise assumes school assignment quality is primarily a mechanism design problem, but the literature shows that the quality gap between schools — not the matching process — drives most of the strategic behavior. If schools were more uniform in quality, the matching mechanism would matter far less. Are we solving the right problem?",
+      "Before debating lottery vs. optimization, we should question the framing itself. The premise assumes school assignment quality is primarily a mechanism design problem, but the literature shows that the quality gap between schools â€” not the matching process â€” drives most of the strategic behavior. If schools were more uniform in quality, the matching mechanism would matter far less. Are we solving the right problem?",
   },
   critique: {
     empirical:
-      "Several claims in the opening round lack sufficient quantitative backing. The assertion about 12% participation improvement needs to control for concurrent policy changes in NYC during that period. Moreover, the Cleveland satisfaction data cited doesn't distinguish between satisfaction with the process and satisfaction with the outcome — a crucial distinction when evaluating mechanism changes.",
+      "Several claims in the opening round lack sufficient quantitative backing. The assertion about 12% participation improvement needs to control for concurrent policy changes in NYC during that period. Moreover, the Cleveland satisfaction data cited doesn't distinguish between satisfaction with the process and satisfaction with the outcome â€” a crucial distinction when evaluating mechanism changes.",
     contrarian:
-      "The synthesis position commits the false compromise fallacy. Not every policy question has a meaningful middle ground. Either you optimize for match quality or you don't — a 'hybrid' that half-optimizes while half-randomizing may capture the worst of both worlds rather than the best. Additionally, the pragmatic argument confuses correlation with causation in the Cleveland case study.",
+      "The synthesis position commits the false compromise fallacy. Not every policy question has a meaningful middle ground. Either you optimize for match quality or you don't â€” a 'hybrid' that half-optimizes while half-randomizing may capture the worst of both worlds rather than the best. Additionally, the pragmatic argument confuses correlation with causation in the Cleveland case study.",
     synthesis:
       "Looking across the opening positions, I notice an unexamined assumption shared by both sides: that family preferences as stated are their true preferences. Behavioral economics research (Thaler & Sunstein, 2008) shows that stated preferences are heavily influenced by framing and default options. This means both the optimization and lottery camps may be optimizing for the wrong signal, which changes the cost-benefit analysis substantially.",
     pragmatic:
-      "The empirical position makes an important point about data, but the 2005 Boston study is now over 20 years old. School choice landscapes have changed dramatically with charter expansion, magnet programs, and demographic shifts. We need contemporary evidence. The contrarian position's traffic light analogy also falls apart because traffic lights are binary while school matching involves ranked preferences — fundamentally different decision structures.",
+      "The empirical position makes an important point about data, but the 2005 Boston study is now over 20 years old. School choice landscapes have changed dramatically with charter expansion, magnet programs, and demographic shifts. We need contemporary evidence. The contrarian position's traffic light analogy also falls apart because traffic lights are binary while school matching involves ranked preferences â€” fundamentally different decision structures.",
     skeptical:
-      "I want to challenge the implicit consequentialism in most arguments so far. We're treating this purely as an efficiency question, but there's a justice dimension that's been underweighted. A system where better-resourced families systematically get better outcomes isn't just inefficient — it's inequitable. The question isn't just 'which mechanism produces better matches' but 'better matches for whom?' This distributive question changes which evidence is relevant.",
+      "I want to challenge the implicit consequentialism in most arguments so far. We're treating this purely as an efficiency question, but there's a justice dimension that's been underweighted. A system where better-resourced families systematically get better outcomes isn't just inefficient â€” it's inequitable. The question isn't just 'which mechanism produces better matches' but 'better matches for whom?' This distributive question changes which evidence is relevant.",
   },
   refine: {
     empirical:
-      "Fair critique on the NYC data — the 12% figure does need to be adjusted for concurrent policy changes. Updated analysis controlling for charter expansion shows a 7-9% improvement, which is still meaningful. On the Cleveland distinction between process and outcome satisfaction: the district did separate these in a 2020 follow-up survey, finding process satisfaction drove 65% of the overall improvement. I concede the Boston study is dated but note that more recent work from Denver (2021) shows similar patterns.",
+      "Fair critique on the NYC data â€” the 12% figure does need to be adjusted for concurrent policy changes. Updated analysis controlling for charter expansion shows a 7-9% improvement, which is still meaningful. On the Cleveland distinction between process and outcome satisfaction: the district did separate these in a 2020 follow-up survey, finding process satisfaction drove 65% of the overall improvement. I concede the Boston study is dated but note that more recent work from Denver (2021) shows similar patterns.",
     contrarian:
-      "I accept that the traffic light analogy was imprecise, but the underlying point stands: retreating from complexity is not always wise. The hybrid compromise critique was challenged as a false compromise fallacy, but consider that Singapore's school matching system uses exactly such a hybrid — priority-based assignment with a random tiebreaker — and achieves both high satisfaction (87%) and good match quality. Perhaps my framing was too binary.",
+      "I accept that the traffic light analogy was imprecise, but the underlying point stands: retreating from complexity is not always wise. The hybrid compromise critique was challenged as a false compromise fallacy, but consider that Singapore's school matching system uses exactly such a hybrid â€” priority-based assignment with a random tiebreaker â€” and achieves both high satisfaction (87%) and good match quality. Perhaps my framing was too binary.",
     synthesis:
-      "The critique about stated preferences is well-taken and I should sharpen my position. Rather than proposing a vague hybrid, I'll be more specific: a two-phase system where Phase 1 uses simplified priority rules that families can easily verify, and Phase 2 applies optimization only to unmatched students. This preserves transparency for the majority while capturing efficiency gains at the margin — addressing both the pragmatist's trust concerns and the empiricist's data demands.",
+      "The critique about stated preferences is well-taken and I should sharpen my position. Rather than proposing a vague hybrid, I'll be more specific: a two-phase system where Phase 1 uses simplified priority rules that families can easily verify, and Phase 2 applies optimization only to unmatched students. This preserves transparency for the majority while capturing efficiency gains at the margin â€” addressing both the pragmatist's trust concerns and the empiricist's data demands.",
     pragmatic:
-      "I concede that the Cleveland data alone isn't sufficient to generalize. But combining it with similar findings from Denver (2021) and Charlotte (2022) strengthens the pattern. Three different districts, three different demographic profiles, same directional result: simpler mechanisms correlate with higher participation and lower appeals. The skeptic's point about distributive justice is important — the practical evidence suggests simpler mechanisms disproportionately benefit lower-income families.",
+      "I concede that the Cleveland data alone isn't sufficient to generalize. But combining it with similar findings from Denver (2021) and Charlotte (2022) strengthens the pattern. Three different districts, three different demographic profiles, same directional result: simpler mechanisms correlate with higher participation and lower appeals. The skeptic's point about distributive justice is important â€” the practical evidence suggests simpler mechanisms disproportionately benefit lower-income families.",
     skeptical:
-      "Several respondents engaged with my framing challenge, which is productive. I'll refine my position: the quality gap between schools is a necessary background condition for any matching mechanism evaluation. If we hold school quality constant (as we should in a mechanism comparison), then the empiricist's data on participation rates becomes more compelling. I was right to question the framing but wrong to suggest it invalidates the mechanism question entirely — it constrains which evidence is relevant, not whether the question matters.",
+      "Several respondents engaged with my framing challenge, which is productive. I'll refine my position: the quality gap between schools is a necessary background condition for any matching mechanism evaluation. If we hold school quality constant (as we should in a mechanism comparison), then the empiricist's data on participation rates becomes more compelling. I was right to question the framing but wrong to suggest it invalidates the mechanism question entirely â€” it constrains which evidence is relevant, not whether the question matters.",
   },
   synthesize: {
     empirical:
       "After three rounds, the evidence converges on a clear finding: mechanism simplicity is instrumentally valuable because it improves participation and equity, but the size of this effect depends on the quality gap between schools. The strongest synthesis is: cities should invest in both school quality equalization AND mechanism simplification, but if forced to choose one intervention, the participation data (7-9% adjusted improvement) suggests mechanism reform has faster returns.",
     contrarian:
-      "I entered this debate skeptical of lottery-based approaches and leave with a more nuanced view. The strongest argument for simpler mechanisms isn't simplicity per se — it's that they're more robust to the information asymmetries that actually exist. The Singapore example shows optimization and simplicity aren't strictly opposed. The debate has clarified that the real axis of disagreement is empirical (how much gaming occurs) rather than theoretical (which mechanism is better in principle).",
+      "I entered this debate skeptical of lottery-based approaches and leave with a more nuanced view. The strongest argument for simpler mechanisms isn't simplicity per se â€” it's that they're more robust to the information asymmetries that actually exist. The Singapore example shows optimization and simplicity aren't strictly opposed. The debate has clarified that the real axis of disagreement is empirical (how much gaming occurs) rather than theoretical (which mechanism is better in principle).",
     synthesis:
-      "The debate has produced genuine convergence on several points: (1) school quality gaps are the deeper problem, (2) simpler mechanisms improve participation among disadvantaged families, (3) some optimization is possible without sacrificing transparency. The remaining disagreement is about implementation sequencing. The two-phase approach I proposed has been refined by others' critiques into something more concrete and testable — a meaningful outcome.",
+      "The debate has produced genuine convergence on several points: (1) school quality gaps are the deeper problem, (2) simpler mechanisms improve participation among disadvantaged families, (3) some optimization is possible without sacrificing transparency. The remaining disagreement is about implementation sequencing. The two-phase approach I proposed has been refined by others' critiques into something more concrete and testable â€” a meaningful outcome.",
     pragmatic:
-      "Three rounds of debate have moved us from abstract principles to actionable policy. The key synthesis: pilot the two-phase approach in a willing district, measure participation rates and match quality by income quintile, and let the data settle the theoretical disagreements. The most productive contribution was the skeptic's framing challenge — it forced everyone to specify what evidence would change their mind, which is exactly what good policy debate should do.",
+      "Three rounds of debate have moved us from abstract principles to actionable policy. The key synthesis: pilot the two-phase approach in a willing district, measure participation rates and match quality by income quintile, and let the data settle the theoretical disagreements. The most productive contribution was the skeptic's framing challenge â€” it forced everyone to specify what evidence would change their mind, which is exactly what good policy debate should do.",
     skeptical:
       "This debate demonstrated something important: mechanism choice is downstream of values, not just efficiency. The distributive justice question I raised was eventually taken up by most participants, which shifted the debate from 'what's optimal' to 'optimal for whom.' The empirical evidence presented is strongest when interpreted through this equity lens. My revised position: lottery-heavy matching is justified primarily on fairness grounds, with the participation improvements as a welcome secondary benefit.",
   },
@@ -125,7 +125,7 @@ const CONTRIBUTION_TEMPLATES = {
     synthesis:
       "I predict the debate will be settled district-by-district rather than through a national consensus. Cities with larger school quality gaps will favor simpler mechanisms (because gaming is worse), while more uniform districts will retain optimization. The two-phase approach will be the modal choice for mid-sized districts. Within 10 years, the evidence base will be strong enough to end the theoretical debate. Confidence: 65%.",
     pragmatic:
-      "Prediction: the first city to publicly pilot a simplified matching system post-2026 will see rapid adoption by 5+ other districts within 2 years, similar to the diffusion pattern of participatory budgeting. The bottleneck isn't evidence — it's political courage to be first. I predict Denver or Austin as most likely first movers given their existing reform orientation. Confidence: 55% on timing, 80% on rapid diffusion once started.",
+      "Prediction: the first city to publicly pilot a simplified matching system post-2026 will see rapid adoption by 5+ other districts within 2 years, similar to the diffusion pattern of participatory budgeting. The bottleneck isn't evidence â€” it's political courage to be first. I predict Denver or Austin as most likely first movers given their existing reform orientation. Confidence: 55% on timing, 80% on rapid diffusion once started.",
     skeptical:
       "I predict the framing question I raised will become more salient as school choice expands. As more cities adopt choice programs, the equity implications of mechanism design will draw attention from civil rights organizations, shifting the debate from efficiency to justice. Within 5 years, 'equitable access' will replace 'optimal matching' as the dominant policy language. The mechanisms may not change quickly, but the evaluation criteria will. Confidence: 75%.",
   },
@@ -299,17 +299,17 @@ async function main() {
   }
 
   // ---- Step 3: Create a new topic with 1-min cadence ----
-  logStep("Step 3: Create debate_v2 topic with 1-min cadence");
+  logStep("Step 3: Create debate topic with 1-min cadence");
   const topic = await api("/v1/internal/topics", {
     method: "POST",
     token: adminToken,
     expectedStatus: 201,
     body: {
       domainId: DOMAIN_ID,
-      title: "[E2E Test] Lottery vs Optimal School Matching — Round Instructions & Categorical Votes",
+      title: "[E2E Test] Lottery vs Optimal School Matching â€” Round Instructions & Categorical Votes",
       prompt:
-        "Should cities prefer lottery-based school matching over optimized assignment mechanisms? Test the full debate_v2 lifecycle with round instructions, categorical votes, and 5 distinct agent personalities.",
-      templateId: "debate_v2",
+        "Should cities prefer lottery-based school matching over optimized assignment mechanisms? Test the full debate lifecycle with round instructions, categorical votes, and 5 distinct agent personalities.",
+      templateId: "debate",
       topicFormat: "scheduled_research",
       cadenceOverrideMinutes: 2,
       topicSource: "cron_auto",
@@ -523,7 +523,7 @@ async function main() {
         const voteKey = `${participant.beingId}:${currentRound.id}:${voteKind}`;
         if (voteKeys.has(voteKey)) continue;
 
-        // Pick a target — each kind targets a different contribution if possible
+        // Pick a target â€” each kind targets a different contribution if possible
         const target = othersTargets[ki % othersTargets.length];
         log("vote-attempt", {
           who: participant.displayName,
@@ -568,7 +568,7 @@ async function main() {
             weight: vote?.weight ?? null,
           });
         } catch (err) {
-          // 3-distinct rule or max-votes may block some combinations — expected
+          // 3-distinct rule or max-votes may block some combinations â€” expected
           log("vote-blocked", {
             who: participant.displayName,
             kind: voteKind,
@@ -607,11 +607,11 @@ async function main() {
   }
 
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-  logStep(`Complete — ${elapsed}s elapsed`);
+  logStep(`Complete â€” ${elapsed}s elapsed`);
   writeLine(`
 SUMMARY:
   Topic:          ${topic.id}
-  Template:       debate_v2
+  Template:       debate
   Agents:         ${participants.map((p) => p.displayName).join(", ")}
   Contributions:  ${allContributions.length}
   Votes:          ${allVotes.length}

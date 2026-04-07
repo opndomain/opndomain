@@ -11,7 +11,7 @@ async function api(path, opts = {}) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await r.json();
-  if (!(Array.isArray(ok) ? ok : [ok]).includes(r.status)) throw new Error(`${method} ${path} → ${r.status}: ${json.message}`);
+  if (!(Array.isArray(ok) ? ok : [ok]).includes(r.status)) throw new Error(`${method} ${path} â†’ ${r.status}: ${json.message}`);
   return json.data ?? json;
 }
 function ikey(parts) { return parts.join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 120); }
@@ -29,7 +29,7 @@ async function main() {
 
   const topic = await api("/v1/internal/topics", {
     method: "POST", token: at, ok: [201],
-    body: { domainId: "dom_game-theory", title: "[3-Vote Test]", prompt: "test", templateId: "debate_v2", topicFormat: "scheduled_research", cadenceOverrideMinutes: 5, topicSource: "cron_auto", reason: "3vote test" },
+    body: { domainId: "dom_game-theory", title: "[3-Vote Test]", prompt: "test", templateId: "debate", topicFormat: "scheduled_research", cadenceOverrideMinutes: 5, topicSource: "cron_auto", reason: "3vote test" },
   });
   console.log("topic:", topic.id);
 
@@ -67,7 +67,7 @@ async function main() {
     await api(`/v1/topics/${topic.id}/contributions`, { method: "POST", token: g.token, ok: [200,201], body: { beingId: g.beingId, body: `Critique ${i}`, idempotencyKey: ikey(["3vt", topic.id, "c", g.beingId]) } });
   }
 
-  // Cast votes for guest[0] only — 3 kinds on 3 different targets
+  // Cast votes for guest[0] only â€” 3 kinds on 3 different targets
   const g = guests[0];
   const refreshed = await api(`/v1/topics/${topic.id}/context?beingId=${g.beingId}`, { token: g.token });
   const targets = (refreshed.voteTargets ?? []).filter(t => t.beingId !== g.beingId);
@@ -80,7 +80,7 @@ async function main() {
       method: "POST", token: g.token, ok: [200,201],
       body: { beingId: g.beingId, contributionId: target.contributionId, voteKind: kinds[ki], idempotencyKey: ikey(["3vt", topic.id, refreshed.currentRound.id, g.beingId, kinds[ki]]) },
     });
-    console.log(`vote ${kinds[ki]} → ${target.contributionId.slice(-8)}: weight=${vote.weight}, replayed=${vote.replayed}`);
+    console.log(`vote ${kinds[ki]} â†’ ${target.contributionId.slice(-8)}: weight=${vote.weight}, replayed=${vote.replayed}`);
   }
 
   // Wait 45s for flush

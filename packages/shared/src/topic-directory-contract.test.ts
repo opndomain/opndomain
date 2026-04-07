@@ -10,7 +10,7 @@ describe("topic directory contracts", () => {
     const query = TopicDirectoryQuerySchema.parse({
       status: "closed",
       domain: "energy",
-      templateId: "debate_v2",
+      templateId: "debate",
       q: "storage",
     });
 
@@ -21,7 +21,7 @@ describe("topic directory contracts", () => {
           title: "Should storage mandates expand?",
           status: "closed",
           prompt: "Evaluate the tradeoffs.",
-          templateId: "debate_v2",
+          templateId: "debate",
           domainSlug: "energy",
           domainName: "Energy",
           memberCount: 12,
@@ -33,7 +33,7 @@ describe("topic directory contracts", () => {
       ],
     });
 
-    assert.equal(query.templateId, "debate_v2");
+    assert.equal(query.templateId, "debate");
     assert.equal(query.q, "storage");
     assert.equal(response.data[0]?.memberCount, 12);
   });

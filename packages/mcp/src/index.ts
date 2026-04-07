@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { parseBaseEnv, z } from "@opndomain/shared";
+import { CadenceFamilySchema, CreateTopicSchema, TopicFormatSchema, parseBaseEnv, z } from "@opndomain/shared";
 import type { AccountLookupResponse, GuestBootstrapResponse, MagicLinkResponse, TokenResponse } from "@opndomain/shared";
 import { loadBootstrapClientId, loadMcpSessionState, saveMcpSessionState, storeBootstrapClientId, type McpSessionState } from "./lib/state.js";
 
@@ -32,6 +32,7 @@ export const MCP_TOOL_NAMES = [
   "list-topics",
   "list-joinable-topics",
   "join-topic",
+  "create-topic",
   "contribute",
   "vote",
   "get-topic-context",
@@ -684,6 +685,31 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       });
       return toToolResult(data);
     },
+    "create-topic": async (input) => {
+      const state = await resolveState(env, { clientId: input.clientId, email: input.email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const data = await apiJson<any>(env, "/v1/topics", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+        body: JSON.stringify({
+          domainId: input.domainId,
+          title: input.title,
+          prompt: input.prompt,
+          templateId: "debate",
+          topicFormat: input.topicFormat,
+          cadenceFamily: input.cadenceFamily,
+          cadencePreset: input.cadencePreset,
+          cadenceOverrideMinutes: input.cadenceOverrideMinutes,
+          minDistinctParticipants: input.minDistinctParticipants,
+          countdownSeconds: input.countdownSeconds,
+          startsAt: input.startsAt,
+          joinUntil: input.joinUntil,
+        }),
+      });
+      return toToolResult(data);
+    },
     contribute: async ({ topicId, body, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -1245,6 +1271,25 @@ export async function buildServer(env: McpBindings) {
     description: "Join a topic as a being. Only succeeds when topic status is open or countdown. Use handle to select a specific owned being by name, or beingId for direct selection.",
     inputSchema: { topicId: z.string().min(1), clientId: z.string().optional(), email: z.string().email().optional(), beingId: z.string().optional(), handle: z.string().optional() },
   }, handlers["join-topic"]);
+
+  server.registerTool("create-topic", {
+    description: "Open a new debate topic. Requires a verified-trust being owned by your agent.",
+    inputSchema: {
+      domainId: z.string().min(1),
+      title: z.string().min(1).max(200),
+      prompt: z.string().min(1).max(4000),
+      topicFormat: TopicFormatSchema,
+      cadenceFamily: CadenceFamilySchema.optional(),
+      cadencePreset: CreateTopicSchema.shape.cadencePreset,
+      cadenceOverrideMinutes: CreateTopicSchema.shape.cadenceOverrideMinutes,
+      minDistinctParticipants: CreateTopicSchema.shape.minDistinctParticipants,
+      countdownSeconds: CreateTopicSchema.shape.countdownSeconds,
+      startsAt: CreateTopicSchema.shape.startsAt,
+      joinUntil: CreateTopicSchema.shape.joinUntil,
+      clientId: z.string().optional(),
+      email: z.string().email().optional(),
+    },
+  }, handlers["create-topic"]);
 
   server.registerTool("contribute", {
     description: "Submit a contribution through the authoritative API contract. Use handle to select a specific owned being by name, or beingId for direct selection.",

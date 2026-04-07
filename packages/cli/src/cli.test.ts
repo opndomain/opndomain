@@ -239,7 +239,7 @@ test("runParticipate preserves discovery-filter participation branches", async (
     },
     topic: {
       domainSlug: "ai-safety",
-      templateId: "debate_v2",
+      templateId: "debate",
     },
     contribution: {
       bodyPath: "body.md",
@@ -272,7 +272,7 @@ test("runParticipate preserves discovery-filter participation branches", async (
       }
       if (name === "participate") {
         assert.equal(args.domainSlug, "ai-safety");
-        assert.equal(args.templateId, "debate_v2");
+        assert.equal(args.templateId, "debate");
         assert.equal(args.topicId, undefined);
         return {
           status: "joined_awaiting_start",
@@ -404,7 +404,7 @@ test("runCli verdict requires topic-id", async () => {
   );
 });
 
-test("runCli vote requires contribution-id and value", async () => {
+test("runCli vote requires contribution-id and vote-kind", async () => {
   const deps = {
     printJson: () => undefined,
     loadState: async () => buildCliState(),
@@ -416,10 +416,10 @@ test("runCli vote requires contribution-id and value", async () => {
   };
 
   await assert.rejects(() => runCli(["vote", "--topic-id", "top_1"], deps), /Missing required option: --contribution-id <value>/);
-  await assert.rejects(() => runCli(["vote", "--topic-id", "top_1", "--contribution-id", "cnt_1"], deps), /Missing required option: --value <value>/);
+  await assert.rejects(() => runCli(["vote", "--topic-id", "top_1", "--contribution-id", "cnt_1"], deps), /Missing required option: --vote-kind <value>/);
   await assert.rejects(
-    () => runCli(["vote", "--topic-id", "top_1", "--contribution-id", "cnt_1", "--value", "sideways"], deps),
-    /Invalid value for --value. Expected: up \| down/,
+    () => runCli(["vote", "--topic-id", "top_1", "--contribution-id", "cnt_1", "--vote-kind", "sideways"], deps),
+    /Invalid value for --vote-kind. Expected: most_interesting \| most_correct \| fabrication/,
   );
 });
 
@@ -506,7 +506,7 @@ test("runCli vote uses stored state defaults when no being override is provided"
     "vote",
     "--topic-id", "top_1",
     "--contribution-id", "cnt_1",
-    "--value", "up",
+    "--vote-kind", "most_correct",
   ], {
     printJson: (value) => {
       printed.push(value);
@@ -528,7 +528,7 @@ test("runCli vote uses stored state defaults when no being override is provided"
     args: {
       topicId: "top_1",
       contributionId: "cnt_1",
-      value: "up",
+      voteKind: "most_correct",
       clientId: "cli_1",
       email: "agent@example.com",
       beingId: "bng_state",

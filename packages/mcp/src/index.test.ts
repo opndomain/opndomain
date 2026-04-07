@@ -201,21 +201,89 @@ async function testJoinableTopicsMerge() {
   const { env } = buildEnv(({ url }) => {
     if (url.pathname === "/v1/topics" && url.searchParams.get("status") === "open") {
       assertEqual(url.searchParams.get("topicFormat"), "scheduled_research");
-      return jsonResponse([{ id: "top_open", templateId: "debate_v2", topicFormat: "scheduled_research" }]);
+      return jsonResponse([{ id: "top_open", templateId: "debate", topicFormat: "scheduled_research" }]);
     }
     if (url.pathname === "/v1/topics" && url.searchParams.get("status") === "countdown") {
       assertEqual(url.searchParams.get("topicFormat"), "scheduled_research");
-      return jsonResponse([{ id: "top_countdown", templateId: "debate_v2", topicFormat: "scheduled_research" }]);
+      return jsonResponse([{ id: "top_countdown", templateId: "debate", topicFormat: "scheduled_research" }]);
     }
     throw new Error(`Unhandled request: ${url.pathname}${url.search}`);
   });
 
   const result = structured(await createToolHandlers(env)["list-joinable-topics"]({
-    templateId: "debate_v2",
+    templateId: "debate",
     topicFormat: "scheduled_research",
   }));
   assertEqual(result.count, 2);
   assertDeepEqual((result.topics as unknown as Array<{ id: string }>).map((topic) => topic.id), ["top_open", "top_countdown"]);
+}
+
+async function testCreateTopicHardcodesDebateTemplate() {
+  const { env, kv, fetcher } = buildEnv(({ method, url, body, headers }) => {
+    if (method === "POST" && url.pathname === "/v1/topics") {
+      assertEqual(headers.get("authorization"), "Bearer access");
+      assertEqual(body.templateId, "debate");
+      assertEqual(body.minTrustTier, undefined);
+      return jsonResponse({
+        id: "top_new",
+        domainId: "dom_1",
+        title: "New Topic",
+        prompt: "Debate this.",
+        templateId: "debate",
+        topicFormat: "scheduled_research",
+      }, 201);
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    beingId: "bng_1",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  const result = structured(await createToolHandlers(env)["create-topic"]({
+    clientId: "cli_1",
+    domainId: "dom_1",
+    title: "New Topic",
+    prompt: "Debate this.",
+    topicFormat: "scheduled_research",
+    cadenceOverrideMinutes: 60,
+  }));
+  assertEqual(result.templateId, "debate");
+  assertOk(fetcher.requests.some((request) => request.method === "POST" && request.pathname === "/v1/topics"));
+}
+
+async function testCreateTopicSurfacesCreationGateErrors() {
+  const { env, kv } = buildEnv(({ method, url }) => {
+    if (method === "POST" && url.pathname === "/v1/topics") {
+      return Response.json({
+        code: "forbidden",
+        message: "Only verified-trust beings can open user-created topics.",
+      }, { status: 403 });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+  await kv.put(mcpSessionKey("cli_1"), JSON.stringify({
+    clientId: "cli_1",
+    agentId: "agt_1",
+    accessToken: "access",
+    refreshToken: "refresh",
+    expiresAt: "2999-01-01T00:00:00.000Z",
+  }));
+
+  await assertRejects(
+    () => createToolHandlers(env)["create-topic"]({
+      clientId: "cli_1",
+      domainId: "dom_1",
+      title: "New Topic",
+      prompt: "Debate this.",
+      topicFormat: "scheduled_research",
+    }),
+    /verified-trust beings can open user-created topics/i,
+  );
 }
 
 async function testListTopicsWrapsArrayResults() {
@@ -649,7 +717,7 @@ async function testJoinableTopicParticipation() {
       return jsonResponse({ id: "bng_1" });
     }
     if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "open") {
-      return jsonResponse([{ id: "top_open", title: "Open Topic", status: "open", templateId: "debate_v2" }]);
+      return jsonResponse([{ id: "top_open", title: "Open Topic", status: "open", templateId: "debate" }]);
     }
     if (method === "GET" && url.pathname === "/v1/topics" && url.searchParams.get("status") === "countdown") {
       return jsonResponse([]);
@@ -819,7 +887,7 @@ async function testExplicitHandleResolvesExistingOwnedBeing() {
   const persisted = await kv.get(mcpSessionKey("cli_1"), "json") as any;
   assertEqual(persisted.beingId, "bng_beta");
   assertEqual(persisted.beingHandle, "agent-beta");
-  // No POST to /v1/beings — resolved from existing owned beings
+  // No POST to /v1/beings â€” resolved from existing owned beings
   assertEqual(fetcher.requests.filter((r) => r.method === "POST" && r.pathname === "/v1/beings").length, 0);
 }
 
@@ -977,6 +1045,8 @@ export async function runAllTests() {
   await testDiscoveryMetadata();
   await testHomepageHighlightsParticipate();
   await testJoinableTopicsMerge();
+  await testCreateTopicHardcodesDebateTemplate();
+  await testCreateTopicSurfacesCreationGateErrors();
   await testListTopicsWrapsArrayResults();
   await testGetVerdictReadsPublicEndpoint();
   await testRefreshesExpiredStoredState();

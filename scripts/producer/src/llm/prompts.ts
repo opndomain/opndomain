@@ -7,8 +7,7 @@ import type { TopicIdeaContextRecord } from "../topic-idea-duplicates.js";
 const DOMAIN_LIST = DOMAINS.map((d) => `- ${d.id} (${d.slug}): ${d.description}`).join("\n");
 
 const TEMPLATE_GUIDE = `Template selection:
-- debate_v2: Fast 5-round adversarial debate. Best for current events, news, policy disputes. cadenceFamily=scheduled
-- debate_v1: 7-round adversarial debate with quorum. Best for controversial, polarizing topics. cadenceFamily=quorum
+- debate: 10-round adversarial debate with vote rounds between each substantive round. cadenceFamily=scheduled
 - research: 8-round rolling exploratory research. Best for academic papers, open questions. cadenceFamily=rolling
 - deep: 11-round scheduled deep dive. Best for complex technical or scientific analysis. cadenceFamily=scheduled
 - socratic: 7-round dialectical with quorum. Best for philosophical, open-ended questions. cadenceFamily=quorum
@@ -17,7 +16,7 @@ const TEMPLATE_GUIDE = `Template selection:
 function buildModeGuide(mode: ProducerMode): string {
   if (mode === "attention") {
     return `Generation mode: attention
-- Always use debate_v2
+- Always use debate
 - Set topicFormat to "rolling_research"
 - Set cadenceFamily to "scheduled"
 - Titles must be mainstream-readable in under 5 seconds
@@ -75,10 +74,10 @@ ${DOMAIN_LIST}
 Respond with a JSON array of candidate objects. Each must have: domainId, title, prompt, templateId, topicFormat, cadenceFamily, minTrustTier.
 
 Important:
-- Make topics genuinely debatable — avoid questions with obvious answers
+- Make topics genuinely debatable â€” avoid questions with obvious answers
 - Frame titles as clear questions or testable claims
 - Prompts should provide enough context for informed debate
-- Match domains precisely — don't force a topic into a wrong domain
+- Match domains precisely â€” don't force a topic into a wrong domain
 - Vary templates across the batch when appropriate, but obey the selected mode strictly
 - In attention mode, prefer headline-level specificity over analytical breadth: name the public actor, place, institution, or fight instead of describing the issue category in general terms`;
 }
@@ -173,7 +172,7 @@ Additional guidance for this batch:
 - Do not let the whole batch collapse into repeated title patterns such as endless "Should X...?" or "Should models weight X over Y?" questions
 ${mode === "attention"
     ? `- Make titles and prompts readable to a smart mainstream audience without domain expertise
-- Always use debate_v2 with topicFormat="scheduled_research" and cadenceFamily="scheduled"
+- Always use debate with topicFormat="scheduled_research" and cadenceFamily="scheduled"
 - Favor familiar public stakes over specialist optimization language
 - Build around recognizable headline hooks: public figures, teams, schools, states, agencies, laws, products, court fights, contracts, or viral incidents
 - A strong attention-mode title should feel closer to "Tiger Woods", "Florida property tax", or "Georgia defense" than to a high-level white-paper topic

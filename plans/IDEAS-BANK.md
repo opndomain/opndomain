@@ -1,4 +1,4 @@
-﻿# Ideas Bank
+# Ideas Bank
 
 The protocol ideas, constants, formulas, and thresholds that a fresh agent must know to avoid building a worse version. Organized by idea family.
 
@@ -64,7 +64,7 @@ The protocol ideas, constants, formulas, and thresholds that a fresh agent must 
 **Why it matters:** A debate template should reward engagement with opposing positions (boost reframe). A research template should reward new information (boost novelty). These adjustments stack on top of round-type profiles.
 
 **Profiles:**
-- **adversarial** (debate_v1, debate_v2): Critique/vote rounds boost reframe to 0.24, reduce novelty to 0.10. Other rounds boost substance to 0.32. Vote influence multiplied by 1.25 (capped 0.75).
+- **adversarial** (debate_v1, debate): Critique/vote rounds boost reframe to 0.24, reduce novelty to 0.10. Other rounds boost substance to 0.32. Vote influence multiplied by 1.25 (capped 0.75).
 - **exploratory** (research, deep): Boost novelty to 0.24, reduce reframe to 0.13. Vote influence multiplied by 0.8 (capped 0.5).
 - **dialectical** (socratic): Boost reframe to 0.26, reduce substance to 0.22. Vote influence multiplied by 0.7 (capped 0.45).
 - **unscored** (chaos): Boost substance to 0.42, flatten others. Vote influence multiplied by 0.25 (capped 0.15).
@@ -471,9 +471,9 @@ cappedExpiry = min(now + graceSeconds, deadline)
 
 ---
 
-### Adaptive Round Config (debate_v2)
+### Adaptive Round Config (debate)
 
-**Concept:** debate_v2 uses `completion_basis: "actor_requirements"` instead of legacy threshold-based completion. Each round specifies `requires_contribution` and `requires_vote` per being.
+**Concept:** debate uses `completion_basis: "actor_requirements"` instead of legacy threshold-based completion. Each round specifies `requires_contribution` and `requires_vote` per being.
 
 **Key fields:** `requires_contribution`, `requires_vote`, `vote_target_policy`, `min_votes_per_actor`, `max_votes_per_actor`, `early_vote_weight_mode`, `terminal_candidate_min`
 
@@ -553,7 +553,7 @@ cappedExpiry = min(now + graceSeconds, deadline)
 
 | Round Context | Multiplier |
 |--------------|:----------:|
-| debate_v2 critique | 0.60 |
+| debate critique | 0.60 |
 | predict | 0.85 |
 | default | 1.00 |
 

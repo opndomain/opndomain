@@ -27,6 +27,7 @@ class FakePreparedStatement {
 }
 
 class FakeDb {
+  batches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -42,7 +43,8 @@ class FakeDb {
     return new FakePreparedStatement(sql, this);
   }
 
-  async batch(_statements: FakePreparedStatement[]) {
+  async batch(statements: FakePreparedStatement[]) {
+    this.batches.push(statements.map((statement) => ({ sql: statement.sql, bindings: statement.bindings })));
     return [];
   }
 
@@ -256,7 +258,7 @@ function queuePresentationRepairReads(db: FakeDb) {
     domain_id: "dom_1",
     title: "Topic",
     prompt: "Prompt",
-    template_id: "debate_v2",
+    template_id: "debate",
     status: "closed",
     current_round_index: 0,
     updated_at: "2026-03-25T00:00:00.000Z",
@@ -485,7 +487,7 @@ describe("internal routes", () => {
             domainId: "dom_1",
             title: "Candidate",
             prompt: "Prompt",
-            templateId: "debate_v2",
+            templateId: "debate",
             topicFormat: "scheduled_research",
             cadenceFamily: "scheduled",
             cadenceOverrideMinutes: 60,
@@ -518,7 +520,7 @@ describe("internal routes", () => {
       domain_id: "dom_1",
       title: "Candidate",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       cadence_family: "scheduled",
       cadence_override_minutes: 60,
@@ -539,7 +541,7 @@ describe("internal routes", () => {
       domain_id: "dom_1",
       title: "Candidate",
       prompt: "Prompt",
-      template_id: "debate_v2",
+      template_id: "debate",
       topic_format: "scheduled_research",
       cadence_family: "scheduled",
       cadence_override_minutes: 60,
@@ -603,7 +605,7 @@ describe("internal routes", () => {
       domainId: "dom_1",
       title: "Candidate",
       prompt: "Prompt",
-      templateId: "debate_v2",
+      templateId: "debate",
       topicFormat: "scheduled_research",
       cadenceFamily: "scheduled",
       cadenceOverrideMinutes: 60,
@@ -616,6 +618,79 @@ describe("internal routes", () => {
       createdAt: "2026-03-31T00:00:00.000Z",
       updatedAt: "2026-03-31T00:00:00.000Z",
     });
+  });
+
+  it("allows admins to create internal topics with non-debate templates", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db, { requestCount: 1 });
+    db.queueFirst("FROM domains", [{
+      id: "dom_1",
+      slug: "ai-safety",
+      name: "AI Safety",
+      description: null,
+      status: "active",
+      parent_domain_id: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM topics t", [{
+      id: "top_internal",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Internal Topic",
+      prompt: "Investigate this.",
+      template_id: "research",
+      topic_format: "rolling_research",
+      topic_source: "manual_admin",
+      status: "open",
+      cadence_family: "rolling",
+      cadence_preset: null,
+      cadence_override_minutes: 60,
+      min_distinct_participants: 3,
+      countdown_seconds: 120,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      change_sequence: 0,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", []);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/topics", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          domainId: "dom_1",
+          title: "Internal Topic",
+          prompt: "Investigate this.",
+          templateId: "research",
+          topicFormat: "rolling_research",
+          cadenceFamily: "rolling",
+          cadenceOverrideMinutes: 60,
+          countdownSeconds: 120,
+          reason: "manual triage",
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    const payload = await response.json() as { data: { templateId: string } };
+
+    assert.equal(response.status, 201);
+    assert.equal(payload.data.templateId, "research");
+    const topicInsert = db.batches.flat().find((entry) => entry.sql.includes("INSERT INTO topics"));
+    assert.equal(topicInsert?.bindings[4], "research");
   });
 
   it("rejects non-admin access for admin endpoints", async () => {
@@ -983,7 +1058,7 @@ describe("internal routes", () => {
       domain_name: "Biology",
       title: "Should we archive this?",
       prompt: "Discuss archive policy.",
-      template_id: "debate_v2",
+      template_id: "debate",
       status: "closed",
       cadence_family: "quality_gated",
       cadence_preset: "24h",
@@ -1053,7 +1128,7 @@ describe("round instruction override admin routes", () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db);
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/4", {
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate/4", {
         method: "PUT",
         headers: {
           cookie: "opn_session=ses_1",
@@ -1073,7 +1148,7 @@ describe("round instruction override admin routes", () => {
     assert.equal(response.status, 200);
     const payload = await response.json() as { data: { goal: string; templateId: string } };
     assert.equal(payload.data.goal, "Custom goal");
-    assert.equal(payload.data.templateId, "debate_v2");
+    assert.equal(payload.data.templateId, "debate");
   });
 
   it("rejects PUT with invalid templateId", async () => {
@@ -1106,7 +1181,7 @@ describe("round instruction override admin routes", () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db);
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/99", {
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate/99", {
         method: "PUT",
         headers: {
           cookie: "opn_session=ses_1",
@@ -1132,14 +1207,14 @@ describe("round instruction override admin routes", () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db);
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate/1", {
         method: "PUT",
         headers: {
           cookie: "opn_session=ses_1",
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          roundKind: "refine",  // debate_v2 index 1 is "vote"
+          roundKind: "refine",  // debate index 1 is "vote"
           goal: "Goal",
           guidance: "Guidance",
           priorRoundContext: null,
@@ -1158,7 +1233,7 @@ describe("round instruction override admin routes", () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db);
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate/1", {
         method: "DELETE",
         headers: { cookie: "opn_session=ses_1" },
       }),
@@ -1174,7 +1249,7 @@ describe("round instruction override admin routes", () => {
     const db = new FakeDb();
     queueAuthenticatedAgent(db, { email: "member@example.com" });
     const response = await createApiApp().fetch(
-      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate_v2/1", {
+      new Request("https://api.opndomain.com/v1/internal/round-instructions/debate/1", {
         method: "PUT",
         headers: {
           cookie: "opn_session=ses_1",

@@ -394,11 +394,10 @@ export const CreateDomainSchema = z.object({
   parentDomainId: z.string().min(1).optional(),
 });
 
-export const CreateTopicSchema = z.object({
+const CreateTopicBaseSchema = z.object({
   domainId: z.string().min(1),
   title: z.string().min(1).max(200),
   prompt: z.string().min(1).max(4000),
-  templateId: TopicTemplateIdSchema,
   topicFormat: TopicFormatSchema,
   cadenceFamily: CadenceFamilySchema.optional(),
   cadencePreset: CadencePresetSchema.optional(),
@@ -407,12 +406,14 @@ export const CreateTopicSchema = z.object({
   countdownSeconds: z.number().int().nonnegative().optional(),
   startsAt: z.string().datetime({ offset: true }).nullable().optional(),
   joinUntil: z.string().datetime({ offset: true }).nullable().optional(),
-  minTrustTier: TrustTierSchema.default("supervised"),
 });
 
-export const CreateInternalTopicSchema = CreateTopicSchema.omit({
-  minTrustTier: true,
-}).extend({
+export const CreateTopicSchema = CreateTopicBaseSchema.extend({
+  templateId: z.literal("debate"),
+});
+
+export const CreateInternalTopicSchema = CreateTopicBaseSchema.extend({
+  templateId: TopicTemplateIdSchema,
   reason: z.string().min(1).max(500).optional(),
   topicSource: TopicSourceSchema.optional(),
 });

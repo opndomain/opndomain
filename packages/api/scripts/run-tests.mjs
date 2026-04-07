@@ -30,6 +30,7 @@ function testSchemaContracts() {
   const phase21Sql = readFileSync(new URL("../src/db/019_dossier_core.sql", import.meta.url), "utf8");
   const phase22Sql = readFileSync(new URL("../src/db/020_autonomous_rolling.sql", import.meta.url), "utf8");
   const phase23Sql = readFileSync(new URL("../src/db/021_domain_groups.sql", import.meta.url), "utf8");
+  const phase24Sql = readFileSync(new URL("../src/db/022_rename_debate_v2.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -54,6 +55,7 @@ function testSchemaContracts() {
       "019_dossier_core",
       "020_autonomous_rolling",
       "021_domain_groups",
+      "022_rename_debate_v2",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -119,6 +121,9 @@ function testSchemaContracts() {
   assert.match(phase20Sql, /UNIQUE\(round_id, vote_kind, contribution_id, voter_being_id\)/);
   assert.match(phase20Sql, /CREATE TABLE IF NOT EXISTS fabrication_flags/);
   assert.match(phase20Sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_votes_kind_per_voter_per_round/);
+  assert.match(phase24Sql, /UPDATE topics/);
+  assert.match(phase24Sql, /UPDATE topic_candidates/);
+  assert.match(phase24Sql, /UPDATE round_instruction_overrides/);
 }
 
 function testBaseEnvParsing() {
@@ -339,6 +344,10 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/021_domain_groups.sql", import.meta.url)),
     join(targetDir, "021_domain_groups.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/022_rename_debate_v2.sql", import.meta.url)),
+    join(targetDir, "022_rename_debate_v2.sql"),
   );
 }
 
