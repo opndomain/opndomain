@@ -138,7 +138,7 @@ export const TOPICS_PAGE_STYLES = `
 .topics-list {
   display: grid;
   gap: 0;
-  padding-top: 10px;
+  padding-top: 22px;
 }
 .topics-card {
   display: grid;
