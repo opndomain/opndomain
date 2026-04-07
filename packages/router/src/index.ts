@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v5";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v7";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -853,56 +853,67 @@ function buildTopicPageViewModel(
       openingSynthesisHtml = `<p>${escapeHtml(verdictPresentation.summary)}</p>`;
     }
 
-    // Convergence map: from positions with classification data (new topics only)
+    // Convergence map: each map-round position carries contributionIds from
+    // every being grouped under it (via heldBy). Intersect those ids with the
+    // final_argument-round contribution ids to get a "where they landed" share —
+    // i.e., what fraction of closing essays came from agents the map round
+    // grouped into this position. Trusts the LLM's mid-debate attribution
+    // instead of doing a doomed bag-of-words re-cluster.
     let convergenceMap: TopicPageViewModel["convergenceMap"] = null;
     const positionsData = verdictPresentation.positions ?? null;
     if (positionsData && positionsData.length > 0 && positionsData[0]?.classification) {
-      const filtered = positionsData
-        .filter((p: { classification?: string }) => p.classification && p.classification !== "noise")
-        .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }) => ({
-          label: p.label,
-          share: p.share ?? 0,
-          classification: p.classification as "majority" | "runner_up" | "minority",
-          strength: p.strength,
-          aggregateScore: p.aggregateScore,
-          contributionCount: p.contributionIds.length,
-          stanceCounts: p.stanceCounts,
-        }))
-        .sort((a: { share: number }, b: { share: number }) => b.share - a.share);
+      const finalArgRound = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
+      const finalArgIds = new Set(
+        (finalArgRound?.contributions ?? [])
+          .map((c) => c.id)
+          .filter((id): id is string => Boolean(id)),
+      );
+      const totalFinalArgs = finalArgIds.size;
+
+      // The map round can place a being into multiple positions' heldBy, which
+      // would let one final_argument be counted in several positions. Dedupe
+      // greedily in classification priority order (majority → runner_up →
+      // minority): each final_arg contributes to at most one position.
+      const eligible = positionsData
+        .filter((p: { classification?: string }) => p.classification && p.classification !== "noise");
+      const priority = { majority: 0, runner_up: 1, minority: 2 } as const;
+      const ordered = [...eligible].sort((a: any, b: any) =>
+        (priority[a.classification as keyof typeof priority] ?? 9) -
+        (priority[b.classification as keyof typeof priority] ?? 9),
+      );
+      const claimed = new Set<string>();
+      const dedupedCounts = new Map<string, number>();
+      for (const p of ordered as any[]) {
+        let count = 0;
+        for (const id of p.contributionIds as string[]) {
+          if (finalArgIds.has(id) && !claimed.has(id)) {
+            claimed.add(id);
+            count++;
+          }
+        }
+        dedupedCounts.set(p.label, count);
+      }
+
+      const filtered = eligible
+        .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }) => {
+          const finalArgsHere = dedupedCounts.get(p.label) ?? 0;
+          const landingShare = totalFinalArgs > 0
+            ? Math.round((finalArgsHere / totalFinalArgs) * 100)
+            : (p.share ?? 0);
+          return {
+            label: p.label,
+            share: landingShare,
+            classification: p.classification as "majority" | "runner_up" | "minority",
+            strength: p.strength,
+            aggregateScore: p.aggregateScore,
+            contributionCount: finalArgsHere,
+            stanceCounts: p.stanceCounts,
+          };
+        })
+        .filter((p) => p.share > 0)
+        .sort((a, b) => b.share - a.share);
       if (filtered.length > 0) {
         convergenceMap = filtered;
-      }
-    }
-
-    // Recompute convergenceMap shares to reflect WHERE THEY LANDED, not where
-    // they started: attach each final_argument contribution to whichever
-    // position label it most lexically resembles, then share = (final_args
-    // attached) / (total final_args). Position labels stay as the agent-authored
-    // map-round labels; only the percentages change.
-    if (convergenceMap && convergenceMap.length > 0) {
-      const finalArgRound = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
-      const finalArgs = (finalArgRound?.contributions ?? []).filter((c) => c.bodyClean && c.bodyClean.trim().length > 0);
-      if (finalArgs.length > 0) {
-        const labelTerms = convergenceMap.map((p) => extractTermSet(p.label));
-        const counts = new Array(convergenceMap.length).fill(0);
-        for (const fa of finalArgs) {
-          const faTerms = extractTermSet(fa.bodyClean ?? "");
-          let bestIdx = 0;
-          let bestOverlap = -1;
-          for (let i = 0; i < labelTerms.length; i++) {
-            const overlap = termSetOverlap(faTerms, labelTerms[i]);
-            if (overlap > bestOverlap) {
-              bestOverlap = overlap;
-              bestIdx = i;
-            }
-          }
-          counts[bestIdx] += 1;
-        }
-        convergenceMap = convergenceMap.map((p, i) => ({
-          ...p,
-          share: Math.round((counts[i] / finalArgs.length) * 100),
-          contributionCount: counts[i],
-        })).sort((a, b) => b.share - a.share);
       }
     }
 
@@ -2474,6 +2485,7 @@ app.get("/topics/:topicId", async (c) => {
         ].join("")}</section>`,
 
         // TIER 2 — The Story (always visible)
+        renderOpeningSynthesis(viewModel),
         renderWinningArgument(viewModel),
         renderBothSidesSummary(viewModel),
         // Highlights (top-scoring quote per round) — promoted out of dropdown,
