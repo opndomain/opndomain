@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * run-debate.mjs — Universal e2e debate driver with CLI-powered agents.
+ * run-debate.mjs â€” Universal e2e debate driver with CLI-powered agents.
  *
  * Each agent gets a persona (system prompt) and generates contributions
  * by calling `claude` CLI in print mode with the round context from the API.
@@ -18,7 +18,7 @@
  *     "title": "Is Tiger Woods the Best Golfer Ever?",
  *     "prompt": "Evaluate Tiger Woods's claim to...",
  *     "domainId": "dom_game-theory",          // optional
- *     "templateId": "debate_v2",               // optional
+ *     "templateId": "debate",               // optional
  *     "cadenceMinutes": 2,                     // optional
  *     "agents": [
  *       {
@@ -36,7 +36,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { Agent, setGlobalDispatcher } from "undici";
 
-// Bump fetch timeouts to 5 minutes — default 30s headers timeout was crashing
+// Bump fetch timeouts to 5 minutes â€” default 30s headers timeout was crashing
 // the script when many parallel API calls saturated the local HTTP queue.
 setGlobalDispatcher(new Agent({
   headersTimeout: 300_000,
@@ -69,7 +69,7 @@ const scenario = JSON.parse(fs.readFileSync(path.resolve(scenarioPath), "utf-8")
 
 const API_BASE_URL = readFlag("--api-base-url", "https://api.opndomain.com");
 const DOMAIN_ID = scenario.domainId ?? readFlag("--domain-id", "dom_game-theory");
-const TEMPLATE_ID = scenario.templateId ?? "debate_v2";
+const TEMPLATE_ID = scenario.templateId ?? "debate";
 const CADENCE_MINUTES = Number(readFlag("--cadence", scenario.cadenceMinutes ?? 2));
 const LLM_MODEL = readFlag("--model", "sonnet"); // sonnet follows formatting rules; haiku ignores no-markdown
 const EXISTING_TOPIC_ID = readFlag("--existing-topic", null);
@@ -174,19 +174,19 @@ Stance: ${agent.stance}
 
 You must evaluate the contributions below and select exactly 3 different contributions to vote on, one for each category:
 
-1. most_interesting — the contribution that adds the most novel insight or reframes the debate most productively
-2. most_correct — the contribution with the strongest evidence and most defensible reasoning
-3. fabrication — the contribution with the most unsupported claims, logical errors, or fabricated evidence (penalty vote)
+1. most_interesting â€” the contribution that adds the most novel insight or reframes the debate most productively
+2. most_correct â€” the contribution with the strongest evidence and most defensible reasoning
+3. fabrication â€” the contribution with the most unsupported claims, logical errors, or fabricated evidence (penalty vote)
 
 Each vote MUST target a DIFFERENT contribution. Vote based on argument quality, not agreement.
 
-OUTPUT FORMAT — CRITICAL:
+OUTPUT FORMAT â€” CRITICAL:
 Respond with exactly 3 lines, each in this format:
 most_interesting: CONTRIBUTION_ID
 most_correct: CONTRIBUTION_ID
 fabrication: CONTRIBUTION_ID
 
-Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else — no explanations, no prose.`;
+Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else â€” no explanations, no prose.`;
 
   const contributionList = targetTexts.map((t) =>
     `ID: ${t.contributionId}\nAuthor: @${t.beingHandle}\nText: ${t.body}`
@@ -197,7 +197,7 @@ Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else — no e
     `ROUND: ${context.currentRound?.roundKind} (round ${(context.currentRound?.sequenceIndex ?? 0) + 1})`,
     votingGuidance ? `\nVOTING GUIDANCE: ${votingGuidance}` : "",
     `\nCONTRIBUTIONS TO EVALUATE:\n\n${contributionList}`,
-    `\nRespond with exactly 3 lines — one per vote kind — using the exact contribution IDs above:`,
+    `\nRespond with exactly 3 lines â€” one per vote kind â€” using the exact contribution IDs above:`,
   ].filter(Boolean).join("\n");
 
   log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length });
@@ -240,6 +240,30 @@ async function generateContribution(agent, context) {
     .map((c) => `[@${c.beingHandle}] ${c.bodyClean}`)
     .slice(-20);
 
+  // For final_argument round, always inject the highest-scored map-round
+  // contribution (the JSON with positions) so the agent can pick a numbered
+  // map position even if it falls outside the sliding window above.
+  let mapRoundBlock = "";
+  let mapPositionList = "";
+  if (roundKind === "final_argument") {
+    const mapContribs = (context.transcript ?? []).filter((c) => c.roundKind === "map" && c.bodyClean);
+    if (mapContribs.length > 0) {
+      // Pick the one with highest final_score; fall back to first.
+      const sorted = [...mapContribs].sort((a, b) => (Number(b.finalScore ?? 0)) - (Number(a.finalScore ?? 0)));
+      const best = sorted[0];
+      mapRoundBlock = `\n\nMAP ROUND POSITIONS (from @${best.beingHandle}, the highest-scored map of this debate):\n${best.bodyClean}`;
+      // Try to enumerate the position statements for an explicit picker list.
+      try {
+        const parsed = JSON.parse(best.bodyClean);
+        if (Array.isArray(parsed?.positions)) {
+          mapPositionList = parsed.positions
+            .map((p, i) => `  ${i + 1}. ${p.statement ?? p.label ?? "(unnamed)"}`)
+            .join("\n");
+        }
+      } catch {}
+    }
+  }
+
   // Map rounds output JSON, final_argument uses structured labels, others are plain prose.
   const isJsonRound = roundKind === "map";
   const isStructuredRound = roundKind === "map" || roundKind === "final_argument";
@@ -247,21 +271,19 @@ async function generateContribution(agent, context) {
   const formatBlock = isJsonRound
     ? `OUTPUT FORMAT:
 Output a single valid JSON object. No prose before or after. No markdown fences. The JSON must match the schema described in the GUIDANCE below.
-The JSON must also include a top-level "kicker" field: one sentence, ≤180 characters. A sharp contestable CLAIM about the debate landscape — your strongest assertion about which positions matter or where the real disagreement lies. Take a side. Do NOT use phrases like "five contributors" or "the debate shows". Read as a claim, not a summary.`
+The JSON must also include a top-level "kicker" field: one sentence, â‰¤180 characters. A sharp contestable CLAIM about the debate landscape â€” your strongest assertion about which positions matter or where the real disagreement lies. Take a side. Do NOT use phrases like "five contributors" or "the debate shows". Read as a claim, not a summary.`
     : roundKind === "final_argument"
     ? `OUTPUT FORMAT:
-Follow the exact section labels specified in the GUIDANCE below. Use the required labels (like MAJORITY CASE:, COUNTER-ARGUMENT:, FINAL VERDICT:) exactly as instructed.
-Between the required labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.
-
-After all required sections, on a new line, append:
-KICKER: <one sentence, ≤180 characters. A verbatim or near-verbatim distillation of the single sharpest CLAIM in your essay above — the most contestable, side-taking sentence you wrote. Start with a noun or strong verb. Take a position. DO NOT summarize the debate, do NOT use phrases like "five contributors", "this debate", "the question", or "in conclusion". The kicker must read as YOUR assertion, not commentary about the round.>`
-    : `OUTPUT FORMAT — THIS IS CRITICAL:
+Follow the GUIDANCE below precisely. Your contribution MUST contain both PART A — MY POSITION and PART B — IMPARTIAL SYNTHESIS sections in that exact order, with the exact labels specified (MAP_POSITION, MY THESIS, WHY I HOLD IT, STRONGEST OBJECTION I CAN'T FULLY ANSWER, WHAT THIS DEBATE SETTLED, WHAT REMAINS CONTESTED, NEUTRAL VERDICT, KICKER).
+Between labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.
+PART A is your advocacy — you take a side and defend it. PART B is impartial — you drop your persona and write as a third-party reader. Doing both well is what wins the peer vote.`
+    : `OUTPUT FORMAT â€” THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
 Do not write a title, label, or thesis header. Start directly with your argument.
 
 After your prose, on a new line, append:
-KICKER: <one sentence, ≤180 characters. This must be a verbatim or near-verbatim distillation of the single sharpest CLAIM you wrote in the prose above — the most contestable, side-taking sentence in your own contribution. Start with a noun or strong verb. The line must take a position someone could disagree with. DO NOT summarize the round, do NOT describe the debate, do NOT use phrases like "five contributors", "this debate", "the question is", "the contributions show", or "in conclusion". The kicker must read as YOUR claim, not commentary about the room.>`;
+KICKER: <one sentence, â‰¤180 characters. This must be a verbatim or near-verbatim distillation of the single sharpest CLAIM you wrote in the prose above â€” the most contestable, side-taking sentence in your own contribution. Start with a noun or strong verb. The line must take a position someone could disagree with. DO NOT summarize the round, do NOT describe the debate, do NOT use phrases like "five contributors", "this debate", "the question is", "the contributions show", or "in conclusion". The kicker must read as YOUR claim, not commentary about the room.>`;
 
   const systemPrompt = `You are "${agent.displayName}" writing a contribution for a structured research debate.
 
@@ -291,12 +313,19 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
     userPrompt.push(`\nPRIOR CONTRIBUTIONS:\n${priorContributions.join("\n\n")}`);
   }
 
+  if (mapRoundBlock) {
+    userPrompt.push(mapRoundBlock);
+    if (mapPositionList) {
+      userPrompt.push(`\nMAP_POSITION OPTIONS — pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`);
+    }
+  }
+
   if (isJsonRound) {
     userPrompt.push(`\nREMINDER: Output a single JSON object. Use exact @handles from the opening round. Begin now:`);
   } else if (isStructuredRound) {
     userPrompt.push(`\nREMINDER: Use the exact section labels specified in the guidance. Write plain prose between labels. No markdown formatting. Begin your contribution now:`);
   } else {
-    userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever — no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
+    userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever â€” no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
   }
 
   const content = await callClaude(systemPrompt, userPrompt.join("\n"));
@@ -395,7 +424,7 @@ async function main() {
         topicFormat: "scheduled_research",
         cadenceOverrideMinutes: CADENCE_MINUTES,
         topicSource: "cron_auto",
-        reason: `Debate — ${scenario.title}`,
+        reason: `Debate â€” ${scenario.title}`,
       },
       logRequest: true, logLabel: "topic-create",
     });
@@ -521,7 +550,7 @@ async function main() {
       }
     }
 
-    // Cast categorical votes — use LLM to read contributions and pick targets
+    // Cast categorical votes â€” use LLM to read contributions and pick targets
     const pendingVoters = contexts.filter(({ participant, context }) => {
       const currentRound = context.currentRound;
       if (!currentRound || context.status !== "started") return false;
@@ -620,7 +649,7 @@ async function main() {
   }
 
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-  logStep(`Complete — ${elapsed}s elapsed`);
+  logStep(`Complete â€” ${elapsed}s elapsed`);
   writeLine(`
 SUMMARY:
   Topic:          ${topic.id}

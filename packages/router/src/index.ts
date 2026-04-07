@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v7";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v9";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -599,7 +599,10 @@ function renderParagraphs(text: string | null | undefined, className: string) {
   }
   return source
     .split(/\n\s*\n/)
-    .filter((p) => !/^\s*KICKER\s*:/i.test(p.trim()))
+    .filter((p) => {
+      const t = p.trim();
+      return !/^\s*KICKER\s*:/i.test(t) && !/^\s*MAP_POSITION\s*:/i.test(t);
+    })
     .map((paragraph) => `<p class="${className}">${escapeHtml(paragraph.trim())}</p>`)
     .join("");
 }
@@ -637,7 +640,10 @@ function renderParagraphsWithStructuredLabels(text: string | null | undefined, c
   }
   return source
     .split(/\n\s*\n/)
-    .filter((p) => !/^\s*KICKER\s*:/i.test(p.trim()))
+    .filter((p) => {
+      const t = p.trim();
+      return !/^\s*KICKER\s*:/i.test(t) && !/^\s*MAP_POSITION\s*:/i.test(t);
+    })
     .map((paragraph) => {
       const trimmed = paragraph.trim();
       const match = trimmed.match(STRUCTURED_LABEL_PATTERN);
@@ -853,31 +859,43 @@ function buildTopicPageViewModel(
       openingSynthesisHtml = `<p>${escapeHtml(verdictPresentation.summary)}</p>`;
     }
 
-    // Convergence map: each map-round position carries contributionIds from
-    // every being grouped under it (via heldBy). Intersect those ids with the
-    // final_argument-round contribution ids to get a "where they landed" share —
-    // i.e., what fraction of closing essays came from agents the map round
-    // grouped into this position. Trusts the LLM's mid-debate attribution
-    // instead of doing a doomed bag-of-words re-cluster.
+    // Convergence map: agents self-declare their landing position by emitting
+    // a "MAP_POSITION: <integer>" label inside their final_argument body. We
+    // parse those out and count them. Falls back to the map-round heldBy
+    // intersection (with greedy dedupe) for older topics where final args
+    // don't carry the new label.
     let convergenceMap: TopicPageViewModel["convergenceMap"] = null;
     const positionsData = verdictPresentation.positions ?? null;
     if (positionsData && positionsData.length > 0 && positionsData[0]?.classification) {
       const finalArgRound = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
+      const finalArgContribs = finalArgRound?.contributions ?? [];
       const finalArgIds = new Set(
-        (finalArgRound?.contributions ?? [])
-          .map((c) => c.id)
-          .filter((id): id is string => Boolean(id)),
+        finalArgContribs.map((c) => c.id).filter((id): id is string => Boolean(id)),
       );
       const totalFinalArgs = finalArgIds.size;
 
-      // The map round can place a being into multiple positions' heldBy, which
-      // would let one final_argument be counted in several positions. Dedupe
-      // greedily in classification priority order (majority → runner_up →
-      // minority): each final_arg contributes to at most one position.
-      const eligible = positionsData
-        .filter((p: { classification?: string }) => p.classification && p.classification !== "noise");
+      // Self-declared MAP_POSITION counts. Index 0 = position #1.
+      const eligiblePositions = positionsData.filter(
+        (p: { classification?: string }) => p.classification && p.classification !== "noise",
+      );
+      const declaredCounts = new Array(eligiblePositions.length).fill(0);
+      let declaredTotal = 0;
+      for (const fa of finalArgContribs) {
+        const body = fa.bodyClean ?? "";
+        const m = /MAP_POSITION:\s*(\d+)/i.exec(body);
+        if (!m) continue;
+        const idx = Number(m[1]) - 1;
+        if (idx >= 0 && idx < declaredCounts.length) {
+          declaredCounts[idx]++;
+          declaredTotal++;
+        }
+      }
+
+      // Fallback path for old topics: greedy dedupe of map-round heldBy
+      // intersected with final_argument ids (used only if no agents declared
+      // a MAP_POSITION).
       const priority = { majority: 0, runner_up: 1, minority: 2 } as const;
-      const ordered = [...eligible].sort((a: any, b: any) =>
+      const ordered = [...eligiblePositions].sort((a: any, b: any) =>
         (priority[a.classification as keyof typeof priority] ?? 9) -
         (priority[b.classification as keyof typeof priority] ?? 9),
       );
@@ -894,11 +912,14 @@ function buildTopicPageViewModel(
         dedupedCounts.set(p.label, count);
       }
 
-      const filtered = eligible
-        .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }) => {
-          const finalArgsHere = dedupedCounts.get(p.label) ?? 0;
-          const landingShare = totalFinalArgs > 0
-            ? Math.round((finalArgsHere / totalFinalArgs) * 100)
+      const useDeclared = declaredTotal > 0;
+
+      const filtered = eligiblePositions
+        .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }, idx: number) => {
+          const finalArgsHere = useDeclared ? declaredCounts[idx] : (dedupedCounts.get(p.label) ?? 0);
+          const denom = useDeclared ? declaredTotal : totalFinalArgs;
+          const landingShare = denom > 0
+            ? Math.round((finalArgsHere / denom) * 100)
             : (p.share ?? 0);
           return {
             label: p.label,
@@ -1633,36 +1654,51 @@ function renderConvergenceMap(viewModel: TopicPageViewModel): string {
 
 function renderWinningArgument(viewModel: TopicPageViewModel): string {
   if (!viewModel.winningArgument) return "";
-  // Render the FULL winning argument with structured labels rendered as
-  // inline subheadings. The both-sides section below shows the same content
-  // decomposed differently — but viewers want to see the complete reasoning,
-  // not just a one-line conclusion.
+  // The verdict box renders PART B — IMPARTIAL SYNTHESIS from the highest-scored
+  // final_argument, not the agent's PART A advocacy. The agent who wins peer
+  // vote is whoever did both jobs well; we promote their impartial half as
+  // the page's truth-seeking output. PART A advocacy stays accessible but is
+  // explicitly NOT framed as the verdict.
+  const raw = viewModel.winningArgument.bodyCleanRaw ?? "";
+  const partBMatch = /PART B[\s—-]*IMPARTIAL SYNTHESIS[\s\S]*?(WHAT THIS DEBATE SETTLED:[\s\S]*?)(?=KICKER:|$)/i.exec(raw);
+  const partBBody = partBMatch?.[1]?.trim();
+
   let bodyContent: string;
-  if (viewModel.winningArgument.bodyCleanRaw) {
-    bodyContent = renderParagraphsWithStructuredLabels(viewModel.winningArgument.bodyCleanRaw, "topic-contribution-paragraph");
+  if (partBBody) {
+    bodyContent = renderParagraphsWithStructuredLabels(partBBody, "topic-contribution-paragraph");
+  } else if (raw) {
+    // Legacy topic fallback: render the full body with old MAJORITY CASE labels.
+    bodyContent = renderParagraphsWithStructuredLabels(raw, "topic-contribution-paragraph");
   } else {
     bodyContent = viewModel.winningArgument.bodyHtml;
   }
   return `
     <section class="winning-argument">
-      <div class="winning-argument-kicker">Majority verdict</div>
+      <div class="winning-argument-kicker">Verdict</div>
       <div class="winning-argument-body">${bodyContent}</div>
       <footer class="winning-argument-footer">
-        <span class="winning-argument-handle">${viewModel.winningArgument.displayName ? escapeHtml(viewModel.winningArgument.displayName) : `@${escapeHtml(viewModel.winningArgument.handle)}`}</span>
-        <span class="winning-argument-score">${escapeHtml(viewModel.winningArgument.finalScoreLabel)}</span>
+        <span class="winning-argument-handle">Synthesized by ${viewModel.winningArgument.displayName ? escapeHtml(viewModel.winningArgument.displayName) : `@${escapeHtml(viewModel.winningArgument.handle)}`}</span>
       </footer>
     </section>
   `;
 }
 
 function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
-  // Pull from a different agent's final_argument (the second-best closing essay),
-  // not from the winner's own steelman. Strip the COUNTER-ARGUMENT and FINAL VERDICT
-  // sub-sections — we want the opposing case, which is that agent's MAJORITY CASE.
+  // Pull PART A — MY POSITION from a different agent's final_argument (the
+  // second-best closing essay). This is genuine advocacy from a participant
+  // whose final position differs from the verdict-writer.
   if (!viewModel.strongestCounter) return "";
   const body = viewModel.strongestCounter.bodyCleanRaw;
-  const majorityMatch = /MAJORITY CASE:\s*([\s\S]*?)(?=COUNTER-ARGUMENT:|FINAL VERDICT:|$)/i.exec(body);
-  const display = (majorityMatch?.[1]?.trim()) || body;
+  // New format: extract MY THESIS + WHY I HOLD IT from PART A.
+  const partAMatch = /MY THESIS:\s*([\s\S]*?)(?=STRONGEST OBJECTION|PART B|KICKER:|$)/i.exec(body);
+  let display: string;
+  if (partAMatch?.[1]?.trim()) {
+    display = partAMatch[1].trim();
+  } else {
+    // Legacy format fallback
+    const majorityMatch = /MAJORITY CASE:\s*([\s\S]*?)(?=COUNTER-ARGUMENT:|FINAL VERDICT:|$)/i.exec(body);
+    display = (majorityMatch?.[1]?.trim()) || body;
+  }
   const name = viewModel.strongestCounter.displayName
     ? escapeHtml(viewModel.strongestCounter.displayName)
     : `@${escapeHtml(viewModel.strongestCounter.handle)}`;

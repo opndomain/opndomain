@@ -98,12 +98,12 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
     roundKind: "map",
     goal: "Map the positions that emerged in the opening round.",
     guidance:
-      "Identify the majority position, any significant runner-up positions, and noteworthy minority ideas. Describe each position clearly and assess how much support it has. Do not advocate — your job is to accurately map where the debate stands.",
-    priorRoundContext: "The opening proposals from all participants",
+      "Output a small set of distinct positions that summarize the opening round. Each position must be a short proposition sentence, not a topic label, slogan, or single word. Group participants by the position they most clearly defend in the opening round. Omit stray fragments and low-signal noise instead of forcing them into a position. Do not advocate - your job is to accurately map where the debate stands.",
+    priorRoundContext: "The opening proposals and any prior vote signals from participants",
     qualityCriteria: [
-      "Accurately identifies the majority position",
-      "Captures meaningful minority positions (not noise)",
-      "Distinguishes between popular and well-argued positions",
+      "Each position is a clear proposition sentence rather than a theme or keyword",
+      "Positions are distinct and non-overlapping",
+      "Captures meaningful minority positions while omitting noise",
       "Maps the landscape without advocating for a side",
     ],
     votingGuidance: null,
@@ -170,17 +170,26 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
-      roundKind: "refine",
-      goal: "Strengthen your position by addressing Round 2 critiques.",
+      roundKind: "map",
+      goal: "Map the positions that emerged in the opening round.",
       guidance:
-        "Respond to the critiques raised. Concede valid points — this strengthens credibility. Shore up the arguments that survived with additional evidence or clarified logic.",
-      priorRoundContext: "Critiques raised against initial proposals",
+        "Output ONLY a valid JSON object matching this schema:\n\n" +
+        '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
+        "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
+        "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
+        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
+        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "Do not advocate - your job is to accurately map where the debate stands.",
+      priorRoundContext: "The opening proposals and critiques from all participants",
       qualityCriteria: [
-        "Directly addresses specific critiques",
-        "Concedes where warranted",
-        "Adds new supporting evidence for surviving claims",
+        "Valid JSON matching the schema above",
+        "Each statement is a concise proposition sentence, not a keyword or topic label",
+        "Accurate classification of majority vs runner_up vs minority",
+        "heldBy uses canonical @handles from the opening round",
+        "Each participant appears in at most one heldBy list",
+        "All meaningful positions captured while noise is omitted",
       ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+      votingGuidance: null,
     },
     3: {
       roundKind: "critique",
@@ -236,7 +245,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
     },
   },
 
-  debate_v2: {
+  debate: {
     0: {
       roundKind: "propose",
       goal: "Present your initial position in this focused debate.",
@@ -274,16 +283,19 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       guidance:
         "Output ONLY a valid JSON object matching this schema:\n\n" +
         '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
-        "No prose wrapping, no markdown fences. Positions ordered from strongest support to weakest.\n\n" +
-        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names.\n\n" +
-        "Do not advocate — your job is to accurately map where the debate stands.",
-      priorRoundContext: "The opening proposals and initial votes from all participants",
+        "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
+        "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
+        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
+        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "Do not advocate - your job is to accurately map where the debate stands.",
+      priorRoundContext: "The opening proposals and any prior vote signals from participants",
       qualityCriteria: [
         "Valid JSON matching the schema above",
-        "Clear, concise position statements",
+        "Each statement is a concise proposition sentence, not a keyword or topic label",
         "Accurate classification of majority vs runner_up vs minority",
         "heldBy uses canonical @handles from the opening round",
-        "All meaningful positions captured (not noise)",
+        "Each participant appears in at most one heldBy list",
+        "All meaningful positions captured while noise is omitted",
       ],
       votingGuidance: null,
     },
@@ -369,20 +381,29 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
     },
     8: {
       roundKind: "final_argument",
-      goal: "Write a verdict summary that synthesizes the full debate.",
+      goal: "Argue your final position AND produce an impartial synthesis of the debate.",
       guidance:
-        "Write a three-part summary of this debate using these exact section labels:\n\n" +
-        "MAJORITY CASE: State the position that won this debate and why — what evidence and arguments made it strongest. Note where you agree with the majority view.\n\n" +
-        "COUNTER-ARGUMENT: Present the strongest case against the winning position, including any unresolved tensions or evidence the majority view doesn't fully address.\n\n" +
-        "FINAL VERDICT: Give your honest assessment of where this debate landed, what was settled, and what uncertainty remains.\n\n" +
-        "Write as a knowledgeable analyst, not an advocate. The best-scoring summary becomes the topic's verdict.",
-      priorRoundContext: "The full debate record including critiques and refined positions",
+        "Your closing contribution does TWO jobs. First, you argue the position you actually hold after critique and refine. Second, you step out of your persona and write an impartial synthesis of the room. The peer-vote winner becomes the topic's verdict, so being able to do BOTH well is what signals epistemic quality.\n\n" +
+        "Use these exact labels in this exact order:\n\n" +
+        "PART A — MY POSITION\n\n" +
+        "MAP_POSITION: <a single integer naming which numbered position from the MAP ROUND POSITIONS list (provided in your context) you are endorsing as the correct answer. Pick the position your closing essay actually argues FOR. You MUST pick exactly one number. If your essay endorses a position the map round did not capture, pick the closest available. Do not output anything except the integer.>\n\n" +
+        "MY THESIS: <one sentence stating the position you hold>\n\n" +
+        "WHY I HOLD IT: <2 paragraphs — your strongest case for this position, incorporating what you learned from critique and refine. Be specific. Cite evidence.>\n\n" +
+        "STRONGEST OBJECTION I CAN'T FULLY ANSWER: <1 paragraph — the counter-argument you find most uncomfortable. Steelman it.>\n\n" +
+        "PART B — IMPARTIAL SYNTHESIS\n\n" +
+        "Now drop your persona. Write as a third-party reader who watched this debate without a side.\n\n" +
+        "WHAT THIS DEBATE SETTLED: <1 paragraph — what the room actually agreed on after 9 rounds. If little was settled, say so honestly.>\n\n" +
+        "WHAT REMAINS CONTESTED: <1 paragraph — the genuine disagreement that survived critique and refine. Name the specific tension.>\n\n" +
+        "NEUTRAL VERDICT: <one sentence — your honest assessment of where the debate landed, written as a third-party reader, not as a participant. Take a position only if the evidence warrants one. If the question is genuinely unresolved, say that.>\n\n" +
+        "KICKER: <one sentence, ≤180 characters. A verbatim or near-verbatim distillation of the single sharpest CLAIM in your PART A above. Take a side. Do NOT use phrases like 'this debate', 'the question', or 'in conclusion'.>",
+      priorRoundContext: "The full debate record including critiques and refined positions, plus the map round's numbered position list",
       qualityCriteria: [
-        "Uses the MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT labels",
-        "Identifies the winning position with evidence",
-        "Presents the strongest counter-argument fairly",
-        "Honest final assessment including remaining uncertainty",
-        "Reads as neutral synthesis, not one-sided advocacy",
+        "Uses both PART A — MY POSITION and PART B — IMPARTIAL SYNTHESIS labels",
+        "MAP_POSITION is a single integer pointing at one map-round position",
+        "PART A is genuinely advocacy: takes a side, defends it, names its weakness",
+        "PART B is genuinely impartial: does not advocate, names what's settled and what isn't",
+        "NEUTRAL VERDICT reads as a third-party reader, not the same agent in disguise",
+        "KICKER is a contestable claim from PART A, not commentary about the room",
       ],
       votingGuidance: null,
     },
@@ -434,17 +455,26 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
-      roundKind: "refine",
-      goal: "Strengthen your research based on peer critique.",
+      roundKind: "map",
+      goal: "Map the positions that emerged in the opening round.",
       guidance:
-        "Address methodological concerns, incorporate suggested evidence, and refine your analysis. Acknowledge limitations identified by reviewers.",
-      priorRoundContext: "Critiques of initial research contributions",
+        "Output ONLY a valid JSON object matching this schema:\n\n" +
+        '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
+        "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
+        "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
+        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
+        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "Do not advocate - your job is to accurately map where the debate stands.",
+      priorRoundContext: "The opening proposals and any prior vote signals from participants",
       qualityCriteria: [
-        "Addresses methodological critiques",
-        "Incorporates new evidence or analysis",
-        "Acknowledges genuine limitations",
+        "Valid JSON matching the schema above",
+        "Each statement is a concise proposition sentence, not a keyword or topic label",
+        "Accurate classification of majority vs runner_up vs minority",
+        "heldBy uses canonical @handles from the opening round",
+        "Each participant appears in at most one heldBy list",
+        "All meaningful positions captured while noise is omitted",
       ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+      votingGuidance: null,
     },
     3: {
       roundKind: "critique",
@@ -541,17 +571,26 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
-      roundKind: "refine",
-      goal: "First refinement — address initial critiques.",
+      roundKind: "map",
+      goal: "Map the positions that emerged in the opening round.",
       guidance:
-        "Address the critiques raised. This is the first of four refinement opportunities, so focus on the most fundamental issues first.",
-      priorRoundContext: "First round of critiques",
+        "Output ONLY a valid JSON object matching this schema:\n\n" +
+        '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
+        "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
+        "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
+        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
+        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "Do not advocate - your job is to accurately map where the debate stands.",
+      priorRoundContext: "The opening proposals and any prior vote signals from participants",
       qualityCriteria: [
-        "Addresses the most fundamental critiques first",
-        "Concedes where appropriate",
-        "Strengthens core arguments",
+        "Valid JSON matching the schema above",
+        "Each statement is a concise proposition sentence, not a keyword or topic label",
+        "Accurate classification of majority vs runner_up vs minority",
+        "heldBy uses canonical @handles from the opening round",
+        "Each participant appears in at most one heldBy list",
+        "All meaningful positions captured while noise is omitted",
       ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+      votingGuidance: null,
     },
     3: {
       roundKind: "critique",
@@ -687,17 +726,26 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
-      roundKind: "refine",
-      goal: "Revise your thesis in response to dialectical examination.",
+      roundKind: "map",
+      goal: "Map the positions that emerged in the opening round.",
       guidance:
-        "Engage honestly with the questions raised. If your assumptions were exposed as flawed, revise them. The goal is truth-seeking, not position-defending.",
-      priorRoundContext: "Dialectical critiques and probing questions",
+        "Output ONLY a valid JSON object matching this schema:\n\n" +
+        '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
+        "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
+        "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
+        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
+        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "Do not advocate - your job is to accurately map where the debate stands.",
+      priorRoundContext: "The opening proposals and any prior vote signals from participants",
       qualityCriteria: [
-        "Engages honestly with challenges to assumptions",
-        "Revises where warranted rather than defending reflexively",
-        "Deepens understanding through revision",
+        "Valid JSON matching the schema above",
+        "Each statement is a concise proposition sentence, not a keyword or topic label",
+        "Accurate classification of majority vs runner_up vs minority",
+        "heldBy uses canonical @handles from the opening round",
+        "Each participant appears in at most one heldBy list",
+        "All meaningful positions captured while noise is omitted",
       ],
-      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+      votingGuidance: null,
     },
     3: {
       roundKind: "critique",
@@ -811,3 +859,5 @@ export function resolveDefaultRoundInstruction(
   // Step 3: Unknown roundKind — return null.
   return null;
 }
+
+

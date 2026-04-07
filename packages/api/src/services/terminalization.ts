@@ -654,6 +654,24 @@ export function extractMinorityReports(
 export function extractBothSidesSummary(
   winningBody: string,
 ): { majorityCase: string; counterArgument: string; finalVerdict: string } | null {
+  // New format (PART A / PART B): impartial synthesis is the page verdict.
+  const settledMatch = /WHAT THIS DEBATE SETTLED:\s*([\s\S]*?)(?=WHAT REMAINS CONTESTED:|NEUTRAL VERDICT:|KICKER:|$)/i.exec(winningBody);
+  const contestedMatch = /WHAT REMAINS CONTESTED:\s*([\s\S]*?)(?=NEUTRAL VERDICT:|KICKER:|$)/i.exec(winningBody);
+  const neutralVerdictMatch = /NEUTRAL VERDICT:\s*([\s\S]*?)(?=KICKER:|$)/i.exec(winningBody);
+
+  const settled = settledMatch?.[1]?.trim() ?? "";
+  const contested = contestedMatch?.[1]?.trim() ?? "";
+  const neutralVerdict = neutralVerdictMatch?.[1]?.trim() ?? "";
+
+  if (settled || contested || neutralVerdict) {
+    return {
+      majorityCase: settled,
+      counterArgument: contested,
+      finalVerdict: neutralVerdict,
+    };
+  }
+
+  // Legacy format fallback (MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT).
   const majorityMatch = /MAJORITY CASE:\s*([\s\S]*?)(?=COUNTER-ARGUMENT:|$)/i.exec(winningBody);
   const counterMatch = /COUNTER-ARGUMENT:\s*([\s\S]*?)(?=FINAL VERDICT:|$)/i.exec(winningBody);
   const verdictMatch = /FINAL VERDICT:\s*([\s\S]*?)$/i.exec(winningBody);
