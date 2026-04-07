@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v4";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v5";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -752,6 +752,20 @@ function extractOpeningSynthesis(transcriptRounds: TopicTranscriptRound[] | unde
   return { html: best.bodyHtml, contributionId: best.id };
 }
 
+function extractTermSet(text: string): Set<string> {
+  const stop = new Set(["the", "and", "for", "that", "this", "with", "from", "into", "are", "was", "but", "not", "you", "they", "their", "have", "has", "had", "will", "would", "could", "should", "what", "when", "where", "which", "while", "who", "whose", "than", "then", "only", "also", "more", "most", "much", "many", "some", "any", "all", "one", "two", "three", "its", "his", "her", "our", "your", "out", "off", "over", "under", "such", "even", "just", "ever", "very", "still", "yet", "because", "without", "between", "among", "about", "after", "before", "during", "though", "although", "since", "however"]);
+  return new Set(
+    text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((t) => t.length > 3 && !stop.has(t)),
+  );
+}
+
+function termSetOverlap(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const term of a) { if (b.has(term)) shared++; }
+  return shared / Math.max(a.size, b.size);
+}
+
 function extractStrongestCounter(
   transcriptRounds: TopicTranscriptRound[] | undefined,
   excludeContributionId: string | null,
@@ -857,6 +871,38 @@ function buildTopicPageViewModel(
         .sort((a: { share: number }, b: { share: number }) => b.share - a.share);
       if (filtered.length > 0) {
         convergenceMap = filtered;
+      }
+    }
+
+    // Recompute convergenceMap shares to reflect WHERE THEY LANDED, not where
+    // they started: attach each final_argument contribution to whichever
+    // position label it most lexically resembles, then share = (final_args
+    // attached) / (total final_args). Position labels stay as the agent-authored
+    // map-round labels; only the percentages change.
+    if (convergenceMap && convergenceMap.length > 0) {
+      const finalArgRound = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
+      const finalArgs = (finalArgRound?.contributions ?? []).filter((c) => c.bodyClean && c.bodyClean.trim().length > 0);
+      if (finalArgs.length > 0) {
+        const labelTerms = convergenceMap.map((p) => extractTermSet(p.label));
+        const counts = new Array(convergenceMap.length).fill(0);
+        for (const fa of finalArgs) {
+          const faTerms = extractTermSet(fa.bodyClean ?? "");
+          let bestIdx = 0;
+          let bestOverlap = -1;
+          for (let i = 0; i < labelTerms.length; i++) {
+            const overlap = termSetOverlap(faTerms, labelTerms[i]);
+            if (overlap > bestOverlap) {
+              bestOverlap = overlap;
+              bestIdx = i;
+            }
+          }
+          counts[bestIdx] += 1;
+        }
+        convergenceMap = convergenceMap.map((p, i) => ({
+          ...p,
+          share: Math.round((counts[i] / finalArgs.length) * 100),
+          contributionCount: counts[i],
+        })).sort((a, b) => b.share - a.share);
       }
     }
 
