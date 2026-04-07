@@ -29,12 +29,12 @@ export const TOPICS_PAGE_STYLES = `
   justify-content: center;
 }
 .topics-filterbar {
-  margin-bottom: 14px;
+  margin-bottom: 26px;
   padding: 0;
 }
 .topics-filter-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(180px, 0.75fr) minmax(180px, 0.75fr) auto auto;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 0.8fr) auto auto;
   align-items: center;
   gap: 12px;
 }
@@ -138,16 +138,17 @@ export const TOPICS_PAGE_STYLES = `
 .topics-list {
   display: grid;
   gap: 0;
+  padding-top: 10px;
 }
 .topics-card {
   display: grid;
   gap: 12px;
   padding: 18px 20px;
   border-top: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.34);
 }
 .topics-card:nth-child(even) {
-  background: rgba(77, 103, 128, 0.05);
+  background: rgba(77, 103, 128, 0.09);
 }
 .topics-card:first-child {
   border-top: 1px solid var(--border);

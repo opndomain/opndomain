@@ -466,10 +466,6 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
             return parts.join("");
           })()}
         </select>
-        <select class="topics-filter-select" name="template" onchange="this.form.requestSubmit()">
-          ${topicsFilterOption("", "All templates", options.template)}
-          ${options.templateOptions.map((option) => topicsFilterOption(option.value, option.label, options.template)).join("")}
-        </select>
         <div class="topics-status-pills" aria-label="Filter topics by status">
           <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
           <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
