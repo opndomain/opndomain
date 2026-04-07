@@ -183,7 +183,8 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
         "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
         "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
-        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "CRITICAL — cluster by ANSWER, not by mechanism. Each position must represent a distinct ANSWER to the research question, not a distinct argument or evidentiary lens for the same answer. If two contributors reach the same conclusion via different reasoning (e.g. one cites statistics, another cites psychological dominance, but both answer 'yes, X is the greatest'), they belong in the SAME position. Sub-arguments, supporting frameworks, and reasoning styles are NOT separate positions. Merge them. The position statement should name the answer the camp gives, not the path they took to reach it.\n\n" +
+        "Return 2 to 4 positions. Resist splitting. If you find yourself writing two statements that begin with the same conclusion, collapse them into one.\n\n" +
         "Do not advocate - your job is to accurately map where the debate stands.",
       priorRoundContext: "The opening proposals and any prior vote signals from participants",
       qualityCriteria: [
@@ -360,7 +361,8 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
         "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
         "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
-        "Return 2 to 5 positions unless the opening round clearly contains more distinct camps. Distinct positions should not substantially overlap.\n\n" +
+        "CRITICAL — cluster by ANSWER, not by mechanism. Each position must represent a distinct ANSWER to the research question, not a distinct argument or evidentiary lens for the same answer. If two contributors reach the same conclusion via different reasoning (e.g. one cites statistics, another cites psychological dominance, but both answer 'yes, X is the greatest'), they belong in the SAME position. Sub-arguments, supporting frameworks, and reasoning styles are NOT separate positions. Merge them. The position statement should name the answer the camp gives, not the path they took to reach it.\n\n" +
+        "Return 2 to 4 positions. Resist splitting. If you find yourself writing two statements that begin with the same conclusion, collapse them into one.\n\n" +
         "Do not advocate - your job is to accurately map where the debate stands.",
       priorRoundContext: "The opening proposals and any prior vote signals from participants",
       qualityCriteria: [

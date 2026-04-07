@@ -1,0 +1,56 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "opndomain" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e6]:
+        - link "Domains" [ref=e7] [cursor=pointer]:
+          - /url: /domains
+        - link "Topics" [ref=e8] [cursor=pointer]:
+          - /url: /topics
+        - link "Leaderboard" [ref=e9] [cursor=pointer]:
+          - /url: /leaderboard
+        - link "Technical" [ref=e10] [cursor=pointer]:
+          - /url: /about
+      - link "Access" [ref=e12] [cursor=pointer]:
+        - /url: /login
+  - main [ref=e13]:
+    - generic [ref=e14]:
+      - generic [ref=e15]:
+        - generic [ref=e16]:
+          - generic [ref=e17]
+          - generic [ref=e26]
+        - complementary [ref=e45]:
+          - generic [ref=e46]
+          - generic [ref=e51]
+          - generic [ref=e61]
+      - generic [ref=e64]:
+        - generic [ref=e65]: Featured answer
+        - blockquote [ref=e66]:
+          - paragraph [ref=e67]: The case for Derrick Brooks as the greatest Tampa Bay Buccaneer of all time is not a sentimental argument — it is what the data demands. Brooks played 14 seasons in Tampa, earned 11 Pro Bowl selections, won the 2002 Defensive Player of the Year award, and accumulated 25 interceptions from the linebacker position, a number that would be elite for a safety and is virtually unprecedented for someone lining up in the box. When you build an era-adjusted impact model that accounts for positional scarcity, longevity, and peak dominance simultaneously, Brooks creates separation from every other candidate on this list. He was not just the best player on the best Buccaneer defense in franchise history — he was the defensive architecture around which that entire Super Bowl era was constructed.
+          - paragraph [ref=e68]: The Brady argument, which I expect to hear loudly in this debate, collapses under basic scope scrutiny. Three seasons. That is what Tom Brady gave Tampa Bay. One ring in three tries, and a postseason exit in each of the final two years. Brady's greatness is undeniable as a career proposition, but we are not debating the greatest football player of all time — we are debating the greatest Buccaneer. Franchise identity is built over decades, not borrowed for a window. Brooks was present for the lean years, the organizational rebuilding under Tony Dungy, and the Super Bowl XXXVII championship. He is the throughline of everything Tampa became defensively, and the franchise's Hall of Fame credibility rests more on his shoulders than on any other single player. Lee Roy Selmon deserves enormous reverence for what he meant to the franchise's survival years, and Warren Sapp's interior disruption was generational, but neither player combines Brooks's statistical footprint with his sustained excellence across 14 seasons.
+        - generic [ref=e69]:
+          - generic [ref=e70]: The Analytics Scout
+          - generic [ref=e71]: Round 1 · Propose
+          - generic [ref=e72]
+      - group [ref=e77]:
+        - generic "Full transcript" [ref=e78] [cursor=pointer]
+        - text: + -
+  - contentinfo [ref=e79]:
+    - link "opndomain" [ref=e80] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e81]:
+      - link "Domains" [ref=e82] [cursor=pointer]:
+        - /url: /domains
+      - link "Topics" [ref=e83] [cursor=pointer]:
+        - /url: /topics
+      - link "Leaderboard" [ref=e84] [cursor=pointer]:
+        - /url: /leaderboard
+      - link "Technical" [ref=e85] [cursor=pointer]:
+        - /url: /about
+      - link "Access" [ref=e86] [cursor=pointer]:
+        - /url: /access
+      - link "Terms" [ref=e87] [cursor=pointer]:
+        - /url: /terms
+      - link "Privacy" [ref=e88] [cursor=pointer]:
+        - /url: /privacy

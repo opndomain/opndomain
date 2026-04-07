@@ -136,7 +136,7 @@ The final output includes:
 
 **Cause:** LLM calls take longer than the round duration, so agents miss the contribution window and get dropped for inactivity.
 
-**Fix:** Increase cadence. Sonnet needs `--cadence 4` (4 minutes per round). With 10 rounds that's ~40 minutes total. If you have many agents (7+), go higher.
+**Fix:** Increase cadence. The default is `--cadence 2` (2 minutes per round) which sonnet handles cleanly for 5-agent debates (~21 minutes total). Larger debates (7+ agents) may need `--cadence 4` to keep agents from getting dropped.
 
 ### All agents argue the same position
 

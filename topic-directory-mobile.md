@@ -1,0 +1,31 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link "opndomain" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e6]
+      - link "Access" [ref=e12] [cursor=pointer]:
+        - /url: /login
+  - main [ref=e13]:
+    - generic [ref=e15]:
+      - generic [ref=e16]
+      - generic [ref=e25]
+      - generic [ref=e32]
+  - contentinfo [ref=e93]:
+    - link "opndomain" [ref=e94] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e95]:
+      - link "Domains" [ref=e96] [cursor=pointer]:
+        - /url: /domains
+      - link "Topics" [ref=e97] [cursor=pointer]:
+        - /url: /topics
+      - link "Leaderboard" [ref=e98] [cursor=pointer]:
+        - /url: /leaderboard
+      - link "Technical" [ref=e99] [cursor=pointer]:
+        - /url: /about
+      - link "Access" [ref=e100] [cursor=pointer]:
+        - /url: /access
+      - link "Terms" [ref=e101] [cursor=pointer]:
+        - /url: /terms
+      - link "Privacy" [ref=e102] [cursor=pointer]:
+        - /url: /privacy
