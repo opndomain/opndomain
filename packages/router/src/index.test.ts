@@ -820,6 +820,320 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(unavailableHtml.includes("The transcript remains available below."), "unavailable verdict fallback should keep the transcript accessible");
     assert.ok(!unavailableHtml.includes("Browse topics"), "closed topic fallback should use the top-nav-only shell without the legacy sidebar");
   });
+
+  it("strips round-8 scaffolding labels from dissenting view bodies", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_dissent_strip" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_dissent_strip/state.json", JSON.stringify({ memberCount: 3, contributionCount: 3, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_dissent_strip/transcript.json", JSON.stringify({ rounds: [] }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_dissent_strip"), JSON.stringify(verdictPresentation("topic_dissent_strip", {
+      minorityReports: [{
+        contributionId: "ctr_dissent",
+        handle: "agent-dissenter",
+        displayName: "Dissenter",
+        finalScore: 72,
+        positionLabel: "Minority view",
+        body:
+          "PART A — MY POSITION\n\n" +
+          "MAP_POSITION: 3\n\n" +
+          "MY THESIS: Dissent thesis statement.\n\n" +
+          "WHY I HOLD IT: The dissenting contributor offers a substantive WHY paragraph that must appear clean in the rendered dissenting views block.\n\n" +
+          "STRONGEST OBJECTION I CAN'T FULLY ANSWER: Some objection.\n\n" +
+          "PART B — IMPARTIAL SYNTHESIS\n\n" +
+          "WHAT THIS DEBATE SETTLED: Nothing.\n\n" +
+          "WHAT REMAINS CONTESTED: Everything.\n\n" +
+          "NEUTRAL VERDICT: Unclear.\n\n" +
+          "KICKER: Dissenting kicker.",
+      }],
+    })));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_dissent_strip"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="dissenting-views">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes("substantive WHY paragraph"), "dissenting view should render WHY I HOLD IT prose");
+    const forbidden = ["PART A", "PART B", "MY THESIS:", "WHY I HOLD IT:", "STRONGEST OBJECTION", "WHAT THIS DEBATE SETTLED:", "WHAT REMAINS CONTESTED:", "NEUTRAL VERDICT:", "KICKER:", "MAP_POSITION:"];
+    for (const label of forbidden) {
+      assert.ok(!section.includes(label), `dissenting view section should not contain label "${label}"`);
+    }
+  });
+
+  it("substitutes guest-handle references in vote logic reasoning", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_vote_logic_sub" })]);
+    db.queueResult("FROM votes v", [{
+      voter_handle: "agent-alpha",
+      voter_display_name: "Agent Alpha",
+      target_handle: "guest-abc123",
+      target_display_name: "The Macro Skeptic",
+      reasoning: "I defer to guest-abc123's structural argument over the rest.",
+      round_index: 0,
+      round_kind: "vote",
+    }]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_vote_logic_sub/state.json", JSON.stringify({ memberCount: 2, contributionCount: 2, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_vote_logic_sub/transcript.json", JSON.stringify({ rounds: [] }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_vote_logic_sub"), JSON.stringify(verdictPresentation("topic_vote_logic_sub")));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_vote_logic_sub"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="vote-logic">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes("The Macro Skeptic"), "vote logic reasoning should substitute guest handle with resolved display name");
+    assert.ok(!section.includes("guest-abc123"), "raw guest-xxxx token should not leak into vote logic reasoning");
+  });
+
+  it("falls back to editorial body when synthesize contribution is too short", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_opening_fallback" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_opening_fallback/state.json", JSON.stringify({ memberCount: 1, contributionCount: 1, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_opening_fallback/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 0,
+        roundKind: "synthesize",
+        contributions: [{
+          id: "ctr_short",
+          beingHandle: "agent-alpha",
+          bodyClean: "PART A — MY POSITION\n\nMAP_POSITION: 1\n",
+          scores: { final: 80 },
+        }],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_opening_fallback"), JSON.stringify(verdictPresentation("topic_opening_fallback")));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_opening_fallback"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="topic-opening-synthesis">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes("Mandatory oversight should be treated as a release condition"), "opening synthesis should fall back to editorial body first paragraph");
+    assert.ok(!section.includes("PART A"), "opening synthesis fallback should not leak the PART A label");
+    assert.ok(!section.includes("MAP_POSITION"), "opening synthesis fallback should not leak MAP_POSITION");
+  });
+
+  it("renders the verdict box as three clean kicker sections with no raw label tokens", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_verdict_kickers" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_verdict_kickers/state.json", JSON.stringify({ memberCount: 1, contributionCount: 1, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_verdict_kickers/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 7,
+        roundKind: "final_argument",
+        contributions: [{
+          id: "ctr_k",
+          beingHandle: "agent-alpha",
+          displayName: "Alpha",
+          bodyClean:
+            "PART A — MY POSITION\n\nMAP_POSITION: 1\n\nMY THESIS: A.\n\nWHY I HOLD IT: B.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: C.\n\n" +
+            "PART B — IMPARTIAL SYNTHESIS\n\n" +
+            "WHAT THIS DEBATE SETTLED: The settled prose explains an agreed-upon finding with enough body to render.\n\n" +
+            "WHAT REMAINS CONTESTED: The contested prose explains a remaining tension with enough body to render.\n\n" +
+            "NEUTRAL VERDICT: The neutral verdict prose summarizes the decision with enough body to render.\n\n" +
+            "KICKER: Final kicker.",
+          scores: { final: 95 },
+        }],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_verdict_kickers"), JSON.stringify(verdictPresentation("topic_verdict_kickers")));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_verdict_kickers"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="winning-argument">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes('class="winning-argument-section-kicker">What this debate settled<'), "verdict should render settled kicker");
+    assert.ok(section.includes('class="winning-argument-section-kicker">What remains contested<'), "verdict should render contested kicker");
+    assert.ok(section.includes('class="winning-argument-section-kicker">Neutral verdict<'), "verdict should render verdict kicker");
+    assert.ok(section.includes("agreed-upon finding"), "verdict should render settled body prose");
+    // No raw uppercase label tokens should appear inside paragraphs
+    const paragraphs = section.match(/<p[^>]*>[^<]*<\/p>/g) ?? [];
+    for (const p of paragraphs) {
+      assert.ok(!/WHAT THIS DEBATE SETTLED:/.test(p), "paragraph should not contain raw settled label");
+      assert.ok(!/WHAT REMAINS CONTESTED:/.test(p), "paragraph should not contain raw contested label");
+      assert.ok(!/NEUTRAL VERDICT:/.test(p), "paragraph should not contain raw neutral verdict label");
+    }
+  });
+
+  it("strips trailing KICKER lines from highlight excerpts", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_highlight_kicker" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_highlight_kicker/state.json", JSON.stringify({ memberCount: 2, contributionCount: 2, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_highlight_kicker/transcript.json", JSON.stringify({ rounds: [] }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_highlight_kicker"), JSON.stringify(verdictPresentation("topic_highlight_kicker", {
+      highlights: [
+        {
+          contributionId: "ctr_h1",
+          beingId: "being_h1",
+          beingHandle: "agent-hl",
+          roundKind: "refine",
+          excerpt: "The refinement strengthens the governance mechanism substantially.\n\nKICKER: Leaked kicker line.",
+          finalScore: 88,
+          reason: "Strong refinement",
+        },
+        {
+          contributionId: "ctr_h2",
+          beingId: "being_h2",
+          beingHandle: "agent-hl2",
+          roundKind: "refine",
+          excerpt: "Another strong refinement that tightens the proposal further.",
+          finalScore: 86,
+          reason: "Another refinement",
+        },
+      ],
+    })));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_highlight_kicker"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="topic-highlights">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes("The refinement strengthens"), "highlight section should render excerpt prose");
+    assert.ok(!section.includes("KICKER:"), "highlight excerpt should not leak KICKER line");
+    assert.ok(!section.includes("Leaked kicker line"), "highlight excerpt should strip the kicker content line");
+  });
+
+  it("strips inline labels from strongest counter while preserving thesis prose", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_counter_strip" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_counter_strip/state.json", JSON.stringify({ memberCount: 2, contributionCount: 2, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_counter_strip/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 8,
+        roundKind: "final_argument",
+        contributions: [
+          {
+            id: "ctr_win",
+            beingHandle: "agent-alpha",
+            displayName: "Alpha",
+            bodyClean:
+              "PART A — MY POSITION\n\nMAP_POSITION: 1\n\nMY THESIS: Winner thesis long enough to serve as content.\n\nWHY I HOLD IT: Winner support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Winner objection.\n\nPART B — IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: X.\n\nWHAT REMAINS CONTESTED: Y.\n\nNEUTRAL VERDICT: Z.\n\nKICKER: W.",
+            scores: { final: 98 },
+          },
+          {
+            id: "ctr_counter",
+            beingHandle: "agent-beta",
+            displayName: "Beta",
+            bodyClean:
+              "PART A — MY POSITION\n\nMAP_POSITION: 2\n\nMY THESIS: A distinctive counter thesis prose that must appear cleanly in the strongest-counter box.\n\nWHY I HOLD IT: Supporting reasoning for the counter position that should be stripped of its inline label.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Counter objection.\n\nPART B — IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: X.\n\nWHAT REMAINS CONTESTED: Y.\n\nNEUTRAL VERDICT: Z.\n\nKICKER: W.",
+            scores: { final: 90 },
+          },
+        ],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_counter_strip"), JSON.stringify(verdictPresentation("topic_counter_strip")));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_counter_strip"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="both-sides-summary">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes("distinctive counter thesis prose"), "counter should render thesis prose");
+    assert.ok(!section.includes("WHY I HOLD IT:"), "counter section should strip WHY I HOLD IT label");
+    assert.ok(!section.includes("MY THESIS:"), "counter section should strip MY THESIS label");
+  });
+
+  it("strips whitespace-only PART A / PART B header variants (no em-dash)", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_partab_whitespace" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_partab_whitespace/state.json", JSON.stringify({ memberCount: 2, contributionCount: 2, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_partab_whitespace/transcript.json", JSON.stringify({ rounds: [] }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_partab_whitespace"), JSON.stringify(verdictPresentation("topic_partab_whitespace", {
+      minorityReports: [{
+        contributionId: "ctr_dissent_ws",
+        handle: "agent-ws",
+        displayName: "Whitespace Dissenter",
+        finalScore: 70,
+        positionLabel: "Minority",
+        body:
+          "PART A  MY POSITION\n\n" +
+          "MY THESIS: foo dissent thesis.\n\n" +
+          "WHY I HOLD IT: A whitespace-form dissent body that should render cleanly without any header artifact leaking into prose.\n\n" +
+          "PART B  IMPARTIAL SYNTHESIS\n\n" +
+          "WHAT THIS DEBATE SETTLED: bar.",
+      }],
+    })));
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_partab_whitespace"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="dissenting-views">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(section.includes("whitespace-form dissent body"), "should render dissent prose body");
+    assert.ok(!section.includes("PART A"), "should strip whitespace-form PART A header");
+    assert.ok(!section.includes("PART B"), "should strip whitespace-form PART B header");
+    assert.ok(!section.includes("MY POSITION"), "should strip MY POSITION descriptor");
+    assert.ok(!section.includes("IMPARTIAL SYNTHESIS"), "should strip IMPARTIAL SYNTHESIS descriptor");
+  });
+
+  it("preserves legacy MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT structure in the verdict box", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_legacy_verdict" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_legacy_verdict/state.json", JSON.stringify({ memberCount: 1, contributionCount: 1, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_legacy_verdict/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 7,
+        roundKind: "final_argument",
+        contributions: [{
+          id: "ctr_legacy",
+          beingHandle: "agent-legacy",
+          displayName: "Legacy Agent",
+          bodyClean:
+            "MAJORITY CASE: The legacy majority case as written by guest-abc123 lays out the core argument.\n\n" +
+            "COUNTER-ARGUMENT: The legacy counter-argument records the principal objection.\n\n" +
+            "FINAL VERDICT: The legacy final verdict resolves the dispute on the merits.",
+          scores: { final: 92 },
+        }],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_legacy_verdict"), JSON.stringify(verdictPresentation("topic_legacy_verdict")));
+    // Add a being whose handle is guest-abc123 so the substitutor has someone to resolve.
+    db.queueResult("FROM votes v", [{
+      voter_handle: "guest-abc123",
+      voter_display_name: "Resolved Name",
+      target_handle: "agent-legacy",
+      target_display_name: "Legacy Agent",
+      reasoning: "n/a",
+      round_index: 0,
+      round_kind: "vote",
+    }]);
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_legacy_verdict"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+    const html = await response.text();
+    const section = /<section class="winning-argument">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(/structured-label[^>]*>Majority Case</i.test(section), "legacy verdict should retain MAJORITY CASE label");
+    assert.ok(/structured-label[^>]*>Counter-Argument</i.test(section), "legacy verdict should retain COUNTER-ARGUMENT label");
+    assert.ok(/structured-label[^>]*>Final Verdict</i.test(section), "legacy verdict should retain FINAL VERDICT label");
+    assert.ok(section.includes("legacy majority case"), "legacy verdict should render majority body prose");
+    assert.ok(section.includes("Resolved Name"), "legacy verdict should substitute guest-handle references with resolved display names");
+    assert.ok(!section.includes("guest-abc123"), "legacy verdict should not leak raw guest- token");
+  });
 });
 
 describe("GET /topics", () => {

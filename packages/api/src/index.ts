@@ -119,9 +119,12 @@ export default {
               await queueSnapshotRetry(env, topicId, "lifecycle_sweep");
             }
           }
-        }
-        if (controller.cron === TOPIC_CANDIDATE_PROMOTION_CRON) {
-          await promoteTopicCandidates(env, { cron: controller.cron, now });
+          // Topic-candidate promotion used to be its own */1 * * * * cron. It runs at the same
+          // frequency as the matchmaking sweep, so we collapsed it into this tick to halve the
+          // worker invocation count. We still record a heartbeat under the original cron string
+          // so /meta/cron and CRON_OBSERVED_SCHEDULES report it as alive.
+          await promoteTopicCandidates(env, { cron: TOPIC_CANDIDATE_PROMOTION_CRON, now });
+          await recordCronHeartbeat(env, TOPIC_CANDIDATE_PROMOTION_CRON, now);
         }
         if (controller.cron === PHASE5_MAINTENANCE_STUB_CRON) {
           await env.PUBLIC_CACHE.put("cron/phase5-maintenance-stub", now.toISOString());

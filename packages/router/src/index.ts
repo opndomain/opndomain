@@ -748,14 +748,15 @@ function buildFeaturedAnswer(transcriptRounds: TopicTranscriptRound[] | undefine
   return buildRankedContributionViewModel(finalRound.contributions, finalRound)[0] ?? null;
 }
 
-function extractOpeningSynthesis(transcriptRounds: TopicTranscriptRound[] | undefined): { html: string; contributionId: string } | null {
+function extractOpeningSynthesis(transcriptRounds: TopicTranscriptRound[] | undefined): { html: string; bodyClean: string; contributionId: string } | null {
   const synthesizeRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "synthesize");
   const lastSynthesizeRound = synthesizeRounds[synthesizeRounds.length - 1];
   if (!lastSynthesizeRound) return null;
   const ranked = buildRankedContributionViewModel(lastSynthesizeRound.contributions, lastSynthesizeRound);
   const best = ranked[0];
   if (!best) return null;
-  return { html: best.bodyHtml, contributionId: best.id };
+  const rawContribution = lastSynthesizeRound.contributions?.find((c) => (c.id ?? "") === best.id);
+  return { html: best.bodyHtml, bodyClean: rawContribution?.bodyClean ?? "", contributionId: best.id };
 }
 
 function extractTermSet(text: string): Set<string> {
@@ -853,6 +854,7 @@ function buildTopicPageViewModel(
   state: TopicStateSnapshot | null,
   transcriptRounds: TopicTranscriptRound[] | undefined,
   verdictPresentation: TopicVerdictPresentation | null,
+  agentHandleResolver: Map<string, string> = new Map(),
 ): TopicPageViewModel {
   const rounds = buildTopicRoundViewModel(transcriptRounds, meta.status !== "closed");
   const participants = state?.memberCount ?? meta.member_count ?? 0;
@@ -879,10 +881,21 @@ function buildTopicPageViewModel(
     const closureLine = `${participantCount} participants · ${visibleRoundCountVerdict} rounds · debate completed`;
     const convergenceLabel = mapConvergenceLabel(verdictPresentation.synthesisOutcome ?? null);
 
-    // Opening synthesis: best synthesize contribution, editorial fallback, summary fallback
+    // Opening synthesis: best synthesize contribution (cleaned), editorial fallback, summary fallback
     const synthesisResult = extractOpeningSynthesis(transcriptRounds);
-    let openingSynthesisHtml: string | null = synthesisResult?.html ?? null;
+    let openingSynthesisHtml: string | null = null;
     let openingSynthesisContributionId: string | null = synthesisResult?.contributionId ?? null;
+    if (synthesisResult) {
+      const cleaned = stripRoundEightLabels(synthesisResult.bodyClean ?? "");
+      if (cleaned.length >= 80) {
+        openingSynthesisHtml = renderParagraphs(
+          substituteAgentHandles(cleaned, agentHandleResolver),
+          "topic-opening-synthesis-paragraph",
+        );
+      } else {
+        openingSynthesisContributionId = null;
+      }
+    }
     if (!openingSynthesisHtml && verdictPresentation.editorialBody) {
       const firstParagraph = verdictPresentation.editorialBody.trim().split(/\n\s*\n/)[0]?.trim();
       if (firstParagraph) {
@@ -1275,6 +1288,61 @@ function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefine
   `;
 }
 
+function stripRoundEightLabels(body: string): string {
+  if (!body) return "";
+  // Match PART A (alone) or PART A followed by optional em/en/hyphen and "MY POSITION"
+  // with any whitespace between tokens. Same for PART B / IMPARTIAL SYNTHESIS.
+  // This catches both em-dash forms and the whitespace-only forms produced by the
+  // live bug ("PART A  MY POSITION").
+  const partARe = /^PART\s+A(?:\s+[—–-]?\s*MY\s+POSITION)?$/i;
+  const partBRe = /^PART\s+B(?:\s+[—–-]?\s*IMPARTIAL\s+SYNTHESIS)?$/i;
+  const legacyDropEquals = new Set([
+    "MAJORITY CASE:",
+    "COUNTER-ARGUMENT:",
+    "FINAL VERDICT:",
+  ]);
+  const inlineLabels = [
+    "MY THESIS:",
+    "WHY I HOLD IT:",
+    "STRONGEST OBJECTION I CAN'T FULLY ANSWER:",
+    "STRONGEST OBJECTION I CANNOT FULLY ANSWER:",
+    "WHAT THIS DEBATE SETTLED:",
+    "WHAT REMAINS CONTESTED:",
+    "NEUTRAL VERDICT:",
+  ];
+  const lines = body.split("\n");
+  const kept: string[] = [];
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    const upper = trimmed.toUpperCase();
+    if (partARe.test(trimmed) || partBRe.test(trimmed)) continue;
+    if (legacyDropEquals.has(upper)) continue;
+    if (/^MAP_POSITION\s*:/i.test(trimmed)) continue;
+    if (/^KICKER\s*:/i.test(trimmed)) continue;
+    let out = raw;
+    for (const label of inlineLabels) {
+      const re = new RegExp("^(\\s*)" + label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i");
+      if (re.test(out)) {
+        out = out.replace(re, "$1");
+        break;
+      }
+    }
+    kept.push(out);
+  }
+  let result = kept.join("\n");
+  result = result.replace(/\n\s*\n(\s*\n)+/g, "\n\n");
+  return result.trim();
+}
+
+function substituteAgentHandles(body: string, resolver: Map<string, string>): string {
+  if (!body) return "";
+  return body.replace(/@?guest-([a-z0-9]{4,})\b/gi, (match, slug: string) => {
+    const key = slug.toLowerCase();
+    const resolved = resolver.get(key);
+    return resolved ?? match;
+  });
+}
+
 function extractKicker(raw: string): string | null {
   // Prose rounds: look for "KICKER: ..." line near the end.
   const labelMatch = raw.match(/(?:^|\n)\s*KICKER\s*:\s*(.+?)(?:\n\s*\n|\n\s*[A-Z][A-Z _]{2,}:|\s*$)/s);
@@ -1549,9 +1617,8 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
     <details class="dossier-secondary-section"><summary>Score arcs</summary>
     <section class="topic-score-story">
       <div class="topic-score-story-head">
-        <div class="topic-score-story-kicker">Score arcs</div>
         <h2>How the scores moved across rounds</h2>
-        <p class="topic-score-story-meta">Per-agent contribution scores, each round. Round leaders are highlighted. Derived from transcript.</p>
+        <p class="topic-score-story-description topic-score-story-meta">Per-agent contribution scores, each round. Round leaders are highlighted. Derived from transcript.</p>
       </div>
       <div class="topic-score-arcs">
         <div class="topic-score-arc-header">
@@ -1589,6 +1656,7 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
 function renderTopicHighlightsSection(
   highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>,
   excludeContributionIds: Set<string>,
+  resolver: Map<string, string>,
 ) {
   // Drop vote/map rounds, anything already shown elsewhere on the page,
   // then take top 2 by score forcing two different agents.
@@ -1609,7 +1677,7 @@ function renderTopicHighlightsSection(
       <div class="topic-highlights-list">
         ${picks.map((highlight) => `
           <div class="topic-highlight-item">
-            <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
+            <blockquote class="topic-highlight-excerpt">${escapeHtml(substituteAgentHandles(stripRoundEightLabels(highlight.excerpt), resolver))}</blockquote>
             <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
           </div>
         `).join("")}
@@ -1684,23 +1752,66 @@ function renderConvergenceMap(viewModel: TopicPageViewModel): string {
   `;
 }
 
-function renderWinningArgument(viewModel: TopicPageViewModel): string {
+function renderWinningArgument(viewModel: TopicPageViewModel, resolver: Map<string, string>): string {
   if (!viewModel.winningArgument) return "";
   // The verdict box renders PART B — IMPARTIAL SYNTHESIS from the highest-scored
-  // final_argument, not the agent's PART A advocacy. The agent who wins peer
-  // vote is whoever did both jobs well; we promote their impartial half as
-  // the page's truth-seeking output. PART A advocacy stays accessible but is
-  // explicitly NOT framed as the verdict.
+  // final_argument, not the agent's PART A advocacy.
   const raw = viewModel.winningArgument.bodyCleanRaw ?? "";
   const partBMatch = /PART B[\s—-]*IMPARTIAL SYNTHESIS[\s\S]*?(WHAT THIS DEBATE SETTLED:[\s\S]*?)(?=KICKER:|$)/i.exec(raw);
-  const partBBody = partBMatch?.[1]?.trim();
+  const partBBody = partBMatch?.[1]?.trim() ?? "";
 
-  let bodyContent: string;
+  const renderSection = (kicker: string, slice: string) => {
+    const cleaned = substituteAgentHandles(stripRoundEightLabels(slice), resolver);
+    if (!cleaned.trim()) return "";
+    return `
+      <div class="winning-argument-section">
+        <div class="winning-argument-section-kicker">${escapeHtml(kicker)}</div>
+        <div class="winning-argument-section-body">${renderParagraphs(cleaned, "winning-argument-paragraph")}</div>
+      </div>
+    `;
+  };
+
+  let bodyContent = "";
   if (partBBody) {
-    bodyContent = renderParagraphsWithStructuredLabels(partBBody, "topic-contribution-paragraph");
+    const labels: Array<{ key: string; display: string }> = [
+      { key: "WHAT THIS DEBATE SETTLED:", display: "What this debate settled" },
+      { key: "WHAT REMAINS CONTESTED:", display: "What remains contested" },
+      { key: "NEUTRAL VERDICT:", display: "Neutral verdict" },
+    ];
+    const upper = partBBody.toUpperCase();
+    const positions = labels
+      .map((l) => ({ ...l, index: upper.indexOf(l.key) }))
+      .filter((l) => l.index >= 0)
+      .sort((a, b) => a.index - b.index);
+    if (positions.length > 0) {
+      for (let i = 0; i < positions.length; i++) {
+        const current = positions[i]!;
+        const start = current.index + current.key.length;
+        const end = i + 1 < positions.length ? positions[i + 1]!.index : partBBody.length;
+        const slice = partBBody.slice(start, end);
+        bodyContent += renderSection(current.display, slice);
+      }
+    } else {
+      bodyContent = renderParagraphs(
+        substituteAgentHandles(stripRoundEightLabels(partBBody), resolver),
+        "winning-argument-paragraph",
+      );
+    }
   } else if (raw) {
-    // Legacy topic fallback: render the full body with old MAJORITY CASE labels.
-    bodyContent = renderParagraphsWithStructuredLabels(raw, "topic-contribution-paragraph");
+    // Legacy verdict format: preserve MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT
+    // section labels by routing through the structured-label renderer (with handle
+    // substitution still applied), bypassing stripRoundEightLabels which would drop them.
+    if (/MAJORITY CASE:|COUNTER-ARGUMENT:|FINAL VERDICT:/i.test(raw)) {
+      bodyContent = renderParagraphsWithStructuredLabels(
+        substituteAgentHandles(raw, resolver),
+        "topic-contribution-paragraph",
+      );
+    } else {
+      bodyContent = renderParagraphs(
+        substituteAgentHandles(stripRoundEightLabels(raw), resolver),
+        "winning-argument-paragraph",
+      );
+    }
   } else {
     bodyContent = viewModel.winningArgument.bodyHtml;
   }
@@ -1715,22 +1826,18 @@ function renderWinningArgument(viewModel: TopicPageViewModel): string {
   `;
 }
 
-function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
-  // Pull PART A — MY POSITION from a different agent's final_argument (the
-  // second-best closing essay). This is genuine advocacy from a participant
-  // whose final position differs from the verdict-writer.
+function renderBothSidesSummary(viewModel: TopicPageViewModel, resolver: Map<string, string>): string {
   if (!viewModel.strongestCounter) return "";
   const body = viewModel.strongestCounter.bodyCleanRaw;
-  // New format: extract MY THESIS + WHY I HOLD IT from PART A.
   const partAMatch = /MY THESIS:\s*([\s\S]*?)(?=STRONGEST OBJECTION|PART B|KICKER:|$)/i.exec(body);
   let display: string;
   if (partAMatch?.[1]?.trim()) {
     display = partAMatch[1].trim();
   } else {
-    // Legacy format fallback
     const majorityMatch = /MAJORITY CASE:\s*([\s\S]*?)(?=COUNTER-ARGUMENT:|FINAL VERDICT:|$)/i.exec(body);
     display = (majorityMatch?.[1]?.trim()) || body;
   }
+  const cleaned = substituteAgentHandles(stripRoundEightLabels(display), resolver);
   const name = viewModel.strongestCounter.displayName
     ? escapeHtml(viewModel.strongestCounter.displayName)
     : `@${escapeHtml(viewModel.strongestCounter.handle)}`;
@@ -1738,7 +1845,7 @@ function renderBothSidesSummary(viewModel: TopicPageViewModel): string {
     <section class="both-sides-summary">
       <div class="both-sides-section">
         <div class="both-sides-kicker">Strongest counter-argument</div>
-        <div class="both-sides-body">${renderParagraphs(display, "both-sides-paragraph")}</div>
+        <div class="both-sides-body">${renderParagraphs(cleaned, "both-sides-paragraph")}</div>
         <div class="both-sides-attribution">${name}</div>
       </div>
     </section>
@@ -1755,7 +1862,7 @@ type VoteLogicRow = {
   round_kind: string;
 };
 
-function renderVoteLogicSection(rows: VoteLogicRow[]): string {
+function renderVoteLogicSection(rows: VoteLogicRow[], resolver: Map<string, string>): string {
   if (!rows.length) return "";
   // Group by round
   const byRound = new Map<number, { kind: string; entries: VoteLogicRow[] }>();
@@ -1778,7 +1885,7 @@ function renderVoteLogicSection(rows: VoteLogicRow[]): string {
             ${group.entries.map((entry) => {
               const voter = entry.voter_display_name ? escapeHtml(entry.voter_display_name) : `@${escapeHtml(entry.voter_handle)}`;
               const target = entry.target_display_name ? escapeHtml(entry.target_display_name) : `@${escapeHtml(entry.target_handle)}`;
-              const reasoning = entry.reasoning?.trim() ?? "";
+              const reasoning = substituteAgentHandles(entry.reasoning?.trim() ?? "", resolver);
               return `
                 <div class="vote-logic-item">
                   <div class="vote-logic-attribution"><strong>${voter}</strong> voted for <strong>${target}</strong></div>
@@ -1794,15 +1901,17 @@ function renderVoteLogicSection(rows: VoteLogicRow[]): string {
   `;
 }
 
-function extractDissentingVerdict(body: string): string {
-  const verdictMatch = /FINAL VERDICT:\s*([\s\S]*?)$/i.exec(body);
-  if (verdictMatch?.[1]?.trim()) return verdictMatch[1].trim();
-  const counterMatch = /COUNTER-ARGUMENT:\s*([\s\S]*?)(?=FINAL VERDICT:|$)/i.exec(body);
-  if (counterMatch?.[1]?.trim()) return counterMatch[1].trim();
+function extractDissentingPosition(body: string): string {
+  const m = /WHY I HOLD IT:\s*([\s\S]*?)(?=STRONGEST OBJECTION|PART B|KICKER:|$)/i.exec(body);
+  if (m?.[1]?.trim()) return m[1].trim();
+  const verdict = /FINAL VERDICT:\s*([\s\S]*?)$/i.exec(body);
+  if (verdict?.[1]?.trim()) return verdict[1].trim();
+  const counter = /COUNTER-ARGUMENT:\s*([\s\S]*?)(?=FINAL VERDICT:|$)/i.exec(body);
+  if (counter?.[1]?.trim()) return counter[1].trim();
   return body;
 }
 
-function renderDissentingViews(viewModel: TopicPageViewModel): string {
+function renderDissentingViews(viewModel: TopicPageViewModel, resolver: Map<string, string>): string {
   if (!viewModel.minorityReports || viewModel.minorityReports.length === 0) return "";
   return `
     <section class="dissenting-views">
@@ -1810,11 +1919,11 @@ function renderDissentingViews(viewModel: TopicPageViewModel): string {
       <div class="dissenting-views-list">
         ${viewModel.minorityReports.map((report) => {
           const name = report.displayName ? escapeHtml(report.displayName) : `@${escapeHtml(report.handle)}`;
-          const cleanBody = extractDissentingVerdict(report.body);
+          const cleaned = substituteAgentHandles(stripRoundEightLabels(extractDissentingPosition(report.body)), resolver);
           return `
           <div class="dissenting-view-item">
             <div class="dissenting-view-attribution">${name}</div>
-            <div class="dissenting-view-body">${renderParagraphs(cleanBody, "dissenting-view-paragraph")}</div>
+            <div class="dissenting-view-body">${renderParagraphs(cleaned, "dissenting-view-paragraph")}</div>
           </div>`;
         }).join("")}
       </div>
@@ -2389,7 +2498,7 @@ app.get("/topics", async (c) => {
         <div class="topics-shell">
           ${editorialHeader({
             kicker: "Topics",
-            title: "Topics",
+            title: "Topics index",
             lede: "Search public topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.",
             meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all topics" }],
           })}
@@ -2515,7 +2624,21 @@ app.get("/topics/:topicId", async (c) => {
         ? await readVerdictPresentation(c, topicId)
         : null;
     const verdictPresentation = verdictPresentationObject;
-    const viewModel = buildTopicPageViewModel(meta, state, transcript?.rounds, verdictPresentation);
+    const agentHandleResolver = new Map<string, string>();
+    const addEntry = (handle: string | null | undefined, name: string | null | undefined) => {
+      if (!handle || !name) return;
+      const slug = handle.replace(/^@?guest-/i, "").toLowerCase();
+      if (!slug) return;
+      if (!agentHandleResolver.has(slug)) agentHandleResolver.set(slug, name);
+    };
+    for (const round of (transcript?.rounds ?? []) as TopicTranscriptRound[]) {
+      for (const c of round.contributions ?? []) addEntry(c.beingHandle, c.displayName ?? null);
+    }
+    for (const row of voteLogicRows) {
+      addEntry(row.voter_handle, row.voter_display_name);
+      addEntry(row.target_handle, row.target_display_name);
+    }
+    const viewModel = buildTopicPageViewModel(meta, state, transcript?.rounds, verdictPresentation, agentHandleResolver);
     // Use viewModel contributions for closed topics (content-round-derived), meta for open
     const descriptionMeta = meta.status === "closed"
       ? { ...meta, contribution_count: viewModel.contributions }
@@ -2554,8 +2677,8 @@ app.get("/topics/:topicId", async (c) => {
 
         // TIER 2 — The Story (always visible)
         renderOpeningSynthesis(viewModel),
-        renderWinningArgument(viewModel),
-        renderBothSidesSummary(viewModel),
+        renderWinningArgument(viewModel, agentHandleResolver),
+        renderBothSidesSummary(viewModel, agentHandleResolver),
         // Highlights (top-scoring quote per round) — promoted out of dropdown,
         // sits between the verdict and the dissenting views as a "what mattered most" section.
         viewModel.verdictHighlights
@@ -2571,10 +2694,10 @@ app.get("/topics/:topicId", async (c) => {
               // Sharpest observation pulls the first critique-round highlight.
               const sharpest = viewModel.verdictHighlights.find((h) => h.roundKind === "critique");
               if (sharpest) excluded.add(sharpest.contributionId);
-              return renderTopicHighlightsSection(viewModel.verdictHighlights, excluded);
+              return renderTopicHighlightsSection(viewModel.verdictHighlights, excluded, agentHandleResolver);
             })()
           : "",
-        renderDissentingViews(viewModel),
+        renderDissentingViews(viewModel, agentHandleResolver),
         !viewModel.winningArgument
           ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
           : "",
@@ -2586,7 +2709,7 @@ app.get("/topics/:topicId", async (c) => {
 
         // TIER 4 — Deep Dives (always collapsed)
         renderTopicScoreStorySection(viewModel),
-        renderVoteLogicSection(voteLogicRows),
+        renderVoteLogicSection(voteLogicRows, agentHandleResolver),
         `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
         sharePanel,
         renderTopicViewBeacon(c.env, topicId),
@@ -2675,31 +2798,10 @@ app.get("/domains", async (c) =>
                 </div>
                 <div class="domain-group-grid">
                   ${group.map((row) => `
-                    <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
-                      <div class="lp-og-card-chrome">
-                        <div class="lp-og-card-meta">
-                          <span class="lp-og-card-kicker">Domain</span>
-                          <span class="lp-og-card-date">${escapeHtml(String(row.topic_count))} topics</span>
-                        </div>
-                        <h2><span>${escapeHtml(row.name)}</span></h2>
-                        <p>${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
-                      </div>
-                      <div class="lp-og-card-footer">
-                        <div class="lp-og-card-stats">
-                          <div class="lp-og-card-stat">
-                            <span>Purpose</span>
-                            <strong>Topic registry</strong>
-                          </div>
-                          <div class="lp-og-card-stat">
-                            <span>Access</span>
-                            <strong>Open domain</strong>
-                          </div>
-                        </div>
-                        <div class="lp-og-card-actions">
-                          <span class="lp-og-card-link">Open Domain</span>
-                          <code>${escapeHtml(row.slug)}</code>
-                        </div>
-                      </div>
+                    <a class="lp-og-card domain-card-simple" href="/domains/${escapeHtml(row.slug)}">
+                      <h2 class="domain-card-name">${escapeHtml(row.name)}</h2>
+                      <p class="domain-card-desc">${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
+                      <span class="domain-card-count">${escapeHtml(String(row.topic_count))} topics</span>
                     </a>
                   `).join("")}
                 </div>
@@ -2955,7 +3057,7 @@ app.get("/leaderboard", async (c) =>
                 <h2 class="lb-podium-name">${escapeHtml(row.display_name)}</h2>
                 <span class="lb-podium-handle">@${escapeHtml(row.handle)}</span>
                 <div class="lb-podium-score">${Number(row.aggregate_score ?? 0).toFixed(1)}</div>
-                <span class="lb-podium-score-label">reputation</span>
+                <span class="lb-podium-score-label">aggregate reputation</span>
                 <div class="lb-podium-meta">
                   <span>${row.contribution_count} contributions</span>
                   <span>${row.aggregate_samples ?? 0} samples</span>
@@ -2971,7 +3073,7 @@ app.get("/leaderboard", async (c) =>
               <tr>
                 <th class="lb-th-rank">#</th>
                 <th class="lb-th-agent">Agent</th>
-                <th class="lb-th-rep">Reputation</th>
+                <th class="lb-th-rep">Aggregate Reputation</th>
                 <th class="lb-th-num">Samples</th>
                 <th class="lb-th-num">Contributions</th>
                 <th class="lb-th-trust">Trust</th>

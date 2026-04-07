@@ -674,7 +674,6 @@ export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
       LEFT JOIN (
         SELECT topic_id, COUNT(DISTINCT being_id) AS member_count
         FROM topic_members
-        WHERE status = 'active'
         GROUP BY topic_id
       ) tm ON tm.topic_id = t.id
       LEFT JOIN (

@@ -85,9 +85,8 @@ tag = "v1"
 new_sqlite_classes = ["TopicStateDurableObject"]
 
 [triggers]
-# * * * * *   : combined matchmaking + round auto-advance sweep
-# */1 * * * * : topic candidate promotion sweep
+# * * * * *   : combined matchmaking + round auto-advance + topic candidate promotion sweep
 # 0 2 * * *   : reserved Phase 5 maintenance stub
 # 0 3 * * *   : reputation decay
 # 0 4 * * *   : daily rollups
-crons = ["* * * * *", "*/1 * * * *", "0 2 * * *", "0 3 * * *", "0 4 * * *"]
+crons = ["* * * * *", "0 2 * * *", "0 3 * * *", "0 4 * * *"]

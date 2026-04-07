@@ -312,7 +312,7 @@ describe("scheduled worker", () => {
     assert.equal(cache.values.get("cron/phase5-maintenance-stub"), "2026-03-26T02:00:00.000Z");
   });
 
-  it("runs topic candidate promotion on the dedicated promotion cron", async () => {
+  it("runs topic candidate promotion as part of the matchmaking sweep tick", async () => {
     const log: string[] = [];
     const db = new FakeDb(log);
     const cache = new FakeCache(log);
@@ -378,7 +378,7 @@ describe("scheduled worker", () => {
 
     const waits: Promise<unknown>[] = [];
     await worker.scheduled(
-      { cron: TOPIC_CANDIDATE_PROMOTION_CRON, scheduledTime: new Date("2026-03-31T00:00:00.000Z").getTime() } as ScheduledController,
+      { cron: MATCHMAKING_SWEEP_CRON, scheduledTime: new Date("2026-03-31T00:00:00.000Z").getTime() } as ScheduledController,
       {
         DB: db as never,
         PUBLIC_CACHE: cache as never,
