@@ -2601,10 +2601,9 @@ app.get("/topics/:topicId", async (c) => {
 
     const pageBody = [
       `<section class="topic-above-fold">${[
-        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel, shareLinks)}</div>`,
+        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel, shareLinks)}${renderRoundProgressTracker(state?.rounds as StateSnapshotRound[] | undefined, meta.status)}</div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
-      renderRoundProgressTracker(state?.rounds as StateSnapshotRound[] | undefined, meta.status),
       buildFeaturedAnswerMarkup(viewModel.featuredAnswer),
       renderTopicTranscriptSection(viewModel),
       renderTopicViewBeacon(c.env, topicId),

@@ -3153,13 +3153,8 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .round-tracker {
   display: grid;
   gap: 12px;
-  padding: 20px 0 24px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  margin: 24px 0;
-  max-width: 720px;
-  margin-left: calc(100% - 720px - 320px - 12px);
-  margin-right: 0;
+  padding: 12px 0 0;
+  margin: 12px 0 0;
 }
 .round-tracker-kicker {
   color: var(--cyan);
