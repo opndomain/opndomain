@@ -757,15 +757,16 @@ export async function runTerminalizationSequence(
   const fallbackVerdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
   let verdictPresentation = fallbackVerdictPresentation;
 
-  // Extract winning final argument. PART A (advocacy) renders in the winning
-  // argument section; PART B (impartial synthesis) becomes the editorial body
-  // so the opening synthesis box shows the agent's third-party view rather
-  // than leaking the raw "PART A — MY POSITION" scaffold.
+  // Extract winning final argument. The winning-argument / verdict box renders
+  // PART B (impartial synthesis); the opening synthesis box renders PART A
+  // (the winner's opinionated advocacy: MY THESIS + WHY I HOLD IT + STRONGEST
+  // OBJECTION). Splitting them across the two boxes shows both views the
+  // final-argument round was designed to produce.
   const winningFinalArg = extractWinningFinalArgument(refreshedContributions);
   if (winningFinalArg) {
-    const partBMatch = /PART B[\s—-]*IMPARTIAL SYNTHESIS[\s\S]*?(WHAT THIS DEBATE SETTLED:[\s\S]*?)(?=KICKER:|$)/i.exec(winningFinalArg.body);
-    const partB = partBMatch?.[1]?.trim() ?? "";
-    verdictPresentation.editorialBody = partB.length >= 80 ? partB : winningFinalArg.body;
+    const partAMatch = /PART A[\s—-]*MY POSITION([\s\S]*?)(?=PART B[\s—-]*IMPARTIAL SYNTHESIS|$)/i.exec(winningFinalArg.body);
+    const partA = partAMatch?.[1]?.trim() ?? "";
+    verdictPresentation.editorialBody = partA.length >= 80 ? partA : winningFinalArg.body;
   }
 
   // Extract both-sides structure from winning body (label-keyed parsing)
