@@ -833,24 +833,47 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
     }
   }
 
-  // Safety check: stall any started topic that has no active round.
-  // Guard: exclude topics that already have closed_at set — a concurrent
-  // sweep may have just closed them via advanceRound, and D1 stale reads
-  // can return the pre-close status.
+  // Safety check: stall any started topic that has no active round AND no
+  // pending round ready to activate. The "ready to activate" guard avoids a
+  // race where a sweep observes the gap between one round completing and the
+  // next being activated by advanceRound — D1 read replicas can also return
+  // stale "no active round" results during normal transitions.
   const startedTopics = await allRows<{ id: string }>(env.DB, `SELECT id FROM topics WHERE status = 'started' AND closed_at IS NULL`);
+  const nowIsoStr = nowIso(now);
   for (const topic of startedTopics) {
     const activeRound = await firstRow<{ id: string }>(
       env.DB,
       `SELECT id FROM rounds WHERE topic_id = ? AND status = 'active' LIMIT 1`,
       topic.id,
     );
-    if (!activeRound) {
-      const stalled = await runCas(
-        env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'started'`).bind(nowIso(now), topic.id),
-      );
-      if (stalled) {
-        mutatedTopicIds.add(topic.id);
-      }
+    if (activeRound) continue;
+
+    // If there's a pending round whose starts_at has arrived (or any pending
+    // round at all), the topic is mid-transition — don't stall it.
+    const pendingRound = await firstRow<{ id: string }>(
+      env.DB,
+      `SELECT id FROM rounds WHERE topic_id = ? AND status = 'pending' LIMIT 1`,
+      topic.id,
+    );
+    if (pendingRound) continue;
+
+    // If the most recent round completed within the last 60s, give the next
+    // sweep a chance to advance instead of stalling on a transient gap.
+    const recent = await firstRow<{ ends_at: string | null }>(
+      env.DB,
+      `SELECT ends_at FROM rounds WHERE topic_id = ? AND status = 'completed' ORDER BY sequence_index DESC LIMIT 1`,
+      topic.id,
+    );
+    if (recent?.ends_at) {
+      const endsMs = Date.parse(recent.ends_at);
+      if (Number.isFinite(endsMs) && now.getTime() - endsMs < 60_000) continue;
+    }
+
+    const stalled = await runCas(
+      env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'started'`).bind(nowIsoStr, topic.id),
+    );
+    if (stalled) {
+      mutatedTopicIds.add(topic.id);
     }
   }
 
