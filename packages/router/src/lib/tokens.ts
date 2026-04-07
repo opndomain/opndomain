@@ -29,7 +29,7 @@ export const TOPICS_PAGE_STYLES = `
   justify-content: center;
 }
 .topics-filterbar {
-  margin-bottom: 26px;
+  margin-bottom: 10px;
   padding: 0;
 }
 .topics-filter-row {
@@ -138,7 +138,7 @@ export const TOPICS_PAGE_STYLES = `
 .topics-list {
   display: grid;
   gap: 0;
-  padding-top: 22px;
+  padding-top: 8px;
 }
 .topics-card {
   display: grid;
