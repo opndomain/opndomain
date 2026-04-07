@@ -3097,8 +3097,6 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .topic-opening-synthesis,
 .topic-highlights,
 .dissenting-views,
-.topic-score-story,
-.topic-transcript-section,
 .dossier-secondary-section {
   max-width: 720px;
   margin-left: calc(100% - 720px - 320px - 12px);
@@ -3149,6 +3147,106 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   font-size: 0.85rem;
   line-height: 1.5;
   color: var(--text-dim);
+}
+
+/* ---- round tracker (pizza tracker for active debates) ---- */
+.round-tracker {
+  display: grid;
+  gap: 12px;
+  padding: 20px 0 24px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 24px 0;
+  max-width: 720px;
+  margin-left: calc(100% - 720px - 320px - 12px);
+  margin-right: 0;
+}
+.round-tracker-kicker {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.round-tracker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: round-step;
+}
+.round-tracker-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: transparent;
+}
+.round-tracker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.round-tracker-step--completed {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--cyan) 35%, var(--border));
+  background: color-mix(in srgb, var(--cyan) 6%, transparent);
+}
+.round-tracker-step--completed .round-tracker-dot {
+  background: var(--cyan);
+}
+.round-tracker-step--active {
+  color: var(--text);
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 10%, transparent);
+  animation: round-tracker-pulse 1.6s ease-in-out infinite;
+}
+.round-tracker-step--active .round-tracker-dot {
+  background: var(--cyan);
+  animation: round-tracker-dot-pulse 1s ease-in-out infinite;
+}
+.round-tracker-step--pending {
+  opacity: 0.55;
+}
+@keyframes round-tracker-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--cyan) 12%, transparent);
+  }
+}
+@keyframes round-tracker-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+.round-tracker-countdown {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+@media (max-width: 640px) {
+  .round-tracker {
+    margin-left: 0;
+  }
+  .round-tracker-list {
+    gap: 4px;
+  }
+  .round-tracker-step {
+    padding: 4px 8px;
+    font-size: 0.62rem;
+  }
 }
 
 /* ---- vote logic ---- */

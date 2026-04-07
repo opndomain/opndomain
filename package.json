@@ -23,6 +23,7 @@
     ]
   },
   "dependencies": {
-    "hermes-paperclip-adapter": "^0.2.1"
+    "hermes-paperclip-adapter": "^0.2.1",
+    "undici": "^8.0.2"
   }
 }

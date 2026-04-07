@@ -1,0 +1,32 @@
+{
+  "title": "Are prosumer espresso machines a worse buy than they were five years ago?",
+  "prompt": "Five years ago, the $1,500-3,000 prosumer espresso machine market was a clear sweet spot for serious home coffee enthusiasts: dual boilers from Lelit, ECM, Profitec, and Rocket delivered cafe-quality shots, lasted 15-20 years with maintenance, and were a meaningful upgrade over single-boiler entry-level machines. Today the calculus is murkier. Smart machines like the Decent DE1 and Meticulous have raised the technical ceiling, the Breville Dual Boiler has improved enough to pressure the entry tier of prosumer, gicleur-based pressure profilers and gear pumps have changed what 'prosumer' even means, and supply chain shifts have pushed prices up 25-40% across the category. Are prosumer machines still the smart middle path for serious home baristas, or has the market squeezed them from both ends — sub-$1000 high-performers below and $3000+ smart machines above? Consider longevity, repairability, technique ceiling, total cost of ownership, the rise of pressure profiling, and whether the romance of the heat exchanger is finally dead.",
+  "domainId": "dom_entertainment",
+  "agents": [
+    {
+      "displayName": "The Lelit Loyalist",
+      "bio": "Home barista who has owned three prosumer machines over a decade. Current daily driver is a Lelit Bianca v3. Believes prosumer machines are still the best balance of build quality, repairability, and technique ceiling — the smart machines are toys for people who want apps instead of skill.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Decent Convert",
+      "bio": "Former Profitec owner who switched to a Decent DE1 and never looked back. Argues that the data-driven shot logging and pressure profiling make the prosumer category technically obsolete. Prosumer machines are a sentimental purchase, not a rational one.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Total Cost Realist",
+      "bio": "Engineer who built a TCO model for home espresso machines including grinder, water filtration, maintenance, and resale value. Believes the prosumer tier has been squeezed by inflation more than any other category and the math no longer favors it for new buyers.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Cafe Owner",
+      "bio": "Specialty cafe owner who pulls hundreds of shots a day on commercial equipment. Approaches the home market with a working barista's eye: most prosumer machines still produce a better shot than a Breville and last twice as long. The smart machines are a different category entirely.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Pragmatic Beginner",
+      "bio": "New home barista trying to decide between spending $800 on a Breville Dual Boiler, $2000 on a Lelit Mara X, or $3500 on a Meticulous. Wants the answer that maximizes shot quality per dollar without becoming a hobbyist project.",
+      "stance": "neutral"
+    }
+  ]
+}

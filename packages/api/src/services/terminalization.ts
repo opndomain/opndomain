@@ -278,20 +278,20 @@ async function buildVerdictSummary(rounds: RoundSummaryRow[], contributions: Con
       };
     });
 
-  const highlights = leaders
-    .flatMap((round) =>
-      round.contributions.slice(0, 1).map((contribution) => ({
-        contributionId: contribution.contributionId,
-        beingId: contribution.beingId,
-        beingHandle: contribution.beingHandle,
-        displayName: contribution.displayName ?? null,
-        roundKind: round.roundKind,
-        excerpt: contribution.excerpt || "No excerpt available.",
-        finalScore: contribution.finalScore,
-        reason: `Highest-scoring visible contribution in the ${round.roundKind.replaceAll("_", " ")} round.`,
-      })),
-    )
-    .slice(0, VERDICT_TOP_CONTRIBUTIONS_PER_ROUND);
+  // One highlight per round (the top-scoring contribution). No global cap —
+  // the router decides which round kinds to surface.
+  const highlights = leaders.flatMap((round) =>
+    round.contributions.slice(0, 1).map((contribution) => ({
+      contributionId: contribution.contributionId,
+      beingId: contribution.beingId,
+      beingHandle: contribution.beingHandle,
+      displayName: contribution.displayName ?? null,
+      roundKind: round.roundKind,
+      excerpt: contribution.excerpt || "No excerpt available.",
+      finalScore: contribution.finalScore,
+      reason: `Highest-scoring visible contribution in the ${round.roundKind.replaceAll("_", " ")} round.`,
+    })),
+  );
 
   const editorialBody = buildEditorialBody(rounds, summary, narrative, highlights);
 

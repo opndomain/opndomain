@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-vote-logic-v10";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v1";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -827,10 +827,10 @@ function buildTopicPageViewModel(
       }
     }
 
-    // Winning argument: best final_argument contribution (new template only)
-    // Strip bodyCleanRaw — the happy path uses pre-rendered bodyHtml; structured labels are for degraded only
-    const extractedWinning = extractWinningArgument(transcriptRounds);
-    const winningArgument = extractedWinning ? { ...extractedWinning, bodyCleanRaw: null } : null;
+    // Winning argument: best final_argument contribution.
+    // Keep bodyCleanRaw so the verdict box can render the full structured argument
+    // (MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT) with inline subheadings.
+    const winningArgument = extractWinningArgument(transcriptRounds);
 
     // Closed-topic null score fallback: replace "Pending" with "n/a"
     for (const round of contentRounds) {
@@ -1063,6 +1063,68 @@ function renderOpeningSynthesis(viewModel: TopicPageViewModel): string {
       <div class="topic-opening-synthesis-kicker">Opening synthesis</div>
       <div class="topic-opening-synthesis-body">${viewModel.openingSynthesisHtml}</div>
     </section>
+  `;
+}
+
+type StateSnapshotRound = {
+  sequenceIndex: number;
+  roundKind: string;
+  status: string;
+  endsAt?: string | null;
+};
+
+function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefined, topicStatus: string): string {
+  if (!Array.isArray(stateRounds) || stateRounds.length === 0) return "";
+  if (topicStatus !== "started" && topicStatus !== "open" && topicStatus !== "countdown") return "";
+
+  // Filter out vote rounds for the public-facing pizza tracker — viewers care
+  // about the content rounds (propose / map / critique / refine / final argument).
+  const contentRounds = stateRounds.filter((r) => r.roundKind !== "vote");
+  if (contentRounds.length === 0) return "";
+
+  const activeRound = stateRounds.find((r) => r.status === "active");
+  const activeEndsAt = activeRound?.endsAt ?? null;
+
+  return `
+    <section class="round-tracker" ${activeEndsAt ? `data-ends-at="${escapeHtml(activeEndsAt)}"` : ""}>
+      <div class="round-tracker-kicker">Debate progress</div>
+      <ol class="round-tracker-list">
+        ${contentRounds.map((round, i) => {
+          const status =
+            round.status === "completed" ? "completed" :
+            round.status === "active" ? "active" :
+            "pending";
+          const label = titleCaseLabel(round.roundKind, "Round");
+          return `
+            <li class="round-tracker-step round-tracker-step--${status}">
+              <span class="round-tracker-dot"></span>
+              <span class="round-tracker-label">${escapeHtml(label)}</span>
+            </li>
+          `;
+        }).join("")}
+      </ol>
+      ${activeEndsAt ? `<div class="round-tracker-countdown" data-countdown-target>Calculating…</div>` : ""}
+    </section>
+    ${activeEndsAt ? `
+    <script>
+      (() => {
+        const tracker = document.currentScript.previousElementSibling;
+        const target = tracker?.querySelector('[data-countdown-target]');
+        const endsAt = tracker?.dataset.endsAt;
+        if (!target || !endsAt) return;
+        const end = new Date(endsAt).getTime();
+        function tick() {
+          const remaining = Math.max(0, end - Date.now());
+          if (remaining === 0) { target.textContent = 'Round closing…'; return; }
+          const m = Math.floor(remaining / 60000);
+          const s = Math.floor((remaining % 60000) / 1000);
+          target.textContent = m > 0 ? \`\${m}m \${s}s remaining\` : \`\${s}s remaining\`;
+        }
+        tick();
+        setInterval(tick, 1000);
+      })();
+    </script>
+    ` : ""}
   `;
 }
 
@@ -1365,19 +1427,17 @@ function renderTopicHighlightsSection(highlights: NonNullable<TopicPageViewModel
     .filter((h) => !excludeContributionId || h.contributionId !== excludeContributionId);
   if (filtered.length === 0) return "";
   return `
-    <details class="dossier-secondary-section">
-      <summary>What moved the debate</summary>
-      <section class="topic-highlights">
-        <div class="topic-highlights-list">
-          ${filtered.map((highlight) => `
-            <div class="topic-highlight-item">
-              <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
-              <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
-            </div>
-          `).join("")}
-        </div>
-      </section>
-    </details>
+    <section class="topic-highlights">
+      <div class="topic-highlights-kicker">What moved the debate</div>
+      <div class="topic-highlights-list">
+        ${filtered.map((highlight) => `
+          <div class="topic-highlight-item">
+            <blockquote class="topic-highlight-excerpt">${escapeHtml(highlight.excerpt)}</blockquote>
+            <div class="topic-highlight-attribution">${highlight.displayName ? escapeHtml(highlight.displayName) : `@${escapeHtml(highlight.beingHandle)}`}</div>
+          </div>
+        `).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -1449,11 +1509,12 @@ function renderConvergenceMap(viewModel: TopicPageViewModel): string {
 
 function renderWinningArgument(viewModel: TopicPageViewModel): string {
   if (!viewModel.winningArgument) return "";
-  // When bothSidesSummary is present, show only the finalVerdict paragraph to avoid duplication
+  // Render the FULL winning argument with structured labels rendered as
+  // inline subheadings. The both-sides section below shows the same content
+  // decomposed differently — but viewers want to see the complete reasoning,
+  // not just a one-line conclusion.
   let bodyContent: string;
-  if (viewModel.bothSidesSummary) {
-    bodyContent = `<p>${escapeHtml(viewModel.bothSidesSummary.finalVerdict)}</p>`;
-  } else if (viewModel.winningArgument.bodyCleanRaw) {
+  if (viewModel.winningArgument.bodyCleanRaw) {
     bodyContent = renderParagraphsWithStructuredLabels(viewModel.winningArgument.bodyCleanRaw, "topic-contribution-paragraph");
   } else {
     bodyContent = viewModel.winningArgument.bodyHtml;
@@ -2292,17 +2353,17 @@ app.get("/topics/:topicId", async (c) => {
         // TIER 2 — The Story (always visible)
         renderWinningArgument(viewModel),
         renderBothSidesSummary(viewModel),
-        renderOpeningSynthesis(viewModel),
-        !viewModel.winningArgument && !viewModel.openingSynthesisHtml
-          ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
-          : "",
-        // Editorial body: skip if bothSidesSummary is present (same content, already decomposed above)
-        !viewModel.bothSidesSummary ? renderEditorialBody(viewModel) : "",
-        // TIER 3 — Supporting (collapsed by default)
+        // Highlights (top-scoring quote per round) — promoted out of dropdown,
+        // sits between the verdict and the dissenting views as a "what mattered most" section.
         viewModel.verdictHighlights
           ? renderTopicHighlightsSection(viewModel.verdictHighlights, viewModel.openingSynthesisContributionId)
           : "",
         renderDissentingViews(viewModel),
+        !viewModel.winningArgument
+          ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
+          : "",
+        // Editorial body: skip if bothSidesSummary is present (same content, already decomposed above)
+        !viewModel.bothSidesSummary ? renderEditorialBody(viewModel) : "",
         !viewModel.convergenceMap && viewModel.positions
           ? renderPositionsSection(viewModel.synthesisOutcome, viewModel.positions)
           : "",
@@ -2327,6 +2388,7 @@ app.get("/topics/:topicId", async (c) => {
         `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel, shareLinks)}${buildFeaturedAnswerMarkup(viewModel.featuredAnswer)}</div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
+      renderRoundProgressTracker(state?.rounds as StateSnapshotRound[] | undefined, meta.status),
       renderTopicTranscriptSection(viewModel),
       renderTopicViewBeacon(c.env, topicId),
     ].join("");

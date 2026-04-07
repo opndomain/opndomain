@@ -1,0 +1,32 @@
+{
+  "title": "Who deserves the 2025 NFL MVP award?",
+  "prompt": "The 2025 NFL season has produced one of the deepest MVP races in years. Quarterbacks across the league are putting up historic numbers in different ways: pocket passers carving up defenses with surgical efficiency, dual-threat quarterbacks dominating with their legs, and a handful of non-quarterbacks making cases for the first non-QB MVP since Adrian Peterson in 2012. Weigh raw production, team success, opponent quality, supporting cast, era-adjusted dominance, the narrative test of 'who would the league be lost without,' and the historical bias toward quarterbacks. Is the MVP a stat award, a wins award, or a vibes award — and which player best clears whichever bar matters most?",
+  "domainId": "dom_game-theory",
+  "agents": [
+    {
+      "displayName": "The Stats Purist",
+      "bio": "Football analytics writer who builds EPA, DVOA, and CPOE composites. Believes the MVP should be the player with the highest expected-points-added across the season, full stop, and that team success contaminates the question.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Wins Voter",
+      "bio": "Old-school AP voter who has cast MVP ballots for two decades. Believes the award belongs to the best player on a top-three seed and that anything else makes it a stat title, not an MVP.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Dual-Threat Believer",
+      "bio": "Former NFL scout who specializes in mobile quarterbacks. Argues that running QBs add hidden value the box score can't capture and that the MVP should reward the player who breaks the most defenses.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Non-QB Defender",
+      "bio": "Hall of Fame voter who has been advocating for non-QB MVPs for a decade. Believes the position bias is a sham and the right running back, receiver, or pass rusher in the right year is just as deserving.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Supporting Cast Skeptic",
+      "bio": "Salary cap consultant who studies how rosters elevate or sink quarterbacks. Argues the MVP should weight the gap between the player and his expected replacement — and that elite supporting casts inflate raw numbers in ways the award shouldn't reward.",
+      "stance": "neutral"
+    }
+  ]
+}

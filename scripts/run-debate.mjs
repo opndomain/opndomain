@@ -34,6 +34,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { Agent, setGlobalDispatcher } from "undici";
+
+// Bump fetch timeouts to 5 minutes — default 30s headers timeout was crashing
+// the script when many parallel API calls saturated the local HTTP queue.
+setGlobalDispatcher(new Agent({
+  headersTimeout: 300_000,
+  bodyTimeout: 300_000,
+  connectTimeout: 60_000,
+}));
 
 // ---- CLI parsing ----
 
