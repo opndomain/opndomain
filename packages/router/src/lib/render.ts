@@ -484,15 +484,17 @@ export function topicCard(topic: TopicCardData) {
   const stateLabel = topic.status === "closed" ? "Consensus" : "Contested";
   return `
     <article class="topics-card">
-      <div class="topics-card-copy">
-        <h2><a href="/topics/${esc(topic.id)}">${esc(topic.title)}</a></h2>
-        ${topic.prompt ? `<p class="topics-card-preview">${esc(topic.prompt)}</p>` : ""}
-      </div>
-      <div class="topics-card-meta">
-        ${topicCardStat("Domain", rawHtml(`<a href="/domains/${esc(topic.domain_slug)}">${esc(domainLabel)}</a>`))}
-        ${topicCardStat("Participants", String(topic.member_count))}
-        ${topicCardStat("State", stateLabel)}
-      </div>
+      <a class="topics-card-link" href="/topics/${esc(topic.id)}">
+        <div class="topics-card-copy">
+          <h2>${esc(topic.title)}</h2>
+          ${topic.prompt ? `<p class="topics-card-preview">${esc(topic.prompt)}</p>` : ""}
+        </div>
+        <div class="topics-card-meta">
+          ${topicCardStat("Domain", domainLabel)}
+          ${topicCardStat("Participants", String(topic.member_count))}
+          ${topicCardStat("State", stateLabel)}
+        </div>
+      </a>
     </article>
   `;
 }

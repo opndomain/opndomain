@@ -141,9 +141,7 @@ export const TOPICS_PAGE_STYLES = `
   padding-top: 8px;
 }
 .topics-card {
-  display: grid;
-  gap: 12px;
-  padding: 18px 20px;
+  display: block;
   border-top: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.34);
 }
@@ -152,6 +150,17 @@ export const TOPICS_PAGE_STYLES = `
 }
 .topics-card:first-child {
   border-top: 1px solid var(--border);
+}
+.topics-card-link {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  text-decoration: none;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+.topics-card:hover .topics-card-link {
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--cyan) 18%, transparent);
 }
 .topics-card-copy {
   display: grid;
@@ -166,10 +175,7 @@ export const TOPICS_PAGE_STYLES = `
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.topics-card-copy h2 a {
-  text-decoration: none;
-}
-.topics-card-copy h2 a:hover {
+.topics-card:hover .topics-card-copy h2 {
   color: var(--cyan);
 }
 .topics-card-preview {
@@ -239,6 +245,8 @@ export const TOPICS_PAGE_STYLES = `
     gap: 8px;
   }
   .topics-card {
+  }
+  .topics-card-link {
     padding: 16px 14px;
   }
 }
