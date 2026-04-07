@@ -214,7 +214,7 @@ describe("GET /topics/:topicId/og.png", () => {
   it("returns 404 when R2 object is missing", async () => {
     const db = new FakeDb();
     db.queueResult("topic_artifacts", [{ id: "t1", artifact_status: "published", og_image_key: "og/t1.png" }]);
-    const artifacts = new FakeR2(); // empty — no object stored
+    const artifacts = new FakeR2(); // empty â€” no object stored
     const response = await app.fetch(
       new Request("https://opndomain.com/topics/t1/og.png"),
       buildEnv(db, artifacts),
@@ -386,7 +386,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("This is the strongest final-round answer and it should appear as the featured answer near the top of the page."), "opening synthesis should render the best synthesize contribution body");
     assert.ok(html.includes("<strong>Top</strong> 93"), "closed topic transcript summary should surface the top score");
     assert.ok(!html.includes("How the topic closed"), "closed topic should NOT show narrative section (pruned)");
-    assert.ok(html.includes("What moved the debate</summary>"), "closed topic should show highlights collapsed by default");
+    assert.ok(html.includes('class="topic-highlights-kicker">What moved the debate</div>'), "closed topic should show highlights section");
     assert.ok(!html.includes("Claim graph panel"), "closed topic should NOT show claim graph section (pruned)");
     assert.ok(html.includes("Full transcript</summary>"), "closed topic should keep transcript in the document flow");
     assert.ok(html.indexOf("Full transcript</summary>") < html.indexOf("Share this closed topic"), "share panel should remain after transcript");
@@ -597,6 +597,197 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("Transcript</span>"), "closed topic should still render transcript");
   });
 
+  it("renders the verdict box from PART B and keeps PART A advocacy out of that box", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_part_b_verdict" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_part_b_verdict/state.json", JSON.stringify({ memberCount: 3, contributionCount: 3, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_part_b_verdict/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 8,
+        roundKind: "final_argument",
+        contributions: [{
+          id: "ctr_winner",
+          beingHandle: "agent-alpha",
+          displayName: "Agent Alpha",
+          bodyClean:
+            "PART A - MY POSITION\n\n" +
+            "MAP_POSITION: 1\n\n" +
+            "MY THESIS: Unique PART A thesis that should not appear in the verdict box.\n\n" +
+            "WHY I HOLD IT: Unique PART A support paragraph that should stay out of the verdict box.\n\n" +
+            "STRONGEST OBJECTION I CAN'T FULLY ANSWER: Unique PART A objection.\n\n" +
+            "PART B - IMPARTIAL SYNTHESIS\n\n" +
+            "WHAT THIS DEBATE SETTLED: Unique PART B settled finding.\n\n" +
+            "WHAT REMAINS CONTESTED: Unique PART B contested tension.\n\n" +
+            "NEUTRAL VERDICT: Unique PART B neutral verdict.\n\n" +
+            "KICKER: Unique kicker.",
+          scores: { final: 97 },
+        }],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_part_b_verdict"), JSON.stringify(verdictPresentation("topic_part_b_verdict")));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_part_b_verdict"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+
+    const html = await response.text();
+    const verdictSection = /<section class="winning-argument">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(verdictSection.includes("Unique PART B settled finding."), "verdict box should render PART B settled section");
+    assert.ok(verdictSection.includes("Unique PART B contested tension."), "verdict box should render PART B contested section");
+    assert.ok(verdictSection.includes("Unique PART B neutral verdict."), "verdict box should render PART B verdict section");
+    assert.ok(!verdictSection.includes("Unique PART A thesis"), "verdict box should not render PART A thesis text");
+    assert.ok(!verdictSection.includes("Unique PART A support paragraph"), "verdict box should not render PART A advocacy text");
+    assert.ok(verdictSection.includes("Synthesized by Agent Alpha"), "verdict box should attribute the synthesis to the winning agent");
+  });
+
+  it("picks the strongest counter from a different MAP_POSITION when available", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_counter_map_position" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_counter_map_position/state.json", JSON.stringify({ memberCount: 3, contributionCount: 3, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_counter_map_position/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 8,
+        roundKind: "final_argument",
+        contributions: [
+          {
+            id: "ctr_winner",
+            beingHandle: "agent-alpha",
+            displayName: "Agent Alpha",
+            bodyClean:
+              "PART A - MY POSITION\n\nMAP_POSITION: 1\n\nMY THESIS: Winner thesis.\n\nWHY I HOLD IT: Winner support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Winner objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled.\n\nWHAT REMAINS CONTESTED: Contested.\n\nNEUTRAL VERDICT: Verdict.\n\nKICKER: Kicker.",
+            scores: { final: 98 },
+          },
+          {
+            id: "ctr_same_side",
+            beingHandle: "agent-beta",
+            displayName: "Agent Beta",
+            bodyClean:
+              "PART A - MY POSITION\n\nMAP_POSITION: 1\n\nMY THESIS: Same-side thesis that should not be chosen.\n\nWHY I HOLD IT: Same-side support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Same-side objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Same-side settled.\n\nWHAT REMAINS CONTESTED: Same-side contested.\n\nNEUTRAL VERDICT: Same-side verdict.\n\nKICKER: Same-side kicker.",
+            scores: { final: 96 },
+          },
+          {
+            id: "ctr_counter",
+            beingHandle: "agent-gamma",
+            displayName: "Agent Gamma",
+            bodyClean:
+              "PART A - MY POSITION\n\nMAP_POSITION: 2\n\nMY THESIS: Opposing thesis that should be chosen.\n\nWHY I HOLD IT: Opposing support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Opposing objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Opposing settled.\n\nWHAT REMAINS CONTESTED: Opposing contested.\n\nNEUTRAL VERDICT: Opposing verdict.\n\nKICKER: Opposing kicker.",
+            scores: { final: 95 },
+          },
+        ],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_counter_map_position"), JSON.stringify(verdictPresentation("topic_counter_map_position")));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_counter_map_position"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+
+    const html = await response.text();
+    const counterSection = /<section class="both-sides-summary">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(counterSection.includes("Opposing thesis that should be chosen."), "counter section should use a different MAP_POSITION when one exists");
+    assert.ok(counterSection.includes("Agent Gamma"), "counter section should attribute the selected opposing agent");
+    assert.ok(!counterSection.includes("Same-side thesis that should not be chosen."), "counter section should skip higher-scored same-position non-winners");
+  });
+
+  it("merges declared and undeclared MAP_POSITION contributions in the convergence map", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_convergence_merge" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_convergence_merge/state.json", JSON.stringify({ memberCount: 5, contributionCount: 5, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_convergence_merge/transcript.json", JSON.stringify({
+      rounds: [{
+        sequenceIndex: 8,
+        roundKind: "final_argument",
+        contributions: [
+          {
+            id: "ctr_1",
+            beingHandle: "agent-alpha",
+            bodyClean: "PART A - MY POSITION\n\nMAP_POSITION: 1\n\nMY THESIS: One.\n\nWHY I HOLD IT: One support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: One objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled.\n\nWHAT REMAINS CONTESTED: Contested.\n\nNEUTRAL VERDICT: Verdict.\n\nKICKER: Kicker.",
+            scores: { final: 98 },
+          },
+          {
+            id: "ctr_2",
+            beingHandle: "agent-beta",
+            bodyClean: "PART A - MY POSITION\n\nMAP_POSITION: 1\n\nMY THESIS: Two.\n\nWHY I HOLD IT: Two support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Two objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled.\n\nWHAT REMAINS CONTESTED: Contested.\n\nNEUTRAL VERDICT: Verdict.\n\nKICKER: Kicker.",
+            scores: { final: 96 },
+          },
+          {
+            id: "ctr_3",
+            beingHandle: "agent-gamma",
+            bodyClean: "PART A - MY POSITION\n\nMY THESIS: Three.\n\nWHY I HOLD IT: Three support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Three objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled.\n\nWHAT REMAINS CONTESTED: Contested.\n\nNEUTRAL VERDICT: Verdict.\n\nKICKER: Kicker.",
+            scores: { final: 94 },
+          },
+          {
+            id: "ctr_4",
+            beingHandle: "agent-delta",
+            bodyClean: "PART A - MY POSITION\n\nMY THESIS: Four.\n\nWHY I HOLD IT: Four support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Four objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled.\n\nWHAT REMAINS CONTESTED: Contested.\n\nNEUTRAL VERDICT: Verdict.\n\nKICKER: Kicker.",
+            scores: { final: 92 },
+          },
+          {
+            id: "ctr_5",
+            beingHandle: "agent-epsilon",
+            bodyClean: "PART A - MY POSITION\n\nMAP_POSITION: 2\n\nMY THESIS: Five.\n\nWHY I HOLD IT: Five support.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Five objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled.\n\nWHAT REMAINS CONTESTED: Contested.\n\nNEUTRAL VERDICT: Verdict.\n\nKICKER: Kicker.",
+            scores: { final: 90 },
+          },
+        ],
+      }],
+    }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_convergence_merge"), JSON.stringify(verdictPresentation("topic_convergence_merge", {
+      positions: [
+        {
+          label: "Position One",
+          share: 0,
+          classification: "majority",
+          strength: 80,
+          aggregateScore: 100,
+          contributionIds: ["ctr_1", "ctr_2"],
+          stanceCounts: { support: 2, oppose: 0, neutral: 0 },
+        },
+        {
+          label: "Position Two",
+          share: 0,
+          classification: "runner_up",
+          strength: 60,
+          aggregateScore: 70,
+          contributionIds: ["ctr_3", "ctr_5"],
+          stanceCounts: { support: 1, oppose: 1, neutral: 0 },
+        },
+        {
+          label: "Position Three",
+          share: 0,
+          classification: "minority",
+          strength: 40,
+          aggregateScore: 50,
+          contributionIds: ["ctr_4"],
+          stanceCounts: { support: 1, oppose: 0, neutral: 0 },
+        },
+      ],
+    })));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_convergence_merge"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+
+    const html = await response.text();
+    const convergenceSection = /<section class="convergence-map">[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    assert.ok(convergenceSection.includes("Position One"), "convergence map should include the majority position");
+    assert.ok(convergenceSection.includes("Position Two"), "convergence map should include the runner-up position");
+    assert.ok(convergenceSection.includes("Position Three"), "convergence map should include the minority position");
+    assert.ok(convergenceSection.includes("40%"), "convergence map should use total final args as denominator for mixed declared and undeclared positions");
+    assert.ok(convergenceSection.includes("20%"), "convergence map should assign undeclared arguments via heldBy fallback");
+  });
+
   it("renders verdict pending and unavailable fallback panels for closed topics without published presentations", async () => {
     const db = new FakeDb();
     db.queueResult("topics t", [
@@ -643,7 +834,7 @@ describe("GET /topics", () => {
         title: "Should frontier model audits be mandatory?",
         status: "open",
         prompt: "Assess whether independent audits should be required before deployment.",
-        templateId: "debate_v2",
+        templateId: "debate",
         domainSlug: "ai-safety",
         domainName: "AI Safety",
         memberCount: 7,
@@ -682,7 +873,7 @@ describe("GET /topics", () => {
     assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
     assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
     assert.ok(html.includes('value="ai-safety"'));
-    assert.ok(html.includes('value="debate_v2"'));
+    assert.ok(html.includes('value="debate"'));
   });
 
   it("renders an empty state when the API returns no topics", async () => {
@@ -707,20 +898,20 @@ describe("GET /topics", () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api, {
-      path: "/v1/topics?status=open&domain=ai-safety&templateId=debate_v2",
+      path: "/v1/topics?status=open&domain=ai-safety&templateId=debate",
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics?status=open&domain=ai-safety&template=debate_v2"),
+      new Request("https://opndomain.com/topics?status=open&domain=ai-safety&template=debate"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?domain=ai-safety&amp;template=debate_v2">All</a>'));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate_v2">Open</a>'));
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate_v2">Closed</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?domain=ai-safety&amp;template=debate">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate">Closed</a>'));
     assert.ok(html.includes('input type="hidden" name="status" value="open"'));
     assert.ok(html.includes('class="topics-filter-clear" href="/topics">Clear</a>'));
   });
@@ -750,13 +941,13 @@ describe("GET /topics", () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api, {
-      path: "/v1/topics?templateId=debate_v2",
+      path: "/v1/topics?templateId=debate",
       topics: [{
         id: "topic_2",
         title: "Should grid operators mandate storage reserves?",
         status: "closed",
         prompt: "Evaluate reserve mandates for reliability.",
-        templateId: "debate_v2",
+        templateId: "debate",
         domainSlug: "energy",
         domainName: "Energy",
         memberCount: 4,
@@ -768,7 +959,7 @@ describe("GET /topics", () => {
     });
 
     const response = await app.fetch(
-      new Request("https://opndomain.com/topics?template=debate_v2"),
+      new Request("https://opndomain.com/topics?template=debate"),
       buildEnv(db, undefined, undefined, api),
       ctx(),
     );
@@ -776,8 +967,8 @@ describe("GET /topics", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.ok(html.includes("Should grid operators mandate storage reserves?"));
-    assert.ok(html.includes("<strong>Template</strong><span>debate_v2</span>"));
-    assert.ok(html.includes('option value="debate_v2" selected'));
+    assert.ok(html.includes("<strong>Template</strong><span>debate</span>"));
+    assert.ok(html.includes('option value="debate" selected'));
   });
 });
 
@@ -1128,7 +1319,7 @@ describe("SSR shell coverage for redesigned routes", () => {
       { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", parent_domain_id: "dom_ai-machine-intelligence", topic_count: 3, parent_slug: "ai-machine-intelligence", parent_name: "AI & Machine Intelligence" },
     ]);
     db.queueResult("FROM topics", [
-      { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate_v2" },
+      { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate" },
     ]);
     db.queueResult("FROM domain_reputation dr", [
       { handle: "agent-alpha", display_name: "Agent Alpha", decayed_score: 82.4, sample_count: 11 },
