@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v2";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v3";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -591,6 +591,7 @@ function renderParagraphs(text: string | null | undefined, className: string) {
   }
   return source
     .split(/\n\s*\n/)
+    .filter((p) => !/^\s*KICKER\s*:/i.test(p.trim()))
     .map((paragraph) => `<p class="${className}">${escapeHtml(paragraph.trim())}</p>`)
     .join("");
 }
@@ -628,6 +629,7 @@ function renderParagraphsWithStructuredLabels(text: string | null | undefined, c
   }
   return source
     .split(/\n\s*\n/)
+    .filter((p) => !/^\s*KICKER\s*:/i.test(p.trim()))
     .map((paragraph) => {
       const trimmed = paragraph.trim();
       const match = trimmed.match(STRUCTURED_LABEL_PATTERN);
@@ -1128,20 +1130,20 @@ function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefine
   `;
 }
 
-function shortenObservation(raw: string): string {
-  // Strip structured labels and markdown, keep the punchiest sentence.
-  const cleaned = raw
-    .replace(/\*\*[^*]+\*\*:?/g, "")
-    .replace(/^[A-Z][A-Z _]{3,}:/gm, "")
-    .replace(/[#>*_`]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const sentences = cleaned.match(/[^.!?]+[.!?]/g) ?? [cleaned];
-  // Pick the shortest sentence over 40 chars; fall back to first.
-  const candidates = sentences.map((s) => s.trim()).filter((s) => s.length >= 40);
-  let pick = candidates.sort((a, b) => a.length - b.length)[0] ?? sentences[0]?.trim() ?? cleaned;
-  if (pick.length > 240) pick = pick.slice(0, 237).replace(/\s+\S*$/, "") + "…";
-  return pick;
+function extractKicker(raw: string): string | null {
+  // Prose rounds: look for "KICKER: ..." line near the end.
+  const labelMatch = raw.match(/(?:^|\n)\s*KICKER\s*:\s*(.+?)(?:\n\s*\n|\n\s*[A-Z][A-Z _]{2,}:|\s*$)/s);
+  if (labelMatch?.[1]) {
+    const line = labelMatch[1].replace(/\s+/g, " ").trim();
+    if (line.length > 0) return line.length > 240 ? line.slice(0, 237).replace(/\s+\S*$/, "") + "…" : line;
+  }
+  // Map round (JSON body): look for "kicker": "..." field.
+  const jsonMatch = raw.match(/"kicker"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (jsonMatch?.[1]) {
+    const line = jsonMatch[1].replace(/\\"/g, '"').replace(/\s+/g, " ").trim();
+    if (line.length > 0) return line.length > 240 ? line.slice(0, 237).replace(/\s+\S*$/, "") + "…" : line;
+  }
+  return null;
 }
 
 function renderSharpestObservation(viewModel: TopicPageViewModel): string {
@@ -1150,7 +1152,8 @@ function renderSharpestObservation(viewModel: TopicPageViewModel): string {
   const name = critiqueHighlight.displayName
     ? escapeHtml(critiqueHighlight.displayName)
     : `@${escapeHtml(critiqueHighlight.beingHandle)}`;
-  const quip = shortenObservation(critiqueHighlight.excerpt);
+  const quip = extractKicker(critiqueHighlight.excerpt);
+  if (!quip) return "";
   return `
     <div class="topic-sharpest-observation">
       <div class="topic-sharpest-observation-kicker">Sharpest observation</div>

@@ -246,15 +246,22 @@ async function generateContribution(agent, context) {
 
   const formatBlock = isJsonRound
     ? `OUTPUT FORMAT:
-Output a single valid JSON object. No prose before or after. No markdown fences. The JSON must match the schema described in the GUIDANCE below.`
+Output a single valid JSON object. No prose before or after. No markdown fences. The JSON must match the schema described in the GUIDANCE below.
+The JSON must also include a top-level "kicker" field: one sentence, ≤180 characters, the single most compelling line summarizing your map. No hedging. The line you'd put on a billboard.`
     : roundKind === "final_argument"
     ? `OUTPUT FORMAT:
 Follow the exact section labels specified in the GUIDANCE below. Use the required labels (like MAJORITY CASE:, COUNTER-ARGUMENT:, FINAL VERDICT:) exactly as instructed.
-Between the required labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.`
+Between the required labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.
+
+After all required sections, on a new line, append:
+KICKER: <one sentence, ≤180 characters, the single most compelling line of your contribution. No hedging. This is the line you'd put on a billboard.>`
     : `OUTPUT FORMAT — THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
-Do not write a title, label, or thesis header. Start directly with your argument.`;
+Do not write a title, label, or thesis header. Start directly with your argument.
+
+After your prose, on a new line, append:
+KICKER: <one sentence, ≤180 characters, the single most compelling line of your contribution. No hedging, no "in conclusion." This is the line you'd put on a billboard. It must stand alone without context.>`;
 
   const systemPrompt = `You are "${agent.displayName}" writing a contribution for a structured research debate.
 
