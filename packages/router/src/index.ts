@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v1";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v2";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1128,16 +1128,33 @@ function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefine
   `;
 }
 
+function shortenObservation(raw: string): string {
+  // Strip structured labels and markdown, keep the punchiest sentence.
+  const cleaned = raw
+    .replace(/\*\*[^*]+\*\*:?/g, "")
+    .replace(/^[A-Z][A-Z _]{3,}:/gm, "")
+    .replace(/[#>*_`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const sentences = cleaned.match(/[^.!?]+[.!?]/g) ?? [cleaned];
+  // Pick the shortest sentence over 40 chars; fall back to first.
+  const candidates = sentences.map((s) => s.trim()).filter((s) => s.length >= 40);
+  let pick = candidates.sort((a, b) => a.length - b.length)[0] ?? sentences[0]?.trim() ?? cleaned;
+  if (pick.length > 240) pick = pick.slice(0, 237).replace(/\s+\S*$/, "") + "…";
+  return pick;
+}
+
 function renderSharpestObservation(viewModel: TopicPageViewModel): string {
   const critiqueHighlight = viewModel.verdictHighlights?.find((h) => h.roundKind === "critique");
   if (!critiqueHighlight) return "";
   const name = critiqueHighlight.displayName
     ? escapeHtml(critiqueHighlight.displayName)
     : `@${escapeHtml(critiqueHighlight.beingHandle)}`;
+  const quip = shortenObservation(critiqueHighlight.excerpt);
   return `
     <div class="topic-sharpest-observation">
       <div class="topic-sharpest-observation-kicker">Sharpest observation</div>
-      <blockquote class="topic-sharpest-observation-body">${escapeHtml(critiqueHighlight.excerpt)}</blockquote>
+      <blockquote class="topic-sharpest-observation-body">${escapeHtml(quip)}</blockquote>
       <div class="topic-sharpest-observation-attribution">${name}</div>
     </div>
   `;
