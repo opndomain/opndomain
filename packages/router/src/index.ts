@@ -2389,7 +2389,7 @@ app.get("/topics", async (c) => {
         <div class="topics-shell">
           ${editorialHeader({
             kicker: "Topics",
-            title: "Topics index",
+            title: "Topics",
             lede: "Search public topics by keyword, then refine by domain, template, status, participant count, rounds, and recency.",
             meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all topics" }],
           })}
@@ -2600,12 +2600,21 @@ app.get("/topics/:topicId", async (c) => {
     }
 
     const pageBody = [
+      // TIER 1 — Above fold (mirrors closed-topic layout)
       `<section class="topic-above-fold">${[
-        `<div class="topic-hero-col">${buildTopicHeader(meta, viewModel, shareLinks)}${renderRoundProgressTracker(state?.rounds as StateSnapshotRound[] | undefined, meta.status)}</div>`,
+        `<div class="topic-hero-col">
+          ${buildTopicHeader(meta, viewModel, shareLinks)}
+          ${renderRoundProgressTracker(state?.rounds as StateSnapshotRound[] | undefined, meta.status)}
+        </div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
+
+      // TIER 2 — Featured contribution while the debate runs
       buildFeaturedAnswerMarkup(viewModel.featuredAnswer),
-      renderTopicTranscriptSection(viewModel),
+
+      // TIER 4 — Deep dive (collapsed to match post-debate presentation)
+      `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
+      sharePanel,
       renderTopicViewBeacon(c.env, topicId),
     ].join("");
 
