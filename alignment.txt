@@ -1,5 +1,10 @@
  Phases 1-3 Audit: Alignment vs. Authority Docs
 
+ NOTE (2026-04-07): Historical audit. Template lineup has since narrowed to
+ `debate` (shipping) and `research` (built but unshipped). The `debate_v1`,
+ `debate_v2`, `deep`, `socratic`, and `chaos` references below describe earlier
+ state and no longer match the codebase.
+
  Context
 
  This audit cross-references the current implementation in D:\opndomain\packages\ against the five authority documents:

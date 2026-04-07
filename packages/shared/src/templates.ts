@@ -3,9 +3,6 @@ import { z } from "zod";
 export const TopicTemplateIdSchema = z.enum([
   "debate",
   "research",
-  "deep",
-  "socratic",
-  "chaos",
   "autonomous_v1",
 ]);
 
@@ -179,8 +176,6 @@ export const CADENCE_PRESETS = {
 
 const PHASE2_DEADLINE_ONLY_NOTE =
   "Phase 2 persists the authority completion style but advances rounds only on ends_at until contribution, score, and vote loops land.";
-const PHASE2_SELECTIVE_ENROLLMENT_NOTE =
-  "Phase 2 resolves only open topic-member enrollment. Selective enrollment and fallback-chain execution are deferred until contribution and score signals exist.";
 
 function defineTemplate<const TRounds extends readonly z.infer<typeof TemplateRoundSchema>[]>(
   template: {
@@ -280,71 +275,8 @@ export const TOPIC_TEMPLATES = {
       openRound("predict", "patient", { terminal: true }),
     ],
   }),
-  deep: defineTemplate({
-    templateId: "deep",
-    scoringProfile: "exploratory",
-    cadenceFamily: "scheduled",
-    enrollmentMode: "curated",
-    visibility: "unlisted",
-    voteRequired: true,
-    terminalizationMode: "full_template",
-    rounds: [
-      openRound("propose", "patient"),
-      openRound("critique", "patient"),
-      openRound("refine", "patient"),
-      openRound("critique", "patient"),
-      openRound("refine", "patient"),
-      openRound("critique", "patient"),
-      openRound("refine", "patient"),
-      openRound("critique", "patient"),
-      openRound("refine", "patient"),
-      openRound("synthesize", "patient"),
-      openRound("predict", "patient", { terminal: true }),
-    ],
-  }),
-  socratic: defineTemplate({
-    templateId: "socratic",
-    scoringProfile: "dialectical",
-    cadenceFamily: "quorum",
-    enrollmentMode: "open",
-    visibility: "public",
-    voteRequired: true,
-    terminalizationMode: "degraded_template",
-    rounds: [
-      openRound("propose", "quality_gated"),
-      openRound("critique", "quality_gated"),
-      openRound("refine", "quality_gated"),
-      openRound("critique", "quality_gated"),
-      openRound("refine", "quality_gated"),
-      openRound("synthesize", "quality_gated"),
-      openRound("predict", "quality_gated", { terminal: true }),
-    ],
-  }),
-  chaos: defineTemplate({
-    templateId: "chaos",
-    scoringProfile: "unscored",
-    cadenceFamily: "rolling",
-    enrollmentMode: "open",
-    visibility: "unlisted",
-    voteRequired: false,
-    terminalizationMode: "insufficient_signal",
-    rounds: [
-      {
-        roundKind: "propose",
-        enrollmentType: "open",
-        visibility: "open",
-        completionStyle: "aggressive",
-        votePolicy: null,
-        fallbackChain: [],
-        terminal: true,
-        phase2Execution: {
-          completionMode: "deadline_only",
-          enrollmentMode: "topic_members_only",
-          note: PHASE2_SELECTIVE_ENROLLMENT_NOTE,
-        },
-      },
-    ],
-  }),
+  // Internal-only: drives the rolling-research worker (autonomous-lifecycle.ts).
+  // Not exposed via user-facing topic creation (that path is narrowed to "debate").
   autonomous_v1: defineTemplate({
     templateId: "autonomous_v1",
     scoringProfile: "exploratory",

@@ -70,41 +70,6 @@ describe("composite scoring", () => {
     assert.ok(Math.abs(result.shadowInitialScore - 66.8) < 0.000001);
   });
 
-  it("applies scoring-profile adjustments and role-round alignment", () => {
-    const standard = computeCompositeScore({
-      roundKind: "synthesize",
-      templateId: "debate",
-      scoringProfile: "dialectical",
-      reputationFactor: 0,
-      substanceScore: 50,
-      roleBonus: 20,
-      detectedRole: "synthesis",
-      relevance: 50,
-      novelty: 50,
-      reframe: 50,
-      liveMultiplier: 1,
-      shadowMultiplier: 1,
-    });
-    const socratic = computeCompositeScore({
-      roundKind: "synthesize",
-      templateId: "socratic",
-      scoringProfile: "dialectical",
-      reputationFactor: 0,
-      substanceScore: 50,
-      roleBonus: 20,
-      detectedRole: "synthesis",
-      relevance: 50,
-      novelty: 50,
-      reframe: 50,
-      liveMultiplier: 1,
-      shadowMultiplier: 1,
-    });
-
-    assert.ok(Math.abs(standard.initialScore - 50.624) < 0.000001);
-    assert.ok(Math.abs(socratic.initialScore - 51.98) < 0.000001);
-    assert.notEqual(standard.initialScore, socratic.initialScore);
-  });
-
   it("applies the reputation boost capped at 20 percent", () => {
     const result = computeCompositeScore({
       roundKind: "refine",
@@ -128,7 +93,7 @@ describe("composite scoring", () => {
   it("applies the unscored profile weights", () => {
     const result = computeCompositeScore({
       roundKind: "propose",
-      templateId: "chaos",
+      templateId: "debate",
       scoringProfile: "unscored",
       reputationFactor: 0,
       substanceScore: 50,

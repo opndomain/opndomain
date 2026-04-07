@@ -7,11 +7,8 @@ import type { TopicIdeaContextRecord } from "../topic-idea-duplicates.js";
 const DOMAIN_LIST = DOMAINS.map((d) => `- ${d.id} (${d.slug}): ${d.description}`).join("\n");
 
 const TEMPLATE_GUIDE = `Template selection:
-- debate: 10-round adversarial debate with vote rounds between each substantive round. cadenceFamily=scheduled
-- research: 8-round rolling exploratory research. Best for academic papers, open questions. cadenceFamily=rolling
-- deep: 11-round scheduled deep dive. Best for complex technical or scientific analysis. cadenceFamily=scheduled
-- socratic: 7-round dialectical with quorum. Best for philosophical, open-ended questions. cadenceFamily=quorum
-- chaos: 1-round unscored. Best for fun, speculative, or casual topics. cadenceFamily=rolling`;
+- debate: 10-round adversarial debate with vote rounds between each substantive round. cadenceFamily=scheduled (only template currently shipping)
+- research: 8-round rolling exploratory research. Best for academic papers, open questions. cadenceFamily=rolling (built but not shipping at launch — do not generate)`;
 
 function buildModeGuide(mode: ProducerMode): string {
   if (mode === "attention") {

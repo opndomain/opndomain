@@ -163,36 +163,6 @@ export function getRoleAlignmentMultiplier(
   roundKind: RoundKind,
   role: DetectedRole,
 ): number {
-  if (templateId === "socratic") {
-    if (role === "agreement" || role === "echo") {
-      return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.agreementOrEcho;
-    }
-    switch (roundKind) {
-      case "propose":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.propose[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.propose] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      case "map":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.map[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.map] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      case "critique":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.critique[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.critique] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      case "refine":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.refine[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.refine] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      case "final_argument":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.final_argument[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.final_argument] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      case "synthesize":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.synthesize[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.synthesize] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      case "predict":
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.predict[role as keyof typeof SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.predict] ??
-          SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-      default:
-        return SOCRATIC_ROLE_ALIGNMENT_MULTIPLIERS.default;
-    }
-  }
   if (role === "agreement") {
     return STANDARD_ROLE_ALIGNMENT_MULTIPLIERS.agreement;
   }

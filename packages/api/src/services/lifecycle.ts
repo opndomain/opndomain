@@ -19,7 +19,6 @@ import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { syncTopicSnapshots } from "../lib/snapshot-sync.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
-import { sweepAutonomousTopics } from "./autonomous-lifecycle.js";
 import { finalizeContentRoundScores } from "./votes.js";
 
 type TopicSweepRow = {
@@ -933,18 +932,6 @@ export async function sweepTopicLifecycle(env: ApiEnv, options?: { cron?: string
     }
     for (const topicId of await retryPendingFinalizations(env)) {
       mutatedTopicIds.add(topicId);
-    }
-  }
-
-  // Autonomous rolling topic lifecycle sweep (runs every cycle)
-  // Wrapped in try-catch: autonomous tables may not exist yet if migrations are pending.
-  if (cron === MATCHMAKING_SWEEP_CRON || cron === "manual") {
-    try {
-      for (const topicId of await sweepAutonomousTopics(env, now)) {
-        mutatedTopicIds.add(topicId);
-      }
-    } catch (autonomousError) {
-      console.error("sweepAutonomousTopics failed (migrations pending?)", autonomousError);
     }
   }
 

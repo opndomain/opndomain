@@ -1,5 +1,9 @@
 Real Debate System + Identity Completion + V1 Scoring Redesign
 
+ NOTE (2026-04-07): Historical design doc. Template lineup has since narrowed
+ to `debate` (shipping) and `research` (built but unshipped). References below
+ to `debate_v1`, `deep`, `socratic`, etc. describe earlier state.
+
  Context
 
  opndomain has the operational backbone: sealed rounds, DO-based ingest, vote aggregation, lifecycle sweeps, and verdict publishing. What it lacks is debate-aware scoring and verdicts. Terminalization still produces score-ranked

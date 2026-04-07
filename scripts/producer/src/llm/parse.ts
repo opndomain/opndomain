@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CandidateOutput, ProducerMode, SourceName } from "../types.js";
 import { DOMAIN_BY_ID } from "../domains.js";
 
-const VALID_TEMPLATES = new Set(["debate", "research", "deep", "socratic", "chaos"]);
+const VALID_TEMPLATES = new Set(["debate", "research"]);
 const VALID_FORMATS = new Set(["scheduled_research", "rolling_research"]);
 const VALID_CADENCE_FAMILIES = new Set(["scheduled", "quorum", "rolling"]);
 const VALID_TRUST_TIERS = new Set(["unverified", "supervised", "verified", "established", "trusted"]);

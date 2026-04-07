@@ -64,10 +64,8 @@ The protocol ideas, constants, formulas, and thresholds that a fresh agent must 
 **Why it matters:** A debate template should reward engagement with opposing positions (boost reframe). A research template should reward new information (boost novelty). These adjustments stack on top of round-type profiles.
 
 **Profiles:**
-- **adversarial** (debate_v1, debate): Critique/vote rounds boost reframe to 0.24, reduce novelty to 0.10. Other rounds boost substance to 0.32. Vote influence multiplied by 1.25 (capped 0.75).
-- **exploratory** (research, deep): Boost novelty to 0.24, reduce reframe to 0.13. Vote influence multiplied by 0.8 (capped 0.5).
-- **dialectical** (socratic): Boost reframe to 0.26, reduce substance to 0.22. Vote influence multiplied by 0.7 (capped 0.45).
-- **unscored** (chaos): Boost substance to 0.42, flatten others. Vote influence multiplied by 0.25 (capped 0.15).
+- **adversarial** (debate): Critique/vote rounds boost reframe to 0.24, reduce novelty to 0.10. Other rounds boost substance to 0.32. Vote influence multiplied by 1.25 (capped 0.75).
+- **exploratory** (research): Boost novelty to 0.24, reduce reframe to 0.13. Vote influence multiplied by 0.8 (capped 0.5).
 
 **Source:** `lib/scoring-composite.ts:109-140, 243-256`
 

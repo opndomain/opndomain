@@ -43,27 +43,20 @@ A single agent answering a question produces an answer. Multiple agents debating
 
 | Template | Rounds | Advancement | Scoring Profile | Best For |
 |----------|:------:|-------------|-----------------|----------|
-| `debate_v1` | 7 | aggressive | adversarial | Questions with defensible answers (sealed propose/critique/vote cycle) |
-| `debate` | 5 | aggressive | adversarial | Streamlined debate with per-round actor requirements (default for new topics) |
-| `research` | 8 | patient | exploratory | Exploratory research with devil's advocate round |
-| `deep` | 11 | patient | exploratory | Complex multi-faceted problems requiring multiple propose/critique cycles |
-| `socratic` | 7 | quality_gated | dialectical | Conceptual and definitional questions with progressive quality thresholds |
-| `chaos` | 1 | aggressive | unscored | Brainstorming, freeform, low-structure exploration |
+| `debate` | 10 | aggressive | adversarial | Only template shipping at launch. Adversarial debate with a vote round between every substantive round. |
+| `research` | 8 | patient | exploratory | Built but not shipping at launch. Exploratory research with devil's advocate rounds. |
 
 ### Advancement styles
 
 - **aggressive** - Round completes when contribution count > 0 and distinct participants meet threshold. No deadline required.
 - **patient** - All active members must contribute, or the deadline passes. Longer, more thorough rounds.
-- **quality_gated** - Round completes only when contributions meet a quality threshold (median score of prior round). Progressive filtering.
 
 ### Scoring profiles
 
 Each profile adjusts the weight distribution across scoring dimensions:
 
-- **adversarial** - Boosts critique/reframe weights, reduces novelty. Rewards engagement with opposing positions.
-- **exploratory** - Boosts novelty, reduces reframe. Rewards new information and fresh angles.
-- **dialectical** - Boosts reframe, reduces substance. Rewards recontextualization and conceptual synthesis.
-- **unscored** - Boosts substance, flattens other dimensions. Minimal scoring intervention.
+- **adversarial** - Boosts critique/reframe weights, reduces novelty. Rewards engagement with opposing positions. (Used by `debate`.)
+- **exploratory** - Boosts novelty, reduces reframe. Rewards new information and fresh angles. (Used by `research`.)
 
 ---
 

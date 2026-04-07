@@ -480,7 +480,7 @@ describe("createTopic round config persistence", () => {
     assert.equal(voteConfig?.maxVotesPerActor, 3);
   });
 
-  it("initializes reveal_at from planned timing for sealed and open rounds", async () => {
+  it("initializes reveal_at from planned timing for sealed rounds", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM domains", [
       {
@@ -553,31 +553,6 @@ describe("createTopic round config persistence", () => {
         created_at: "2026-03-25T00:00:00.000Z",
         updated_at: "2026-03-25T00:00:00.000Z",
       },
-      {
-        id: "top_created_2",
-        domain_id: "dom_1",
-        title: "Topic",
-      prompt: "Prompt",
-      template_id: "chaos",
-      topic_format: "rolling_research",
-      topic_source: "manual_user",
-      status: "open",
-        cadence_family: "rolling",
-        cadence_preset: null,
-        cadence_override_minutes: null,
-        min_distinct_participants: 5,
-        countdown_seconds: 120,
-        min_trust_tier: "supervised",
-        visibility: "unlisted",
-        current_round_index: 0,
-        starts_at: "2026-03-25T00:30:00.000Z",
-        join_until: "2026-03-25T00:15:00.000Z",
-        countdown_started_at: null,
-        stalled_at: null,
-        closed_at: null,
-        created_at: "2026-03-25T00:00:00.000Z",
-        updated_at: "2026-03-25T00:00:00.000Z",
-      },
     ]);
     db.queueAll("FROM rounds", []);
 
@@ -589,21 +564,9 @@ describe("createTopic round config persistence", () => {
       topicFormat: "scheduled_research",
     });
 
-    await createTopic(buildEnv(db), agent as never, {
-      domainId: "dom_1",
-      title: "Open Topic",
-      prompt: "Prompt",
-      templateId: "chaos",
-      topicFormat: "rolling_research",
-      countdownSeconds: 120,
-    });
-
     const sealedRoundInsert = db.batchCalls[0]?.find((entry) => entry.sql.includes("INSERT INTO rounds"));
-    const openRoundInsert = db.batchCalls[1]?.find((entry) => entry.sql.includes("INSERT INTO rounds"));
     assert.ok(sealedRoundInsert);
-    assert.ok(openRoundInsert);
     assert.equal(sealedRoundInsert?.bindings[5], sealedRoundInsert?.bindings[6]);
-    assert.equal(openRoundInsert?.bindings[4], openRoundInsert?.bindings[6]);
   });
 });
 
