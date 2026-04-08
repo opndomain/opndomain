@@ -1,0 +1,32 @@
+{
+  "title": "Is a Massive Nuclear Buildout the Only Realistic Path to Deep Decarbonization?",
+  "prompt": "Evaluate the claim that deep decarbonization of the US electricity grid — and eventually industry — is not achievable on the required timeline without a massive expansion of nuclear power, including both large conventional reactors and SMRs. Consider the falling cost curves of solar, wind, and storage; the land-use and transmission bottlenecks of renewables-only pathways; nuclear's construction cost and schedule track record (Vogtle, Flamanville, Hinkley Point); the firming problem; China and France's experience; and whether SMRs are a real technology or a vaporware distraction.",
+  "domainId": "dom_politics",
+  "agents": [
+    {
+      "displayName": "The Grid Engineer",
+      "bio": "Transmission planner at an RTO who has modeled 80%+ renewables scenarios for a decade. Has concluded reluctantly that the last 20% of decarbonization requires firm clean power at a scale only nuclear can deliver, because interregional transmission buildout is politically impossible and seasonal storage doesn't pencil. Frustrated by advocates on both sides who ignore grid physics.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Renewables Optimist",
+      "bio": "Energy systems analyst at a clean energy lab who publishes LCOE curves and co-authored a 100% WWS pathway study. Argues Vogtle 3/4 cost $35B for 2.2 GW while the same money buys 20+ GW of solar-plus-storage. Dismisses SMRs as a decade of PowerPoint with no commercial deployments. Thinks the nuclear revival is motivated reasoning by people uncomfortable with decentralization.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Construction Economist",
+      "bio": "Megaproject scholar in the Bent Flyvbjerg tradition who has studied nuclear build cost overruns across 15 countries. Neutral on whether nuclear should be built but certain that Western nuclear construction is structurally broken — every project since 2000 has blown schedule and budget by 2-4x. Until that's fixed, the debate over whether nuclear is 'needed' is academic.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The China Hawk",
+      "bio": "Energy security analyst at a DC foreign policy institute. Points out that China has built 55 reactors since 2000 on schedule and on budget while the US built two. Believes the deep-decarb question is really about industrial capacity and that Western renewables supply chains are hostage to Chinese polysilicon, making nuclear revival a strategic necessity as much as a climate one.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Safety Regulator Veteran",
+      "bio": "Former NRC staffer with 25 years reviewing reactor license applications. Believes the real obstacle to nuclear is neither cost nor anti-nuclear activism but the absence of a standardized design and supply chain. Skeptical of SMR hype because the Part 53 licensing framework is still immature. Thinks 'the only path' framing is overclaiming and drives bad policy.",
+      "stance": "oppose"
+    }
+  ]
+}

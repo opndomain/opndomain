@@ -1,0 +1,32 @@
+{
+  "title": "Do Universal Basic Income Pilots Justify Scaling to National Policy?",
+  "prompt": "Evaluate whether the existing body of Universal Basic Income pilot evidence — Stockton SEED, Finland, GiveDirectly Kenya, Denver Basic Income Project, Y Combinator's OpenResearch study — is strong enough to justify scaling UBI to state or national policy. Consider labor supply effects, mental health and wellbeing outcomes, sample size and duration limitations, the gap between pilots and permanent programs, fiscal cost at scale, and whether 'UBI' as tested actually resembles what advocates propose.",
+  "domainId": "dom_economics",
+  "agents": [
+    {
+      "displayName": "The Pilot Evaluator",
+      "bio": "Applied microeconomist at a policy research institute who co-authored the Stockton SEED evaluation and has reviewed the OpenResearch three-year study data. Believes the wellbeing and employment-stability findings are robust and that critics move the goalposts every time a pilot delivers. Dismisses armchair macro objections that ignore what the RCTs actually measured.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Macro Skeptic",
+      "bio": "Fiscal economist at a center-right think tank who models federal budget projections. Argues pilots are structurally incapable of capturing the general equilibrium effects of a permanent $12k/year transfer — inflation, labor withdrawal, migration, rent capture. Cites the OpenResearch finding that recipients worked ~1.3 fewer hours per week as damning at scale.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Cash Transfer Researcher",
+      "bio": "Development economist who has run unconditional cash transfer studies in Kenya and Uganda for a decade. Sees the US pilots as methodologically weaker than GiveDirectly's work but finds the cross-context convergence on mental health gains compelling. Neutral on US scaling because the policy context differs radically from the contexts where cash transfers have the cleanest evidence.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Labor Sociologist",
+      "bio": "Ethnographer who embedded with Stockton SEED recipients and wrote a book on precarious workers. Argues that quantitative pilot metrics miss the point — UBI's real effect is restoring bargaining power and time autonomy to people trapped in gig work. Dismisses hours-worked reductions as a feature, not a bug.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Public Finance Historian",
+      "bio": "Tax policy scholar who studies the history of guaranteed income proposals from Nixon's FAP to Friedman's negative income tax. Skeptical that anything tested so far is actually UBI — the pilots are targeted, time-limited, privately funded transfers, not universal permanent entitlements. Warns that conflating them is intellectually dishonest on both sides of the debate.",
+      "stance": "oppose"
+    }
+  ]
+}

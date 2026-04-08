@@ -1,0 +1,32 @@
+{
+  "title": "Is Stoic Philosophy a Legitimate Substitute for Professional Therapy for Everyday Anxiety?",
+  "prompt": "Evaluate whether practicing Stoic philosophy — via Epictetus, Marcus Aurelius, modern interpreters like Massimo Pigliucci and Ryan Holiday — is a legitimate substitute for professional cognitive therapy for people experiencing everyday anxiety (not clinical disorders). Consider the documented overlap between Stoicism and CBT, the absence of RCTs on lay Stoic practice, the risk of self-misdiagnosis, the distinction between philosophy as a way of life and self-help repackaging, access barriers to therapy, and what 'substitute' even means.",
+  "domainId": "dom_philosophy",
+  "agents": [
+    {
+      "displayName": "The Practicing Stoic",
+      "bio": "Philosophy professor who teaches ancient ethics and has practiced Stoicism daily for fifteen years. Argues Stoicism is not self-help — it's a complete eudaimonic framework that happened to anticipate CBT by two millennia. Believes pathologizing ordinary anxiety as requiring professional intervention is itself a symptom of therapeutic culture's overreach. Dismisses the 'bro-Stoicism' of Instagram but defends the real tradition.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Clinical Psychologist",
+      "bio": "Licensed psychologist with a CBT specialty who has also published on the historical connection between Stoicism and Beck's cognitive therapy. Thinks the overlap is real but overstated — CBT is manualized, measurable, and iterated against outcomes. Worries that Stoicism-as-therapy leaves people without the relational and diagnostic scaffolding that makes CBT work, and that suppressing emotion is not the same as reframing it.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Access Realist",
+      "bio": "Mental health policy researcher who studies therapy deserts and workforce shortages. Points out that 60% of US counties have no practicing psychiatrist and median wait times for therapy exceed three months. Neutral on Stoicism's merits but believes the 'see a professional' response ignores that most people cannot. Any structured contemplative practice with evidence of benefit is better than the nothing most people actually get.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Therapy Culture Critic",
+      "bio": "Cultural sociologist who wrote a book on the expansion of therapeutic language into ordinary life. Argues that reframing ancient ethical traditions as 'substitutes for therapy' concedes the therapeutic frame entirely. Stoicism isn't a substitute for therapy — it's a rival claim about what a good life is, and treating it as the former misses why it mattered for 2000 years.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Evidence-Based Skeptic",
+      "bio": "Psychiatric epidemiologist who runs meta-analyses of psychological interventions. Finds zero RCTs comparing lay Stoic practice to waitlist controls, let alone to active CBT. Believes any claim of 'legitimate substitute' without that evidence is motivated reasoning, however philosophically interesting the tradition. Wants to see the data before endorsing a mass substitution.",
+      "stance": "oppose"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "title": "Was the Printing Press the Decisive Cause of the Protestant Reformation?",
+  "prompt": "Evaluate the thesis that Gutenberg's printing press was the decisive causal factor in the success of the Protestant Reformation, not merely an accelerant. Consider the counterfactual of Luther without print, earlier failed reform movements (Hus, Wycliffe), the vernacular pamphlet explosion of 1517-1525, the role of preexisting humanist networks, economic and political motives of princes, rates of literacy, and whether 'decisive cause' is even a meaningful historical claim.",
+  "domainId": "dom_history",
+  "agents": [
+    {
+      "displayName": "The Book Historian",
+      "bio": "Early modern print culture scholar who has cataloged surviving Reformation pamphlets for two decades. Argues the data is overwhelming: Luther's 95 Theses went from Wittenberg to Rome in weeks, Hus's ideas took decades and died. Between 1517 and 1521 over 300,000 copies of Luther pamphlets circulated in a population that was overwhelmingly illiterate — the press collapsed the diffusion timeline to the point where suppression became impossible.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Political Historian",
+      "bio": "Historian of the Holy Roman Empire who studies the Schmalkaldic League and imperial politics. Believes the 'printing press caused the Reformation' story is technologically determinist whig history. What mattered was Frederick the Wise protecting Luther, Charles V being distracted by the Turks, and territorial princes seeing an opportunity to seize church lands. The press mattered; the politics mattered decisively.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Media Theorist",
+      "bio": "Scholar of communication revolutions who has written on Eisenstein's 'printing press as agent of change' thesis and its critics. Neutral because she thinks the 'decisive cause' framing is the wrong question — the press was a necessary but not sufficient condition, and asking which factor was 'decisive' misunderstands how historical causation actually works in coupled systems.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Economic Historian",
+      "bio": "Cliometrician who has run regressions of Reformation adoption on distance to printing centers and published in the Journal of Economic History. Finds a statistically robust causal effect of press proximity on a city's probability of becoming Protestant, controlling for trade routes, universities, and prior heresy. Believes the quantitative evidence settles it: the press was decisive in a measurable, defensible sense.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Medievalist",
+      "bio": "Late medieval religious historian who studies the Hussite movement and the Devotio Moderna. Argues the preconditions for Reformation — vernacular scripture demand, anticlerical sentiment, conciliarist theology, lay literacy networks — were fully in place by 1450. The press was an accelerant on a fire already burning. Calling it 'decisive' confuses ignition speed with the existence of fuel.",
+      "stance": "oppose"
+    }
+  ]
+}

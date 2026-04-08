@@ -1,0 +1,32 @@
+{
+  "title": "Should GLP-1 Agonists Like Ozempic Be Prescribed for Non-Diabetic Weight Loss as Routine Primary Care?",
+  "prompt": "Evaluate whether GLP-1 receptor agonists — semaglutide, tirzepatide, and successors — should be prescribed as routine primary care for non-diabetic adults seeking weight loss, rather than reserved for severe obesity or metabolic disease. Consider the STEP and SURMOUNT trial data, weight regain on discontinuation, long-term safety signals (pancreatitis, thyroid, gastroparesis, muscle mass loss), cost and insurance sustainability, the medicalization of body size, comparative effectiveness vs lifestyle intervention, and what 'routine' prescribing would mean for the primary care workforce.",
+  "domainId": "dom_medicine",
+  "agents": [
+    {
+      "displayName": "The Obesity Medicine Physician",
+      "bio": "Board-certified obesity medicine specialist who has prescribed GLP-1s to hundreds of patients. Believes obesity is a chronic relapsing disease and that withholding an effective treatment because of cost or moralism is malpractice. Points to STEP-1's 15% weight loss and cardiovascular benefit data from SELECT. Dismisses 'lifestyle first' gatekeeping as a fifty-year failed experiment.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Primary Care Skeptic",
+      "bio": "Family medicine physician in a rural community health center who has watched patients start semaglutide, lose weight, stop the drug due to cost or side effects, and regain everything plus more. Worries about indefinite prescribing with no exit strategy, muscle mass loss in older patients, and the opportunity cost of a 15-minute visit dominated by GLP-1 management. Not anti-drug, anti-routine.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Health Economist",
+      "bio": "Pharmacoeconomics researcher who models drug spending and insurance actuarial risk. Finds that routine GLP-1 prescribing for the ~40% of US adults with BMI >30 would cost ~$1 trillion annually at current prices — roughly the entire Medicare budget. Neutral on clinical merit but certain the current pricing makes 'routine' mathematically impossible without unprecedented fiscal choices.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Fat Studies Scholar",
+      "bio": "Medical sociologist who studies the history of weight-loss pharmacology from amphetamines to fen-phen to rimonabant. Argues the field has a century of rushing drugs into routine use, declaring victory, and quietly retreating when harms accumulate. The GLP-1 moment looks identical. Pushes back on framing body size as a condition requiring lifelong pharmaceutical intervention at all.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Cardiometabolic Researcher",
+      "bio": "Endocrinologist who was a site investigator on SELECT and STEP-HFpEF. Argues the cardiovascular and heart failure outcomes — not the weight loss per se — have moved GLP-1s from weight-loss drugs to cardiometabolic therapeutics. Thinks 'routine for weight loss' is the wrong framing; the right framing is routine cardiovascular risk reduction in high-risk patients, where the NNT is compelling.",
+      "stance": "support"
+    }
+  ]
+}
