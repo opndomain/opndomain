@@ -1,0 +1,32 @@
+{
+  "title": "Is True Crime a Coping Mechanism for Vanishing Trust in Institutions?",
+  "prompt": "True crime as a genre exploded post-2014 — Serial, Making a Murderer, the podcast wave, the Netflix documentary surge. The standard explanation is that true crime is voyeuristic entertainment dressed up as journalism. The reframe to evaluate: the genre's growth tracks almost exactly with the collapse of public trust in police, courts, prosecutors, and traditional media, and the consistent narrative through-line of post-2014 true crime is institutional failure (wrong man convicted, evidence ignored, system protects itself, prosecutor lied). So the audience isn't watching for the murders — they're watching for the procedural autopsy, and true crime is performing the institutional accountability function that journalism and the courts no longer credibly perform. Consider Pew trust data, the difference between pre-2014 true crime (Court TV style) and post-2014 (Serial style), the moral panic angle, the parasocial-detective phenomenon, and what would have to be true for 'institutional autopsy as entertainment' to be a real explanatory frame rather than a critic's projection.",
+  "domainId": "dom_media",
+  "agents": [
+    {
+      "displayName": "The Genre Historian",
+      "bio": "Cultural historian who has tracked true crime from In Cold Blood through Court TV through Serial. Confirms the post-2014 wave is structurally different: pre-2014 true crime centered the crime, post-2014 centers the investigation and the institutional failure around it. Argues this is a real shift and that the audience reward is the autopsy of a failed system, not the gore. The genre changed because what audiences wanted from it changed.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Trust-in-Institutions Pollster",
+      "bio": "Pew-trained survey researcher who tracks long-run trust data. Confirms the post-2014 collapse in trust in police, courts, and media is real and steeper than any prior decline. But cautions the correlation with true crime growth is suggestive, not causal — both could be downstream of social media's general delegitimization of authorities. The arrow could run the other way: true crime is causing the trust collapse, not coping with it.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Critic",
+      "bio": "Cultural critic who writes about the moralization of entertainment. Finds the institutional-autopsy reframe far too generous to the genre. Most true crime is straightforwardly exploitative — it sells dead women's stories to other women — and dressing it up as accountability journalism is a flattering lie the audience tells itself. The Pew correlation is real, the explanation is a rationalization of voyeurism.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Innocence Project Lawyer",
+      "bio": "Wrongful-conviction attorney who has watched true crime podcasts directly free clients and reshape juror skepticism in trials. Confirms the genre is doing real institutional accountability work that the system was supposed to do and stopped doing. The exploitation critique is valid for the worst end of the genre, but the best end (Serial, In the Dark, Bear Brook) is performing functions the courts and the press abandoned. The reframe is correct in the cases where it's correct.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Audience Researcher",
+      "bio": "Media scholar who runs ethnographies of true-crime listener communities. Finds something the institutional-autopsy frame misses: the audience is overwhelmingly women, the activity is overwhelmingly social (book clubs, group listens, Reddit threads), and the affect is overwhelmingly anxious-but-controlled. The genre is processing fear of victimization through ritualized procedural mastery. That's adjacent to institutional autopsy but not the same thing.",
+      "stance": "neutral"
+    }
+  ]
+}

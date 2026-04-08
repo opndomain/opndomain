@@ -1,0 +1,32 @@
+{
+  "title": "Are 3D Modeling, ASCII Art, and LLM Image Generation Three Eras of the Same Problem?",
+  "prompt": "Three threads of computer graphics history are usually told separately: (1) ASCII and text-mode art, from 1960s teletype portraits through Aalib and modern Unicode shading; (2) 3D modeling and rendering, from wireframes through Phong shading, raster pipelines, physically based rendering, and now neural rendering and Gaussian splatting; (3) LLM image generation, from DALL-E through Midjourney and the recent benchmarks on whether language models have any spatial model at all (the 'can language models draw' literature, GPT-4's famously bad ASCII unicorns, the emerging vision-language models). The reframe to evaluate: these aren't three separate stories. They are three eras of a single problem — how much spatial structure can you encode into a discrete, low-bandwidth channel and recover something recognizable on the other side? Track the improvement curves. ASCII art started with 8-bit characters and hit a ceiling at edge-detection-based shading in the early 2000s. 3D modeling went from wireframe (1970s) through Pixar-quality offline rendering (2000s) to real-time PBR and now neural fields. LLMs are at the wireframe stage — GPT-4 generates token sequences that, with the right decoder, render passable images, but the spatial-reasoning benchmarks suggest the underlying model is still primitive. Consider: are the S-curves of these three eras actually the same shape, offset in time? Is 'discrete spatial encoding into low-bandwidth channels' the right unifying frame, or does it collapse meaningful differences? What does the comparison predict about where LLM image generation will plateau and what counts as the next era? Reference relevant work: NeRF, 3D Gaussian Splatting, the 'Can Language Models Draw' benchmarks, Aalib and the ASCII-art compression literature, Phong's 1975 paper, and the long arc from teletype portraits to neural rendering.",
+  "domainId": "dom_computer-science",
+  "agents": [
+    {
+      "displayName": "The Graphics Historian",
+      "bio": "Computer graphics researcher who has written on the field's history from Sutherland's Sketchpad through neural rendering. Argues the unification frame is correct and underappreciated: every era of computer graphics has been a search for how much spatial information can be packed into the available representation, and each new era widens the channel. ASCII, polygons, and tokens are all discrete spatial encodings, and the field is one continuous bandwidth-expansion story.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The ASCII Art Purist",
+      "bio": "Demoscene veteran and curator of historical ASCII art collections. Pushes back hard. ASCII art was never trying to maximize fidelity — the constraint was the medium and the constraint was the point, the way haiku is not a failed sonnet. Lumping ASCII into a single 'spatial encoding' arc with photoreal rendering erases the aesthetic project of working inside a tight channel on purpose. The reframe is technically defensible and artistically wrong.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Neural Rendering Researcher",
+      "bio": "Researcher working on NeRF and 3D Gaussian Splatting. Confirms the modern frontier collapses the old polygon/voxel/raster distinction into a single 'learned implicit representation' and finds the analogy to LLM token-stream encoding genuinely illuminating. Both are continuous functions sampled into discrete outputs, both improve along the same rough loss curves, and both hit the same wall on global structure vs local detail. The unification is real at the math, not just the metaphor.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The LLM Benchmarks Researcher",
+      "bio": "ML researcher running spatial-reasoning benchmarks on language models. Confirms LLMs are at a primitive stage (the GPT-4 ASCII unicorn, 'where is the cat' failures), but the analogy to early 3D rendering breaks at mechanism. Wireframe had a correct math model that needed compute. LLMs have statistical regularities approximating one. The improvement curve will not be the same shape — different substrate.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Information Theorist",
+      "bio": "Information theorist working on rate-distortion in visual encoding. Argues the unification is best stated as a Shannon problem: every era picks a discrete channel (characters, polygons, tokens) and maximizes recoverable spatial content per symbol. The curves are the same shape because they're bounded by the same theorem. Open question: what the token-stream asymptote looks like and whether LLMs are near it or still early-rate.",
+      "stance": "support"
+    }
+  ]
+}

@@ -366,9 +366,12 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
       .trim();
   }
 
-  // Hard cap at 7500 chars to stay within the 8000 char API limit
-  if (content.length > 7500) {
-    const truncated = content.slice(0, 7500).replace(/\s\S*$/, ""); // cut at last word boundary
+  // Hard cap at 19000 chars to stay within the 20000 char API limit. The
+  // final_argument round legitimately needs the headroom because of PART A +
+  // PART B with multiple labeled sections; clipping it shorter produces a
+  // verdict box that ends mid-sentence.
+  if (content.length > 19000) {
+    const truncated = content.slice(0, 19000).replace(/\s\S*$/, ""); // cut at last word boundary
     log("llm-truncated", { who: agent.displayName, original: content.length, truncated: truncated.length });
     return truncated;
   }

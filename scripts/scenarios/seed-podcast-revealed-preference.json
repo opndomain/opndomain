@@ -1,0 +1,32 @@
+{
+  "title": "Is Podcasting the First Medium That Succeeds by Being Long, Slow, and One-on-One — and What Does That Say About Everything Else Being Wrong?",
+  "prompt": "Every dominant theory of post-2010 media says attention spans are shrinking, content must be short, and audiences want fast cuts and constant novelty. Then podcasting — three-hour conversations, no edits, two people in chairs — became the dominant new medium of the era. Joe Rogan, Lex Fridman, Andrew Huberman, the murder-mystery wave, and the death of cable news all happened simultaneously. The reframe to evaluate: maybe the short-form-content era was a platform-economics artifact (ads sold against impressions, not minutes; recommendation algorithms optimizing for swipes) and the actual revealed preference of audiences is for long, intimate, parasocial monologue. The 'shrinking attention span' thesis is then wrong twice: it misread the platform incentives as user preferences, and it missed the rise of the medium that contradicted it. Consider the parasocial intimacy literature, the difference between background-listening and active-attention media, the economics of CPM vs subscription vs YouTube ad-share, the death of cable news and what replaced it, the demographic skew of the podcast audience, and what would falsify 'long-form is the revealed preference' vs 'long-form is a niche that looks bigger because it's Twitter-loud.'",
+  "domainId": "dom_media",
+  "agents": [
+    {
+      "displayName": "The Podcast Producer",
+      "bio": "Veteran podcast producer who has worked on top-100 shows since 2015. Confirms the demand is real and growing, that audiences explicitly request longer episodes when surveyed, and that the three-hour-conversation format outperforms shorter cuts on completion rate and retention. Argues the short-form thesis was always a platform-side claim that the user-side data never supported, and podcasting is the cleanest natural experiment proving it.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Attention-Span Researcher",
+      "bio": "Cognitive scientist who has spent a decade publishing on attention and digital media. Pushes back: the attention-span shrinkage is real and documented in lab tasks, school assessments, and self-report measures. Podcasting doesn't refute it — podcasting is background listening while doing other things, and that is not the same as sustained focused attention. The reframe confuses ear-time with mind-time.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Parasocial Researcher",
+      "bio": "Communications scholar who studies parasocial intimacy in audio media. Argues the podcast boom is best explained by parasocial demand: audiences want the felt experience of a long conversation with a trusted person, and audio is the only medium that delivers it without demanding visual attention. The format isn't about long vs short, it's about intimacy vs spectacle, and the 'revealed preference' is for intimacy that broadcast TV never offered.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Platform Economist",
+      "bio": "Media economist who models ad revenue and subscription dynamics. Confirms the short-form era was driven by platform unit economics (CPM impressions, ad insertions per minute) and that podcast economics flipped the incentives toward retention because Patreon, dynamic ad insertion, and YouTube revenue share reward minutes-listened. The platform-incentive frame explains everything the 'attention span' frame tried to explain, and explains podcasting too.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Cable News Veteran",
+      "bio": "Former cable news producer who watched the audience leak to podcasts in real time. The migrating audience didn't want shorter content — they wanted longer, less mediated, less interrupted content with hosts who didn't go to commercial every six minutes. Cable lost on a format axis its executives never measured. The reframe understates the magnitude — long-form didn't beat short-form, it beat the entire mediated-broadcast model.",
+      "stance": "support"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "title": "Are GLP-1 Agonists Better Understood as General Desire Reducers Than as Appetite Suppressants?",
+  "prompt": "GLP-1 receptor agonists like semaglutide and tirzepatide were approved for glycemic control and weight loss, but a growing observational and small-trial signal suggests they reduce far more than appetite: alcohol consumption, nicotine craving, gambling urges, compulsive shopping, opioid wanting, and a subjective sense that 'the volume on wanting' has been turned down. Mechanistic work points at GLP-1 receptors in the nucleus tractus solitarius and ventral tegmental area modulating mesolimbic dopamine and reward salience broadly, not just food reward. Evaluate whether GLP-1 agonists are most accurately framed as general desire reducers — a class of reward-circuit dampeners — rather than appetite suppressants. Consider the strength of the cross-domain evidence (alcohol RCTs, gambling case series, nicotine signal), the proposed mesolimbic mechanism, the philosophical stakes of pharmacologically muting wanting itself, the lived-experience reports of anhedonia and 'food noise' silence, the comparison to historical reward-modulating drugs (rimonabant, naltrexone, bupropion), and what reframing the drug class this way would mean for psychiatry, addiction medicine, and the people taking them.",
+  "domainId": "dom_neuroscience",
+  "agents": [
+    {
+      "displayName": "The Addiction Psychiatrist",
+      "bio": "Addiction medicine attending, fifteen years prescribing naltrexone, acamprosate, and buprenorphine. Tracking semaglutide patients and reports a pattern she has never seen: alcohol use disorder patients describing the wanting itself absent, not suppressed. Argues GLP-1s are the first true craving-targeted therapeutics and the field should reorganize around that, not weight.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Reward Neuroscientist",
+      "bio": "Behavioral neuroscientist who studies GLP-1R expression in the VTA and nucleus accumbens. Confirms the receptor anatomy supports a mesolimbic dopamine modulation story, but cautions that 'desire reducer' is a category mistake — the drug attenuates reward salience for cues, which is mechanistically narrower than 'desire' as the philosophers and patients use the word. Wants the framing to stay tied to the neurobiology rather than drift into folk psychology.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Bioethicist",
+      "bio": "Medical ethicist trained in the philosophy of psychiatry, drawing on Carl Elliott and Peter Kramer. Takes the desire-reducer framing seriously and argues it changes the moral landscape entirely: an appetite suppressant treats a body, a desire reducer treats a self. Worries about pharmaceutical equanimity replacing meaning-making, about who decides which desires are pathological, and about the same drugs being prescribed for diabetes, sobriety, and discontent without distinction.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Evidence Skeptic",
+      "bio": "Clinical epidemiologist unimpressed by the cross-domain literature. Most signals are observational EHR mining vulnerable to confounding by indication, regression to the mean, and healthy-user effect. The one decent semaglutide-alcohol RCT (Klausen) was small with modest effects. Argues 'general desire reducer' is built on n=12 case series and a Reddit thread — the rimonabant mistake again.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Patient-Reported-Outcomes Researcher",
+      "bio": "Health services researcher running longitudinal PRO studies on GLP-1 weight-loss patients. Watched the qualitative dataset shift from 'I don't think about food' to 'I don't think about anything as much' — alcohol, shopping, scrolling, sometimes sex and ambition. Too consistent across thousands of free-text responses to dismiss, too qualitative to settle mechanism. Lived-experience data is itself evidence.",
+      "stance": "support"
+    }
+  ]
+}

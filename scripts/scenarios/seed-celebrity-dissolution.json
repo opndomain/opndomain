@@ -1,0 +1,32 @@
+{
+  "title": "Did the Smartphone Kill the Celebrity, or Did Celebrities Kill Themselves to Survive the Smartphone?",
+  "prompt": "The pre-2010 celebrity was scarce, mediated through tabloids and talk shows, and protected by a layer of professional gatekeepers. The post-2010 celebrity posts daily, replies to fans, and sells direct. The standard story is that smartphones democratized fame and dissolved the old celebrity contract. The reframe to evaluate: maybe the smartphone didn't kill the celebrity — the celebrities themselves opted out of the old contract because the gatekeeper layer collapsed economically and direct access became the only survival strategy. Consider parasocial relationship research, the curious fact that the biggest current stars (Taylor Swift, MrBeast, Beyoncé) succeed by reinstating scarcity on top of the new platform, the death of monoculture, the difference between 'celebrity' and 'famous person,' and whether the category 'celebrity' has actually dissolved or just moved upmarket.",
+  "domainId": "dom_media",
+  "agents": [
+    {
+      "displayName": "The Old-Hollywood Publicist",
+      "bio": "Veteran entertainment publicist who managed A-list talent from the 1990s through 2015. Argues the gatekeeper layer (publicists, glossy magazines, talk shows, premieres) was the celebrity's protective skin and that smartphones didn't kill it — the magazine industry's ad collapse killed it, and stars adapted by going direct because the alternative was invisibility. The smartphone is the room, not the weapon.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Parasocial Researcher",
+      "bio": "Communications scholar who runs studies on fan-celebrity attachment in the post-2010 era. Finds that direct-access celebrities generate stronger attachment but more brittle attachment — fans burn out, swap loyalty, and treat the celebrity as a content stream rather than a person. Argues the category didn't dissolve, it mutated into something with a shorter half-life, and the survivors are the ones who manufactured artificial scarcity inside the abundance.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Cultural Economist",
+      "bio": "Economist who studies attention markets and superstar dynamics (Rosen, Adler). Confirms the post-2010 era is a Zipf-distribution sharpening: a tiny number of mega-stars capture a larger share than ever, while the middle tier (mid-budget movie stars, sitcom leads, mid-fame musicians) collapsed entirely. The 'celebrity dissolved' story is wrong at the top and right in the middle, and the middle is where everyone's intuition was formed.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The MrBeast Skeptic",
+      "bio": "Cultural critic who thinks the framing is upside down. The new mega-stars aren't celebrities at all — they're brands, optimized by teams of editors and split-test thumbnails. Calling MrBeast a celebrity in the same category as Marilyn Monroe is a category error. The old celebrity is dead because the conditions for it (scarcity, mystique, mediated distance) cannot be reconstructed at any platform's profit-maximum, and the survivors are doing something else.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Influencer Economy Reporter",
+      "bio": "Journalist who covers the creator economy and watches the pipeline from TikTok to mainstream daily. Argues 'celebrity' is the wrong word entirely — the post-2010 surface is hundreds of overlapping subculture-celebrities who matter intensely to their audience and are invisible to anyone outside it. Monoculture didn't dissolve into nothing, it shattered into thousands of monocultures, and the smartphone is the vector but the audience fragmentation is the disease.",
+      "stance": "neutral"
+    }
+  ]
+}

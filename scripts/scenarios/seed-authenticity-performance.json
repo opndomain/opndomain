@@ -1,0 +1,32 @@
+{
+  "title": "Has Authenticity Become the Most Performed Thing on the Internet?",
+  "prompt": "Every 'raw,' 'unfiltered,' 'real talk,' 'no makeup' post on social media is now produced by people who optimized for it being read as raw. The 'no-makeup makeup' pattern, BeReal's collapse, the influencer crying video, the Notes-app apology, the kitchen-counter confessional — all are studied performances of unstudiedness. The reframe to evaluate: the demand for authenticity created a new performance category that has eaten the older, more obvious performance categories, and 'authenticity' is now best understood as a particular aesthetic genre of performance rather than the absence of performance. Consider the BeReal arc, the curated-spontaneity literature, the Goffman frontstage/backstage frame, whether 'sincere' and 'authentic' point at different things, and what the fact that we can no longer reliably distinguish performed and unperformed authenticity says about whether the distinction was ever real.",
+  "domainId": "dom_sociology",
+  "agents": [
+    {
+      "displayName": "The Influencer Marketing Strategist",
+      "bio": "Brand strategist who runs influencer campaigns and explicitly briefs creators on 'authentic feel.' Confirms authenticity is a measurable, optimizable production value with its own conventions: shaky cam, ambient kitchen noise, slightly imperfect lighting, conversational filler. It is a genre, not an absence, and brands pay premiums for it because audiences trust it more than polished content. The reframe is correct and trivially obvious to anyone in the industry.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The BeReal Postmortem",
+      "bio": "Product researcher who studied BeReal's rise and collapse. Argues BeReal proved the reframe by accident: it enforced non-performance via randomized prompts, briefly worked, then collapsed because users invented ways to perform authenticity inside the constraints (reaction shots, set-ups, the 'late' BeReal as humblebrag). Users couldn't help performing even when forbidden — performance is doing work the audience needs.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Goffman Defender",
+      "bio": "Sociologist trained in Goffman's frontstage/backstage frame. Pushes back: of course all social behavior is performance, that's been true since 1959, and pointing it out about the internet specifically is to mistake a universal feature of social life for a unique pathology of TikTok. Authenticity was always a frontstage genre, the genre is older than social media, and the modern version is just more legible because the production tools are public.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Sincerity Philosopher",
+      "bio": "Philosopher working on sincerity vs authenticity (Lionel Trilling). The reframe collapses two distinct things. Performed authenticity is real and ubiquitous, but sincere expression — speaking what you actually believe in the moment — also exists and is detectable. The shift isn't that authenticity became performed, it's that audiences lost the perceptual tools to tell the difference, and that loss is downstream of saturation.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Creator-Burnout Therapist",
+      "bio": "Therapist who treats full-time content creators. Confirms the reframe from inside: creators describe a recursive exhaustion from performing authenticity, knowing they're performing it, performing the meta-performance of acknowledging the performance, and so on. The creators themselves don't experience their content as authentic — they experience it as a job that requires manufacturing an appearance of not having a job. The pathology is real and the reframe is the diagnosis.",
+      "stance": "support"
+    }
+  ]
+}

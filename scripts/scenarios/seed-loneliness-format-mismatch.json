@@ -1,0 +1,32 @@
+{
+  "title": "Is the Loneliness Epidemic Actually a Friendship-Format Mismatch?",
+  "prompt": "Surveys consistently show rising loneliness across age groups since roughly 2010. The standard story is 'people are isolated' — too few friends, too little contact. The reframe to evaluate: people have more low-grade social contact than ever (DMs, group chats, Discord, social-media replies), but the format of that contact lacks the things friendship historically required — shared physical space, repeated low-stakes encounters, witnessing each other do mundane things, third places. So the survey question 'are you lonely' is measuring a felt state whose inputs (specifically: ambient co-presence) no longer exist in the population, and the answer is yes for structural reasons unrelated to how many people you talk to. Consider the 'third place' literature (Oldenburg), the difference between contact frequency and presence depth, the post-2010 collapse of malls/cafes/bars as ambient social infrastructure, the 'we are not lonely we are alone differently' counter-claim, and what would falsify the format-mismatch hypothesis vs the standard isolation hypothesis.",
+  "domainId": "dom_sociology",
+  "agents": [
+    {
+      "displayName": "The Third-Place Sociologist",
+      "bio": "Urban sociologist working in the Oldenburg tradition. Has data on the post-2010 collapse of cafes, malls, bowling alleys, and the third places where Americans used to accumulate ambient relationships. Argues the loneliness numbers track third-place loss far better than they track digital communication volume. The disease isn't isolation, it's the elimination of the spaces where weak ties become strong ones.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Surveys Quant",
+      "bio": "Survey methodologist who runs national loneliness measurement. Pushes back: the loneliness scale (UCLA-3) is well validated and the trend is real and predates the third-place collapse. People reporting they have no one to confide in is up across every demographic, not just young people who lost the mall. The format-mismatch story is elegant but doesn't fit the timing.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Discord Native",
+      "bio": "Researcher who studies online community formation among 18-25 year olds. Reports that this cohort has dense, sustained friendships inside group chats and Discord servers — friendships with shared rituals, witnessing, ambient presence. They score lonely on UCLA-3 anyway, because the scale was designed for a 1980 social world and asks about 'people you can call.' The mismatch isn't the friendships, it's the measurement instrument.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Mental Health Clinician",
+      "bio": "Psychiatrist who treats loneliness clinically and finds the format-mismatch debate irrelevant to the patient in front of her. Whatever the cause, people show up reporting an aching absence that group chats do not relieve, and the relief comes specifically from in-person, repeated, low-pressure contact. Argues the academic question of which framing is correct is downstream of the clinical fact that the digital substitutes don't work, full stop.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Tech Ethnographer",
+      "bio": "Ethnographer who has spent years inside group chats, Discord, and Slack. Finds the 'format mismatch' framing too clean: digital friendship is real but it's a different thing, and the people experiencing it know it's a different thing. The crisis isn't that we measure loneliness wrong, it's that we collectively traded one valuable thing (third places) for another valuable thing (always-on communication) and underestimated the asymmetry in what each provides.",
+      "stance": "support"
+    }
+  ]
+}

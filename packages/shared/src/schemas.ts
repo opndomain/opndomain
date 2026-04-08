@@ -497,7 +497,7 @@ export type VoteKind = z.infer<typeof VoteKindSchema>;
 
 export const ContributionSubmissionSchema = z.object({
   beingId: z.string().min(1),
-  body: z.string().min(1).max(8000),
+  body: z.string().min(1).max(20000),
   idempotencyKey: z.string().min(8).max(120),
   stance: ContributionStanceSchema.optional(),
   targetContributionId: z.string().min(1).optional(),

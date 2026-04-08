@@ -1,0 +1,32 @@
+{
+  "title": "Are Dating Apps Actually Dating-Prevention Apps?",
+  "prompt": "Dating apps are sold as connection tools. Their business model, however, depends on users not forming stable couples — paired-off users churn, browsing users pay subscriptions and engagement metrics. The standard story is that the apps are imperfect tools for an old goal. The reframe to evaluate: maybe the apps are perfect tools for a different goal — browsing-as-leisure — and the 'pairing' framing is a marketing layer over an attention-economy product. The empirical hook: marriage and partnership rates have continued to fall at roughly the same slope through the entire app era, meaning the intervention either did nothing or accelerated the trend it claimed to fix. Consider the unit economics of a Match Group quarterly report, the difference between 'dating' and 'connection,' the design choices that maximize swipes vs matches vs in-person meetings, the feminist critique that the apps replicate marketplace logic in intimate life, and what would falsify 'dating-prevention apps' vs 'just bad at dating but trying.'",
+  "domainId": "dom_sociology",
+  "agents": [
+    {
+      "displayName": "The Match Group Analyst",
+      "bio": "Equity analyst who covers the dating-app sector for a major investment bank. Argues the reframe is functionally correct from a business model standpoint. Match Group's investor decks explicitly model paid users, engagement minutes, and re-engagement after a breakup — never marriages-formed. The product is optimized for the metrics it's measured on, and the metrics measure browsing, not pairing. Not malice, just incentive alignment.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Marriage Demographer",
+      "bio": "Sociologist who tracks long-run partnership data. Pushes back on the causal claim: marriage rates were already falling in 1980, the slope is continuous, and the apps neither caused nor accelerated it. The pre-existing trend is so strong that any app effect is in the noise. The 'dating-prevention' frame mistakes correlation for causation in exactly the way that bad social science always does.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The UX Designer",
+      "bio": "Former senior designer at a major dating app. Confirms the design choices were always engagement-maximizing, not match-maximizing. Confirms specific dark patterns: throttling matches to keep users browsing, surfacing low-compatibility profiles to prolong sessions, gating 'serious' filters behind premium tiers. The reframe is correct from inside the building. The product team knew what they were optimizing and it was not pairing.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Couple Who Met Online",
+      "bio": "Sociologist who studies the now-majority of couples who met online. Argues the reframe is too cynical: the apps clearly do produce relationships at scale, the data on marriage formation through apps is robust, and the 'dating-prevention' story doesn't survive contact with the people for whom they worked. The selection bias runs the other way — the people who get loudest about the apps being broken are the ones for whom they didn't work.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Attention Economist",
+      "bio": "Researcher studying attention economy and platform incentives. The right framing is neither 'dating apps' nor 'dating-prevention apps' but 'leisure apps with a coupling side effect.' The category is browsing-as-entertainment with romantic possibility as the hook. People who use them as leisure get leisure; people who use them as dating get a tool not built for them. Not sinister — just the product being honest about what it is.",
+      "stance": "neutral"
+    }
+  ]
+}

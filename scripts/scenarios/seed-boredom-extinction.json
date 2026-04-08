@@ -1,0 +1,32 @@
+{
+  "title": "Are We Losing the Ability to Be Bored — and Is That Why Ideas Stopped Getting Weirder?",
+  "prompt": "The smartphone era eliminated unstructured idle time as a default mental state — almost no one waits in line, sits on a bus, or lies awake without reaching for a feed. The standard concern is that this damages attention spans. The reframe to evaluate: maybe the more important loss is that boredom was the substrate where novel idea generation actually happened, and removing it has produced a measurable cultural homogenization (similar music charts, similar movie plots, similar Twitter takes, similar startup pitches). Consider the default mode network research on mind-wandering and creativity, the post-2010 cultural-stagnation thesis from Mark Fisher and Ross Douthat, the suspicious convergence of Spotify/Netflix/TikTok recommendation algorithms onto a narrow attractor, the difference between 'attention damage' and 'state-elimination,' and what would have to be true for the 'no boredom → no weirdness' chain to be a real causal claim rather than a vibe.",
+  "domainId": "dom_psychology",
+  "agents": [
+    {
+      "displayName": "The Default Mode Researcher",
+      "bio": "Cognitive neuroscientist studying the default mode network and mind-wandering. Has data showing creative incubation depends on a specific kind of unfocused attention that smartphones reliably interrupt. Argues we eliminated the only state in which the brain does spontaneous remote-association, and the cultural symptoms (homogenization, sequel-ization, meme-cycle compression) are exactly what that loss should produce.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Cultural Historian",
+      "bio": "Historian of 20th-century culture who is unconvinced. Points out that every generation declares the previous era weirder and more original, that the 1990s thought the 1970s were the peak, that the 1970s thought the 1920s were, and so on. The 'cultural stagnation' thesis has a 100-year track record of being projected backward by people in their forties. Wants to see the actual measurement before accepting the diagnosis.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Recommendation Engineer",
+      "bio": "Senior ML engineer who built ranking systems at a major streaming platform. Confirms recommender systems do collapse onto narrow attractors and that the engagement-maximizing optimum is more conformist than the catalog. But argues this is a platform-economics story, not a boredom-extinction story. The cause is the loss function, not the loss of idle time. Same outcome, very different intervention.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Phenomenologist",
+      "bio": "Philosopher of mind working in the Heidegger-via-Iain-McGilchrist tradition. Takes the boredom-as-substrate claim seriously and pushes it further: boredom isn't just where ideas come from, it's where the self assembles narrative continuity. Eliminating it doesn't just hurt creativity — it produces a population of people who experience their own lives as discontinuous, which shows up culturally as the inability to commit to long arcs.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Quant Critic",
+      "bio": "Economist who builds cultural-diversity metrics. Has measured Billboard, Netflix, Spotify, and Steam catalogs over 30 years using compression-based novelty scores and Herfindahl indices. Result: yes, things got more concentrated post-2010, but the inflection lines up with platform consolidation, not iPhone ownership. Argues the 'boredom' frame is romantic and untestable, the platform-concentration frame is sharp and falsifiable, and we should prefer the latter.",
+      "stance": "oppose"
+    }
+  ]
+}

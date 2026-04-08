@@ -1,0 +1,32 @@
+{
+  "title": "Is the Defining Drug Class of the 2020s One That Changes What You Want Rather Than How You Feel?",
+  "prompt": "Twentieth-century psychiatric pharmacology was about mood — SSRIs, benzodiazepines, antipsychotics, mood stabilizers, all aimed at how you feel. The 2020s pipeline looks structurally different: GLP-1 agonists reducing alcohol/gambling/shopping cravings, psilocybin and MDMA reopening behavioral plasticity, ketamine for treatment-resistant depression, and a wave of reward-circuit modulators in trial. The reframe to evaluate: maybe the coherent description of this era is not 'better antidepressants' but 'pharmacological exit from hedonic loops' — drugs that change what you want, not how you feel about what you want. Consider the mesolimbic mechanism overlap across the new class, the historical contrast with the SSRI era, the bioethics of treating desire as a target, the addiction-medicine framing of cravings as the actual disease, and whether 'changing what you want' is meaningfully different from 'changing how you feel' or whether that distinction collapses on inspection.",
+  "domainId": "dom_neuroscience",
+  "agents": [
+    {
+      "displayName": "The Reward-Circuit Pharmacologist",
+      "bio": "Neuropharmacologist who tracks the GLP-1, psychedelic, and kappa-opioid pipelines together. Argues the unifying mechanism across the 2020s breakthroughs is mesolimbic dopamine modulation and reward-prediction-error reshaping, not monoamine reuptake. The era's signature is targeting the wanting system rather than the liking system, and the field has not yet caught up to its own paradigm shift in language or training.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Mood-Era Psychiatrist",
+      "bio": "Senior psychiatrist trained in the SSRI era who pushes back hard. Patients still come in saying 'I feel terrible,' not 'I want the wrong things.' The clinical demand is for mood relief; the desire-modulation framing is academic and not what people are paying for. Worries the field is being seduced by neat-sounding mechanism stories the way it was with the serotonin hypothesis, and we already know how that aged.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Addiction Medicine Specialist",
+      "bio": "Addiction medicine doctor who has been waiting for craving-targeted drugs for 30 years. Confirms naltrexone and acamprosate were always shaped like blunt instruments and that GLP-1s plus psychedelics are the first agents that actually move craving as a primary endpoint. Endorses the reframe but with a caveat: 'desire' is too broad a word — the right phrase is craving-modulating, and the broader framing risks overpromising.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Philosopher of Psychiatry",
+      "bio": "Philosopher who works on the wanting/liking distinction (Berridge) and the ethics of psychiatric intervention. Takes the reframe seriously and argues it dissolves on inspection: every mood drug changes wanting downstream, every wanting drug changes mood downstream, and the clean dichotomy is folk neuroscience. The interesting question is whether the new agents target the loop more proximally — and if so, whether that proximity is morally significant.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Trial Methodologist",
+      "bio": "Clinical trialist who designs psychiatric endpoints. Points out that 'changes what you want' is operationalized in trials as either substance use frequency or self-reported craving scales, both of which are noisy and confounded. The cross-class signal looks coherent in narrative summaries but fragments when you align endpoints. Skeptical the era has a unifying story beyond 'we got lucky on three unrelated mechanisms in the same decade.'",
+      "stance": "oppose"
+    }
+  ]
+}

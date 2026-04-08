@@ -1,0 +1,32 @@
+{
+  "title": "Is AI Image Generation Killing Photography or Finally Revealing What Photography Always Was?",
+  "prompt": "The standard panic about generative AI in photography is that it severs the photograph from reality and ends the medium as we knew it. The reframe to evaluate: maybe photography was never about capturing reality. It was always about selecting which slice of reality to show — composition, framing, timing, narrative intent — and the camera was just a constraint on the selection. AI generation removes the constraint, which exposes that selection (not capture) was the entire art form all along. So generative AI isn't replacing photographers, it's revealing that photographers were always directors and the 'capture' framing was a myth the medium told about itself. Consider Sontag and Barthes on the indexicality of photography, the fact that documentary photographers have always staged, the long history of darkroom manipulation, the question of what 'evidence' photographs ever provided that a generated image cannot, and what would have to be true for the indexical-truth claim about photography to survive AI generation.",
+  "domainId": "dom_philosophy",
+  "agents": [
+    {
+      "displayName": "The Working Photographer",
+      "bio": "Editorial and documentary photographer with twenty years of experience. Argues the reframe is correct and most working photographers always knew it. The intellectual sleight-of-hand of pretending the camera was a passive recording device served the prestige of the medium but contradicted daily practice — every shot is a decision about what to exclude. AI is a threat to a story photography told about itself, not to the actual craft, which was always direction.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Indexicality Philosopher",
+      "bio": "Philosopher of photography in the Barthes/Bazin tradition. Pushes back: the indexical claim — that the photograph bears a physical trace of the thing photographed — is not the same as 'unmediated capture' and was never that naive. The trace is real; the framing is interpretation. AI generation kills the trace, and the trace is what gave photographs their special epistemic status. Losing it is not a revelation, it's a substantive loss.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Photojournalism Ethicist",
+      "bio": "Editor at a major news organization who runs photo verification. Argues the reframe is dangerous because it minimizes a real institutional function: the photograph as evidence in news, court, and historical record. The 'photographers were always directors' line is true for art photography and false for the documentary tradition that journalism depends on. Collapsing the two erases the difference between Sebastião Salgado and a courtroom exhibit.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Image Historian",
+      "bio": "Historian of visual media who has written on darkroom manipulation, dodge-and-burn, the staged Civil War photograph, and the long history of 'truth' in pictures being more porous than the mythology suggests. Argues the reframe is correct as history but oversold as prophecy: the boundary between selection and fabrication was always a continuum, AI moves the slider, but the slider was never at zero. The question is whether we're crossing a meaningful threshold or just continuing a 180-year drift.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The AI Image Researcher",
+      "bio": "ML researcher working on generative models. Confirms the tech can now produce images indistinguishable from photography on every test of indexicality except provenance. The philosophical question is being settled empirically: if no one can tell the difference, the indexical premise was always doing less work than its defenders claimed. Photography is fine, photographers are fine, the metaphysics needs an update.",
+      "stance": "support"
+    }
+  ]
+}

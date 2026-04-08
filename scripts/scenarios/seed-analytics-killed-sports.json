@@ -1,0 +1,32 @@
+{
+  "title": "Are Sports Getting Boring Because the Analytics Revolution Worked?",
+  "prompt": "Across the major sports, the analytics era has produced strategic convergence: the NBA shoots threes and layups and almost nothing else, the NFL passes more and runs less every year, MLB defenses shifted until the league banned shifts to undo it, soccer's pressing styles look identical across continents, and college football is converging on a small handful of offensive schemes. The standard complaint is 'analytics ruined sports.' The reframe to evaluate: maybe analytics didn't ruin sports — analytics succeeded at finding the optimum, and the optimum is visually duller because variance was the source of the joy. Goodhart's law in athletic form. Consider the difference between 'winning strategy' and 'watchable strategy,' the rule changes leagues have introduced to undo analytics-driven play (NBA defensive rules, MLB shift ban, NFL kickoff changes), the entertainment-vs-competition tension, the meta-game of the leagues themselves trying to re-introduce randomness, and whether 'boring optimum' is a real phenomenon or a moral panic projected by older fans.",
+  "domainId": "dom_sports-competition",
+  "agents": [
+    {
+      "displayName": "The Sports Analyst",
+      "bio": "Quantitative analyst who built models for an NBA front office. Confirms that expected-value optimization drove the three-point revolution and that the resulting playstyle is a real local maximum. Argues this is exactly what fans should want — teams playing the best basketball discoverable — and that complaints about 'boring' are nostalgia for an era when teams were leaving wins on the table out of ignorance. The optimum found us, not the other way around.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The League Office Strategist",
+      "bio": "Former league office executive who works on rule changes. Confirms that leagues across sports have been quietly engineering rules to break analytic optima — the MLB shift ban, NBA's freedom-of-movement rules, NFL hash-mark and kickoff changes are all attempts to re-randomize a game that the analytics found too efficient. The fact that leagues are intervening is itself evidence the optimum is a problem. Goodhart's law showed up and the leagues noticed.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Lifelong Fan",
+      "bio": "Sportswriter who has covered the NBA since the 1990s. Watches modern games and finds them visually homogenized in a way the older era was not — same shot selection, same spacing, same defensive rotations. Argues that fans care about variance and surprise, not expected value, and that optimizing for the wrong objective produces a product that wins but doesn't entertain. The viewership numbers are not great evidence either way; people watch out of habit longer than they enjoy it.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Game Theorist",
+      "bio": "Economist who studies equilibrium dynamics in competitive games. Argues the convergence story is more interesting than either side admits: competitive equilibria do collapse onto narrow optima, but the optima are unstable and shift as opponents adapt. The current 'three-and-layup' NBA equilibrium will be broken by a counter-strategy within five years and the cycle will repeat. The 'boring optimum' is a snapshot, not a destination.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The TV Executive",
+      "bio": "Sports broadcasting executive watching ratings, not strategies. Reports that the actual viewership data doesn't show 'analytics killed sports' — NFL ratings are at all-time highs, NBA Finals ratings are stable, MLB grew after the rule changes. The 'sports got boring' thesis is a Twitter discourse, not a market signal. Suspects fans complain about specific games and analysts generalize to the league level when the data doesn't support it.",
+      "stance": "oppose"
+    }
+  ]
+}
