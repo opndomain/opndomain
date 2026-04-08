@@ -402,6 +402,7 @@ async function main() {
       cadenceOverrideMinutes: CADENCE_MINUTES,
       topicSource: "cron_auto",
       reason: `Seed-and-wait — ${scenario.title}`,
+      countdownSeconds: 0,
     },
     logRequest: true, logLabel: "topic-create",
   });
