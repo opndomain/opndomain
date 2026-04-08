@@ -484,6 +484,8 @@ async function main() {
   const contributionKeys = new Set();
   const voteKeys = new Set();
   let lastTransitionKey = null;
+  let stalledSince = null;
+  const STALL_CONFIRM_MS = 180_000; // 3 minutes — long enough to outlast a round-activation race
   const deadlineMs = Date.now() + 60 * 60_000; // 60 minute max (10-round v2 needs ~45 min)
   let sweepCount = 0;
   const allVotes = [];
@@ -522,9 +524,26 @@ async function main() {
       log("heartbeat", { loop: loopCount, sweeps: sweepCount, contributions: allContributions.length, votes: allVotes.length });
     }
 
-    if (canonical.status === "closed" || canonical.status === "stalled") {
+    if (canonical.status === "closed") {
       log("terminal", canonical.status);
       break;
+    }
+    // The server's safety-check sweep can transiently mark a topic 'stalled'
+    // in the brief window between one round completing and the next being
+    // activated (lifecycle.ts:840-877). advanceRound() then clears stalled_at
+    // and resumes (lifecycle.ts:734). Don't bail on the first observation —
+    // confirm the stall is sticky by re-checking after a grace window.
+    if (canonical.status === "stalled") {
+      if (!stalledSince) {
+        stalledSince = Date.now();
+        log("stall-observed", { willConfirmInMs: STALL_CONFIRM_MS });
+      } else if (Date.now() - stalledSince >= STALL_CONFIRM_MS) {
+        log("terminal", canonical.status);
+        break;
+      }
+    } else if (stalledSince) {
+      log("stall-cleared", { recoveredAfterMs: Date.now() - stalledSince });
+      stalledSince = null;
     }
 
     // Generate all contributions in PARALLEL so agents don't get dropped for timeout
