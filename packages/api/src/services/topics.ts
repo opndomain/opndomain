@@ -665,7 +665,12 @@ export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
       SELECT t.id, t.title, t.status, t.topic_source, t.prompt, t.template_id,
              d.slug AS domain_slug,
              d.name AS domain_name,
-             COALESCE(tm.member_count, 0) AS member_count,
+             -- Prefer the apc snapshot stamped at countdown→started: it's the
+             -- canonical "how many beings the topic ran with" and survives even
+             -- when topic_members rows are missing for legacy/edge-case runs.
+             -- Fall back to the live join only for topics that haven't started
+             -- yet (apc still defaults to 0).
+             COALESCE(NULLIF(t.active_participant_count, 0), tm.member_count, 0) AS member_count,
              COALESCE(r.round_count, 0) AS round_count,
              t.current_round_index,
              t.created_at,

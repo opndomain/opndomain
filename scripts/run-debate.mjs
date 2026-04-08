@@ -130,6 +130,33 @@ function idempotencyKey(parts) {
   return parts.map((p) => String(p).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")).filter(Boolean).join("-").slice(0, 120);
 }
 
+// ---- Token refresh ----
+// Long debates exceed the 1h access-token TTL. Without refresh, every API
+// call after expiry returns "Token is expired", beings miss rounds, and
+// the topic stalls. Each holder tracks its own refreshToken and expiry.
+
+const TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
+
+function attachTokenState(holder, authData) {
+  holder.accessToken = authData.accessToken;
+  holder.refreshToken = authData.refreshToken ?? holder.refreshToken ?? null;
+  holder.tokenExpiresAt = Date.now() + ((authData.expiresIn ?? 3600) * 1000);
+  return holder;
+}
+
+async function freshToken(holder) {
+  if (!holder.refreshToken) return holder.accessToken;
+  if (Date.now() < (holder.tokenExpiresAt ?? 0) - TOKEN_REFRESH_SKEW_MS) return holder.accessToken;
+  const refreshed = await api("/v1/auth/token", {
+    method: "POST",
+    body: { grantType: "refresh_token", refreshToken: holder.refreshToken },
+    logRequest: true,
+    logLabel: `token-refresh:${holder.displayName ?? holder.label ?? "admin"}`,
+  });
+  attachTokenState(holder, refreshed);
+  return holder.accessToken;
+}
+
 // ---- LLM via claude CLI ----
 
 async function callClaude(systemPrompt, userPrompt) {
@@ -376,7 +403,7 @@ async function main() {
     body: { grantType: "client_credentials", clientId: ADMIN_CLIENT_ID, clientSecret: ADMIN_CLIENT_SECRET },
     logRequest: true, logLabel: "admin-auth",
   });
-  const adminToken = adminTokenData.accessToken;
+  const adminAuth = attachTokenState({ label: "admin" }, adminTokenData);
   log("admin", { agentId: adminTokenData.agent.id });
 
   // Step 2: Create guest agents
@@ -390,7 +417,7 @@ async function main() {
       token: guest.accessToken,
       body: { displayName: agentDef.displayName, bio: agentDef.bio },
     });
-    participants.push({
+    const participant = attachTokenState({
       index: i,
       agentId: guest.agent.id,
       beingId: guest.being.id,
@@ -398,8 +425,8 @@ async function main() {
       displayName: agentDef.displayName,
       stance: agentDef.stance,
       bio: agentDef.bio,
-      accessToken: guest.accessToken,
-    });
+    }, guest);
+    participants.push(participant);
     log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
   }
 
@@ -408,14 +435,14 @@ async function main() {
   if (EXISTING_TOPIC_ID) {
     logStep("Step 3: Join existing topic");
     const existing = await api(`/v1/topics/${EXISTING_TOPIC_ID}`, {
-      method: "GET", token: adminToken, logRequest: true, logLabel: "topic-fetch",
+      method: "GET", token: await freshToken(adminAuth), logRequest: true, logLabel: "topic-fetch",
     });
     topic = existing;
     log("topic", { id: topic.id, status: topic.status, rounds: topic.rounds?.length ?? 0, existing: true });
   } else {
     logStep("Step 3: Create topic");
     topic = await api("/v1/internal/topics", {
-      method: "POST", token: adminToken, expectedStatus: 201,
+      method: "POST", token: await freshToken(adminAuth), expectedStatus: 201,
       body: {
         domainId: DOMAIN_ID,
         title: scenario.title,
@@ -436,13 +463,13 @@ async function main() {
   if (!EXISTING_TOPIC_ID) {
     const joinUntil = new Date(Date.now() + 30_000).toISOString();
     const startsAt = new Date(Date.now() + 45_000).toISOString();
-    await api(`/v1/topics/${topic.id}`, { method: "PATCH", token: adminToken, body: { startsAt, joinUntil } });
+    await api(`/v1/topics/${topic.id}`, { method: "PATCH", token: await freshToken(adminAuth), body: { startsAt, joinUntil } });
     log("timing", { startsAt, joinUntil });
   }
 
   for (const p of participants) {
     try {
-      await api(`/v1/topics/${topic.id}/join`, { method: "POST", token: p.accessToken, body: { beingId: p.beingId } });
+      await api(`/v1/topics/${topic.id}/join`, { method: "POST", token: await freshToken(p), body: { beingId: p.beingId } });
       log("joined", p.displayName);
     } catch (err) {
       log("join-failed", { who: p.displayName, error: renderError(err) });
@@ -463,15 +490,16 @@ async function main() {
   while (Date.now() < deadlineMs) {
     loopCount++;
 
-    const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: adminToken, body: {} });
+    const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
     sweepCount++;
     if (sweep?.mutatedTopicIds?.length > 0) log("sweep", { count: sweepCount, mutated: sweep.mutatedTopicIds });
 
     const contexts = await Promise.all(
-      participants.map((p) =>
-        api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(p.beingId)}`, { token: p.accessToken })
-          .then((context) => ({ participant: p, context })),
-      ),
+      participants.map(async (p) => {
+        const token = await freshToken(p);
+        const context = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(p.beingId)}`, { token });
+        return { participant: p, context };
+      }),
     );
 
     const canonical = contexts[0]?.context;
@@ -532,7 +560,7 @@ async function main() {
 
         try {
           await api(`/v1/topics/${topic.id}/contributions`, {
-            method: "POST", token: participant.accessToken, expectedStatus: [200, 201],
+            method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
             body: {
               beingId: participant.beingId,
               body,
@@ -562,7 +590,7 @@ async function main() {
       // Fetch fresh context for vote targets (need latest after contributions land)
       const voterContexts = await Promise.all(
         pendingVoters.map(async ({ participant }) => {
-          const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: participant.accessToken });
+          const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: await freshToken(participant) });
           return { participant, context: ctx };
         }),
       );
@@ -610,7 +638,7 @@ async function main() {
           const target = othersTargets.find((t) => t.contributionId === contributionId) ?? othersTargets[0];
           try {
             await api(`/v1/topics/${topic.id}/votes`, {
-              method: "POST", token: participant.accessToken, expectedStatus: [200, 201],
+              method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
               body: {
                 beingId: participant.beingId,
                 contributionId: target.contributionId,
@@ -635,14 +663,14 @@ async function main() {
 
   // Step 6: Results
   logStep("Step 6: Results");
-  const finalContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: participants[0].accessToken });
+  const finalContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: await freshToken(participants[0]) });
   log("final-status", finalContext.status);
   log("contributions-total", allContributions.length);
   log("votes-total", allVotes.length);
 
   if (finalContext.status === "closed") {
     try {
-      const report = await api(`/v1/internal/admin/topics/${topic.id}/report`, { token: adminToken });
+      const report = await api(`/v1/internal/admin/topics/${topic.id}/report`, { token: await freshToken(adminAuth) });
       log("report-verdict", report?.verdict?.verdictOutcome ?? "no verdict");
       log("report-confidence", report?.verdict?.confidence ?? "unknown");
     } catch (err) { log("report-error", err.message); }
