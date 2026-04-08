@@ -219,12 +219,14 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "critique",
       goal: "Challenge the strongest positions identified in the mapping round.",
       guidance:
-        "Now that positions have been mapped, target the most compelling arguments. Identify unsupported assumptions, logical gaps, or alternative interpretations of the evidence. Steelmanning before critiquing signals rigor.",
+        "Now that positions have been mapped, target the most compelling arguments. Identify unsupported assumptions, logical gaps, or alternative interpretations of the evidence. Steelmanning before critiquing signals rigor. You must also name one concrete result, fact pattern, or argument that would materially change your mind about your current position. This condition must be specific enough that a third party could check it: name a number, threshold, named study, dataset, archival finding, implementation result, or concrete fact pattern. Do not give a generic answer like 'better evidence' or 'a strong RCT.'",
       priorRoundContext: "Position maps and the original proposals they describe",
       qualityCriteria: [
         "Targets the strongest arguments, not strawmen",
         "Identifies specific logical or evidential gaps",
         "Offers counter-evidence or alternative framings",
+        "Names a concrete condition that would materially change the contributor's mind",
+        "Change-my-mind condition is specific enough that a reader could verify it, not a generic appeal to better evidence",
       ],
       votingGuidance: null,
     },
@@ -250,12 +252,14 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "refine",
       goal: "Address the strongest critiques and refine your position.",
       guidance:
-        "Respond directly to the critiques. Concede valid points and shore up surviving arguments with additional evidence. Conceding ground on weak points strengthens your overall position.",
+        "Respond directly to the critiques. Concede valid points and shore up surviving arguments with additional evidence. Conceding ground on weak points strengthens your overall position. Revisit the condition you named in critique and say whether anything in the round moved you meaningfully toward it, away from it, or left it unchanged. Unchanged is a valid answer if the critiques did not meet the bar you set. Faking small updates to appear reasonable is worse than honestly saying your view did not move.",
       priorRoundContext: "Critiques raised against the mapped positions",
       qualityCriteria: [
         "Directly addresses the strongest critiques",
         "Concedes where warranted",
         "Strengthens remaining claims with new evidence or reasoning",
+        "Revisits the contributor's stated change-my-mind condition",
+        "States plainly whether the contributor's position moved, became more constrained, or remained unchanged",
       ],
       votingGuidance: null,
     },
@@ -288,6 +292,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "MY THESIS: <one sentence stating the position you hold>\n\n" +
         "WHY I HOLD IT: <2 paragraphs — your strongest case for this position, incorporating what you learned from critique and refine. Be specific. Cite evidence.>\n\n" +
         "STRONGEST OBJECTION I CAN'T FULLY ANSWER: <1 paragraph — the counter-argument you find most uncomfortable. Steelman it.>\n\n" +
+        "CHANGE-MY-MIND STATUS: <one short paragraph — looking back at the condition you named in critique and revisited in refine, say whether it was met, partially met, or not met, and whether your final position is stronger, weaker, or more constrained than when you first stated it. Unchanged is valid.>\n\n" +
         "PART B — IMPARTIAL SYNTHESIS\n\n" +
         "Now drop your persona. Write as a third-party reader who watched this debate without a side.\n\n" +
         "WHAT THIS DEBATE SETTLED: <1 paragraph — what the room actually agreed on after 9 rounds. If little was settled, say so honestly.>\n\n" +
@@ -299,6 +304,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Uses both PART A — MY POSITION and PART B — IMPARTIAL SYNTHESIS labels",
         "MAP_POSITION is a single integer pointing at one map-round position",
         "PART A is genuinely advocacy: takes a side, defends it, names its weakness",
+        "CHANGE-MY-MIND STATUS closes the loop on the condition stated in critique and revisited in refine",
         "PART B is genuinely impartial: does not advocate, names what's settled and what isn't",
         "NEUTRAL VERDICT reads as a third-party reader, not the same agent in disguise",
         "KICKER is a contestable claim from PART A, not commentary about the room",

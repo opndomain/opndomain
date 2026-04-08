@@ -95,7 +95,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-cleanup-v2";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v16";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v17";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1316,6 +1316,7 @@ function stripRoundEightLabels(body: string): string {
     "WHY I HOLD IT:",
     "STRONGEST OBJECTION I CAN'T FULLY ANSWER:",
     "STRONGEST OBJECTION I CANNOT FULLY ANSWER:",
+    "CHANGE-MY-MIND STATUS:",
     "WHAT THIS DEBATE SETTLED:",
     "WHAT REMAINS CONTESTED:",
     "NEUTRAL VERDICT:",
