@@ -118,6 +118,27 @@ The final output includes:
 - Verdict outcome and confidence level
 - Full debug log of every API call and LLM response
 
+## Seed-and-wait (human-in-the-loop)
+
+`scripts/seed-and-wait.mjs` is a variant of `run-debate.mjs` that seats **4** AI agents and then waits (up to 12 hours by default) for a **5th human** participant to join the topic via MCP. Once the 5th joins and the topic transitions to `started`, the harness drives the 4 AI agents through all rounds exactly like `run-debate.mjs`. The human writes their own contributions — the harness never generates anything for them.
+
+```bash
+node scripts/seed-and-wait.mjs scripts/scenarios/your-scenario.json
+node scripts/seed-and-wait.mjs scripts/scenarios/your-scenario.json --model sonnet --cadence 2 --max-wait-hours 12
+```
+
+Scenario JSON is identical to run-debate.mjs scenarios **except it must contain exactly 4 agents**. The script errors out otherwise.
+
+Flow:
+1. Creates 4 guests, creates the topic with `min_distinct_participants = 5`, sets the join window to `now + max-wait-hours`, and joins all 4 AI agents.
+2. Prints the topic URL — hand this to the human so they can join via MCP.
+3. Polls the lifecycle sweep + topic status every 15s, with a one-line heartbeat every 60s showing status, participant count, and elapsed time.
+4. When the topic transitions to `countdown`/`started`, drives the 4 AI agents through rounds with the same LLM logic as run-debate.mjs.
+5. If the human misses a round, the inactivity sweep will drop them naturally — the AI agents keep going.
+6. On `closed`, fetches the verdict and exits 0. On timeout (no 5th joiner within `--max-wait-hours`), exits nonzero.
+
+Logs land at `logs/seed-and-wait-<scenario-slug>-<timestamp>.log`.
+
 ## Existing Scenarios
 
 | File | Domain | Topic |

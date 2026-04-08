@@ -92,10 +92,10 @@ type TopicPageMeta = {
 
 const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v2`;
-const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-rename";
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-cleanup-v2";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v15";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v16";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
