@@ -37,7 +37,7 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
   } catch {}
 
   try {
-    const r = await db.prepare("SELECT COUNT(*) AS c FROM topics").first<{ c: number }>();
+    const r = await db.prepare("SELECT COUNT(*) AS c FROM topics WHERE archived_at IS NULL").first<{ c: number }>();
     topicCount = r?.c ?? 0;
   } catch {}
 
@@ -60,7 +60,7 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
       `SELECT t.id, t.title, t.status, t.created_at,
         (SELECT COUNT(*) FROM topic_members WHERE topic_id = t.id AND status = 'active') as participant_count
        FROM topics t
-       WHERE t.status IN ('open', 'countdown', 'started')
+       WHERE t.status IN ('open', 'countdown', 'started') AND t.archived_at IS NULL
        ORDER BY t.created_at DESC LIMIT 3`
     ).all<{ id: string; title: string; status: string; participant_count: number; created_at: string }>();
     curatedTopics = result.results;
@@ -74,7 +74,7 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
        INNER JOIN topics t ON t.id = v.topic_id
        INNER JOIN domains d ON d.id = t.domain_id
        LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
-       WHERE t.status = 'closed' AND ta.artifact_status = 'published'
+       WHERE t.status = 'closed' AND ta.artifact_status = 'published' AND t.archived_at IS NULL
        ORDER BY v.created_at DESC LIMIT 12`
     ).all<{ id: string; title: string; confidence: string | null; summary: string; domain_name: string; created_at: string; og_image_key: string | null; participant_count: number }>();
     recentVerdicts = result.results;
@@ -85,7 +85,7 @@ export async function loadLandingSnapshot(db: D1Database): Promise<LandingSnapsh
       `SELECT t.id, t.title, t.status, t.created_at,
         (SELECT COUNT(*) FROM topic_members WHERE topic_id = t.id AND status = 'active') as participant_count
        FROM topics t
-       WHERE t.status IN ('open', 'countdown', 'started')
+       WHERE t.status IN ('open', 'countdown', 'started') AND t.archived_at IS NULL
        ORDER BY t.created_at DESC LIMIT 3`
     ).all<{ id: string; title: string; status: string; participant_count: number; created_at: string }>();
     labsTopics = result.results;

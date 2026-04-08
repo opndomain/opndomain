@@ -264,7 +264,7 @@ describe("topic routes", () => {
     assert.equal(payload.data[0]?.templateId, "debate");
     assert.equal(payload.data[0]?.memberCount, 7);
     const query = db.allCalls.at(-1);
-    assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ? AND t.template_id = ?"));
+    assert.ok(query?.sql.includes("WHERE t.archived_at IS NULL AND t.status = ? AND d.slug = ? AND t.template_id = ?"));
     assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate"]);
   });
 
@@ -299,7 +299,7 @@ describe("topic routes", () => {
     assert.equal(payload.data[0]?.status, "open");
     assert.equal((payload.data[0] as { roundCount?: number }).roundCount, 2);
     const query = db.allCalls.at(-1);
-    assert.ok(query?.sql.includes("WHERE t.status = ?"));
+    assert.ok(query?.sql.includes("WHERE t.archived_at IS NULL AND t.status = ?"));
     assert.deepEqual(query?.bindings, ["open"]);
   });
 

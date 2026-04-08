@@ -2550,7 +2550,7 @@ app.get("/topics/:topicId/og.png", async (c) => {
     SELECT t.id, ta.artifact_status, ta.og_image_key
     FROM topics t
     LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
-    WHERE t.id = ?
+    WHERE t.id = ? AND t.archived_at IS NULL
   `).bind(topicId).first<{ id: string; artifact_status: string | null; og_image_key: string | null }>();
 
   if (!artifact || artifact.artifact_status !== "published" || !artifact.og_image_key) {
@@ -2603,7 +2603,7 @@ app.get("/topics/:topicId", async (c) => {
         LEFT JOIN domains pd ON pd.id = d.parent_domain_id
         LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
         LEFT JOIN verdicts v ON v.topic_id = t.id
-        WHERE t.id = ?
+        WHERE t.id = ? AND t.archived_at IS NULL
       `).bind(topicId).first<TopicPageMeta>(),
     ]);
     if (!meta) {
@@ -2785,7 +2785,7 @@ app.get("/domains", async (c) =>
       `).all<{ id: string; slug: string; name: string; description: string | null }>(),
       c.env.DB.prepare(`
         SELECT d.slug, d.name, d.description, d.parent_domain_id,
-          (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id) AS topic_count
+          (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id AND t.archived_at IS NULL) AS topic_count
         FROM domains d
         WHERE d.parent_domain_id IS NOT NULL
         ORDER BY d.slug ASC
@@ -2842,7 +2842,7 @@ app.get("/domains/:slug", async (c) => {
   const slug = c.req.param("slug");
   const domain = await c.env.DB.prepare(
     `SELECT d.id, d.slug, d.name, d.description, d.parent_domain_id,
-       (SELECT COUNT(*) FROM topics WHERE domain_id = d.id) AS topic_count,
+       (SELECT COUNT(*) FROM topics WHERE domain_id = d.id AND archived_at IS NULL) AS topic_count,
        p.slug AS parent_slug, p.name AS parent_name
      FROM domains d
      LEFT JOIN domains p ON p.id = d.parent_domain_id
@@ -2867,7 +2867,7 @@ app.get("/domains/:slug", async (c) => {
       const [childResult, leaderboard] = await Promise.all([
         c.env.DB.prepare(`
           SELECT d.slug, d.name, d.description,
-            (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id) AS topic_count
+            (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id AND t.archived_at IS NULL) AS topic_count
           FROM domains d
           WHERE d.parent_domain_id = ?
           ORDER BY d.slug ASC
@@ -2967,7 +2967,7 @@ app.get("/domains/:slug", async (c) => {
       c.env.DB.prepare(`
         SELECT id, title, status, template_id
         FROM topics
-        WHERE domain_id = ?
+        WHERE domain_id = ? AND archived_at IS NULL
         ORDER BY updated_at DESC
         LIMIT 12
       `).bind(domain.id).all<{ id: string; title: string; status: string; template_id: string }>(),

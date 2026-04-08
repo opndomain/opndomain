@@ -638,7 +638,9 @@ async function getTopicRow(env: ApiEnv, topicId: string) {
 
 export async function listTopics(env: ApiEnv, filters: TopicListFilters = {}) {
   await ensureSeedDomains(env);
-  const whereClauses: string[] = [];
+  // Public listing never shows archived topics. Admin views go through a
+  // separate query in services/admin.ts that explicitly opts in.
+  const whereClauses: string[] = ["t.archived_at IS NULL"];
   const bindings: unknown[] = [];
 
   if (filters.status) {

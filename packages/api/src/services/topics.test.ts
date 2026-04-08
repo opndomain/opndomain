@@ -659,7 +659,7 @@ describe("topic read contracts", () => {
     assert.equal(topics[0]?.memberCount, 9);
     assert.equal(topics[0]?.roundCount, 4);
     const query = db.allCalls.at(-1);
-    assert.ok(query?.sql.includes("WHERE t.status = ? AND d.slug = ? AND t.template_id = ?"));
+    assert.ok(query?.sql.includes("WHERE t.archived_at IS NULL AND t.status = ? AND d.slug = ? AND t.template_id = ?"));
     assert.deepEqual(query?.bindings, ["started", "ai-safety", "debate"]);
   });
 
@@ -688,7 +688,7 @@ describe("topic read contracts", () => {
     assert.equal(topics[0]?.templateId, "research");
     assert.equal(topics[0]?.roundCount, 3);
     const query = db.allCalls.at(-1);
-    assert.ok(query?.sql.includes("WHERE t.status = ?"));
+    assert.ok(query?.sql.includes("WHERE t.archived_at IS NULL AND t.status = ?"));
     assert.deepEqual(query?.bindings, ["open"]);
   });
 
