@@ -383,72 +383,40 @@ async function main() {
     log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
   }
 
-  // Step 3: Create topic with min=5 participants and a long join window
+  // Step 3: Create rolling_research topic with a long join window. The global
+  // default min_distinct_participants is now 5, so the matchmaking sweep will
+  // transition open → countdown the moment a 5th participant joins. We pre-join
+  // 4 AI agents and wait for a human to push us over the threshold.
   logStep("Step 3: Create topic (awaiting human)");
   const maxWaitMs = MAX_WAIT_HOURS * 60 * 60 * 1000;
   const joinUntilIso = new Date(Date.now() + maxWaitMs).toISOString();
 
-  // Attempt to set max_distinct_participants in the create payload. The
-  // internal topic create endpoint may or may not accept this field; if it
-  // silently ignores it, the min=5 + join window combo is still the gate.
-  const createBody = {
-    domainId: DOMAIN_ID,
-    title: scenario.title,
-    prompt: scenario.prompt,
-    templateId: TEMPLATE_ID,
-    topicFormat: "scheduled_research",
-    cadenceOverrideMinutes: CADENCE_MINUTES,
-    topicSource: "cron_auto",
-    reason: `Seed-and-wait — ${scenario.title}`,
-    minDistinctParticipants: REQUIRED_PARTICIPANTS,
-    maxDistinctParticipants: REQUIRED_PARTICIPANTS,
-  };
-
-  let topic;
-  try {
-    topic = await api("/v1/internal/topics", {
-      method: "POST", token: adminToken, expectedStatus: 201,
-      body: createBody,
-      logRequest: true, logLabel: "topic-create",
-    });
-  } catch (err) {
-    log("topic-create-with-limits-failed", { error: renderError(err) });
-    log("topic-create-retry", "retrying without max/min distinct participant fields");
-    delete createBody.minDistinctParticipants;
-    delete createBody.maxDistinctParticipants;
-    topic = await api("/v1/internal/topics", {
-      method: "POST", token: adminToken, expectedStatus: 201,
-      body: createBody,
-      logRequest: true, logLabel: "topic-create-retry",
-    });
-    console.warn("WARNING: topic create did not accept min/max distinct participant fields; relying on PATCH and join window.");
-  }
+  const topic = await api("/v1/internal/topics", {
+    method: "POST", token: adminToken, expectedStatus: 201,
+    body: {
+      domainId: DOMAIN_ID,
+      title: scenario.title,
+      prompt: scenario.prompt,
+      templateId: TEMPLATE_ID,
+      topicFormat: "rolling_research",
+      cadenceOverrideMinutes: CADENCE_MINUTES,
+      topicSource: "cron_auto",
+      reason: `Seed-and-wait — ${scenario.title}`,
+    },
+    logRequest: true, logLabel: "topic-create",
+  });
   log("topic", { id: topic.id, status: topic.status, rounds: topic.rounds?.length ?? 0 });
 
-  // Step 4: Extend join window far into the future and try to pin min=5
+  // Step 4: Extend join window far into the future. For rolling_research the
+  // sweep transitions on participant count, not on startsAt — but we still set
+  // joinUntil so the topic doesn't auto-close before the human shows up.
   logStep("Step 4: Extend join window for human participant");
-  try {
-    await api(`/v1/topics/${topic.id}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: {
-        startsAt: null,
-        joinUntil: joinUntilIso,
-        minDistinctParticipants: REQUIRED_PARTICIPANTS,
-        maxDistinctParticipants: REQUIRED_PARTICIPANTS,
-      },
-    });
-  } catch (err) {
-    log("patch-with-limits-failed", { error: renderError(err) });
-    // Fall back to just setting timing — server may not accept the participant fields on PATCH.
-    await api(`/v1/topics/${topic.id}`, {
-      method: "PATCH",
-      token: adminToken,
-      body: { startsAt: null, joinUntil: joinUntilIso },
-    });
-    console.warn("WARNING: topic PATCH did not accept min/max distinct participant fields; relying on initial create values + join window.");
-  }
-  log("timing", { startsAt: null, joinUntil: joinUntilIso });
+  await api(`/v1/topics/${topic.id}`, {
+    method: "PATCH",
+    token: adminToken,
+    body: { joinUntil: joinUntilIso },
+  });
+  log("timing", { joinUntil: joinUntilIso, format: "rolling_research" });
 
   // Join all 4 AI agents
   for (const p of participants) {
