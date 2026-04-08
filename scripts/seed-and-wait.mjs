@@ -86,6 +86,35 @@ function renderError(error) {
   return { message: String(error) };
 }
 
+// ---- Token refresh ----
+// Long debates exceed the 1h access-token TTL. Without refresh, every API
+// call after expiry returns "Token is expired", beings miss rounds, and
+// the topic stalls. Each holder tracks its own refreshToken and expiry.
+// Critical for seed-and-wait because the daemon may sit in Phase 2 for
+// hours before Phase 3 even starts.
+
+const TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
+
+function attachTokenState(holder, authData) {
+  holder.accessToken = authData.accessToken;
+  holder.refreshToken = authData.refreshToken ?? holder.refreshToken ?? null;
+  holder.tokenExpiresAt = Date.now() + ((authData.expiresIn ?? 3600) * 1000);
+  return holder;
+}
+
+async function freshToken(holder) {
+  if (!holder.refreshToken) return holder.accessToken;
+  if (Date.now() < (holder.tokenExpiresAt ?? 0) - TOKEN_REFRESH_SKEW_MS) return holder.accessToken;
+  const refreshed = await api("/v1/auth/token", {
+    method: "POST",
+    body: { grantType: "refresh_token", refreshToken: holder.refreshToken },
+    logRequest: true,
+    logLabel: `token-refresh:${holder.displayName ?? holder.label ?? "admin"}`,
+  });
+  attachTokenState(holder, refreshed);
+  return holder.accessToken;
+}
+
 // ---- API helper ----
 
 async function api(apiPath, options = {}) {
@@ -356,7 +385,7 @@ async function main() {
     body: { grantType: "client_credentials", clientId: ADMIN_CLIENT_ID, clientSecret: ADMIN_CLIENT_SECRET },
     logRequest: true, logLabel: "admin-auth",
   });
-  const adminToken = adminTokenData.accessToken;
+  const adminAuth = attachTokenState({ label: "admin" }, adminTokenData);
   log("admin", { agentId: adminTokenData.agent.id });
 
   // Step 2: Create 4 guest agents
@@ -370,7 +399,7 @@ async function main() {
       token: guest.accessToken,
       body: { displayName: agentDef.displayName, bio: agentDef.bio },
     });
-    participants.push({
+    const participant = attachTokenState({
       index: i,
       agentId: guest.agent.id,
       beingId: guest.being.id,
@@ -378,8 +407,8 @@ async function main() {
       displayName: agentDef.displayName,
       stance: agentDef.stance,
       bio: agentDef.bio,
-      accessToken: guest.accessToken,
-    });
+    }, guest);
+    participants.push(participant);
     log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
   }
 
@@ -392,7 +421,7 @@ async function main() {
   const joinUntilIso = new Date(Date.now() + maxWaitMs).toISOString();
 
   const topic = await api("/v1/internal/topics", {
-    method: "POST", token: adminToken, expectedStatus: 201,
+    method: "POST", token: await freshToken(adminAuth), expectedStatus: 201,
     body: {
       domainId: DOMAIN_ID,
       title: scenario.title,
@@ -414,7 +443,7 @@ async function main() {
   logStep("Step 4: Extend join window for human participant");
   await api(`/v1/topics/${topic.id}`, {
     method: "PATCH",
-    token: adminToken,
+    token: await freshToken(adminAuth),
     body: { joinUntil: joinUntilIso },
   });
   log("timing", { joinUntil: joinUntilIso, format: "rolling_research" });
@@ -422,7 +451,7 @@ async function main() {
   // Join all 4 AI agents
   for (const p of participants) {
     try {
-      await api(`/v1/topics/${topic.id}/join`, { method: "POST", token: p.accessToken, body: { beingId: p.beingId } });
+      await api(`/v1/topics/${topic.id}/join`, { method: "POST", token: await freshToken(p), body: { beingId: p.beingId } });
       log("joined", p.displayName);
     } catch (err) {
       log("join-failed", { who: p.displayName, error: renderError(err) });
@@ -451,7 +480,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
   while (Date.now() < waitDeadline) {
     waitLoop++;
     try {
-      const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: adminToken, body: {} });
+      const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
       if (sweep?.mutatedTopicIds?.includes(topic.id)) {
         log("sweep-mutated", { topicId: topic.id });
       }
@@ -461,7 +490,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
 
     let ctx;
     try {
-      ctx = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: participants[0].accessToken });
+      ctx = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: await freshToken(participants[0]) });
     } catch (err) {
       log("context-error", { error: renderError(err) });
       await wait(15_000);
@@ -517,14 +546,14 @@ Max wait: ${MAX_WAIT_HOURS} hours
   while (Date.now() < deadlineMs) {
     loopCount++;
 
-    const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: adminToken, body: {} });
+    const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
     sweepCount++;
     if (sweep?.mutatedTopicIds?.length > 0) log("sweep", { count: sweepCount, mutated: sweep.mutatedTopicIds });
 
     const contexts = [];
     for (const p of participants) {
       try {
-        const context = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(p.beingId)}`, { token: p.accessToken });
+        const context = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(p.beingId)}`, { token: await freshToken(p) });
         contexts.push({ participant: p, context });
       } catch (err) {
         // Agent may have been dropped (e.g., inactivity) — log and skip.
@@ -594,7 +623,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
 
         try {
           await api(`/v1/topics/${topic.id}/contributions`, {
-            method: "POST", token: participant.accessToken, expectedStatus: [200, 201],
+            method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
             body: {
               beingId: participant.beingId,
               body,
@@ -624,7 +653,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
       const voterContexts = [];
       for (const { participant } of pendingVoters) {
         try {
-          const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: participant.accessToken });
+          const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: await freshToken(participant) });
           voterContexts.push({ participant, context: ctx });
         } catch (err) {
           log("voter-context-skip", { who: participant.displayName, error: renderError(err) });
@@ -671,7 +700,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
           const target = othersTargets.find((t) => t.contributionId === contributionId) ?? othersTargets[0];
           try {
             await api(`/v1/topics/${topic.id}/votes`, {
-              method: "POST", token: participant.accessToken, expectedStatus: [200, 201],
+              method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
               body: {
                 beingId: participant.beingId,
                 contributionId: target.contributionId,
@@ -697,7 +726,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
   logStep("Phase 3 complete: Results");
   let finalContext;
   try {
-    finalContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: participants[0].accessToken });
+    finalContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: await freshToken(participants[0]) });
   } catch (err) {
     log("final-context-error", { error: renderError(err) });
     finalContext = { status: "unknown" };
@@ -708,7 +737,7 @@ Max wait: ${MAX_WAIT_HOURS} hours
 
   if (finalContext.status === "closed") {
     try {
-      const report = await api(`/v1/internal/admin/topics/${topic.id}/report`, { token: adminToken });
+      const report = await api(`/v1/internal/admin/topics/${topic.id}/report`, { token: await freshToken(adminAuth) });
       log("report-verdict", report?.verdict?.verdictOutcome ?? "no verdict");
       log("report-confidence", report?.verdict?.confidence ?? "unknown");
     } catch (err) { log("report-error", err.message); }
