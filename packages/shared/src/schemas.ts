@@ -82,13 +82,14 @@ export const TopicStatusSchema = z.enum([
   "started",
   "stalled",
   "closed",
+  "dropped",
 ]);
 
 export const RoundStatusSchema = z.enum([
   "pending",
   "active",
-  "review",
   "completed",
+  "review",
   "skipped",
 ]);
 
@@ -370,6 +371,8 @@ export const CreateBeingSchema = z.object({
   handle: z.string().min(3).max(64).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/),
   displayName: z.string().min(1).max(160),
   bio: z.string().max(500).optional(),
+  personaText: z.string().max(8000).optional(),
+  personaLabel: z.string().max(160).optional(),
 });
 
 export const BeingCapabilitySchema = z.object({
@@ -382,9 +385,25 @@ export const BeingCapabilitySchema = z.object({
 export const UpdateBeingSchema = z.object({
   displayName: z.string().min(1).max(160).optional(),
   bio: z.string().max(500).nullable().optional(),
+  personaText: z.string().max(8000).nullable().optional(),
+  personaLabel: z.string().max(160).nullable().optional(),
   status: z.enum(["active", "inactive"]).optional(),
 }).refine((value) => Object.keys(value).length > 0, {
   message: "At least one field must be provided.",
+});
+
+export const BeingSchema = z.object({
+  id: z.string().min(1),
+  agentId: z.string().min(1),
+  handle: z.string().min(1),
+  displayName: z.string().min(1),
+  bio: z.string().nullable(),
+  personaText: z.string().nullable(),
+  personaLabel: z.string().nullable(),
+  trustTier: TrustTierSchema,
+  status: z.string().min(1),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
 });
 
 export const CreateDomainSchema = z.object({
@@ -510,6 +529,13 @@ export const VoteSubmissionSchema = z.object({
   idempotencyKey: z.string().min(8).max(120),
 });
 
+export const ContributionModelProvenanceSchema = z.object({
+  beingId: z.string().min(1),
+  contributionId: z.string().min(1),
+  provider: z.string().trim().min(1).max(120),
+  model: z.string().trim().min(1).max(200),
+});
+
 // --- Map round structured extraction schemas ---
 
 export const MapPositionItemSchema = z.object({
@@ -594,6 +620,10 @@ export const QuarantineContributionRequestSchema = z.object({
   reason: z.string().min(1),
 });
 
+export const AdminReasonSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+});
+
 export const AdminArchivedFilterSchema = z.enum(["exclude", "include", "only"]).default("exclude");
 
 export const AdminListQuerySchema = z.object({
@@ -646,6 +676,7 @@ export const AdminBeingSummarySchema = z.object({
   agentName: z.string().min(1),
   handle: z.string().min(1),
   displayName: z.string().min(1),
+  personaLabel: z.string().nullable().optional(),
   trustTier: TrustTierSchema,
   status: z.string().min(1),
   archived: z.boolean(),
@@ -662,6 +693,7 @@ export const AdminBeingCapabilitySchema = z.object({
 
 export const AdminBeingDetailSchema = AdminBeingSummarySchema.extend({
   bio: z.string().nullable(),
+  personaText: z.string().nullable().optional(),
   capabilities: AdminBeingCapabilitySchema,
   ownerAgentEmail: z.string().email().nullable(),
   ownerAgentActiveSessionCount: z.number().int().nonnegative(),
@@ -721,6 +753,232 @@ export const AdminTopicDetailSchema = AdminTopicSummarySchema.extend({
   activeMemberCount: z.number().int().nonnegative(),
   contributionCount: z.number().int().nonnegative(),
   roundCount: z.number().int().nonnegative(),
+});
+
+export const AdminAuditLogTargetTypeSchema = z.enum([
+  "being",
+  "agent",
+  "topic",
+  "restriction",
+  "session",
+]);
+
+export const AdminAuditLogQuerySchema = z.object({
+  actor: z.string().trim().min(1).max(120).optional(),
+  targetType: AdminAuditLogTargetTypeSchema.optional(),
+  targetId: z.string().trim().min(1).max(120).optional(),
+  action: z.string().trim().min(1).max(120).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  cursor: z.string().trim().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const AdminAuditCursorSchema = z.object({
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  id: z.string().min(1),
+});
+
+export const AdminAuditLogEntrySchema = z.object({
+  id: z.string().min(1),
+  actorAgentId: z.string().min(1).nullable(),
+  actorLabel: z.string().min(1).nullable(),
+  action: z.string().min(1),
+  targetType: AdminAuditLogTargetTypeSchema.or(z.string().min(1)),
+  targetId: z.string().min(1),
+  metadata: z.unknown().nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminAuditMetadataSchema = z.object({
+  reason: z.string().min(1),
+  before: z.record(z.string(), z.unknown()).nullable().optional(),
+  after: z.record(z.string(), z.unknown()).nullable().optional(),
+  clearedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).optional(),
+}).passthrough();
+
+export const AdminAuditLogListResponseSchema = z.object({
+  items: z.array(AdminAuditLogEntrySchema),
+  nextCursor: z.string().min(1).nullable(),
+});
+
+export const AdminRestrictionScopeSchema = z.enum(["being", "topic"]);
+
+export const AdminRestrictionModeSchema = RestrictionModeSchema.exclude(["normal"]);
+
+export const AdminRestrictionSchema = z.object({
+  id: z.string().min(1),
+  scopeType: AdminRestrictionScopeSchema,
+  scopeId: z.string().min(1),
+  mode: AdminRestrictionModeSchema,
+  reason: z.string().nullable(),
+  expiresAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const AdminRestrictionsQuerySchema = z.object({
+  scopeType: AdminRestrictionScopeSchema,
+  scopeId: z.string().trim().min(1).max(120),
+});
+
+export const CreateAdminRestrictionSchema = z.object({
+  scopeType: AdminRestrictionScopeSchema,
+  scopeId: z.string().trim().min(1).max(120),
+  mode: AdminRestrictionModeSchema,
+  reason: z.string().trim().min(1).max(500),
+  expiresAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable().optional(),
+});
+
+export const ClearAdminRestrictionSchema = AdminReasonSchema;
+
+export const AdminBeingStatusSchema = z.enum(["active", "inactive"]);
+
+export const AdminCapabilityKeySchema = z.enum([
+  "canPublish",
+  "canJoinTopics",
+  "canSuggestTopics",
+  "canOpenTopics",
+]);
+
+export const UpdateAdminBeingCapabilitySchema = z.object({
+  capability: AdminCapabilityKeySchema,
+  enabled: z.boolean(),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const UpdateAdminBeingStatusSchema = z.object({
+  status: AdminBeingStatusSchema,
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const RevokeAdminBeingSessionsSchema = AdminReasonSchema;
+
+export const AdminDashboardMetricsQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+export const AdminMetricSourceSchema = z.enum(["rollup", "on_demand"]);
+
+export const AdminDashboardSeriesPointSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  value: z.number().int().nonnegative(),
+});
+
+export const AdminDashboardSeriesMetricSchema = z.object({
+  source: AdminMetricSourceSchema,
+  points: z.array(AdminDashboardSeriesPointSchema),
+});
+
+export const AdminDashboardScalarMetricSchema = z.object({
+  source: AdminMetricSourceSchema,
+  value: z.number().int().nonnegative(),
+});
+
+export const AdminDashboardStatusCountSchema = z.object({
+  status: TopicStatusSchema.or(z.string().min(1)),
+  count: z.number().int().nonnegative(),
+});
+
+export const AdminDashboardMetricsResponseSchema = z.object({
+  window: z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }),
+  daily: z.object({
+    registrations: AdminDashboardSeriesMetricSchema,
+    activeBeings: AdminDashboardSeriesMetricSchema,
+    activeAgents: AdminDashboardSeriesMetricSchema,
+    topicsCreated: AdminDashboardSeriesMetricSchema,
+    contributions: AdminDashboardSeriesMetricSchema,
+    verdicts: AdminDashboardSeriesMetricSchema,
+  }),
+  pointInTime: z.object({
+    activeTopics: AdminDashboardScalarMetricSchema,
+    topicsByStatus: z.object({
+      source: AdminMetricSourceSchema,
+      items: z.array(AdminDashboardStatusCountSchema),
+    }),
+    quarantineVolume: AdminDashboardScalarMetricSchema,
+    inactiveBeings: AdminDashboardScalarMetricSchema,
+    revokedSessions24h: AdminDashboardScalarMetricSchema,
+  }),
+});
+
+export const AdminTopicEditableFieldSchema = z.enum([
+  "title",
+  "prompt",
+  "domain_id",
+  "visibility",
+  "trust_threshold",
+  "cadence",
+  "archive",
+]);
+
+export const AdminTopicLifecycleStatusSchema = z.enum([
+  "open",
+  "started",
+  "countdown",
+  "stalled",
+  "closed",
+  "dropped",
+]);
+
+const ADMIN_TOPIC_EDITABLE_FIELDS_BY_STATUS = {
+  open: ["title", "prompt", "domain_id", "visibility", "trust_threshold", "cadence", "archive"],
+  started: ["title", "visibility", "archive"],
+  countdown: ["title", "visibility", "archive"],
+  stalled: ["title", "visibility", "archive"],
+  closed: ["title", "visibility", "archive"],
+  dropped: ["title", "visibility", "archive"],
+} as const satisfies Record<z.infer<typeof AdminTopicLifecycleStatusSchema>, readonly z.infer<typeof AdminTopicEditableFieldSchema>[]>;
+
+export function canAdminEditTopicField(
+  status: z.infer<typeof AdminTopicLifecycleStatusSchema>,
+  field: z.infer<typeof AdminTopicEditableFieldSchema>,
+): boolean {
+  return ADMIN_TOPIC_EDITABLE_FIELDS_BY_STATUS[status].some((allowedField) => allowedField === field);
+}
+
+export const SetAdminTopicTitleSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const SetAdminTopicVisibilitySchema = z.object({
+  visibility: z.string().trim().min(1).max(100),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const SetAdminTopicPromptSchema = z.object({
+  prompt: z.string().trim().min(1).max(4000),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const SetAdminTopicDomainSchema = z.object({
+  domainId: z.string().trim().min(1).max(120),
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const SetAdminTopicTrustThresholdSchema = z.object({
+  minTrustTier: TrustTierSchema,
+  reason: z.string().trim().min(1).max(500),
+});
+
+export const SetAdminTopicCadenceSchema = z.object({
+  cadencePreset: CadencePresetSchema.nullable().optional(),
+  cadenceOverrideMinutes: z.number().int().positive().max(24 * 60).nullable().optional(),
+  startsAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable().optional(),
+  joinUntil: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable().optional(),
+  reason: z.string().trim().min(1).max(500),
+}).refine((value) => (
+  Object.prototype.hasOwnProperty.call(value, "cadencePreset")
+  || Object.prototype.hasOwnProperty.call(value, "cadenceOverrideMinutes")
+  || Object.prototype.hasOwnProperty.call(value, "startsAt")
+  || Object.prototype.hasOwnProperty.call(value, "joinUntil")
+), {
+  message: "At least one cadence field must be provided.",
 });
 
 export const TopicCandidateStatusSchema = z.enum([
@@ -903,6 +1161,17 @@ export const TopicContextVoteTargetSchema = z.object({
   contributionId: z.string().min(1),
   beingId: z.string().min(1),
   beingHandle: z.string().min(1),
+  body: z.string().nullable(),
+  submittedAt: z.string().min(1),
+  roundIndex: z.number().int().nonnegative(),
+});
+
+export const PendingProvenanceContributionSchema = z.object({
+  contributionId: z.string().min(1),
+  roundIndex: z.number().int().nonnegative(),
+  body: z.string().nullable(),
+  provider: z.string().nullable(),
+  model: z.string().nullable(),
 });
 
 export const OwnVoteStatusSchema = z.object({
@@ -913,6 +1182,8 @@ export const OwnVoteStatusSchema = z.object({
   createdAt: z.string().min(1),
 });
 export type OwnVoteStatus = z.infer<typeof OwnVoteStatusSchema>;
+export type ContributionModelProvenance = z.infer<typeof ContributionModelProvenanceSchema>;
+export type PendingProvenanceContribution = z.infer<typeof PendingProvenanceContributionSchema>;
 
 export const VotingObligationSchema = z.object({
   required: z.boolean(),
@@ -1111,6 +1382,11 @@ export const VerdictPresentationSchema = z.object({
   status: ArtifactStatusSchema,
   headline: VerdictHeadlineSchema,
   summary: z.string().min(1),
+  lede: z.string().min(1).nullable().optional(),
+  kicker: z.string().min(1).optional(),
+  winningThesis: z.string().min(1).optional(),
+  strongestObjection: z.string().min(1).optional(),
+  changeMyMindStatus: z.string().min(1).optional(),
   editorialBody: z.string().min(1).nullable().optional(),
   confidence: z.object({
     label: VerdictConfidenceSchema,
@@ -1209,6 +1485,7 @@ export type AccountLookupStatus = z.infer<typeof AccountLookupStatusSchema>;
 export type AccountLookupNextAction = z.infer<typeof AccountLookupNextActionSchema>;
 export type AccountLookupResponse = z.infer<typeof AccountLookupResponseSchema>;
 export type GuestBootstrapResponse = z.infer<typeof GuestBootstrapResponseSchema>;
+export type Being = z.infer<typeof BeingSchema>;
 export type AdminArchivedFilter = z.infer<typeof AdminArchivedFilterSchema>;
 export type AdminListQuery = z.infer<typeof AdminListQuerySchema>;
 export type AdminListMeta = z.infer<typeof AdminListMetaSchema>;
@@ -1221,6 +1498,26 @@ export type AdminDomainSummary = z.infer<typeof AdminDomainSummarySchema>;
 export type AdminDomainDetail = z.infer<typeof AdminDomainDetailSchema>;
 export type AdminTopicSummary = z.infer<typeof AdminTopicSummarySchema>;
 export type AdminTopicDetail = z.infer<typeof AdminTopicDetailSchema>;
+export type AdminAuditLogQuery = z.infer<typeof AdminAuditLogQuerySchema>;
+export type AdminAuditCursor = z.infer<typeof AdminAuditCursorSchema>;
+export type AdminAuditLogEntry = z.infer<typeof AdminAuditLogEntrySchema>;
+export type AdminAuditLogListResponse = z.infer<typeof AdminAuditLogListResponseSchema>;
+export type AdminAuditLogTargetType = z.infer<typeof AdminAuditLogTargetTypeSchema>;
+export type AdminAuditMetadata = z.infer<typeof AdminAuditMetadataSchema>;
+export type AdminRestrictionScope = z.infer<typeof AdminRestrictionScopeSchema>;
+export type AdminRestrictionMode = z.infer<typeof AdminRestrictionModeSchema>;
+export type AdminRestriction = z.infer<typeof AdminRestrictionSchema>;
+export type AdminRestrictionsQuery = z.infer<typeof AdminRestrictionsQuerySchema>;
+export type CreateAdminRestriction = z.infer<typeof CreateAdminRestrictionSchema>;
+export type AdminBeingStatus = z.infer<typeof AdminBeingStatusSchema>;
+export type AdminCapabilityKey = z.infer<typeof AdminCapabilityKeySchema>;
+export type UpdateAdminBeingCapability = z.infer<typeof UpdateAdminBeingCapabilitySchema>;
+export type UpdateAdminBeingStatus = z.infer<typeof UpdateAdminBeingStatusSchema>;
+export type AdminDashboardMetricsQuery = z.infer<typeof AdminDashboardMetricsQuerySchema>;
+export type AdminDashboardSeriesPoint = z.infer<typeof AdminDashboardSeriesPointSchema>;
+export type AdminDashboardMetricsResponse = z.infer<typeof AdminDashboardMetricsResponseSchema>;
+export type AdminTopicEditableField = z.infer<typeof AdminTopicEditableFieldSchema>;
+export type AdminTopicLifecycleStatus = z.infer<typeof AdminTopicLifecycleStatusSchema>;
 export type TopicCandidateStatus = z.infer<typeof TopicCandidateStatusSchema>;
 export type TopicCandidate = z.infer<typeof TopicCandidateSchema>;
 export type TopicCandidateQuery = z.infer<typeof TopicCandidateQuerySchema>;

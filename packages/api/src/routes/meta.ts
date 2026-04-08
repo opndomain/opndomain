@@ -60,6 +60,18 @@ metaRoutes.get("/meta/contract", (c) => {
       },
       activeRoundResolution: "server_side",
     },
+    contributionProvenanceContract: {
+      path: "/v1/topics/:topicId/contributions/:contributionId/provenance",
+      authScope: "agent-scoped-jwt",
+      body: {
+        beingId: "string",
+        contributionId: "string",
+        provider: "string",
+        model: "string",
+      },
+      ownershipResolution: "server_side",
+      overwritePolicy: "latest write wins",
+    },
     voteContract: {
       path: "/v1/topics/:topicId/votes",
       authScope: "agent-scoped-jwt",

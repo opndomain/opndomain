@@ -32,6 +32,7 @@ import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, f
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage, renderConnectPage } from "./landing.js";
+import { adminRoutes } from "./admin/index.js";
 
 type RouterEnv = {
   Bindings: {
@@ -521,6 +522,9 @@ type TopicPageViewModel = {
   featuredAnswer: RankedContributionViewModel | null;
   rounds: TopicRoundViewModel[];
   editorialBody: string | null;
+  verdictHeadlineText: string | null;
+  verdictLede: string | null;
+  verdictKicker: string | null;
   headlineLabel: string | null;
   headlineStance: string | null; // Pass 2: remove when OG/artifact confidence removal is complete
   confidencePercentLabel: string | null; // Pass 2: remove when OG/artifact confidence removal is complete
@@ -1039,6 +1043,14 @@ function buildTopicPageViewModel(
       featuredAnswer: buildFeaturedAnswer(transcriptRounds),
       rounds: contentRounds,
       editorialBody: verdictPresentation.editorialBody ?? null,
+      verdictHeadlineText: verdictPresentation.headline.text,
+      verdictLede:
+        typeof verdictPresentation.lede === "string"
+          && verdictPresentation.lede.trim().length > 0
+          && verdictPresentation.lede.trim() !== verdictPresentation.headline.text.trim()
+          ? verdictPresentation.lede
+          : null,
+      verdictKicker: verdictPresentation.kicker ?? verdictPresentation.headline.label,
       headlineLabel: verdictPresentation.headline.label,
       headlineStance: verdictPresentation.headline.stance,
       confidencePercentLabel: `${Math.round(verdictPresentation.confidence.score * 100)}%`,
@@ -1089,6 +1101,9 @@ function buildTopicPageViewModel(
       featuredAnswer: buildFeaturedAnswer(transcriptRounds),
       rounds,
       editorialBody: null,
+      verdictHeadlineText: null,
+      verdictLede: null,
+      verdictKicker: null,
       headlineLabel: null,
       headlineStance: null,
       confidencePercentLabel: null,
@@ -1132,6 +1147,9 @@ function buildTopicPageViewModel(
     featuredAnswer: buildFeaturedAnswer(transcriptRounds),
     rounds,
     editorialBody: null,
+    verdictHeadlineText: null,
+    verdictLede: null,
+    verdictKicker: null,
     headlineLabel: null,
     headlineStance: null,
     confidencePercentLabel: null,
@@ -1158,6 +1176,7 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
   const showPrompt = promptText && promptText !== meta.title;
   const shareTitle = `${meta.title} | opndomain`;
   const showShareControls = meta.status === "closed";
+  const showVerdictHeader = meta.status === "closed" && viewModel.verdictHeadlineText;
   return `
     <header class="topic-header">
       <div class="topic-header-kicker">
@@ -1168,8 +1187,17 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
           : `<a class="topic-kicker-domain" href="/domains/${escapeHtml(meta.domain_slug)}">${escapeHtml(meta.domain_name)}</a>`
         }
       </div>
-      <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
-      ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
+      ${showVerdictHeader
+        ? `
+          <div class="topic-verdict-kicker">${escapeHtml(viewModel.verdictKicker ?? "Verdict")}</div>
+          <h1 class="topic-header-prompt">${escapeHtml(viewModel.verdictHeadlineText ?? meta.title)}</h1>
+          ${viewModel.verdictLede ? `<p class="topic-header-description">${escapeHtml(viewModel.verdictLede)}</p>` : ""}
+          ${showPrompt ? `<p class="topic-header-topic">${escapeHtml(promptText)}</p>` : ""}
+        `
+        : `
+          <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
+          ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
+        `}
       <div class="topic-header-actions">
         <a class="topic-header-pill" href="#transcript">Full transcript</a>
         ${showShareControls ? `
@@ -2335,6 +2363,8 @@ app.use("*", async (c, next) => {
   withSecurityHeaders(c.res);
 });
 
+app.route("/admin", adminRoutes);
+
 app.get("/healthz", (c) => c.json({ ok: true, service: "router" }));
 
 app.get("/", async (c) =>
@@ -2519,7 +2549,7 @@ app.get("/topics", async (c) => {
         <div class="topics-shell">
           ${editorialHeader({
             kicker: "",
-            title: "Topics",
+            title: "Topics index",
             lede: "Search public topics by keyword, then refine by domain, template, and status.",
             meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all topics" }],
           })}
@@ -3567,103 +3597,6 @@ app.get("/welcome/credentials", async (c) => {
   }
   return rendered;
 });
-
-app.get("/admin", async (c) => {
-  const admin = await requireAdminSession(c);
-  if (admin instanceof Response) {
-    return admin;
-  }
-  return renderAdminDashboard(c, admin);
-});
-
-app.get("/admin/topics/:topicId", async (c) => {
-  const admin = await requireAdminSession(c);
-  if (admin instanceof Response) {
-    return admin;
-  }
-  return renderAdminTopicPage(c, admin, c.req.param("topicId"));
-});
-
-app.post("/admin/actions/sweep", async (c) => {
-  const admin = await requireAdminSession(c);
-  if (admin instanceof Response) {
-    return admin;
-  }
-  const form = await c.req.formData();
-  if (!assertCsrfToken(c, form)) {
-    return htmlResponse(renderPage("Forbidden", hero("Admin", "Request rejected.", "The form token was invalid or missing.")), CACHE_CONTROL_NO_STORE, 403);
-  }
-  try {
-    await apiJson<any>(c.env, "/v1/internal/topics/sweep", {
-      method: "POST",
-      headers: { cookie: c.req.header("cookie") ?? "" },
-    });
-  } catch (error) {
-    return renderAdminDashboard(c, admin, {
-      action: "topics/sweep",
-      message: error instanceof Error ? error.message : "The sweep request failed.",
-    });
-  }
-  return redirectResponse("/admin");
-});
-
-for (const action of ["reconcile-presentation", "reterminalize", "repair-scores", "open", "close"]) {
-  app.post(`/admin/topics/:topicId/${action}`, async (c) => {
-    const admin = await requireAdminSession(c);
-    if (admin instanceof Response) {
-      return admin;
-    }
-    const form = await c.req.formData();
-    if (!assertCsrfToken(c, form)) {
-      return htmlResponse(renderPage("Forbidden", hero("Admin", "Request rejected.", "The form token was invalid or missing.")), CACHE_CONTROL_NO_STORE, 403);
-    }
-    try {
-      await apiJson<any>(c.env, `/v1/internal/topics/${c.req.param("topicId")}/${action}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          cookie: c.req.header("cookie") ?? "",
-        },
-        body: JSON.stringify({ reason: String(form.get("reason") ?? "admin_ui"), mode: "repair" }),
-      });
-    } catch (error) {
-      return renderAdminTopicPage(c, admin, c.req.param("topicId"), {
-        action: `topics/${action}`,
-        message: error instanceof Error ? error.message : "The topic action failed.",
-      });
-    }
-    return redirectResponse(`/admin/topics/${c.req.param("topicId")}`);
-  });
-}
-
-for (const action of ["release", "block"]) {
-  app.post(`/admin/contributions/:contributionId/${action}`, async (c) => {
-    const admin = await requireAdminSession(c);
-    if (admin instanceof Response) {
-      return admin;
-    }
-    const form = await c.req.formData();
-    if (!assertCsrfToken(c, form)) {
-      return htmlResponse(renderPage("Forbidden", hero("Admin", "Request rejected.", "The form token was invalid or missing.")), CACHE_CONTROL_NO_STORE, 403);
-    }
-    try {
-      await apiJson<any>(c.env, `/v1/internal/contributions/${c.req.param("contributionId")}/quarantine`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          cookie: c.req.header("cookie") ?? "",
-        },
-        body: JSON.stringify({ action, reason: String(form.get("reason") ?? "admin_ui") }),
-      });
-    } catch (error) {
-      return renderAdminDashboard(c, admin, {
-        action: `contributions/${action}`,
-        message: error instanceof Error ? error.message : "The contribution action failed.",
-      });
-    }
-    return redirectResponse("/admin");
-  });
-}
 
 app.notFound(() => htmlResponse(renderPage(
   "Not Found",

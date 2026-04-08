@@ -1,5 +1,6 @@
 import {
   PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
+  parseFinalArgument,
   TERMINALIZATION_CONFIDENCE_MAP,
   TERMINALIZATION_FORCE_FLUSH_EMPTY_REMAINING,
   TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS,
@@ -756,6 +757,7 @@ export async function runTerminalizationSequence(
   const confidence = chooseConfidence(terminalizationMode, completedRounds);
   const fallbackVerdictPresentation = await buildVerdictSummary(rounds, refreshedContributions);
   let verdictPresentation = fallbackVerdictPresentation;
+  let parsedFinalArgument: ReturnType<typeof parseFinalArgument> = null;
 
   // Extract winning final argument. The winning-argument / verdict box renders
   // PART B (impartial synthesis); the opening synthesis box renders PART A
@@ -767,10 +769,12 @@ export async function runTerminalizationSequence(
     const partAMatch = /PART A[\s—-]*MY POSITION([\s\S]*?)(?=PART B[\s—-]*IMPARTIAL SYNTHESIS|$)/i.exec(winningFinalArg.body);
     const partA = partAMatch?.[1]?.trim() ?? "";
     verdictPresentation.editorialBody = partA.length >= 80 ? partA : winningFinalArg.body;
+    parsedFinalArgument = parseFinalArgument(winningFinalArg.body);
   }
+  console.info("final_argument_parse", { topicId, parsed: Boolean(parsedFinalArgument) });
 
   // Extract both-sides structure from winning body (label-keyed parsing)
-  const bothSides = winningFinalArg ? extractBothSidesSummary(winningFinalArg.body) : null;
+  let bothSides = winningFinalArg ? extractBothSidesSummary(winningFinalArg.body) : null;
 
   let epistemicReasoning: Record<string, unknown> | null = null;
   if (env.ENABLE_EPISTEMIC_SCORING) {
@@ -805,6 +809,29 @@ export async function runTerminalizationSequence(
     positionBeingMap = mapResult.positionBeingMap;
   }
 
+  if (parsedFinalArgument && winningFinalArg) {
+    verdictPresentation.summary = parsedFinalArgument.neutralVerdict;
+
+    let winnerIsMajority = false;
+    for (const [label, beingIds] of positionBeingMap.entries()) {
+      const majorityPos = finalPositions.find(
+        (position) => normalizePositionLabel(position.label) === label && position.classification === "majority",
+      );
+      if (majorityPos && beingIds.includes(winningFinalArg.beingId)) {
+        winnerIsMajority = true;
+        break;
+      }
+    }
+
+    bothSides = winnerIsMajority
+      ? {
+          majorityCase: parsedFinalArgument.whyIHoldIt,
+          counterArgument: parsedFinalArgument.strongestObjection,
+          finalVerdict: parsedFinalArgument.neutralVerdict,
+        }
+      : extractBothSidesSummary(winningFinalArg.body);
+  }
+
   // Recompute verdictOutcome from finalPositions so convergence label stays aligned with positions_json
   const verdictOutcome = synthesizeOutcome(finalPositions, verdictPresentation.participantCount);
 
@@ -829,6 +856,7 @@ export async function runTerminalizationSequence(
       ...(epistemicReasoning ? { epistemic: epistemicReasoning } : {}),
       ...(minorityReports.length > 0 ? { minorityReports } : {}),
       ...(bothSides ? { bothSidesSummary: bothSides } : {}),
+      ...(parsedFinalArgument ? { parsedFinalArgument } : {}),
     },
     Boolean(options?.reterminalize),
     verdictOutcome,

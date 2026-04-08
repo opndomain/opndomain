@@ -19,6 +19,8 @@ import {
   PHASE19_ROUND_INSTRUCTION_OVERRIDES_SQL,
   PHASE20_VOTE_CATEGORIES_SQL,
   PHASE23_DOMAIN_GROUPS_SQL,
+  PHASE25_BEING_PERSONA_FIELDS_SQL,
+  PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -46,6 +48,8 @@ describe("schema migrations", () => {
       "020_autonomous_rolling",
       "021_domain_groups",
       "022_rename_debate_v2",
+      "023_being_persona_fields",
+      "024_contribution_model_provenance",
     ]);
   });
 
@@ -187,6 +191,17 @@ describe("schema migrations", () => {
     assert.match(PHASE23_DOMAIN_GROUPS_SQL, /INSERT OR IGNORE INTO domains/);
     assert.match(PHASE23_DOMAIN_GROUPS_SQL, /dom_ai-machine-intelligence/);
     assert.match(PHASE23_DOMAIN_GROUPS_SQL, /UPDATE domains SET parent_domain_id = 'dom_media-culture'/);
+  });
+
+  it("adds persona fields to beings in phase 25", () => {
+    assert.match(PHASE25_BEING_PERSONA_FIELDS_SQL, /ALTER TABLE beings ADD COLUMN persona_text TEXT;/);
+    assert.match(PHASE25_BEING_PERSONA_FIELDS_SQL, /ALTER TABLE beings ADD COLUMN persona_label TEXT;/);
+  });
+
+  it("adds contribution model provenance fields in phase 26", () => {
+    assert.match(PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL, /ALTER TABLE contributions ADD COLUMN model_provider TEXT;/);
+    assert.match(PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL, /ALTER TABLE contributions ADD COLUMN model_name TEXT;/);
+    assert.match(PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL, /ALTER TABLE contributions ADD COLUMN model_recorded_at TEXT;/);
   });
 
   it("adds persisted account classes and topic sources in phase 16", () => {

@@ -1,50 +1,29 @@
 #!/usr/bin/env node
 
 /**
- * run-debate.mjs â€” Universal e2e debate driver with CLI-powered agents.
+ * run-debate-codex.mjs - Universal e2e debate driver with Codex CLI-powered agents.
  *
- * Each agent gets a persona (system prompt) and generates contributions
- * by calling `claude` CLI in print mode with the round context from the API.
+ * Each agent gets a persona prompt and generates contributions by calling
+ * `codex exec` with the round context from the API.
  *
  * Usage:
- *   node scripts/run-debate.mjs scripts/scenarios/tiger-woods.json
- *   node scripts/run-debate.mjs scripts/scenarios/tiger-woods.json --cadence 3
- *   node scripts/run-debate.mjs scripts/scenarios/tiger-woods.json --model sonnet
- *   node scripts/run-debate.mjs scripts/scenarios/tiger-woods.json --domain-id dom_ai-safety
- *   node scripts/run-debate.mjs scripts/scenarios/tiger-woods.json --api-base-url http://localhost:8787
- *
- * Scenario JSON shape:
- *   {
- *     "title": "Is Tiger Woods the Best Golfer Ever?",
- *     "prompt": "Evaluate Tiger Woods's claim to...",
- *     "domainId": "dom_game-theory",          // optional
- *     "templateId": "debate",               // optional
- *     "cadenceMinutes": 2,                     // optional
- *     "agents": [
- *       {
- *         "displayName": "The Statistician",
- *         "bio": "Numbers-first golf analyst...",
- *         "stance": "support"
- *       }
- *     ]
- *   }
+ *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json
+ *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --cadence 3
+ *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --model gpt-5.4-mini
+ *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --domain-id dom_ai-safety
+ *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --api-base-url http://localhost:8787
  */
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { Agent, setGlobalDispatcher } from "undici";
 
-// Bump fetch timeouts to 5 minutes â€” default 30s headers timeout was crashing
-// the script when many parallel API calls saturated the local HTTP queue.
 setGlobalDispatcher(new Agent({
   headersTimeout: 300_000,
   bodyTimeout: 300_000,
   connectTimeout: 60_000,
 }));
-
-// ---- CLI parsing ----
 
 function readFlag(name, fallback) {
   const idx = process.argv.indexOf(name);
@@ -54,13 +33,13 @@ function readFlag(name, fallback) {
 const scenarioPath = process.argv[2];
 if (!scenarioPath || scenarioPath.startsWith("--")) {
   console.error(`
-Usage: node scripts/run-debate.mjs <scenario.json> [options]
+Usage: node scripts/run-debate-codex.mjs <scenario.json> [options]
 
 Options:
   --api-base-url URL    API base URL (default: https://api.opndomain.com)
   --domain-id ID        Domain ID (default: dom_game-theory)
   --cadence MINUTES     Round duration in minutes (default: 2)
-  --model MODEL         Claude model: haiku, sonnet, opus (default: sonnet)
+  --model MODEL         Codex model (default: gpt-5.4-mini)
 `);
   process.exit(1);
 }
@@ -71,18 +50,16 @@ const API_BASE_URL = readFlag("--api-base-url", "https://api.opndomain.com");
 const DOMAIN_ID = scenario.domainId ?? readFlag("--domain-id", "dom_game-theory");
 const TEMPLATE_ID = scenario.templateId ?? "debate";
 const CADENCE_MINUTES = Number(readFlag("--cadence", scenario.cadenceMinutes ?? 2));
-const LLM_MODEL = readFlag("--model", "sonnet"); // sonnet follows formatting rules; haiku ignores no-markdown
+const LLM_MODEL = readFlag("--model", "gpt-5.4-mini");
 const EXISTING_TOPIC_ID = readFlag("--existing-topic", null);
 
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_DIR = path.resolve("logs");
 const scenarioSlug = path.basename(scenarioPath, ".json").replace(/[^a-z0-9-]/gi, "-");
-const LOG_PATH = path.join(LOG_DIR, `debate-${scenarioSlug}-${RUN_ID}.log`);
+const LOG_PATH = path.join(LOG_DIR, `debate-codex-${scenarioSlug}-${RUN_ID}.log`);
 
 const ADMIN_CLIENT_ID = "cli_8308c04fc3a813a0e34435e08ec0c5f8";
 const ADMIN_CLIENT_SECRET = "_1504zCRV7WRnBQ5dtZycHkcO7LxMsdC7P0Nkj5wTCM";
-
-// ---- Logging ----
 
 function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function writeLine(line = "") { console.log(line); fs.appendFileSync(LOG_PATH, `${line}\n`); }
@@ -96,8 +73,6 @@ function renderError(error) {
   if (error instanceof Error) return { name: error.name, message: error.message, stack: error.stack?.split("\n").slice(0, 6).join("\n") };
   return { message: String(error) };
 }
-
-// ---- API helper ----
 
 async function api(apiPath, options = {}) {
   const { method = "GET", token, body, expectedStatus = 200, logRequest = false, logLabel = null } = options;
@@ -135,11 +110,6 @@ function isBeingActiveInContext(context, beingId) {
     && context.members.some((member) => member.beingId === beingId && member.status === "active");
 }
 
-// ---- Token refresh ----
-// Long debates exceed the 1h access-token TTL. Without refresh, every API
-// call after expiry returns "Token is expired", beings miss rounds, and
-// the topic stalls. Each holder tracks its own refreshToken and expiry.
-
 const TOKEN_REFRESH_SKEW_MS = 5 * 60_000;
 
 function attachTokenState(holder, authData) {
@@ -162,19 +132,17 @@ async function freshToken(holder) {
   return holder.accessToken;
 }
 
-// ---- LLM via claude CLI ----
+async function runCodexPrompt(prompt) {
+  return new Promise((resolve, reject) => {
+    const args = ["exec", "--full-auto"];
+    if (LLM_MODEL) args.push("--model", LLM_MODEL);
+    args.push("-");
 
-async function callClaude(systemPrompt, userPrompt) {
-  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
-  const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
-  fs.writeFileSync(systemPromptFile, systemPrompt);
-
-  const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
-
-  const content = await new Promise((resolve, reject) => {
-    const proc = spawn("bash", ["-c", shellCmd], {
+    const proc = spawn("codex", args, {
+      shell: true,
+      cwd: process.cwd(),
+      stdio: ["pipe", "pipe", "pipe"],
       timeout: 120_000,
-      cwd: cleanCwd,
       env: { ...process.env },
     });
 
@@ -182,17 +150,29 @@ async function callClaude(systemPrompt, userPrompt) {
     let stderr = "";
     proc.stdout.on("data", (chunk) => { stdout += chunk; });
     proc.stderr.on("data", (chunk) => { stderr += chunk; });
-    proc.stdin.write(userPrompt);
+    proc.stdin.write(prompt);
     proc.stdin.end();
     proc.on("close", (code) => {
-      if (code !== 0) reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 200)}`));
+      if (code !== 0) reject(new Error(`codex CLI exited ${code}: ${stderr.slice(0, 400)}`));
       else resolve(stdout.trim());
     });
     proc.on("error", reject);
   });
+}
 
-  try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
-  return content;
+async function callCodex(systemPrompt, userPrompt) {
+  const combinedPrompt = [
+    "You are participating in a structured research debate through the Codex CLI.",
+    "",
+    "Follow the system instructions below as mandatory requirements.",
+    "",
+    "SYSTEM INSTRUCTIONS:",
+    systemPrompt,
+    "",
+    "USER CONTEXT:",
+    userPrompt,
+  ].join("\n");
+  return await runCodexPrompt(combinedPrompt);
 }
 
 async function generateVoteDecisions(agent, context, targetTexts) {
@@ -206,19 +186,19 @@ Stance: ${agent.stance}
 
 You must evaluate the contributions below and select exactly 3 different contributions to vote on, one for each category:
 
-1. most_interesting â€” the contribution that adds the most novel insight or reframes the debate most productively
-2. most_correct â€” the contribution with the strongest evidence and most defensible reasoning
-3. fabrication â€” the contribution with the most unsupported claims, logical errors, or fabricated evidence (penalty vote)
+1. most_interesting - the contribution that adds the most novel insight or reframes the debate most productively
+2. most_correct - the contribution with the strongest evidence and most defensible reasoning
+3. fabrication - the contribution with the most unsupported claims, logical errors, or fabricated evidence (penalty vote)
 
 Each vote MUST target a DIFFERENT contribution. Vote based on argument quality, not agreement.
 
-OUTPUT FORMAT â€” CRITICAL:
+OUTPUT FORMAT - CRITICAL:
 Respond with exactly 3 lines, each in this format:
 most_interesting: CONTRIBUTION_ID
 most_correct: CONTRIBUTION_ID
 fabrication: CONTRIBUTION_ID
 
-Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else â€” no explanations, no prose.`;
+Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else - no explanations, no prose.`;
 
   const contributionList = targetTexts.map((t) =>
     `ID: ${t.contributionId}\nAuthor: @${t.beingHandle}\nText: ${t.body}`
@@ -229,14 +209,13 @@ Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else â€”
     `ROUND: ${context.currentRound?.roundKind} (round ${(context.currentRound?.sequenceIndex ?? 0) + 1})`,
     votingGuidance ? `\nVOTING GUIDANCE: ${votingGuidance}` : "",
     `\nCONTRIBUTIONS TO EVALUATE:\n\n${contributionList}`,
-    `\nRespond with exactly 3 lines â€” one per vote kind â€” using the exact contribution IDs above:`,
+    "\nRespond with exactly 3 lines - one per vote kind - using the exact contribution IDs above:",
   ].filter(Boolean).join("\n");
 
-  log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length });
-  const raw = await callClaude(systemPrompt, userPrompt);
+  log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length, model: LLM_MODEL });
+  const raw = await callCodex(systemPrompt, userPrompt);
   log("vote-llm-done", { who: agent.displayName, raw: raw.slice(0, 200) });
 
-  // Parse the 3 lines
   const decisions = {};
   const validIds = new Set(targetTexts.map((t) => t.contributionId));
   for (const line of raw.split("\n")) {
@@ -250,7 +229,6 @@ Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else â€”
     }
   }
 
-  // Fallback: if LLM didn't return valid structured output, assign mechanically
   const usedIds = new Set(Object.values(decisions));
   const remaining = targetTexts.filter((t) => !usedIds.has(t.contributionId));
   for (const kind of ["most_interesting", "most_correct", "fabrication"]) {
@@ -266,25 +244,19 @@ async function generateContribution(agent, context) {
   const roundKind = context.currentRound?.roundKind ?? "unknown";
   const roundInstruction = context.currentRoundConfig?.roundInstruction;
 
-  // Build prior contributions from transcript
   const priorContributions = (context.transcript ?? [])
     .filter((c) => c.bodyClean)
     .map((c) => `[@${c.beingHandle}] ${c.bodyClean}`)
     .slice(-20);
 
-  // For final_argument round, always inject the highest-scored map-round
-  // contribution (the JSON with positions) so the agent can pick a numbered
-  // map position even if it falls outside the sliding window above.
   let mapRoundBlock = "";
   let mapPositionList = "";
   if (roundKind === "final_argument") {
     const mapContribs = (context.transcript ?? []).filter((c) => c.roundKind === "map" && c.bodyClean);
     if (mapContribs.length > 0) {
-      // Pick the one with highest final_score; fall back to first.
       const sorted = [...mapContribs].sort((a, b) => (Number(b.finalScore ?? 0)) - (Number(a.finalScore ?? 0)));
       const best = sorted[0];
       mapRoundBlock = `\n\nMAP ROUND POSITIONS (from @${best.beingHandle}, the highest-scored map of this debate):\n${best.bodyClean}`;
-      // Try to enumerate the position statements for an explicit picker list.
       try {
         const parsed = JSON.parse(best.bodyClean);
         if (Array.isArray(parsed?.positions)) {
@@ -296,26 +268,25 @@ async function generateContribution(agent, context) {
     }
   }
 
-  // Map rounds output JSON, final_argument uses structured labels, others are plain prose.
   const isJsonRound = roundKind === "map";
   const isStructuredRound = roundKind === "map" || roundKind === "final_argument";
 
   const formatBlock = isJsonRound
     ? `OUTPUT FORMAT:
 Output a single valid JSON object. No prose before or after. No markdown fences. The JSON must match the schema described in the GUIDANCE below.
-The JSON must also include a top-level "kicker" field: one sentence, â‰¤180 characters. A sharp contestable CLAIM about the debate landscape â€” your strongest assertion about which positions matter or where the real disagreement lies. Take a side. Do NOT use phrases like "five contributors" or "the debate shows". Read as a claim, not a summary.`
+The JSON must also include a top-level "kicker" field: one sentence, <=180 characters. A sharp contestable claim about the debate landscape - your strongest assertion about which positions matter or where the real disagreement lies. Take a side. Do NOT use phrases like "five contributors" or "the debate shows". Read as a claim, not a summary.`
     : roundKind === "final_argument"
     ? `OUTPUT FORMAT:
-Follow the GUIDANCE below precisely. Your contribution MUST contain both PART A — MY POSITION and PART B — IMPARTIAL SYNTHESIS sections in that exact order, with the exact labels specified (MAP_POSITION, MY THESIS, WHY I HOLD IT, STRONGEST OBJECTION I CAN'T FULLY ANSWER, WHAT THIS DEBATE SETTLED, WHAT REMAINS CONTESTED, NEUTRAL VERDICT, KICKER).
-Between labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.
-PART A is your advocacy — you take a side and defend it. PART B is impartial — you drop your persona and write as a third-party reader. Doing both well is what wins the peer vote.`
-    : `OUTPUT FORMAT â€” THIS IS CRITICAL:
+Follow the GUIDANCE below precisely. Your contribution MUST contain both PART A - MY POSITION and PART B - IMPARTIAL SYNTHESIS sections in that exact order, with the exact labels specified (MAP_POSITION, MY THESIS, WHY I HOLD IT, STRONGEST OBJECTION I CAN'T FULLY ANSWER, CHANGE-MY-MIND STATUS, WHAT THIS DEBATE SETTLED, WHAT REMAINS CONTESTED, NEUTRAL VERDICT, KICKER).
+Between labels, write plain prose. No markdown: no headers, no bold, no italic, no bullet points, no code blocks.
+PART A is your advocacy - you take a side and defend it. PART B is impartial - you drop your persona and write as a third-party reader. Doing both well is what wins the peer vote.`
+    : `OUTPUT FORMAT - THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
-NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
+NEVER use: headers, bold, italic, bullet points, numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
 Do not write a title, label, or thesis header. Start directly with your argument.
 
 After your prose, on a new line, append:
-KICKER: <one sentence, â‰¤180 characters. This must be a verbatim or near-verbatim distillation of the single sharpest CLAIM you wrote in the prose above â€” the most contestable, side-taking sentence in your own contribution. Start with a noun or strong verb. The line must take a position someone could disagree with. DO NOT summarize the round, do NOT describe the debate, do NOT use phrases like "five contributors", "this debate", "the question is", "the contributions show", or "in conclusion". The kicker must read as YOUR claim, not commentary about the room.>`;
+KICKER: <one sentence, <=180 characters. This must be a verbatim or near-verbatim distillation of the single sharpest claim you wrote in the prose above - the most contestable, side-taking sentence in your own contribution. Start with a noun or strong verb. The line must take a position someone could disagree with. DO NOT summarize the round, do NOT describe the debate, do NOT use phrases like "five contributors", "this debate", "the question is", "the contributions show", or "in conclusion". The kicker must read as your claim, not commentary about the room.>`;
 
   const systemPrompt = `You are "${agent.displayName}" writing a contribution for a structured research debate.
 
@@ -348,22 +319,21 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
   if (mapRoundBlock) {
     userPrompt.push(mapRoundBlock);
     if (mapPositionList) {
-      userPrompt.push(`\nMAP_POSITION OPTIONS — pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`);
+      userPrompt.push(`\nMAP_POSITION OPTIONS - pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`);
     }
   }
 
   if (isJsonRound) {
-    userPrompt.push(`\nREMINDER: Output a single JSON object. Use exact @handles from the opening round. Begin now:`);
+    userPrompt.push("\nREMINDER: Output a single JSON object. Use exact @handles from the opening round. Begin now:");
   } else if (isStructuredRound) {
-    userPrompt.push(`\nREMINDER: Use the exact section labels specified in the guidance. Write plain prose between labels. No markdown formatting. Begin your contribution now:`);
+    userPrompt.push("\nREMINDER: Use the exact section labels specified in the guidance. Write plain prose between labels. No markdown formatting. Begin your contribution now:");
   } else {
-    userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever â€” no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
+    userPrompt.push("\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever - no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:");
   }
 
-  const content = await callClaude(systemPrompt, userPrompt.join("\n"));
-  if (!content) throw new Error("claude CLI returned empty output");
+  const content = await callCodex(systemPrompt, userPrompt.join("\n"));
+  if (!content) throw new Error("codex CLI returned empty output");
 
-  // Strip markdown fences and skip truncation for JSON rounds
   if (isJsonRound) {
     return content
       .replace(/^```(?:json)?\s*\n?/, "")
@@ -371,19 +341,13 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
       .trim();
   }
 
-  // Hard cap at 19000 chars to stay within the 20000 char API limit. The
-  // final_argument round legitimately needs the headroom because of PART A +
-  // PART B with multiple labeled sections; clipping it shorter produces a
-  // verdict box that ends mid-sentence.
   if (content.length > 19000) {
-    const truncated = content.slice(0, 19000).replace(/\s\S*$/, ""); // cut at last word boundary
+    const truncated = content.slice(0, 19000).replace(/\s\S*$/, "");
     log("llm-truncated", { who: agent.displayName, original: content.length, truncated: truncated.length });
     return truncated;
   }
   return content;
 }
-
-// ---- Main ----
 
 async function main() {
   const startedAt = Date.now();
@@ -402,9 +366,9 @@ async function main() {
     cadenceMinutes: CADENCE_MINUTES,
     model: LLM_MODEL,
     agentCount: scenario.agents.length,
+    runner: "codex",
   });
 
-  // Step 1: Admin token
   logStep("Step 1: Authenticate admin");
   const adminTokenData = await api("/v1/auth/token", {
     method: "POST",
@@ -414,7 +378,6 @@ async function main() {
   const adminAuth = attachTokenState({ label: "admin" }, adminTokenData);
   log("admin", { agentId: adminTokenData.agent.id });
 
-  // Step 2: Create guest agents
   logStep(`Step 2: Create ${scenario.agents.length} guest agents`);
   const participants = [];
   for (let i = 0; i < scenario.agents.length; i++) {
@@ -438,7 +401,6 @@ async function main() {
     log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
   }
 
-  // Step 3: Create topic OR fetch existing
   let topic;
   if (EXISTING_TOPIC_ID) {
     logStep("Step 3: Join existing topic");
@@ -459,14 +421,13 @@ async function main() {
         topicFormat: "scheduled_research",
         cadenceOverrideMinutes: CADENCE_MINUTES,
         topicSource: "cron_auto",
-        reason: `Debate â€” ${scenario.title}`,
+        reason: `Debate - ${scenario.title}`,
       },
       logRequest: true, logLabel: "topic-create",
     });
     log("topic", { id: topic.id, status: topic.status, rounds: topic.rounds.length });
   }
 
-  // Step 4: Set timing and join (skip timing reset for existing topics)
   logStep("Step 4: Timing + join");
   if (!EXISTING_TOPIC_ID) {
     const joinUntil = new Date(Date.now() + 30_000).toISOString();
@@ -484,14 +445,13 @@ async function main() {
     }
   }
 
-  // Step 5: Drive debate loop
   logStep("Step 5: Drive debate");
   const contributionKeys = new Set();
   const voteKeys = new Set();
   let lastTransitionKey = null;
   let stalledSince = null;
-  const STALL_CONFIRM_MS = 180_000; // 3 minutes — long enough to outlast a round-activation race
-  const deadlineMs = Date.now() + 60 * 60_000; // 60 minute max (10-round v2 needs ~45 min)
+  const STALL_CONFIRM_MS = 180_000;
+  const deadlineMs = Date.now() + 60 * 60_000;
   let sweepCount = 0;
   const allVotes = [];
   const allContributions = [];
@@ -533,11 +493,7 @@ async function main() {
       log("terminal", canonical.status);
       break;
     }
-    // The server's safety-check sweep can transiently mark a topic 'stalled'
-    // in the brief window between one round completing and the next being
-    // activated (lifecycle.ts:840-877). advanceRound() then clears stalled_at
-    // and resumes (lifecycle.ts:734). Don't bail on the first observation —
-    // confirm the stall is sticky by re-checking after a grace window.
+
     if (canonical.status === "stalled") {
       if (!stalledSince) {
         stalledSince = Date.now();
@@ -551,7 +507,6 @@ async function main() {
       stalledSince = null;
     }
 
-    // Generate all contributions in PARALLEL so agents don't get dropped for timeout
     const pendingContributions = contexts
       .filter(({ participant, context }) => {
         const currentRound = context.currentRound;
@@ -565,7 +520,7 @@ async function main() {
 
     if (pendingContributions.length > 0) {
       const roundKind = pendingContributions[0].context.currentRound.roundKind;
-      log("llm-batch", { round: roundKind, agents: pendingContributions.length, model: LLM_MODEL });
+      log("llm-batch", { round: roundKind, agents: pendingContributions.length, model: LLM_MODEL, runner: "codex" });
 
       const results = await Promise.allSettled(
         pendingContributions.map(async ({ participant, context }) => {
@@ -643,7 +598,6 @@ async function main() {
       }
     }
 
-    // Cast categorical votes â€” use LLM to read contributions and pick targets
     const pendingVoters = contexts.filter(({ participant, context }) => {
       const currentRound = context.currentRound;
       if (!currentRound || context.status !== "started") return false;
@@ -652,7 +606,6 @@ async function main() {
     });
 
     if (pendingVoters.length > 0) {
-      // Fetch fresh context for vote targets (need latest after contributions land)
       const voterContexts = await Promise.all(
         pendingVoters.map(async ({ participant }) => {
           const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: await freshToken(participant) });
@@ -660,7 +613,6 @@ async function main() {
         }),
       );
 
-      // Run vote decisions in parallel via LLM
       const voteResults = await Promise.allSettled(
         voterContexts.map(async ({ participant, context: ctx }) => {
           const voteRequired = Boolean(ctx.currentRoundConfig?.voteRequired);
@@ -668,9 +620,8 @@ async function main() {
           if (!voteRequired || voteTargets.length === 0) return null;
 
           const othersTargets = voteTargets.filter((t) => t.beingId !== participant.beingId);
-          if (othersTargets.length < 3) return null; // need at least 3 distinct targets
+          if (othersTargets.length < 3) return null;
 
-          // Build the contribution text for each vote target from transcript
           const transcript = ctx.transcript ?? [];
           const targetTexts = othersTargets.map((t) => {
             const contrib = transcript.find((c) => c.id === t.contributionId);
@@ -681,7 +632,6 @@ async function main() {
             };
           });
 
-          // Ask LLM to pick votes
           const voteDecisions = await generateVoteDecisions(participant, ctx, targetTexts);
           return { participant, context: ctx, voteDecisions, othersTargets };
         }),
@@ -761,7 +711,6 @@ async function main() {
     await wait(3_000);
   }
 
-  // Step 6: Results
   logStep("Step 6: Results");
   const finalContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: await freshToken(participants[0]) });
   log("final-status", finalContext.status);
@@ -777,7 +726,7 @@ async function main() {
   }
 
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
-  logStep(`Complete â€” ${elapsed}s elapsed`);
+  logStep(`Complete - ${elapsed}s elapsed`);
   writeLine(`
 SUMMARY:
   Topic:          ${topic.id}
@@ -785,6 +734,7 @@ SUMMARY:
   Template:       ${TEMPLATE_ID}
   Domain:         ${DOMAIN_ID}
   Model:          ${LLM_MODEL}
+  Runner:         codex
   Agents:         ${participants.map((p) => p.displayName).join(", ")}
   Contributions:  ${allContributions.length}
   Votes:          ${allVotes.length}

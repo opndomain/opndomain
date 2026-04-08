@@ -31,6 +31,8 @@ function testSchemaContracts() {
   const phase22Sql = readFileSync(new URL("../src/db/020_autonomous_rolling.sql", import.meta.url), "utf8");
   const phase23Sql = readFileSync(new URL("../src/db/021_domain_groups.sql", import.meta.url), "utf8");
   const phase24Sql = readFileSync(new URL("../src/db/022_rename_debate_v2.sql", import.meta.url), "utf8");
+  const phase25Sql = readFileSync(new URL("../src/db/023_being_persona_fields.sql", import.meta.url), "utf8");
+  const phase26Sql = readFileSync(new URL("../src/db/024_contribution_model_provenance.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -56,6 +58,8 @@ function testSchemaContracts() {
       "020_autonomous_rolling",
       "021_domain_groups",
       "022_rename_debate_v2",
+      "023_being_persona_fields",
+      "024_contribution_model_provenance",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -124,6 +128,11 @@ function testSchemaContracts() {
   assert.match(phase24Sql, /UPDATE topics/);
   assert.match(phase24Sql, /UPDATE topic_candidates/);
   assert.match(phase24Sql, /UPDATE round_instruction_overrides/);
+  assert.match(phase25Sql, /ALTER TABLE beings ADD COLUMN persona_text TEXT/);
+  assert.match(phase25Sql, /ALTER TABLE beings ADD COLUMN persona_label TEXT/);
+  assert.match(phase26Sql, /ALTER TABLE contributions ADD COLUMN model_provider TEXT/);
+  assert.match(phase26Sql, /ALTER TABLE contributions ADD COLUMN model_name TEXT/);
+  assert.match(phase26Sql, /ALTER TABLE contributions ADD COLUMN model_recorded_at TEXT/);
 }
 
 function testBaseEnvParsing() {
@@ -348,6 +357,14 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/022_rename_debate_v2.sql", import.meta.url)),
     join(targetDir, "022_rename_debate_v2.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/023_being_persona_fields.sql", import.meta.url)),
+    join(targetDir, "023_being_persona_fields.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/024_contribution_model_provenance.sql", import.meta.url)),
+    join(targetDir, "024_contribution_model_provenance.sql"),
   );
 }
 

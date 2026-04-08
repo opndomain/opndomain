@@ -603,6 +603,234 @@ describe("terminalization service", () => {
     assert.ok(snapshots.writes.some((write) => write.key.includes("kind=verdict_published")));
   });
 
+  it("replaces the stitched summary with parsed neutral verdict content when the winner final_argument parses", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    db.queueFirst("FROM topics WHERE id = ?", [
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+    ]);
+    const presentationVerdictRow = {
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_prop_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 3,
+        totalRounds: 3,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, presentationVerdictRow, presentationVerdictRow]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+      { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
+      { id: "rnd_2", sequence_index: 1, round_kind: "map", status: "completed" },
+      { id: "rnd_3", sequence_index: 2, round_kind: "final_argument", status: "completed" },
+    ]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id", [
+      makeContribution({ id: "cnt_prop_1", being_id: "bng_1", being_handle: "alpha", round_id: "rnd_1", round_kind: "propose", final_score: 60, body_clean: "Alpha opening case." }),
+      makeContribution({ id: "cnt_prop_2", being_id: "bng_2", being_handle: "beta", round_id: "rnd_1", round_kind: "propose", final_score: 55, body_clean: "Beta opening case." }),
+      makeContribution({
+        id: "cnt_map_1",
+        being_id: "bng_3",
+        being_handle: "mapper",
+        round_id: "rnd_2",
+        round_kind: "map",
+        final_score: 88,
+        body_clean: JSON.stringify({
+          positions: [
+            { statement: "Alpha position", heldBy: ["@alpha"], classification: "majority" },
+            { statement: "Beta position", heldBy: ["@beta"], classification: "minority" },
+          ],
+        }),
+      }),
+      makeContribution({
+        id: "cnt_final_1",
+        being_id: "bng_1",
+        being_handle: "alpha",
+        display_name: "Alpha Agent",
+        round_id: "rnd_3",
+        round_kind: "final_argument",
+        final_score: 92,
+        body_clean:
+          "PART A - MY POSITION\n\n" +
+          "MAP_POSITION: 1\n\n" +
+          "MY THESIS: Frontier labs should ship only after mandatory oversight review.\n\n" +
+          "WHY I HOLD IT: Oversight functions as a release gate rather than a brand signal.\n\n" +
+          "STRONGEST OBJECTION I CAN'T FULLY ANSWER: Emergency deployment cases can make a rigid review layer costly.\n\n" +
+          "CHANGE-MY-MIND STATUS: Partially met. I narrowed the claim, but the release-gate case held.\n\n" +
+          "PART B - IMPARTIAL SYNTHESIS\n\n" +
+          "WHAT THIS DEBATE SETTLED: The room converged on the need for some durable oversight mechanism.\n\n" +
+          "WHAT REMAINS CONTESTED: The live disagreement is how much emergency discretion labs should retain.\n\n" +
+          "NEUTRAL VERDICT: Mandatory oversight was the strongest answer, with a narrow carveout question still open.\n\n" +
+          "KICKER: Mandatory oversight is a release condition.",
+      }),
+      makeContribution({
+        id: "cnt_final_2",
+        being_id: "bng_2",
+        being_handle: "beta",
+        round_id: "rnd_3",
+        round_kind: "final_argument",
+        final_score: 70,
+        body_clean:
+          "PART A - MY POSITION\n\n" +
+          "MAP_POSITION: 2\n\n" +
+          "MY THESIS: Labs need more discretion.\n\n" +
+          "WHY I HOLD IT: Flexibility matters.\n\n" +
+          "STRONGEST OBJECTION I CAN'T FULLY ANSWER: Some oversight floor is still necessary.\n\n" +
+          "CHANGE-MY-MIND STATUS: Not met.\n\n" +
+          "PART B - IMPARTIAL SYNTHESIS\n\n" +
+          "WHAT THIS DEBATE SETTLED: Some guardrail is needed.\n\n" +
+          "WHAT REMAINS CONTESTED: The shape of that guardrail.\n\n" +
+          "NEUTRAL VERDICT: The room leaned toward tighter oversight.\n\n" +
+          "KICKER: Flexibility still matters.",
+      }),
+    ]);
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_prop_1",
+      substance_score: 70,
+      role_bonus: 10,
+      details_json: JSON.stringify({ role: "claim" }),
+      relevance: 0.8,
+      novelty: 0.7,
+      reframe: 0.4,
+      initial_score: 68,
+      shadow_initial_score: 67,
+      scoring_profile: "adversarial",
+      round_kind: "propose",
+      template_id: "debate",
+      topic_id: "top_1",
+    }]);
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_prop_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
+    ]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueFirst("FROM domain_reputation", [null]);
+    queueClosedTopicPresentationReads(db);
+
+    const result = await runTerminalizationSequence(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_STATE_DO: {
+          idFromName: (name: string) => name,
+          get: () => ({
+            fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+          }),
+        },
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+      "top_1",
+    );
+
+    assert.equal(result.terminalized, true);
+    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
+    assert.ok(verdictInsert);
+    assert.equal(verdictInsert?.bindings[4], "Mandatory oversight was the strongest answer, with a narrow carveout question still open.");
+    const reasoning = JSON.parse(String(verdictInsert?.bindings[5] ?? "{}"));
+    assert.equal(reasoning.bothSidesSummary?.majorityCase, "Oversight functions as a release gate rather than a brand signal.");
+    assert.equal(reasoning.bothSidesSummary?.counterArgument, "Emergency deployment cases can make a rigid review layer costly.");
+    assert.equal(reasoning.parsedFinalArgument?.myThesis, "Frontier labs should ship only after mandatory oversight review.");
+    assert.equal(reasoning.parsedFinalArgument?.kicker, "Mandatory oversight is a release condition.");
+  });
+
+  it("preserves the stitched fallback summary when the winner final_argument does not parse", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    db.queueFirst("FROM topics WHERE id = ?", [
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+      { id: "top_1", domain_id: "dom_1", template_id: "debate", status: "closed" },
+    ]);
+    const presentationVerdictRow = {
+      confidence: "moderate",
+      terminalization_mode: "full_template",
+      summary: "summary",
+      verdict_outcome: null,
+      positions_json: null,
+      reasoning_json: JSON.stringify({
+        topContributionsPerRound: [
+          {
+            roundKind: "propose",
+            contributions: [{ contributionId: "cnt_prop_1", beingId: "bng_1", finalScore: 73, excerpt: "Body" }],
+          },
+        ],
+        completedRounds: 3,
+        totalRounds: 3,
+      }),
+    };
+    db.queueFirst("FROM verdicts WHERE topic_id = ?", [null, presentationVerdictRow, presentationVerdictRow]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+      { id: "rnd_1", sequence_index: 0, round_kind: "propose", status: "completed" },
+      { id: "rnd_2", sequence_index: 1, round_kind: "vote", status: "completed" },
+      { id: "rnd_3", sequence_index: 2, round_kind: "final_argument", status: "completed" },
+    ]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id", [
+      makeContribution({ id: "cnt_prop_1", being_id: "bng_1", being_handle: "alpha", round_id: "rnd_1", round_kind: "propose", final_score: 73.6, body_clean: "Opening excerpt." }),
+      makeContribution({ id: "cnt_vote_1", being_id: "bng_2", being_handle: "beta", round_id: "rnd_2", round_kind: "vote", final_score: 63.4, body_clean: "Vote excerpt." }),
+      makeContribution({ id: "cnt_final_1", being_id: "bng_1", being_handle: "alpha", round_id: "rnd_3", round_kind: "final_argument", final_score: 69.6, body_clean: "Legacy closing argument without labels." }),
+    ]);
+    db.queueAll("FROM contribution_scores cs", [{
+      contribution_id: "cnt_prop_1",
+      substance_score: 70,
+      role_bonus: 10,
+      details_json: JSON.stringify({ role: "claim" }),
+      relevance: 0.8,
+      novelty: 0.7,
+      reframe: 0.4,
+      initial_score: 68,
+      shadow_initial_score: 67,
+      scoring_profile: "adversarial",
+      round_kind: "propose",
+      template_id: "debate",
+      topic_id: "top_1",
+    }]);
+    db.queueAll("SELECT contribution_id, direction, weight, voter_being_id", [
+      { contribution_id: "cnt_prop_1", direction: 1, weight: 2, voter_being_id: "bng_2" },
+    ]);
+    db.queueAll("GROUP BY topic_id", [{ topic_id: "top_1", distinct_voter_count: 1, topic_vote_count: 1 }]);
+    db.queueFirst("FROM domain_reputation", [null]);
+    queueClosedTopicPresentationReads(db);
+
+    const result = await runTerminalizationSequence(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_STATE_DO: {
+          idFromName: (name: string) => name,
+          get: () => ({
+            fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+          }),
+        },
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+      } as never,
+      "top_1",
+    );
+
+    assert.equal(result.terminalized, true);
+    const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
+    assert.ok(verdictInsert);
+    assert.equal(verdictInsert?.bindings[4], "propose: Opening excerpt. (73.6) | vote: Vote excerpt. (63.4) | final_argument: Legacy closing argument without labels. (69.6)");
+    const reasoning = JSON.parse(String(verdictInsert?.bindings[5] ?? "{}"));
+    assert.equal(reasoning.parsedFinalArgument, undefined);
+    assert.equal(reasoning.bothSidesSummary, undefined);
+  });
+
   it("reterminalize replaces an existing verdict and rebuilds affected reputations", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();

@@ -16,7 +16,9 @@ export type ParticipateStatus =
   | "joined_awaiting_round"
   | "topic_not_joinable"
   | "no_joinable_topic"
-  | "contributed";
+  | "contributed"
+  | "vote_required"
+  | "body_required";
 
 export type LaunchPayload = {
   agentId: string | null;
@@ -40,6 +42,8 @@ export type CliState = {
   agentId: string | null;
   beingId?: string | null;
   beingHandle?: string | null;
+  providerId?: "ollama" | "codex" | "claude-code" | "anthropic" | null;
+  activeTopicId?: string | null;
   accessToken: string | null;
   refreshToken: string | null;
   expiresAt: string | null;
@@ -93,7 +97,16 @@ export type ParticipateDeps = {
 
 function stateFromLaunchResult(
   result: ToolResponse,
-  fallback: { email: string; name: string; clientSecret?: string; mcpUrl: string; beingId?: string | null; beingHandle?: string | null },
+  fallback: {
+    email: string;
+    name: string;
+    clientSecret?: string;
+    mcpUrl: string;
+    beingId?: string | null;
+    beingHandle?: string | null;
+    providerId?: CliState["providerId"];
+    activeTopicId?: string | null;
+  },
 ): CliState {
   return {
     version: 1,
@@ -105,6 +118,8 @@ function stateFromLaunchResult(
     agentId: result.launch?.agentId ?? result.agentId ?? null,
     beingId: result.beingId ?? fallback.beingId ?? null,
     beingHandle: (result.beingHandle as string | null | undefined) ?? fallback.beingHandle ?? null,
+    providerId: fallback.providerId ?? null,
+    activeTopicId: fallback.activeTopicId ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
     expiresAt: result.launch?.expiresAt ?? result.expiresAt ?? null,
@@ -148,6 +163,8 @@ async function ensureLaunchState(config: ResolvedParticipationConfig, deps: Part
       clientId: registration.clientId,
       clientSecret: registration.clientSecret,
       agentId: registration.agent?.id ?? null,
+      providerId: null,
+      activeTopicId: null,
       accessToken: null,
       refreshToken: null,
       expiresAt: registration.verification?.expiresAt ?? null,
@@ -196,6 +213,8 @@ async function ensureLaunchState(config: ResolvedParticipationConfig, deps: Part
     mcpUrl: config.mcpUrl ?? state.mcpUrl,
     beingId: state.beingId ?? null,
     beingHandle: state.beingHandle ?? null,
+    providerId: state.providerId ?? null,
+    activeTopicId: state.activeTopicId ?? null,
   });
   await deps.saveState(nextState);
 

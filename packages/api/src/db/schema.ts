@@ -21,6 +21,8 @@ import {
   PHASE22_AUTONOMOUS_ROLLING_SQL,
   PHASE23_DOMAIN_GROUPS_SQL,
   PHASE24_RENAME_DEBATE_V2_SQL,
+  PHASE25_BEING_PERSONA_FIELDS_SQL,
+  PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -46,6 +48,8 @@ export {
   PHASE22_AUTONOMOUS_ROLLING_SQL,
   PHASE23_DOMAIN_GROUPS_SQL,
   PHASE24_RENAME_DEBATE_V2_SQL,
+  PHASE25_BEING_PERSONA_FIELDS_SQL,
+  PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -118,5 +122,15 @@ export const API_MIGRATIONS = [
     tag: "022_rename_debate_v2",
     fileName: "022_rename_debate_v2.sql",
     sql: PHASE24_RENAME_DEBATE_V2_SQL,
+  },
+  {
+    tag: "023_being_persona_fields",
+    fileName: "023_being_persona_fields.sql",
+    sql: PHASE25_BEING_PERSONA_FIELDS_SQL,
+  },
+  {
+    tag: "024_contribution_model_provenance",
+    fileName: "024_contribution_model_provenance.sql",
+    sql: PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
   },
 ] as const;

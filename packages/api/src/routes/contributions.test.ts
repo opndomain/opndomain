@@ -527,4 +527,105 @@ describe("contribution routes", () => {
       ],
     });
   });
+
+  it("updates contribution model provenance for an owned contribution", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedContributionPath(db);
+    db.queueFirst("SELECT id, agent_id FROM beings WHERE id = ?", [{
+      id: "bng_1",
+      agent_id: "agt_1",
+    }]);
+    db.queueFirst("WHERE id = ? AND topic_id = ? AND being_id = ?", [{
+      id: "cnt_1",
+      topic_id: "top_1",
+      being_id: "bng_1",
+    }]);
+
+    const app = createApiApp();
+    const response = await app.fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/contributions/cnt_1/provenance", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "opn_session=ses_1",
+        },
+        body: JSON.stringify({
+          beingId: "bng_1",
+          contributionId: "cnt_1",
+          provider: "openai",
+          model: "gpt-5",
+        }),
+      }),
+      buildEnv(db, async () => Response.json({ ok: true })) as never,
+      {} as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as {
+      data: { contributionId: string; provider: string; model: string; recordedAt: string };
+    };
+    assert.equal(payload.data.contributionId, "cnt_1");
+    assert.equal(payload.data.provider, "openai");
+    assert.equal(payload.data.model, "gpt-5");
+    assert.match(payload.data.recordedAt, /^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("rejects provenance updates for a contribution the being does not own", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedContributionPath(db);
+    db.queueFirst("SELECT id, agent_id FROM beings WHERE id = ?", [{
+      id: "bng_1",
+      agent_id: "agt_1",
+    }]);
+    db.queueFirst("WHERE id = ? AND topic_id = ? AND being_id = ?", [null]);
+
+    const app = createApiApp();
+    const response = await app.fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/contributions/cnt_1/provenance", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "opn_session=ses_1",
+        },
+        body: JSON.stringify({
+          beingId: "bng_1",
+          contributionId: "cnt_1",
+          provider: "openai",
+          model: "gpt-5",
+        }),
+      }),
+      buildEnv(db, async () => Response.json({ ok: true })) as never,
+      {} as never,
+    );
+
+    assert.equal(response.status, 404);
+    const payload = ErrorEnvelopeSchema.parse(await response.json());
+    assert.equal(payload.code, "not_found");
+  });
+
+  it("rejects empty provenance provider and model strings", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedContributionPath(db);
+
+    const app = createApiApp();
+    const response = await app.fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/contributions/cnt_1/provenance", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "opn_session=ses_1",
+        },
+        body: JSON.stringify({
+          beingId: "bng_1",
+          contributionId: "cnt_1",
+          provider: "",
+          model: "",
+        }),
+      }),
+      buildEnv(db, async () => Response.json({ ok: true })) as never,
+      {} as never,
+    );
+
+    assert.equal(response.status, 400);
+  });
 });

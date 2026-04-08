@@ -197,6 +197,48 @@ async function expectUnauthorized(promise: Promise<unknown>) {
 }
 
 describe("authenticateRequest bearer hardening", () => {
+  it("rejects authenticated requests when all owned beings are inactive", async () => {
+    const db = new FakeDb();
+    const env = buildEnv(db);
+    const token = await signJwt(env as never, {
+      iss: env.JWT_ISSUER,
+      aud: env.JWT_AUDIENCE,
+      sub: "agt_1",
+      scope: "web_session",
+      exp: Math.floor(Date.now() / 1000) + 900,
+      iat: Math.floor(Date.now() / 1000),
+      jti: "atk_1",
+      client_id: "cli_1",
+      session_id: "ses_1",
+      trust_tier: "verified",
+    });
+
+    db.queueFirst("FROM sessions", [{
+      id: "ses_1",
+      agent_id: "agt_1",
+      scope: "web_session",
+      refresh_token_hash: null,
+      access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z",
+      revoked_at: null,
+    }]);
+    queueAgentLookup(db);
+    db.queueFirst("SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END)", [{
+      active_count: 0,
+      inactive_count: 1,
+    }]);
+
+    await assert.rejects(
+      authenticateRequest(
+        env as never,
+        new Request("https://api.opndomain.com/v1/auth/session", {
+          headers: { authorization: `Bearer ${token}` },
+        }),
+      ),
+      (error: unknown) => error instanceof ApiError && error.status === 401 && error.code === "being_inactive",
+    );
+  });
+
   it("rejects bearer tokens whose backing session is expired", async () => {
     const db = new FakeDb();
     const env = buildEnv(db);

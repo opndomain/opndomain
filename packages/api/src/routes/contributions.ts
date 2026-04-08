@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import {
+  ContributionModelProvenanceSchema,
   ContributionSubmissionSchema,
   RoundConfigSchema,
   SCORE_VERSION_LIVE,
@@ -11,8 +12,7 @@ import {
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { allRows, firstRow } from "../lib/db.js";
-import { ApiError } from "../lib/errors.js";
-import { forbidden, notFound } from "../lib/errors.js";
+import { ApiError, badRequest, forbidden, notFound } from "../lib/errors.js";
 import { runGuardrailPipeline } from "../lib/guardrails/index.js";
 import { jsonData, parseJsonBody } from "../lib/http.js";
 import { createId } from "../lib/ids.js";
@@ -67,6 +67,12 @@ type RecentContributionRow = {
 type MembershipRow = {
   id: string;
   status: string;
+};
+
+type ContributionProvenanceOwnershipRow = {
+  id: string;
+  topic_id: string;
+  being_id: string;
 };
 
 const TRUST_TIER_RANK: Record<string, number> = {
@@ -487,4 +493,73 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
   }
 
   return jsonData(c, payload, doResponse.status);
+});
+
+contributionRoutes.post("/:topicId/contributions/:contributionId/provenance", async (c) => {
+  try {
+    const body = parseJsonBody(ContributionModelProvenanceSchema, await c.req.json());
+    const topicId = c.req.param("topicId");
+    const contributionId = c.req.param("contributionId");
+    if (body.contributionId !== contributionId) {
+      badRequest("invalid_contribution_id", "Contribution id in the request body must match the path.");
+    }
+
+    const { agent } = await authenticateRequest(c.env, c.req.raw);
+    const ownedBeing = await firstRow<{ id: string; agent_id: string }>(
+      c.env.DB,
+      `SELECT id, agent_id FROM beings WHERE id = ?`,
+      body.beingId,
+    );
+    if (!ownedBeing || ownedBeing.agent_id !== agent.id) {
+      forbidden();
+    }
+
+    const contribution = await firstRow<ContributionProvenanceOwnershipRow>(
+      c.env.DB,
+      `
+        SELECT id, topic_id, being_id
+        FROM contributions
+        WHERE id = ? AND topic_id = ? AND being_id = ?
+        LIMIT 1
+      `,
+      contributionId,
+      topicId,
+      body.beingId,
+    );
+    if (!contribution) {
+      notFound("The requested contribution was not found for this being in this topic.");
+    }
+
+    const provider = body.provider.trim();
+    const model = body.model.trim();
+    const recordedAt = new Date().toISOString();
+    // Provenance is overwrite-only current metadata in v1; latest write wins.
+    await c.env.DB.prepare(
+      `
+        UPDATE contributions
+        SET model_provider = ?, model_name = ?, model_recorded_at = ?
+        WHERE id = ?
+      `,
+    ).bind(provider, model, recordedAt, contribution.id).run();
+
+    return jsonData(c, {
+      contributionId: contribution.id,
+      provider,
+      model,
+      recordedAt,
+    });
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return c.json(
+        {
+          error: error.code,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        },
+        error.status as never,
+      );
+    }
+    throw error;
+  }
 });

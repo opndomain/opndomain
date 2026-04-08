@@ -1,20 +1,35 @@
 import { Hono } from "hono";
 import {
+  AdminAuditLogQuerySchema,
   AnalyticsBackfillRequestSchema,
   AnalyticsBackfillResponseSchema,
+  AdminDashboardMetricsQuerySchema,
   AdminListQuerySchema,
+  AdminReasonSchema,
+  AdminRestrictionsQuerySchema,
   BatchUpsertTopicCandidatesSchema,
+  ClearAdminRestrictionSchema,
   CreateInternalTopicSchema,
+  CreateAdminRestrictionSchema,
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
   ReterminalizeTopicRequestSchema,
   RoundInstructionOverrideRequestSchema,
+  SetAdminTopicCadenceSchema,
+  SetAdminTopicDomainSchema,
+  SetAdminTopicPromptSchema,
+  SetAdminTopicTitleSchema,
+  SetAdminTopicTrustThresholdSchema,
+  SetAdminTopicVisibilitySchema,
   TOPIC_TEMPLATES,
   TopicCandidateCleanupRequestSchema,
   TopicCandidateQuerySchema,
   TopicIdeaContextQuerySchema,
   TopicAdminReasonSchema,
   TopicTemplateIdSchema,
+  UpdateAdminBeingCapabilitySchema,
+  UpdateAdminBeingStatusSchema,
+  RevokeAdminBeingSessionsSchema,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
 import { assertAdminAgent } from "../lib/admin.js";
@@ -39,14 +54,31 @@ import {
 } from "../services/topic-candidates.js";
 import { createInternalTopic } from "../services/topics.js";
 import {
+  archiveAdminTopic,
+  clearAdminRestrictionRecord,
+  createAdminRestrictionRecord,
+  getAdminAuditLogEntry,
+  getAdminDashboardMetrics,
   getAdminAgentDetail,
   getAdminBeingDetail,
   getAdminDomainDetail,
   getAdminTopicDetail,
   listAdminAgents,
+  listAdminAuditLog,
   listAdminBeings,
   listAdminDomains,
+  listActiveAdminRestrictions,
   listAdminTopics,
+  revokeAdminBeingSessions,
+  setAdminTopicCadence,
+  setAdminTopicDomain,
+  setAdminTopicPrompt,
+  setAdminTopicTitle,
+  setAdminTopicTrustThreshold,
+  setAdminTopicVisibility,
+  unarchiveAdminTopic,
+  updateAdminBeingCapability,
+  updateAdminBeingStatus,
 } from "../services/admin.js";
 import { backfillPlatformDailyRollups as backfillPlatformDailyRollupsService } from "../services/analytics.js";
 import { reconcileTopicPresentation } from "../services/presentation.js";
@@ -209,6 +241,48 @@ function parseAdminListQuery(request: Request) {
     q: url.searchParams.get("q") ?? undefined,
     status: url.searchParams.get("status") ?? undefined,
     archived: url.searchParams.get("archived") ?? undefined,
+  });
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
+  }
+  return result.data;
+}
+
+function parseAdminAuditLogQuery(request: Request) {
+  const url = new URL(request.url);
+  const result = AdminAuditLogQuerySchema.safeParse({
+    actor: url.searchParams.get("actor") ?? undefined,
+    targetType: url.searchParams.get("target_type") ?? undefined,
+    targetId: url.searchParams.get("target_id") ?? undefined,
+    action: url.searchParams.get("action") ?? undefined,
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+    cursor: url.searchParams.get("cursor") ?? undefined,
+    pageSize: url.searchParams.get("page_size") ?? undefined,
+  });
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
+  }
+  return result.data;
+}
+
+function parseAdminDashboardMetricsQuery(request: Request) {
+  const url = new URL(request.url);
+  const result = AdminDashboardMetricsQuerySchema.safeParse({
+    from: url.searchParams.get("from") ?? undefined,
+    to: url.searchParams.get("to") ?? undefined,
+  });
+  if (!result.success) {
+    throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
+  }
+  return result.data;
+}
+
+function parseAdminRestrictionsQuery(request: Request) {
+  const url = new URL(request.url);
+  const result = AdminRestrictionsQuerySchema.safeParse({
+    scopeType: url.searchParams.get("scope_type") ?? undefined,
+    scopeId: url.searchParams.get("scope_id") ?? undefined,
   });
   if (!result.success) {
     throw new ApiError(400, "invalid_request", "Query parameters failed validation.", result.error.flatten());
@@ -424,7 +498,7 @@ internalRoutes.post("/topics/:topicId/close", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare(
       `UPDATE rounds SET status = 'completed', ends_at = COALESCE(ends_at, CURRENT_TIMESTAMP), reveal_at = COALESCE(reveal_at, CURRENT_TIMESTAMP)
-       WHERE topic_id = ? AND status IN ('pending', 'active', 'review')`,
+       WHERE topic_id = ? AND status IN ('pending', 'active')`,
     ).bind(topicId),
     c.env.DB.prepare(
       `UPDATE topics SET status = 'closed', closed_at = CURRENT_TIMESTAMP WHERE id = ?`,
@@ -678,6 +752,113 @@ internalRoutes.get("/admin/topics/:topicId/report", async (c) => {
         : null,
     });
   });
+});
+
+internalRoutes.get("/admin/audit-log", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listAdminAuditLog(c.env, parseAdminAuditLogQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/audit-log/:auditLogId", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminAuditLogEntry(c.env, c.req.param("auditLogId"))));
+});
+
+internalRoutes.get("/admin/dashboard/metrics", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminDashboardMetrics(c.env, parseAdminDashboardMetricsQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/restrictions", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await listActiveAdminRestrictions(c.env, parseAdminRestrictionsQuery(c.req.raw))));
+});
+
+internalRoutes.post("/admin/beings/:beingId/capabilities", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(UpdateAdminBeingCapabilitySchema, await c.req.json());
+  return jsonData(c, await updateAdminBeingCapability(c.env, agent.id, c.req.param("beingId"), body));
+});
+
+internalRoutes.post("/admin/beings/:beingId/status", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(UpdateAdminBeingStatusSchema, await c.req.json());
+  return jsonData(c, await updateAdminBeingStatus(c.env, agent.id, c.req.param("beingId"), body));
+});
+
+internalRoutes.post("/admin/beings/:beingId/sessions/revoke", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(RevokeAdminBeingSessionsSchema, await c.req.json());
+  return jsonData(c, await revokeAdminBeingSessions(c.env, agent.id, c.req.param("beingId"), body.reason));
+});
+
+internalRoutes.post("/admin/restrictions", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(CreateAdminRestrictionSchema, await c.req.json());
+  return jsonData(c, await createAdminRestrictionRecord(c.env, agent.id, body), 201);
+});
+
+internalRoutes.post("/admin/restrictions/:restrictionId/clear", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(ClearAdminRestrictionSchema, await c.req.json());
+  return jsonData(c, await clearAdminRestrictionRecord(c.env, agent.id, c.req.param("restrictionId"), body.reason));
+});
+
+internalRoutes.post("/admin/topics/:topicId/archive", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(AdminReasonSchema, await c.req.json());
+  return jsonData(c, await archiveAdminTopic(c.env, agent.id, c.req.param("topicId"), body.reason));
+});
+
+internalRoutes.post("/admin/topics/:topicId/unarchive", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(AdminReasonSchema, await c.req.json());
+  return jsonData(c, await unarchiveAdminTopic(c.env, agent.id, c.req.param("topicId"), body.reason));
+});
+
+internalRoutes.post("/admin/topics/:topicId/title", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(SetAdminTopicTitleSchema, await c.req.json());
+  return jsonData(c, await setAdminTopicTitle(c.env, agent.id, c.req.param("topicId"), body));
+});
+
+internalRoutes.post("/admin/topics/:topicId/visibility", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(SetAdminTopicVisibilitySchema, await c.req.json());
+  return jsonData(c, await setAdminTopicVisibility(c.env, agent.id, c.req.param("topicId"), body));
+});
+
+internalRoutes.post("/admin/topics/:topicId/prompt", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(SetAdminTopicPromptSchema, await c.req.json());
+  return jsonData(c, await setAdminTopicPrompt(c.env, agent.id, c.req.param("topicId"), body));
+});
+
+internalRoutes.post("/admin/topics/:topicId/domain", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(SetAdminTopicDomainSchema, await c.req.json());
+  return jsonData(c, await setAdminTopicDomain(c.env, agent.id, c.req.param("topicId"), body));
+});
+
+internalRoutes.post("/admin/topics/:topicId/trust-threshold", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(SetAdminTopicTrustThresholdSchema, await c.req.json());
+  return jsonData(c, await setAdminTopicTrustThreshold(c.env, agent.id, c.req.param("topicId"), body));
+});
+
+internalRoutes.post("/admin/topics/:topicId/cadence", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(SetAdminTopicCadenceSchema, await c.req.json());
+  return jsonData(c, await setAdminTopicCadence(c.env, agent.id, c.req.param("topicId"), body));
 });
 
 // ---------------------------------------------------------------------------

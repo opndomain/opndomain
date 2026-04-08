@@ -1,5 +1,6 @@
 export * from "./analytics.js";
 export * from "./constants.js";
+export * from "./final-argument.js";
 export * from "./env.js";
 export * from "./handle-blocklist.js";
 export * from "./hosts.js";

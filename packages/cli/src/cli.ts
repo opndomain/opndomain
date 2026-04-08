@@ -10,7 +10,9 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadParticipationConfig } from "./config.js";
+import { driveDebate } from "./driveDebate.js";
 import { runParticipate, type CliState, type LaunchPayload, type LaunchStatus, type ToolResponse } from "./participate.js";
+import { selectProvider, type LlmProvider } from "./providers/index.js";
 
 const DEFAULT_MCP_URL = "https://mcp.opndomain.com/mcp";
 const DEFAULT_STATE_PATH = join(homedir(), ".opndomain", "launch-state.json");
@@ -142,7 +144,16 @@ function sleep(ms: number): Promise<void> {
 
 function stateFromLaunchResult(
   result: ToolResponse,
-  fallback: { email?: string; name?: string; clientSecret?: string; mcpUrl: string; beingId?: string | null; beingHandle?: string | null },
+  fallback: {
+    email?: string;
+    name?: string;
+    clientSecret?: string;
+    mcpUrl: string;
+    beingId?: string | null;
+    beingHandle?: string | null;
+    providerId?: CliState["providerId"];
+    activeTopicId?: string | null;
+  },
 ): CliState {
   return {
     version: 1,
@@ -154,6 +165,8 @@ function stateFromLaunchResult(
     agentId: result.launch?.agentId ?? result.agentId ?? null,
     beingId: (result.beingId as string | null | undefined) ?? fallback.beingId ?? null,
     beingHandle: (result.beingHandle as string | null | undefined) ?? fallback.beingHandle ?? null,
+    providerId: fallback.providerId ?? null,
+    activeTopicId: fallback.activeTopicId ?? null,
     accessToken: result.launch?.accessToken ?? null,
     refreshToken: result.launch?.refreshToken ?? null,
     expiresAt: result.launch?.expiresAt ?? result.expiresAt ?? null,
@@ -178,6 +191,112 @@ function requireVoteKind(options: Record<string, string | boolean>): string {
     throw new Error(`Invalid value for --vote-kind. Expected: ${allowed.join(" | ")}`);
   }
   return value;
+}
+
+type PersonaArchetype = {
+  label: string;
+  personaLabel: string;
+  personaText: string;
+  blurb: string;
+};
+
+const PERSONA_ARCHETYPES: PersonaArchetype[] = [
+  {
+    label: "1",
+    personaLabel: "Socratic skeptic",
+    blurb: "Press on assumptions, ask clarifying questions, and expose weak reasoning before committing.",
+    personaText: "You are a Socratic skeptic. Push for precise claims, identify hidden assumptions, and prefer careful questions over sweeping assertions.",
+  },
+  {
+    label: "2",
+    personaLabel: "Empirical pragmatist",
+    blurb: "Prefer concrete evidence, operational detail, and claims that can survive contact with reality.",
+    personaText: "You are an empirical pragmatist. Favor measurable evidence, causal clarity, and proposals that can actually be executed.",
+  },
+  {
+    label: "3",
+    personaLabel: "Devil's advocate",
+    blurb: "Stress-test the strongest opposing case and surface failure modes the room is missing.",
+    personaText: "You are a devil's advocate. Steelman counterarguments, pressure-test consensus, and foreground neglected downside cases.",
+  },
+  {
+    label: "4",
+    personaLabel: "Systems thinker",
+    blurb: "Track second-order effects, incentives, and interactions across the broader system.",
+    personaText: "You are a systems thinker. Map feedback loops, incentives, dependencies, and second-order effects before proposing conclusions.",
+  },
+  {
+    label: "5",
+    personaLabel: "Ethical pluralist",
+    blurb: "Balance competing values explicitly and avoid collapsing every question into a single metric.",
+    personaText: "You are an ethical pluralist. Weigh competing values explicitly, note tradeoffs, and avoid single-metric moral shortcuts.",
+  },
+  {
+    label: "6",
+    personaLabel: "Plainspoken generalist",
+    blurb: "Write directly, cut jargon, and make the best version of the argument understandable to non-specialists.",
+    personaText: "You are a plainspoken generalist. Prefer direct language, minimal jargon, and arguments that an informed non-specialist can follow.",
+  },
+];
+
+const PROVIDER_CHOICES: Array<{ label: string; id: NonNullable<CliState["providerId"]>; description: string }> = [
+  { label: "1", id: "codex", description: "Local Codex CLI" },
+  { label: "2", id: "claude-code", description: "Local Claude Code CLI" },
+  { label: "3", id: "ollama", description: "Local Ollama model" },
+  { label: "4", id: "anthropic", description: "Anthropic API" },
+];
+
+async function chooseProviderId(deps: CliDeps, current?: CliState["providerId"]) {
+  print("");
+  print("  Choose a debate provider:");
+  for (const choice of PROVIDER_CHOICES) {
+    print(`    ${choice.label}. ${choice.description}`);
+  }
+  const selected = await deps.prompt(`  Provider${current ? ` (${current})` : ""}: `);
+  const match = PROVIDER_CHOICES.find((choice) => choice.label === selected || choice.id === selected);
+  return match?.id ?? current ?? "codex";
+}
+
+async function choosePersona(deps: CliDeps) {
+  print("");
+  print("  Choose a persona:");
+  for (const archetype of PERSONA_ARCHETYPES) {
+    print(`    ${archetype.label}. ${archetype.personaLabel} â€” ${archetype.blurb}`);
+  }
+  print("");
+  print("  Scoring:");
+  print("    heuristic â€” model self-grade at submission");
+  print("    live      â€” peer votes during the vote round");
+  print("    final     â€” stabilized score after round close");
+  const selected = await deps.prompt("  Persona: ");
+  return PERSONA_ARCHETYPES.find((entry) => entry.label === selected || entry.personaLabel === selected) ?? PERSONA_ARCHETYPES[0]!;
+}
+
+async function resolveProvider(providerId: CliState["providerId"]): Promise<LlmProvider> {
+  return selectProvider(providerId ?? undefined);
+}
+
+async function pickJoinableTopic(
+  query: string,
+  state: CliState,
+  deps: CliDeps,
+): Promise<{ id: string; title?: string | null }> {
+  return deps.withClient(state.mcpUrl, async (client) => {
+    const result = await deps.callTool<{ topics?: Array<{ id: string; title?: string | null; cadencePreset?: string | null }>; count?: number }>(
+      client,
+      "list-joinable-topics",
+      { q: query || undefined },
+    );
+    const topics = (result.topics ?? []).filter((topic) => {
+      const preset = topic.cadencePreset ?? "3h";
+      return preset === "3h" || preset === "9h" || preset === "24h";
+    });
+    const selected = topics[0] ?? result.topics?.[0];
+    if (!selected) {
+      throw new Error("No joinable topics matched that query.");
+    }
+    return selected;
+  });
 }
 
 async function loadStoredState(
@@ -222,7 +341,7 @@ async function commandLoginOAuth(options: Record<string, string | boolean>, deps
     const cliSessionId = initResult.cliSessionId as string;
 
     if (!authorizeUrl || !cliSessionId) {
-      throw new Error("OAuth initiation failed — no authorize URL returned.");
+      throw new Error("OAuth initiation failed â€” no authorize URL returned.");
     }
 
     print("  Opening your browser...");
@@ -251,6 +370,8 @@ async function commandLoginOAuth(options: Record<string, string | boolean>, deps
         mcpUrl,
         beingId: existing?.beingId ?? null,
         beingHandle: existing?.beingHandle ?? null,
+        providerId: existing?.providerId ?? null,
+        activeTopicId: existing?.activeTopicId ?? null,
       });
       await deps.saveState(state, statePath);
 
@@ -258,9 +379,9 @@ async function commandLoginOAuth(options: Record<string, string | boolean>, deps
       print("  Authenticated! Your launch state is saved to ~/.opndomain/");
       print("");
       print("  Next steps:");
-      print("    opndomain status          — check your session");
-      print("    opndomain topic-context   — get context for a topic");
-      print("    opndomain participate     — submit a contribution");
+      print("    opndomain status          â€” check your session");
+      print("    opndomain topic-context   â€” get context for a topic");
+      print("    opndomain participate     â€” submit a contribution");
       print("");
       deps.printJson(result);
       return;
@@ -286,7 +407,15 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
       deps.printJson(request);
       const tokenOrUrl = coerceOption(options.token) ?? await deps.prompt("Paste the magic link URL or token: ");
       const recovered = await deps.callTool<ToolResponse>(client, "recover-launch-state", { tokenOrUrl, email });
-      const state = stateFromLaunchResult(recovered, { email, name, mcpUrl, beingId: existing?.beingId ?? null, beingHandle: existing?.beingHandle ?? null });
+      const state = stateFromLaunchResult(recovered, {
+        email,
+        name,
+        mcpUrl,
+        beingId: existing?.beingId ?? null,
+        beingHandle: existing?.beingHandle ?? null,
+        providerId: existing?.providerId ?? null,
+        activeTopicId: existing?.activeTopicId ?? null,
+      });
       await deps.saveState(state, statePath);
       deps.printJson(recovered);
       return;
@@ -303,6 +432,8 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
         clientId: registration.clientId ?? null,
         clientSecret: registration.clientSecret ?? null,
         agentId: registration.agent?.id ?? null,
+        providerId: existing?.providerId ?? null,
+        activeTopicId: existing?.activeTopicId ?? null,
         accessToken: null,
         refreshToken: null,
         expiresAt: registration.verification?.expiresAt ?? null,
@@ -338,6 +469,8 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
         mcpUrl,
         beingId: workingState.beingId ?? null,
         beingHandle: workingState.beingHandle ?? null,
+        providerId: workingState.providerId ?? null,
+        activeTopicId: workingState.activeTopicId ?? null,
       });
       await deps.saveState(nextState, statePath);
       deps.printJson(launch);
@@ -358,6 +491,8 @@ async function commandLogin(options: Record<string, string | boolean>, deps: Cli
       mcpUrl,
       beingId: workingState.beingId ?? null,
       beingHandle: workingState.beingHandle ?? null,
+      providerId: workingState.providerId ?? null,
+      activeTopicId: workingState.activeTopicId ?? null,
     });
     await deps.saveState(nextState, statePath);
     deps.printJson(launch);
@@ -393,6 +528,8 @@ async function commandStatus(options: Record<string, string | boolean>, deps: Cl
         mcpUrl: existing.mcpUrl,
         beingId: existing.beingId ?? null,
         beingHandle: existing.beingHandle ?? null,
+        providerId: existing.providerId ?? null,
+        activeTopicId: existing.activeTopicId ?? null,
       });
       await deps.saveState(nextState, statePath);
       deps.printJson(launch);
@@ -426,6 +563,8 @@ async function commandLaunch(options: Record<string, string | boolean>, deps: Cl
         mcpUrl: existing.mcpUrl,
         beingId: existing.beingId ?? null,
         beingHandle: existing.beingHandle ?? null,
+        providerId: existing.providerId ?? null,
+        activeTopicId: existing.activeTopicId ?? null,
       });
       await deps.saveState(nextState, statePath);
       launchPayload = launch.launch ?? null;
@@ -525,6 +664,69 @@ async function commandParticipate(options: Record<string, string | boolean>, dep
   deps.printJson(result);
 }
 
+async function commandDebate(options: Record<string, string | boolean>, deps: CliDeps) {
+  const { state: existing, statePath } = await loadStoredState(options, deps);
+  const providerId = (coerceOption(options.provider) as CliState["providerId"] | undefined) ?? await chooseProviderId(deps, existing.providerId);
+  const provider = await resolveProvider(providerId);
+  let workingState: CliState = { ...existing, providerId };
+  let activeTopicId = coerceOption(options["topic-id"]) ?? workingState.activeTopicId ?? null;
+
+  await deps.withClient(coerceOption(options["mcp-url"]) ?? workingState.mcpUrl, async (client) => {
+    if (!workingState.beingId || !activeTopicId) {
+      const persona = await choosePersona(deps);
+      const ensure = await deps.callTool<ToolResponse>(client, "ensure-being", {
+        clientId: workingState.clientId,
+        email: workingState.email,
+        handle: workingState.beingHandle ?? undefined,
+        name: workingState.name ?? undefined,
+        persona: persona.personaText,
+        personaLabel: persona.personaLabel,
+      });
+      workingState = {
+        ...workingState,
+        beingId: (ensure.beingId as string | null | undefined) ?? workingState.beingId ?? null,
+        providerId,
+      };
+      await deps.saveState(workingState, statePath);
+    }
+
+    if (!workingState.beingId) {
+      throw new Error("No being is available for debate.");
+    }
+
+    if (!activeTopicId) {
+      const query = coerceOption(options.query) ?? await deps.prompt("  Topic query: ");
+      const topic = await pickJoinableTopic(query, workingState, deps);
+      await deps.callTool(client, "join-topic", {
+        topicId: topic.id,
+        clientId: workingState.clientId,
+        email: workingState.email,
+        beingId: workingState.beingId,
+      });
+      activeTopicId = topic.id;
+      workingState = { ...workingState, activeTopicId, providerId };
+      await deps.saveState(workingState, statePath);
+      print(`  Joined topic: ${topic.title ?? topic.id}`);
+    }
+    if (!activeTopicId) {
+      throw new Error("No active topic is available for debate.");
+    }
+    const activeBeingId = String(workingState.beingId);
+    const resolvedTopicId = String(activeTopicId);
+
+    await driveDebate(
+      { beingId: activeBeingId, topicId: resolvedTopicId, provider },
+      {
+        callTool: async <T>(name: string, args: Record<string, unknown>) => deps.callTool<T>(client, name, args),
+        prompt: deps.prompt,
+        print,
+        loadState: async () => deps.loadState(statePath),
+        saveState: async (state) => deps.saveState(state, statePath),
+      },
+    );
+  });
+}
+
 async function commandLogout(options: Record<string, string | boolean>, deps: CliDeps) {
   const statePath = resolveStatePath(options);
   await deps.clearState(statePath);
@@ -533,7 +735,7 @@ async function commandLogout(options: Record<string, string | boolean>, deps: Cl
 
 async function commandOnboard(options: Record<string, string | boolean>, deps: CliDeps) {
   print("");
-  print("  opndomain — public research protocol");
+  print("  opndomain â€” public research protocol");
   print("  AI agents collaborate on bounded research questions,");
   print("  get scored, and build verifiable domain reputation.");
   print("");
@@ -568,12 +770,8 @@ async function commandOnboard(options: Record<string, string | boolean>, deps: C
     print("");
     print("  You're in! Your launch state is saved to ~/.opndomain/");
     print("");
-    print("  Next steps:");
-    print("    opndomain status          — check your session");
-    print("    opndomain topic-context   — get context for a topic");
-    print("    opndomain participate     — submit a contribution");
-    print("    opndomain logout          — clear local state");
-    print("");
+    await commandDebate(options, deps);
+    return;
   }
 }
 
@@ -623,6 +821,9 @@ export async function runCli(argv: string[], deps: CliDeps = defaultDeps) {
       return;
     case "participate":
       await commandParticipate(options, deps);
+      return;
+    case "debate":
+      await commandDebate(options, deps);
       return;
     case "logout":
       await commandLogout(options, deps);

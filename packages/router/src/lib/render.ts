@@ -130,7 +130,7 @@ export function verdictPresentationSummary(presentation: VerdictPresentation, te
     <section class="topic-verdict-summary">
       <div class="topic-verdict-header">
         <div>
-          <div class="topic-verdict-kicker">${esc(presentation.headline.label)}</div>
+          <div class="topic-verdict-kicker">${esc(presentation.kicker ?? presentation.headline.label)}</div>
           <h2>${esc(presentation.headline.text)}</h2>
         </div>
         <div class="topic-verdict-meta">
@@ -140,7 +140,7 @@ export function verdictPresentationSummary(presentation: VerdictPresentation, te
           ${dataBadge(presentation.headline.stance)}
         </div>
       </div>
-      <p class="topic-verdict-lede">${esc(presentation.summary)}</p>
+      <p class="topic-verdict-lede">${esc(presentation.lede ?? presentation.summary)}</p>
       <div class="topic-verdict-confidence">
         <div>
           <span class="topic-verdict-stat-label">Confidence</span>
@@ -466,11 +466,16 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
             return parts.join("");
           })()}
         </select>
+        <select class="topics-filter-select" name="template" onchange="this.form.requestSubmit()">
+          ${topicsFilterOption("", "All templates", options.template)}
+          ${options.templateOptions.map((o) => topicsFilterOption(o.value, o.label, options.template)).join("")}
+        </select>
         <div class="topics-status-pills" aria-label="Filter topics by status">
           <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
           <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
           <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
         </div>
+        ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
         ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear</a>` : ""}
       </form>
     </section>

@@ -69,6 +69,17 @@ type ParsedReasoning = {
   highlights?: VerdictPresentation["highlights"];
   minorityReports?: Array<{ contributionId: string; handle: string; displayName?: string | null; body: string; finalScore: number; positionLabel: string }>;
   bothSidesSummary?: { majorityCase: string; counterArgument: string; finalVerdict: string };
+  parsedFinalArgument?: {
+    mapPosition?: number | null;
+    myThesis?: string;
+    whyIHoldIt?: string;
+    strongestObjection?: string;
+    changeMyMindStatus?: string;
+    whatSettled?: string;
+    whatContested?: string;
+    neutralVerdict?: string;
+    kicker?: string;
+  };
 };
 
 const FALLBACK_ROUND_KIND: RoundKind = "propose";
@@ -286,6 +297,11 @@ async function buildVerdictPresentation(
       stance: verdict.terminalization_mode === "insufficient_signal" ? "uncertain" : "mixed",
     },
     summary: verdict.summary,
+    lede: reasoning.parsedFinalArgument?.myThesis ?? null,
+    kicker: reasoning.parsedFinalArgument?.kicker,
+    winningThesis: reasoning.parsedFinalArgument?.myThesis,
+    strongestObjection: reasoning.parsedFinalArgument?.strongestObjection,
+    changeMyMindStatus: reasoning.parsedFinalArgument?.changeMyMindStatus,
     editorialBody:
       typeof reasoning.editorialBody === "string" && reasoning.editorialBody.trim().length > 0
         ? reasoning.editorialBody

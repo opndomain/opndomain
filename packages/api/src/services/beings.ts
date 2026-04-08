@@ -12,6 +12,8 @@ type BeingRow = {
   handle: string;
   display_name: string;
   bio: string | null;
+  persona_text: string | null;
+  persona_label: string | null;
   trust_tier: string;
   status: string;
   created_at: string;
@@ -36,6 +38,8 @@ function mapBeing(row: BeingRow) {
     handle: row.handle,
     displayName: row.display_name,
     bio: row.bio,
+    personaText: row.persona_text,
+    personaLabel: row.persona_label,
     trustTier: row.trust_tier,
     status: row.status,
     createdAt: row.created_at,
@@ -59,7 +63,7 @@ function mapCapability(row: CapabilityRow) {
 export async function createBeing(
   env: ApiEnv,
   agent: AgentRecord,
-  input: { handle: string; displayName: string; bio?: string },
+  input: { handle: string; displayName: string; bio?: string; personaText?: string; personaLabel?: string },
 ) {
   if (containsBlockedSubstring(input.handle)) {
     badRequest("handle_blocked", "That handle is not allowed.");
@@ -72,10 +76,10 @@ export async function createBeing(
     await env.DB.batch([
       env.DB.prepare(
         `
-          INSERT INTO beings (id, agent_id, handle, display_name, bio, trust_tier, status)
-          VALUES (?, ?, ?, ?, ?, ?, 'active')
+          INSERT INTO beings (id, agent_id, handle, display_name, bio, persona_text, persona_label, trust_tier, status)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
         `,
-      ).bind(beingId, agent.id, input.handle, input.displayName, input.bio ?? null, trustTier),
+      ).bind(beingId, agent.id, input.handle, input.displayName, input.bio ?? null, input.personaText ?? null, input.personaLabel ?? null, trustTier),
       env.DB.prepare(
         `
           INSERT INTO being_capabilities (
@@ -112,7 +116,7 @@ export async function listBeings(env: ApiEnv, agent: AgentRecord) {
   const beings = await allRows<BeingRow>(
     env.DB,
     `
-      SELECT id, agent_id, handle, display_name, bio, trust_tier, status, created_at, updated_at
+      SELECT id, agent_id, handle, display_name, bio, persona_text, persona_label, trust_tier, status, created_at, updated_at
       FROM beings
       WHERE agent_id = ?
       ORDER BY created_at ASC
@@ -126,7 +130,7 @@ export async function getBeing(env: ApiEnv, agent: AgentRecord, beingId: string)
   const row = await firstRow<BeingRow>(
     env.DB,
     `
-      SELECT id, agent_id, handle, display_name, bio, trust_tier, status, created_at, updated_at
+      SELECT id, agent_id, handle, display_name, bio, persona_text, persona_label, trust_tier, status, created_at, updated_at
       FROM beings
       WHERE id = ?
     `,
@@ -145,7 +149,7 @@ export async function updateBeing(
   env: ApiEnv,
   agent: AgentRecord,
   beingId: string,
-  input: { displayName?: string; bio?: string | null; status?: "active" | "inactive" },
+  input: { displayName?: string; bio?: string | null; personaText?: string | null; personaLabel?: string | null; status?: "active" | "inactive" },
 ) {
   await getBeing(env, agent, beingId);
   await runStatement(
@@ -155,6 +159,8 @@ export async function updateBeing(
         SET
           display_name = COALESCE(?, display_name),
           bio = CASE WHEN ? = 1 THEN ? ELSE bio END,
+          persona_text = CASE WHEN ? = 1 THEN ? ELSE persona_text END,
+          persona_label = CASE WHEN ? = 1 THEN ? ELSE persona_label END,
           status = COALESCE(?, status)
         WHERE id = ?
       `,
@@ -162,6 +168,10 @@ export async function updateBeing(
       input.displayName ?? null,
       Number(Object.prototype.hasOwnProperty.call(input, "bio")),
       input.bio ?? null,
+      Number(Object.prototype.hasOwnProperty.call(input, "personaText")),
+      input.personaText ?? null,
+      Number(Object.prototype.hasOwnProperty.call(input, "personaLabel")),
+      input.personaLabel ?? null,
       input.status ?? null,
       beingId,
     ),
@@ -231,7 +241,7 @@ export async function findActingBeingForTopicCreation(env: ApiEnv, agent: AgentR
   const row = await firstRow<BeingRow & { can_open_topics: number }>(
     env.DB,
     `
-      SELECT b.id, b.agent_id, b.handle, b.display_name, b.bio, b.trust_tier, b.status, b.created_at, b.updated_at, bc.can_open_topics
+      SELECT b.id, b.agent_id, b.handle, b.display_name, b.bio, b.persona_text, b.persona_label, b.trust_tier, b.status, b.created_at, b.updated_at, bc.can_open_topics
       FROM beings b
       INNER JOIN being_capabilities bc ON bc.being_id = b.id
       WHERE b.agent_id = ? AND b.status = 'active'
@@ -263,7 +273,7 @@ export async function validateBeingForTopicCreation(env: ApiEnv, agent: AgentRec
   const row = await firstRow<BeingRow & { can_open_topics: number }>(
     env.DB,
     `
-      SELECT b.id, b.agent_id, b.handle, b.display_name, b.bio, b.trust_tier, b.status, b.created_at, b.updated_at, bc.can_open_topics
+      SELECT b.id, b.agent_id, b.handle, b.display_name, b.bio, b.persona_text, b.persona_label, b.trust_tier, b.status, b.created_at, b.updated_at, bc.can_open_topics
       FROM beings b
       INNER JOIN being_capabilities bc ON bc.being_id = b.id
       WHERE b.id = ?

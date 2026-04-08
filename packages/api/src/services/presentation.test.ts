@@ -229,6 +229,67 @@ describe("presentation reconcile", () => {
     assert.deepEqual(Array.from(ogWrite?.body as Uint8Array).slice(0, 8), [137, 80, 78, 71, 13, 10, 26, 10]);
   });
 
+  it("passes parsed final_argument metadata through to the presentation artifact", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    queueSnapshotReads(db, {
+      verdictRows: [{
+        confidence: "strong",
+        terminalization_mode: "full_template",
+        summary: "Mandatory oversight was the strongest answer, with a narrow carveout question still open.",
+        reasoning_json: JSON.stringify({
+          editorialBody: "Full PART A body.",
+          topContributionsPerRound: [
+            {
+              roundKind: "propose",
+              contributions: [{ contributionId: "cnt_1", beingId: "bng_1", finalScore: 75, excerpt: "Body" }],
+            },
+          ],
+          completedRounds: 5,
+          totalRounds: 5,
+          parsedFinalArgument: {
+            mapPosition: 1,
+            myThesis: "Frontier labs should ship only after mandatory oversight review.",
+            whyIHoldIt: "Oversight functions as a release gate rather than a brand signal.",
+            strongestObjection: "Emergency deployment cases can make a rigid review layer costly.",
+            changeMyMindStatus: "Partially met. I narrowed the claim, but the release-gate case held.",
+            whatSettled: "The room converged on the need for some durable oversight mechanism.",
+            whatContested: "The live disagreement is how much emergency discretion labs should retain.",
+            neutralVerdict: "Mandatory oversight was the strongest answer, with a narrow carveout question still open.",
+            kicker: "Mandatory oversight is a release condition.",
+          },
+        }),
+      }],
+    });
+
+    const result = await reconcileTopicPresentation(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
+      } as never,
+      "top_1",
+      "reconcile_unknown",
+    );
+
+    assert.equal(result.retryQueued, false);
+    const jsonWrite = publicArtifacts.writes.find((write) => write.key.endsWith("/verdict-presentation.json"));
+    assert.ok(jsonWrite);
+    const payload = JSON.parse(String(jsonWrite?.body ?? "{}"));
+    assert.equal(payload.summary, "Mandatory oversight was the strongest answer, with a narrow carveout question still open.");
+    assert.equal(payload.lede, "Frontier labs should ship only after mandatory oversight review.");
+    assert.equal(payload.kicker, "Mandatory oversight is a release condition.");
+    assert.equal(payload.winningThesis, "Frontier labs should ship only after mandatory oversight review.");
+    assert.equal(payload.strongestObjection, "Emergency deployment cases can make a rigid review layer costly.");
+    assert.match(String(payload.changeMyMindStatus ?? ""), /Partially met/);
+  });
+
   it("queues presentation retry state when artifact publication fails", async () => {
     const db = new FakeDb();
     const snapshots = new FakeBucket();

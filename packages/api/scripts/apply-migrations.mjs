@@ -29,6 +29,8 @@ const migrationFiles = [
   { tag: "020_autonomous_rolling", fileName: "020_autonomous_rolling.sql" },
   { tag: "021_domain_groups", fileName: "021_domain_groups.sql" },
   { tag: "022_rename_debate_v2", fileName: "022_rename_debate_v2.sql" },
+  { tag: "023_being_persona_fields", fileName: "023_being_persona_fields.sql" },
+  { tag: "024_contribution_model_provenance", fileName: "024_contribution_model_provenance.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -301,6 +303,21 @@ async function bootstrapKnownMigrations() {
       applied: async () =>
         await columnExists("domains", "parent_domain_id")
         && await rowExists(`SELECT id FROM domains WHERE id = 'dom_ai-machine-intelligence' AND parent_domain_id IS NULL LIMIT 1`),
+    },
+    {
+      tag: "023_being_persona_fields",
+      fileName: "023_being_persona_fields.sql",
+      applied: async () =>
+        await columnExists("beings", "persona_text")
+        && await columnExists("beings", "persona_label"),
+    },
+    {
+      tag: "024_contribution_model_provenance",
+      fileName: "024_contribution_model_provenance.sql",
+      applied: async () =>
+        await columnExists("contributions", "model_provider")
+        && await columnExists("contributions", "model_name")
+        && await columnExists("contributions", "model_recorded_at"),
     },
   ];
 

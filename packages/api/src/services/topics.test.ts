@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
-import { RoundInstructionSchema, TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
+import { PendingProvenanceContributionSchema, RoundInstructionSchema, TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
 import { ApiError } from "../lib/errors.js";
 import { capTranscriptByBudget, createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, recordTopicView, updateTopic } from "./topics.js";
 
@@ -903,7 +903,22 @@ describe("topic read contracts", () => {
       status: "active",
     }]);
     db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
-    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", [{
+      id: "cnt_2",
+      round_id: "rnd_0",
+      sequence_index: 0,
+      being_id: "bng_2",
+      being_handle: "bravo",
+      body_clean: "Visible prior-round contribution",
+      visibility: "normal",
+      submitted_at: "2026-03-25T00:10:00.000Z",
+      heuristic_score: 0.8,
+      live_score: 0.9,
+      final_score: 1.0,
+      reveal_at: "2026-03-25T00:30:00.000Z",
+      round_kind: "propose",
+      round_visibility: "open",
+    }]);
     db.queueFirst("FROM round_configs", [{
       config_json: JSON.stringify({
         roundKind: "critique",
@@ -962,6 +977,9 @@ describe("topic read contracts", () => {
     assert.equal(voteTarget.contributionId, "cnt_2");
     assert.equal(voteTarget.beingId, "bng_2");
     assert.equal(voteTarget.beingHandle, "bravo");
+    assert.equal(voteTarget.body, "Visible prior-round contribution");
+    assert.equal(voteTarget.submittedAt, "2026-03-25T00:10:00.000Z");
+    assert.equal(voteTarget.roundIndex, 0);
     assert.equal(topic.domainSlug, "ai-safety");
     assert.equal(topic.members[0]?.ownedByCurrentAgent, true);
   });
@@ -1088,6 +1106,102 @@ describe("topic read contracts", () => {
     assert.equal(topic.votingObligation.votesCast, 1);
     assert.equal(topic.votingObligation.fulfilled, true);
     assert.equal(topic.votingObligation.dropWarning, null);
+  });
+
+  it("returns pending provenance contributions for the acting being capped to recent items", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      status: "started",
+      cadence_family: "quality_gated",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 1,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [{
+      id: "rnd_1",
+      topic_id: "top_1",
+      sequence_index: 1,
+      round_kind: "vote",
+      status: "active",
+      starts_at: null,
+      ends_at: null,
+      reveal_at: null,
+      created_at: "2026-03-25T01:00:00.000Z",
+      updated_at: "2026-03-25T01:00:00.000Z",
+    }]);
+    db.queueAll("FROM topic_members", [{
+      being_id: "bng_1",
+      handle: "alpha",
+      display_name: "Alpha",
+      role: "participant",
+      status: "active",
+    }]);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "vote",
+        sequenceIndex: 1,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: true,
+        voteTargetPolicy: "prior_round",
+        minVotesPerActor: 3,
+        maxVotesPerActor: 3,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: {
+          completionMode: "deadline_only",
+          enrollmentMode: "topic_members_only",
+          note: "test",
+        },
+      }),
+    }]);
+    db.queueAll("FROM votes\n            WHERE round_id = ? AND voter_being_id = ?", []);
+    db.queueFirst("WHERE topic_id = ? AND sequence_index = ?", [{
+      id: "rnd_0",
+      sequence_index: 0,
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN rounds r ON r.id = c.round_id\n      INNER JOIN round_configs rc ON rc.round_id = r.id", []);
+    db.queueAll("SELECT c.id, r.sequence_index, c.body_clean, c.model_provider, c.model_name", [
+      {
+        id: "cnt_missing",
+        sequence_index: 0,
+        body_clean: "Prior-round contribution missing provenance",
+        model_provider: null,
+        model_name: null,
+      },
+    ]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1", "bng_1");
+
+    assert.equal(topic.pendingProvenanceContributions.length, 1);
+    const item = PendingProvenanceContributionSchema.parse(topic.pendingProvenanceContributions[0]);
+    assert.equal(item.contributionId, "cnt_missing");
+    assert.equal(item.roundIndex, 0);
+    assert.equal(item.body, "Prior-round contribution missing provenance");
+    assert.equal(item.provider, null);
+    assert.equal(item.model, null);
   });
 
   it("returns unfulfilled votingObligation when no votes cast", async () => {

@@ -77,6 +77,7 @@ type RoundRow = {
 type TranscriptContextRow = {
   id: string;
   round_id: string;
+  sequence_index: number;
   being_id: string;
   being_handle: string;
   body_clean: string | null;
@@ -118,6 +119,9 @@ type VoteTargetDetailRow = {
   contribution_id: string;
   being_id: string;
   being_handle: string;
+  body_clean: string | null;
+  submitted_at: string;
+  sequence_index: number;
 };
 
 type OwnVoteRow = {
@@ -126,6 +130,14 @@ type OwnVoteRow = {
   direction: number;
   vote_kind: string;
   created_at: string;
+};
+
+type PendingProvenanceContributionRow = {
+  id: string;
+  sequence_index: number;
+  body_clean: string | null;
+  model_provider: string | null;
+  model_name: string | null;
 };
 
 type PendingRoundScheduleRow = {
@@ -138,6 +150,7 @@ type PendingRoundScheduleRow = {
 };
 
 const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 5;
+const PENDING_PROVENANCE_LIMIT = 5;
 
 // ---------------------------------------------------------------------------
 // Round instruction resolver (D1-first, shared fallback)
@@ -925,6 +938,7 @@ export async function getTopicTranscript(
       SELECT
         c.id,
         c.round_id,
+        r.sequence_index,
         c.being_id,
         b.handle AS being_handle,
         c.body_clean,
@@ -1071,6 +1085,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
       SELECT
         c.id,
         c.round_id,
+        r.sequence_index,
         c.being_id,
         b.handle AS being_handle,
         c.body_clean,
@@ -1092,13 +1107,14 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     `,
     topicId,
   );
-  const unfilteredTranscript = transcript
+  const visibleTranscriptEntries = transcript
     .filter((row) => isTranscriptVisibleContribution(row))
     .map((row) => {
       const isPending = row.final_score === null && row.round_kind !== "vote";
       return {
         id: row.id,
         roundId: row.round_id,
+        roundIndex: row.sequence_index,
         beingId: row.being_id,
         beingHandle: row.being_handle,
         bodyClean: row.body_clean,
@@ -1109,6 +1125,7 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
           : { heuristic: row.heuristic_score, live: row.live_score, final: row.final_score },
       };
     });
+  const unfilteredTranscript = visibleTranscriptEntries.map(({ roundIndex: _roundIndex, ...entry }) => entry);
   const { transcript: visibleTranscript, capped: transcriptCapped } = capTranscriptByBudget(
     unfilteredTranscript,
     TRANSCRIPT_QUERY_DEFAULT_LIMIT,
@@ -1230,18 +1247,18 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
           if (resolvedTargets.eligibleContributionIds.length === 0) {
             return [];
           }
-          const placeholders = resolvedTargets.eligibleContributionIds.map(() => "?").join(", ");
-          const rows = await allRows<VoteTargetDetailRow>(
-            env.DB,
-            `
-              SELECT c.id AS contribution_id, c.being_id, b.handle AS being_handle
-              FROM contributions c
-              INNER JOIN beings b ON b.id = c.being_id
-              WHERE c.id IN (${placeholders})
-            `,
-            ...resolvedTargets.eligibleContributionIds,
+          // Keep vote-target body exposure tied to the same transcript visibility gate.
+          // Future callers should not bypass this by re-querying contributions directly.
+          const rowsByContributionId = new Map<string, VoteTargetDetailRow>(
+            visibleTranscriptEntries.map((row) => [row.id, {
+              contribution_id: row.id,
+              being_id: row.beingId,
+              being_handle: row.beingHandle,
+              body_clean: row.bodyClean,
+              submitted_at: row.submittedAt,
+              sequence_index: row.roundIndex,
+            }]),
           );
-          const rowsByContributionId = new Map(rows.map((row) => [row.contribution_id, row]));
           return resolvedTargets.eligibleContributionIds
             .map((contributionId) => rowsByContributionId.get(contributionId))
             .filter((row): row is VoteTargetDetailRow => Boolean(row))
@@ -1249,8 +1266,39 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
               contributionId: row.contribution_id,
               beingId: row.being_id,
               beingHandle: row.being_handle,
+              body: row.body_clean,
+              submittedAt: row.submitted_at,
+              roundIndex: row.sequence_index,
             }));
         })()
+      : [];
+  const visibleOwnedContributionIds = new Set(
+    visibleTranscriptEntries
+      .filter((entry) => entry.beingId === beingId)
+      .map((entry) => entry.id),
+  );
+  const pendingProvenanceContributions =
+    beingId
+      ? (await allRows<PendingProvenanceContributionRow>(
+          env.DB,
+          `
+            SELECT c.id, r.sequence_index, c.body_clean, c.model_provider, c.model_name
+            FROM contributions c
+            INNER JOIN rounds r ON r.id = c.round_id
+            WHERE c.topic_id = ?
+              AND c.being_id = ?
+              AND (
+                c.model_provider IS NULL
+                OR TRIM(c.model_provider) = ''
+                OR c.model_name IS NULL
+                OR TRIM(c.model_name) = ''
+              )
+            ORDER BY c.submitted_at DESC, c.created_at DESC
+            LIMIT ${PENDING_PROVENANCE_LIMIT}
+          `,
+          topicId,
+          beingId,
+        )).filter((row) => visibleOwnedContributionIds.has(row.id))
       : [];
 
   return {
@@ -1274,6 +1322,13 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     })),
     currentRoundConfig,
     voteTargets,
+    pendingProvenanceContributions: pendingProvenanceContributions.map((row) => ({
+      contributionId: row.id,
+      roundIndex: row.sequence_index,
+      body: row.body_clean,
+      provider: row.model_provider,
+      model: row.model_name,
+    })),
     ownVoteStatus,
     votingObligation,
   };

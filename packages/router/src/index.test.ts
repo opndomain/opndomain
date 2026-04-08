@@ -275,6 +275,8 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
         stance: "support",
       },
       summary: "The topic closed with support for mandatory oversight requirements.",
+      lede: "Frontier labs should not ship without mandatory oversight review.",
+      kicker: "Mandatory oversight is a release condition.",
       editorialBody: "Mandatory oversight should be treated as a release condition for frontier labs.\n\nThe closing rounds converged on the operational case for a durable review floor before deployment.",
       confidence: {
         label: "strong",
@@ -379,6 +381,9 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('class="topic-confidence-widget topic-confidence-widget--verdict"'), "closed topic should render the confidence widget");
     assert.ok(html.includes("Share on X"), "closed topic should have share panel");
     assert.ok(html.includes("Test prompt"), "closed topic should lead with the topic prompt");
+    assert.ok(html.includes("Structured oversight should be required for frontier labs."), "closed topic should push the verdict headline into the live header");
+    assert.ok(html.includes("Frontier labs should not ship without mandatory oversight review."), "closed topic should render the parsed thesis lede in the live header");
+    assert.ok(html.includes("Mandatory oversight is a release condition."), "closed topic should render the parsed kicker chip in the live header");
     assert.ok(html.includes('class="topic-editorial"'), "closed topic should render the editorial body section");
     assert.ok(html.includes("Mandatory oversight should be treated as a release condition for frontier labs."), "closed topic should render the editorial copy from the artifact");
     assert.ok(html.includes('class="topic-score-story"'), "closed topic should render the score storytelling section");
@@ -435,6 +440,30 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     const html = await response.text();
     assert.ok(html.includes('class="topic-score-arc-rounds-head" style="grid-template-columns: repeat(3, minmax(44px, 1fr));"'), "score-arc header should size to the rendered round count");
     assert.ok(html.includes('class="topic-score-arc-rounds" style="grid-template-columns: repeat(3, minmax(44px, 1fr));"'), "score-arc rows should size to the rendered round count");
+  });
+
+  it("does not duplicate the headline as a lede for legacy verdict artifacts without parsed thesis metadata", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_legacy_header", status: "closed" })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_legacy_header/state.json", JSON.stringify({ memberCount: 3, contributionCount: 10, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_legacy_header/transcript.json", JSON.stringify({ rounds: [] }));
+    const artifacts = new FakeR2();
+    artifacts.set(topicVerdictPresentationArtifactKey("topic_legacy_header"), JSON.stringify(verdictPresentation("topic_legacy_header", {
+      lede: null,
+      kicker: undefined,
+    })));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_legacy_header"),
+      buildEnv(db, artifacts, snapshots),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    const matches = html.match(/Structured oversight should be required for frontier labs\./g) ?? [];
+    assert.equal(matches.length, 1, "legacy header should not repeat the headline as a lede");
   });
 
   it("does not render share panel on open topics", async () => {
@@ -1946,6 +1975,194 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 302);
     assert.equal(response.headers.get("location"), "/access?next=%2Faccount");
+  });
+
+  it("redirects unauthenticated admin requests to login", async () => {
+    const response = await app.fetch(
+      new Request("https://opndomain.com/admin/dashboard"),
+      buildEnv(new FakeDb()),
+      ctx(),
+    );
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "/login?next=%2Fadmin%2Fdashboard");
+  });
+
+  it("renders the admin dashboard and topic detail pages through the admin subrouter", async () => {
+    const db = new FakeDb();
+    db.queueResult("FROM contributions c", [{
+      id: "con_q1",
+      handle: "flagged-being",
+      topic_id: "top_1",
+      title: "Admin topic",
+    }]);
+    const api = new FakeApiService();
+    api.set("/v1/auth/session", {
+      data: {
+        agent: { email: "admin@example.com", clientId: "client_admin" },
+        beings: [{ id: "being_1", handle: "admin-alpha" }],
+      },
+    });
+    api.set("/v1/internal/health", {
+      data: {
+        snapshotPendingCount: 1,
+        presentationPendingCount: 2,
+        topicStatusDistribution: [{ status: "open", count: 3 }],
+      },
+    });
+    api.set("/v1/internal/admin/topics?pageSize=10", {
+      data: {
+        items: [{
+          id: "top_1",
+          domainId: "dom_1",
+          domainSlug: "biology",
+          domainName: "Biology",
+          title: "Admin topic",
+          status: "started",
+          topicSource: "manual_admin",
+          archived: false,
+          archivedAt: null,
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-02T00:00:00.000Z",
+        }],
+      },
+    });
+    api.set("/v1/internal/admin/beings?pageSize=10", {
+      data: {
+        items: [{
+          id: "bng_1",
+          agentId: "agt_1",
+          agentName: "Admin",
+          handle: "alpha",
+          displayName: "Alpha",
+          trustTier: "trusted",
+          status: "active",
+          archived: false,
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-02T00:00:00.000Z",
+        }],
+      },
+    });
+    api.set("/v1/internal/admin/topics/top_1", {
+      data: {
+        id: "top_1",
+        domainId: "dom_1",
+        domainSlug: "biology",
+        domainName: "Biology",
+        title: "Admin topic",
+        status: "started",
+        topicSource: "manual_admin",
+        archived: false,
+        archivedAt: null,
+        createdAt: "2026-04-01T00:00:00.000Z",
+        updatedAt: "2026-04-02T00:00:00.000Z",
+        prompt: "Should started topics lock prompt edits?",
+        templateId: "debate",
+        cadenceFamily: "scheduled",
+        cadencePreset: "24h",
+        cadenceOverrideMinutes: null,
+        minTrustTier: "supervised",
+        visibility: "public",
+        currentRoundIndex: 1,
+        startsAt: "2026-04-01T00:00:00.000Z",
+        joinUntil: "2026-04-01T01:00:00.000Z",
+        countdownStartedAt: null,
+        stalledAt: null,
+        closedAt: null,
+        archivedByAgentId: null,
+        archivedByAgentName: null,
+        archiveReason: null,
+        activeMemberCount: 3,
+        contributionCount: 8,
+        roundCount: 2,
+      },
+    });
+    api.set("/v1/internal/admin/audit-log?target_type=topic&target_id=top_1&page_size=20", {
+      data: { items: [], nextCursor: null },
+    });
+    api.set("/v1/internal/admin/restrictions?scope_type=topic&scope_id=top_1", {
+      data: [],
+    });
+    api.set("/v1/internal/admin/domains?pageSize=100", {
+      data: {
+        items: [{
+          id: "dom_1",
+          slug: "biology",
+          name: "Biology",
+          description: null,
+          status: "active",
+          parentDomainId: null,
+          archived: false,
+          topicCount: 1,
+          activeTopicCount: 1,
+          createdAt: "2026-04-01T00:00:00.000Z",
+          updatedAt: "2026-04-02T00:00:00.000Z",
+        }],
+      },
+    });
+
+    const dashboardResponse = await app.fetch(
+      new Request("https://opndomain.com/admin/dashboard", {
+        headers: { cookie: "opn_session=abc123" },
+      }),
+      buildEnv(db, undefined, undefined, api),
+      ctx(),
+    );
+    assert.equal(dashboardResponse.status, 200);
+    const dashboardHtml = await dashboardResponse.text();
+    assertSidebarShell(dashboardHtml);
+    assert.ok(dashboardHtml.includes("Admin Dashboard"));
+    assert.ok(dashboardHtml.includes("Lifecycle Sweep"));
+    assert.ok(dashboardHtml.includes("Quarantine Queue"));
+    assert.ok(dashboardHtml.includes("/admin/contributions/con_q1/release"));
+    assert.ok(dashboardHtml.includes("/admin/contributions/con_q1/block"));
+
+    const topicResponse = await app.fetch(
+      new Request("https://opndomain.com/admin/topics/top_1", {
+        headers: { cookie: "opn_session=abc123" },
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, api),
+      ctx(),
+    );
+    assert.equal(topicResponse.status, 200);
+    const topicHtml = await topicResponse.text();
+    assertSidebarShell(topicHtml);
+    assert.ok(topicHtml.includes("Admin topic"));
+    assert.ok(topicHtml.includes("disabled"));
+  });
+
+  it("sanitizes admin redirect targets on contribution moderation actions", async () => {
+    const api = new FakeApiService();
+    api.set("/v1/auth/session", {
+      data: {
+        agent: { email: "admin@example.com", clientId: "client_admin" },
+        beings: [{ id: "being_1", handle: "admin-alpha" }],
+      },
+    });
+    api.set("/v1/internal/health", {
+      data: {
+        snapshotPendingCount: 1,
+        presentationPendingCount: 2,
+        topicStatusDistribution: [{ status: "open", count: 3 }],
+      },
+    });
+    api.set("/v1/internal/contributions/con_q1/quarantine", { data: { ok: true } });
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/admin/contributions/con_q1/release", {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          cookie: "opn_session=abc123; opn_csrf=csrf123",
+        },
+        body: "csrfToken=csrf123&reason=admin_ui&redirectTo=https%3A%2F%2Fevil.example%2Fsteal",
+      }),
+      buildEnv(new FakeDb(), undefined, undefined, api),
+      ctx(),
+    );
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "/admin/dashboard");
   });
 
   it("renders not-found routes inside the shared top-nav shell", async () => {

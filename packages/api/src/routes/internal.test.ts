@@ -22,12 +22,14 @@ class FakePreparedStatement {
   }
 
   async run() {
+    this.db.executedRuns.push({ sql: this.sql, bindings: this.bindings });
     return { success: true, meta: { changes: 1 } };
   }
 }
 
 class FakeDb {
   batches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
+  executedRuns: Array<{ sql: string; bindings: unknown[] }> = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -1120,6 +1122,175 @@ describe("internal routes", () => {
     assert.equal(detailPayload.data.activeMemberCount, 4);
     assert.equal(detailPayload.data.contributionCount, 12);
     assert.equal(detailPayload.data.roundCount, 3);
+  });
+
+  it("returns dashboard metrics for the requested date window", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    db.queueAll("FROM beings\n       WHERE substr(created_at, 1, 10) BETWEEN ? AND ?", [
+      { metric_date: "2026-04-01", value: 2 },
+    ]);
+    db.queueAll("SELECT rollup_date, active_beings AS value", [
+      { rollup_date: "2026-04-01", value: 3 },
+    ]);
+    db.queueAll("SELECT rollup_date, active_agents AS value", [
+      { rollup_date: "2026-04-01", value: 4 },
+    ]);
+    db.queueAll("SELECT rollup_date, topics_created_count AS value", [
+      { rollup_date: "2026-04-01", value: 5 },
+    ]);
+    db.queueAll("SELECT rollup_date, contributions_created_count AS value", [
+      { rollup_date: "2026-04-01", value: 6 },
+    ]);
+    db.queueAll("SELECT rollup_date, verdicts_created_count AS value", [
+      { rollup_date: "2026-04-01", value: 7 },
+    ]);
+    db.queueFirst("SELECT active_topics AS value", [{ value: 8 }]);
+    db.queueAll("FROM topics\n       GROUP BY status", [{ status: "open", count: 2 }]);
+    db.queueFirst("FROM text_restrictions", [{ value: 1 }]);
+    db.queueFirst("FROM beings\n       WHERE status = 'inactive'", [{ value: 9 }]);
+    db.queueFirst("FROM sessions\n       WHERE revoked_at IS NOT NULL", [{ value: 10 }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/dashboard/metrics?from=2026-04-01&to=2026-04-01", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as { data: { window: { from: string; to: string }; daily: { registrations: { points: Array<{ value: number }> } }; pointInTime: { activeTopics: { value: number } } } };
+    assert.equal(payload.data.window.from, "2026-04-01");
+    assert.equal(payload.data.window.to, "2026-04-01");
+    assert.equal(payload.data.daily.registrations.points[0]?.value, 2);
+    assert.equal(payload.data.pointInTime.activeTopics.value, 8);
+  });
+
+  it("creates and clears admin restrictions", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db, { requestCount: 2 });
+    db.queueFirst("SELECT id, agent_id FROM beings WHERE id = ?", [{ id: "bng_1", agent_id: "agt_2" }]);
+    db.queueFirst("FROM text_restrictions\n     WHERE id = ?", [
+      {
+        id: "rst_1",
+        scope_type: "being",
+        scope_id: "bng_1",
+        mode: "queue",
+        reason: "manual review",
+        expires_at: null,
+        created_at: "2026-04-01T00:00:00.000Z",
+        updated_at: "2026-04-01T00:00:00.000Z",
+      },
+      {
+        id: "rst_1",
+        scope_type: "being",
+        scope_id: "bng_1",
+        mode: "queue",
+        reason: "manual review",
+        expires_at: null,
+        created_at: "2026-04-01T00:00:00.000Z",
+        updated_at: "2026-04-01T00:00:00.000Z",
+      },
+    ]);
+
+    const app = createApiApp();
+    const createResponse = await app.fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/restrictions", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          scopeType: "being",
+          scopeId: "bng_1",
+          mode: "queue",
+          reason: "manual review",
+        }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(createResponse.status, 201);
+    assert.ok(db.executedRuns.some((run) => run.sql.includes("INSERT INTO text_restrictions")));
+    assert.ok(db.executedRuns.some((run) => run.sql.includes("INSERT INTO admin_audit_log")));
+
+    const clearResponse = await app.fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/restrictions/rst_1/clear", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ reason: "expired" }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(clearResponse.status, 200);
+    assert.ok(db.executedRuns.some((run) => run.sql.includes("UPDATE text_restrictions SET expires_at = ?")));
+  });
+
+  it("updates being status through the admin endpoint", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    db.queueFirst("SELECT id, agent_id FROM beings WHERE id = ?", [{ id: "bng_1", agent_id: "agt_2" }]);
+    db.queueFirst("SELECT\n        b.id,\n        b.agent_id,\n        a.name AS agent_name,", [
+      {
+        id: "bng_1",
+        agent_id: "agt_2",
+        agent_name: "Operator",
+        handle: "alpha",
+        display_name: "Alpha",
+        bio: "Researcher",
+        trust_tier: "trusted",
+        status: "inactive",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-26T00:00:00.000Z",
+        can_publish: 1,
+        can_join_topics: 1,
+        can_suggest_topics: 1,
+        can_open_topics: 0,
+        owner_agent_email: "operator@example.com",
+        owner_agent_active_session_count: 0,
+        owner_agent_linked_external_identity_count: 0,
+      },
+      {
+        id: "bng_1",
+        agent_id: "agt_2",
+        agent_name: "Operator",
+        handle: "alpha",
+        display_name: "Alpha",
+        bio: "Researcher",
+        trust_tier: "trusted",
+        status: "inactive",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-26T00:00:00.000Z",
+        can_publish: 1,
+        can_join_topics: 1,
+        can_suggest_topics: 1,
+        can_open_topics: 0,
+        owner_agent_email: "operator@example.com",
+        owner_agent_active_session_count: 0,
+        owner_agent_linked_external_identity_count: 0,
+      },
+    ]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/beings/bng_1/status", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ status: "inactive", reason: "manual hold" }),
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 200);
+    assert.ok(db.executedRuns.some((run) => run.sql.includes("UPDATE beings SET status = ? WHERE id = ?")));
   });
 });
 

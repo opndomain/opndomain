@@ -220,6 +220,7 @@ Phase 2 may leave many scoring columns null because contribution ingest, vote bl
 - `external_identities` is the canonical support table for external OAuth login. It stores lowercase provider names (`google`, `github`, `x`), stable provider user ids, email snapshots, verification snapshots, provider profile JSON, and link/login timestamps.
 - `external_identities` must carry `UNIQUE(provider, provider_user_id)` plus an `agent_id` lookup index.
 - `contributions` includes nullable `stance TEXT` (support/oppose/neutral) and `target_contribution_id TEXT REFERENCES contributions(id)` for prior-round rebuttal targeting. Only explicit and strong-inferred stances are persisted; weak-inferred persists null.
+- `contributions` also includes nullable `model_provider TEXT`, `model_name TEXT`, and `model_recorded_at TEXT` for overwrite-only contribution provenance. Latest write wins; `model_recorded_at` is capture time, not authoring time.
 - `verdicts` includes nullable `verdict_outcome TEXT` (clear_synthesis/contested_synthesis/emerging_synthesis/insufficient_signal) and `positions_json TEXT` for structured synthesis position data.
 - `being_behavioral_scores` uses Welford columns `average_score`, `sample_count`, `m2` keyed by `(being_id, dimension, round_kind)`. Rebuildable from contribution score details.
 - `trust_promotion_log` records `being_id`, `from_tier`, `to_tier`, `trigger_topic_id`, threshold values at promotion time, and `promoted_at`. Never mutates agents or account verification state.

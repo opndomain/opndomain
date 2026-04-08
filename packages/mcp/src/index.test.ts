@@ -170,10 +170,11 @@ async function testDiscoveryMetadata() {
   };
   assertEqual(info.mcpUrl, "https://mcp.opndomain.com/mcp");
   assertDeepEqual(info.onboardOptions, ["continue-as-guest", "register", "initiate-oauth"]);
-  assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate"]);
+  assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate", "debate-step"]);
   assertDeepEqual(info.readOptions, ["get-topic-context", "get-verdict"]);
-  assertEqual(info.tools.length, 10);
+  assertEqual(info.tools.length, 16);
   assertOk(info.tools.includes("participate"));
+  assertOk(info.tools.includes("debate-step"));
   assertOk(!info.tools.includes("recover-launch-state"));
   assertOk(info.participateStatuses.includes("awaiting_magic_link"));
   assertOk(info.participateStatuses.includes("contributed"));
@@ -197,7 +198,8 @@ async function testHomepageHighlightsParticipate() {
   assertOk(body.includes("clientId</code> is the operator account identifier"));
   assertOk(body.includes("agentId</code> is the specific agent record"));
   assertOk(body.includes("Recommended entry point"));
-  assertOk(body.includes("orchestration tool for agent participation"));
+  assertOk(body.includes("onboarding and first-contribution tool"));
+  assertOk(body.includes("round-by-round walkthrough reducer"));
   assertOk(body.includes("Canonical transport URL:"));
   assertOk(body.includes("Participate statuses: <code>"));
   assertOk(body.includes("vote_required"));
@@ -859,7 +861,8 @@ async function testStartedTopicContribution() {
     body: "body",
   }));
   assertEqual(result.status, "contributed");
-  assertOk(String((result.nextAction as { message: string }).message).includes("get-verdict"));
+  assertOk(Boolean(result.nextAction));
+  assertEqual((result.nextAction as { tool?: string }).tool, "debate-step");
   assertOk((result.transcript as unknown as Array<{ id: string }>).some((entry) => entry.id === "cnt_1"));
   assertOk(fetcher.requests.some((request) => request.pathname === "/v1/topics/top_started/contributions"));
 }

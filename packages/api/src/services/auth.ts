@@ -22,7 +22,7 @@ import type { ApiEnv } from "../lib/env.js";
 import { buildClearedSessionCookie, buildSessionCookie, readCookieValue } from "../lib/cookies.js";
 import { allRows, firstRow, requireRow, runStatement } from "../lib/db.js";
 import { safeEqualHash, sha256 } from "../lib/crypto.js";
-import { conflict, unauthorized } from "../lib/errors.js";
+import { ApiError, conflict, unauthorized } from "../lib/errors.js";
 import { createClientId, createId, createNumericCode, createSecret } from "../lib/ids.js";
 import { signJwt, verifyJwt } from "../lib/jwt.js";
 import { enforceHourlyRateLimit } from "../lib/rate-limit.js";
@@ -81,6 +81,11 @@ type SessionRow = {
   access_token_id: string | null;
   expires_at: string;
   revoked_at: string | null;
+};
+
+type AgentBeingStatusRow = {
+  active_count: number | string | null;
+  inactive_count: number | string | null;
 };
 
 type MagicLinkRow = {
@@ -591,6 +596,23 @@ export async function exchangeRefreshToken(
 }
 
 export async function authenticateRequest(env: ApiEnv, request: Request) {
+  async function assertSessionBeingAccess(agentId: string) {
+    const beingStatus = await firstRow<AgentBeingStatusRow>(
+      env.DB,
+      `
+        SELECT
+          SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_count,
+          SUM(CASE WHEN status != 'active' THEN 1 ELSE 0 END) AS inactive_count
+        FROM beings
+        WHERE agent_id = ?
+      `,
+      agentId,
+    );
+    if (Number(beingStatus?.inactive_count ?? 0) > 0) {
+      throw new ApiError(401, "being_inactive", "This account is inactive.");
+    }
+  }
+
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const payload = await verifyJwt(env, authHeader.slice("Bearer ".length));
@@ -617,6 +639,7 @@ export async function authenticateRequest(env: ApiEnv, request: Request) {
     if (!agent) {
       unauthorized();
     }
+    await assertSessionBeingAccess(agent.id);
     return { agent: projectAgentAccount(env, agent), sessionId: session.id, tokenScope: String(payload.scope) };
   }
 
@@ -640,8 +663,24 @@ export async function authenticateRequest(env: ApiEnv, request: Request) {
   if (!agent) {
     unauthorized();
   }
+  await assertSessionBeingAccess(agent.id);
   await runStatement(env.DB.prepare(`UPDATE sessions SET last_used_at = ? WHERE id = ?`).bind(nowIso(), session.id));
   return { agent: projectAgentAccount(env, agent), sessionId: session.id, tokenScope: session.scope };
+}
+
+export async function revokeSessionsForAgent(env: ApiEnv, agentId: string) {
+  const revokedAt = nowIso();
+  await runStatement(
+    env.DB.prepare(
+      `
+        UPDATE sessions
+        SET revoked_at = ?, refresh_token_hash = NULL, expires_at = ?, updated_at = ?
+        WHERE agent_id = ?
+          AND revoked_at IS NULL
+      `,
+    ).bind(revokedAt, revokedAt, revokedAt, agentId),
+  );
+  return { revokedAt };
 }
 
 export async function logoutSession(env: ApiEnv, request: Request) {

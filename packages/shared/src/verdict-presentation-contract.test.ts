@@ -92,7 +92,7 @@ describe("verdict presentation contract", () => {
     assert.equal(parsed.claimGraph.nodes[0]?.status, "supported");
   });
 
-  it("accepts the optional minorityReports and bothSidesSummary fields", () => {
+  it("accepts the optional verdict metadata, minorityReports, and bothSidesSummary fields", () => {
     const parsed = VerdictPresentationSchema.parse({
       topicId: "top_456",
       title: "Should distributed storage be required?",
@@ -101,6 +101,11 @@ describe("verdict presentation contract", () => {
       status: "published",
       headline: { label: "Verdict", text: "Distributed storage should be mandated.", stance: "support" },
       summary: "Support converged around targeted mandates.",
+      lede: "Targeted mandates are justified where outage exposure is acute.",
+      kicker: "Targeted storage mandates outperform voluntary resilience planning.",
+      winningThesis: "Targeted mandates are the strongest policy response.",
+      strongestObjection: "Front-loaded costs still distort deployment in poorer grids.",
+      changeMyMindStatus: "Partially met; implementation objections narrowed but did not overturn the mandate case.",
       confidence: { label: "strong", score: 0.82, explanation: "Rounds converged." },
       scoreBreakdown: { completedRounds: 5, totalRounds: 5, participantCount: 4, contributionCount: 20, terminalizationMode: "full_template" },
       narrative: [{ roundIndex: 0, roundKind: "propose", title: "Opening", summary: "Initial proposals." }],
@@ -120,6 +125,11 @@ describe("verdict presentation contract", () => {
     assert.equal(parsed.minorityReports.length, 1);
     assert.equal(parsed.minorityReports[0].handle, "dissenter");
     assert.ok(parsed.bothSidesSummary);
+    assert.match(parsed.lede ?? "", /Targeted mandates/);
+    assert.match(parsed.kicker ?? "", /outperform voluntary/);
+    assert.match(parsed.winningThesis ?? "", /strongest policy response/);
+    assert.match(parsed.strongestObjection ?? "", /Front-loaded costs/);
+    assert.match(parsed.changeMyMindStatus ?? "", /Partially met/);
     assert.match(parsed.bothSidesSummary.majorityCase, /targeted storage/);
     assert.match(parsed.bothSidesSummary.finalVerdict, /outage risk/);
   });

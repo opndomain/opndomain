@@ -1,20 +1,37 @@
 import type {
+  AdminAuditMetadata,
+  AdminAuditLogTargetType,
+  AdminAuditLogEntry,
+  AdminAuditLogListResponse,
+  AdminAuditLogQuery,
   AdminAgentDetail,
   AdminAgentSummary,
+  AdminBeingStatus,
   AdminBeingDetail,
   AdminBeingSummary,
+  AdminCapabilityKey,
+  AdminDashboardMetricsQuery,
+  AdminDashboardMetricsResponse,
   AdminDomainDetail,
   AdminDomainSummary,
   AdminExternalIdentity,
   AdminListMeta,
   AdminListQuery,
+  AdminRestriction,
+  AdminRestrictionsQuery,
+  AdminTopicEditableField,
   AdminTopicDetail,
   AdminTopicSummary,
+  CreateAdminRestriction,
 } from "@opndomain/shared";
+import { canAdminEditTopicField } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { allRows, firstRow } from "../lib/db.js";
-import { notFound } from "../lib/errors.js";
+import { allRows, firstRow, runStatement } from "../lib/db.js";
+import { badRequest, notFound } from "../lib/errors.js";
+import { createId } from "../lib/ids.js";
+import { nowIso } from "../lib/time.js";
 import { ensureSeedDomains } from "./domains.js";
+import { revokeSessionsForAgent } from "./auth.js";
 
 type CountRow = { count: number | string | null };
 
@@ -695,4 +712,915 @@ export async function getAdminTopicDetail(env: ApiEnv, topicId: string): Promise
     contributionCount: countValue(row.contribution_count),
     roundCount: countValue(row.round_count),
   };
+}
+
+type AuditLogRow = {
+  id: string;
+  actor_agent_id: string | null;
+  actor_name: string | null;
+  actor_email: string | null;
+  action: string;
+  target_type: string;
+  target_id: string;
+  metadata_json: string | null;
+  created_at: string;
+};
+
+type RestrictionRow = {
+  id: string;
+  scope_type: "being" | "topic";
+  scope_id: string;
+  mode: AdminRestriction["mode"];
+  reason: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DashboardDailyPointRow = {
+  rollup_date?: string;
+  metric_date?: string;
+  value: number | string | null;
+};
+
+type DashboardStatusCountRow = {
+  status: string;
+  count: number | string | null;
+};
+
+type DashboardScalarRow = {
+  value: number | string | null;
+};
+
+type TopicMetadataRow = {
+  id: string;
+  status: string;
+  title: string;
+  prompt: string;
+  domain_id: string;
+  visibility: string;
+  min_trust_tier: string;
+  cadence_preset: string | null;
+  cadence_override_minutes: number | null;
+  starts_at: string | null;
+  join_until: string | null;
+  archived_at: string | null;
+};
+
+type BeingOwnershipRow = {
+  id: string;
+  agent_id: string;
+};
+
+function parseAuditMetadata(value: string | null): unknown | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function buildAuditMetadata(
+  reason: string,
+  options?: {
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    clearedAt?: string;
+    extra?: Record<string, unknown>;
+  },
+): AdminAuditMetadata {
+  return {
+    reason,
+    before: options?.before,
+    after: options?.after,
+    ...(options?.clearedAt ? { clearedAt: options.clearedAt } : {}),
+    ...(options?.extra ?? {}),
+  };
+}
+
+function mapAuditLogRow(row: AuditLogRow): AdminAuditLogEntry {
+  return {
+    id: row.id,
+    actorAgentId: row.actor_agent_id,
+    actorLabel: row.actor_email ?? row.actor_name ?? row.actor_agent_id,
+    action: row.action,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    metadata: parseAuditMetadata(row.metadata_json),
+    createdAt: row.created_at,
+  };
+}
+
+function encodeAuditCursor(createdAt: string, id: string): string {
+  return btoa(JSON.stringify({ createdAt, id }));
+}
+
+function decodeAuditCursor(cursor: string): { createdAt: string; id: string } {
+  try {
+    const value = JSON.parse(atob(cursor)) as { createdAt?: string; id?: string };
+    if (!value.createdAt || !value.id) {
+      throw new Error("invalid");
+    }
+    return { createdAt: value.createdAt, id: value.id };
+  } catch {
+    badRequest("invalid_cursor", "The audit log cursor is invalid.");
+  }
+}
+
+function isoDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function parseDashboardWindow(query: AdminDashboardMetricsQuery) {
+  const today = new Date();
+  const defaultTo = isoDateOnly(today);
+  const defaultFrom = isoDateOnly(new Date(today.getTime() - (29 * 24 * 60 * 60 * 1000)));
+  const from = query.from ?? defaultFrom;
+  const to = query.to ?? defaultTo;
+  const fromDate = new Date(`${from}T00:00:00.000Z`);
+  const toDate = new Date(`${to}T00:00:00.000Z`);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()) || fromDate > toDate) {
+    badRequest("invalid_date_range", "The dashboard date range is invalid.");
+  }
+  const diffDays = Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  if (diffDays > 365) {
+    badRequest("invalid_date_range", "The dashboard date range cannot exceed 365 days.");
+  }
+  return { from, to };
+}
+
+function buildDateBuckets(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const cursor = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  while (cursor <= end) {
+    dates.push(isoDateOnly(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+function mapSeriesPoints(
+  dates: string[],
+  rows: DashboardDailyPointRow[],
+  dateKey: "rollup_date" | "metric_date",
+) {
+  const values = new Map(
+    rows.map((row) => [String(row[dateKey] ?? ""), countValue(row.value)]),
+  );
+  return dates.map((date) => ({ date, value: values.get(date) ?? 0 }));
+}
+
+function capabilityColumnName(capability: AdminCapabilityKey): string {
+  switch (capability) {
+    case "canPublish":
+      return "can_publish";
+    case "canJoinTopics":
+      return "can_join_topics";
+    case "canSuggestTopics":
+      return "can_suggest_topics";
+    case "canOpenTopics":
+      return "can_open_topics";
+  }
+}
+
+async function requireBeingOwnership(env: ApiEnv, beingId: string): Promise<BeingOwnershipRow> {
+  const row = await firstRow<BeingOwnershipRow>(
+    env.DB,
+    `SELECT id, agent_id FROM beings WHERE id = ?`,
+    beingId,
+  );
+  if (!row) {
+    notFound("The requested admin being was not found.");
+  }
+  return row;
+}
+
+async function requireTopicMetadataRow(env: ApiEnv, topicId: string): Promise<TopicMetadataRow> {
+  const row = await firstRow<TopicMetadataRow>(
+    env.DB,
+    `SELECT id, status, title, prompt, domain_id, visibility, min_trust_tier, cadence_preset, cadence_override_minutes, starts_at, join_until, archived_at
+     FROM topics
+     WHERE id = ?`,
+    topicId,
+  );
+  if (!row) {
+    notFound("The requested admin topic was not found.");
+  }
+  return row;
+}
+
+function assertAdminTopicFieldEditable(topicStatus: string, field: AdminTopicEditableField) {
+  if (!["open", "started", "countdown", "stalled", "closed", "dropped"].includes(topicStatus)) {
+    badRequest("invalid_topic_status", `Unsupported topic status ${topicStatus}.`);
+  }
+  if (!canAdminEditTopicField(topicStatus as Parameters<typeof canAdminEditTopicField>[0], field)) {
+    badRequest("invalid_topic_status", `Field ${field} cannot be edited while the topic is ${topicStatus}.`);
+  }
+}
+
+export async function recordAdminAuditLog(
+  env: ApiEnv,
+  input: {
+    actorAgentId: string;
+    action: string;
+    targetType: AdminAuditLogTargetType;
+    targetId: string;
+    metadata?: Record<string, unknown> | null;
+  },
+) {
+  await runStatement(
+    env.DB.prepare(
+      `INSERT INTO admin_audit_log (id, actor_agent_id, action, target_type, target_id, metadata_json)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      createId("adl"),
+      input.actorAgentId,
+      input.action,
+      input.targetType,
+      input.targetId,
+      input.metadata ? JSON.stringify(input.metadata) : null,
+    ),
+  );
+}
+
+export async function listAdminAuditLog(env: ApiEnv, query: AdminAuditLogQuery): Promise<AdminAuditLogListResponse> {
+  const clauses: string[] = [];
+  const bindings: unknown[] = [];
+
+  if (query.actor) {
+    clauses.push(`(
+      aal.actor_agent_id = ?
+      OR lower(coalesce(a.email, '')) LIKE ?
+      OR lower(coalesce(a.name, '')) LIKE ?
+      OR lower(coalesce(a.client_id, '')) LIKE ?
+    )`);
+    const actorId = query.actor.trim();
+    const actorLike = `%${actorId.toLowerCase()}%`;
+    bindings.push(actorId, actorLike, actorLike, actorLike);
+  }
+  if (query.targetType) {
+    clauses.push(`aal.target_type = ?`);
+    bindings.push(query.targetType);
+  }
+  if (query.targetId) {
+    clauses.push(`aal.target_id = ?`);
+    bindings.push(query.targetId);
+  }
+  if (query.action) {
+    clauses.push(`aal.action = ?`);
+    bindings.push(query.action);
+  }
+  if (query.from) {
+    clauses.push(`substr(aal.created_at, 1, 10) >= ?`);
+    bindings.push(query.from);
+  }
+  if (query.to) {
+    clauses.push(`substr(aal.created_at, 1, 10) <= ?`);
+    bindings.push(query.to);
+  }
+  if (query.cursor) {
+    const cursor = decodeAuditCursor(query.cursor);
+    clauses.push(`(aal.created_at < ? OR (aal.created_at = ? AND aal.id < ?))`);
+    bindings.push(cursor.createdAt, cursor.createdAt, cursor.id);
+  }
+
+  const whereSql = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await allRows<AuditLogRow>(
+    env.DB,
+    `
+      SELECT
+        aal.id,
+        aal.actor_agent_id,
+        aal.action,
+        aal.target_type,
+        aal.target_id,
+        aal.metadata_json,
+        aal.created_at,
+        a.name AS actor_name,
+        a.email AS actor_email
+      FROM admin_audit_log aal
+      LEFT JOIN agents a ON a.id = aal.actor_agent_id
+      ${whereSql}
+      ORDER BY aal.created_at DESC, aal.id DESC
+      LIMIT ?
+    `,
+    ...bindings,
+    query.pageSize + 1,
+  );
+  const page = rows.slice(0, query.pageSize).map(mapAuditLogRow);
+  const last = page.at(-1);
+  return {
+    items: page,
+    nextCursor: rows.length > query.pageSize && last ? encodeAuditCursor(last.createdAt, last.id) : null,
+  };
+}
+
+export async function getAdminAuditLogEntry(env: ApiEnv, auditLogId: string): Promise<AdminAuditLogEntry> {
+  const row = await firstRow<AuditLogRow>(
+    env.DB,
+    `
+      SELECT
+        aal.id,
+        aal.actor_agent_id,
+        aal.action,
+        aal.target_type,
+        aal.target_id,
+        aal.metadata_json,
+        aal.created_at,
+        a.name AS actor_name,
+        a.email AS actor_email
+      FROM admin_audit_log aal
+      LEFT JOIN agents a ON a.id = aal.actor_agent_id
+      WHERE aal.id = ?
+    `,
+    auditLogId,
+  );
+  if (!row) {
+    notFound("The requested admin audit log entry was not found.");
+  }
+  return mapAuditLogRow(row);
+}
+
+export async function listActiveAdminRestrictions(env: ApiEnv, query: AdminRestrictionsQuery): Promise<AdminRestriction[]> {
+  const rows = await allRows<RestrictionRow>(
+    env.DB,
+    `
+      SELECT id, scope_type, scope_id, mode, reason, expires_at, created_at, updated_at
+      FROM text_restrictions
+      WHERE scope_type = ?
+        AND scope_id = ?
+        AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+      ORDER BY created_at DESC, id DESC
+      LIMIT 50
+    `,
+    query.scopeType,
+    query.scopeId,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    mode: row.mode,
+    reason: row.reason,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function getAdminDashboardMetrics(
+  env: ApiEnv,
+  query: AdminDashboardMetricsQuery,
+): Promise<AdminDashboardMetricsResponse> {
+  const window = parseDashboardWindow(query);
+  const dates = buildDateBuckets(window.from, window.to);
+
+  const [
+    registrationsRows,
+    activeBeingsRows,
+    activeAgentsRows,
+    topicsCreatedRows,
+    contributionsRows,
+    verdictsRows,
+    activeTopicsRow,
+    topicsByStatusRows,
+    quarantineVolumeRow,
+    inactiveBeingsRow,
+    revokedSessionsRow,
+  ] = await Promise.all([
+    allRows<DashboardDailyPointRow>(
+      env.DB,
+      `SELECT substr(created_at, 1, 10) AS metric_date, COUNT(*) AS value
+       FROM beings
+       WHERE substr(created_at, 1, 10) BETWEEN ? AND ?
+       GROUP BY substr(created_at, 1, 10)
+       ORDER BY metric_date ASC`,
+      window.from,
+      window.to,
+    ),
+    allRows<DashboardDailyPointRow>(
+      env.DB,
+      `SELECT rollup_date, active_beings AS value
+       FROM platform_daily_rollups
+       WHERE rollup_date BETWEEN ? AND ?
+       ORDER BY rollup_date ASC`,
+      window.from,
+      window.to,
+    ),
+    allRows<DashboardDailyPointRow>(
+      env.DB,
+      `SELECT rollup_date, active_agents AS value
+       FROM platform_daily_rollups
+       WHERE rollup_date BETWEEN ? AND ?
+       ORDER BY rollup_date ASC`,
+      window.from,
+      window.to,
+    ),
+    allRows<DashboardDailyPointRow>(
+      env.DB,
+      `SELECT rollup_date, topics_created_count AS value
+       FROM platform_daily_rollups
+       WHERE rollup_date BETWEEN ? AND ?
+       ORDER BY rollup_date ASC`,
+      window.from,
+      window.to,
+    ),
+    allRows<DashboardDailyPointRow>(
+      env.DB,
+      `SELECT rollup_date, contributions_created_count AS value
+       FROM platform_daily_rollups
+       WHERE rollup_date BETWEEN ? AND ?
+       ORDER BY rollup_date ASC`,
+      window.from,
+      window.to,
+    ),
+    allRows<DashboardDailyPointRow>(
+      env.DB,
+      `SELECT rollup_date, verdicts_created_count AS value
+       FROM platform_daily_rollups
+       WHERE rollup_date BETWEEN ? AND ?
+       ORDER BY rollup_date ASC`,
+      window.from,
+      window.to,
+    ),
+    firstRow<DashboardScalarRow>(
+      env.DB,
+      `SELECT active_topics AS value
+       FROM platform_daily_rollups
+       ORDER BY rollup_date DESC
+       LIMIT 1`,
+    ),
+    allRows<DashboardStatusCountRow>(
+      env.DB,
+      `SELECT status, COUNT(*) AS count
+       FROM topics
+       GROUP BY status
+       ORDER BY status ASC`,
+    ),
+    firstRow<DashboardScalarRow>(
+      env.DB,
+      `SELECT COUNT(*) AS value
+       FROM text_restrictions
+       WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP`,
+    ),
+    firstRow<DashboardScalarRow>(
+      env.DB,
+      `SELECT COUNT(*) AS value
+       FROM beings
+       WHERE status = 'inactive'`,
+    ),
+    firstRow<DashboardScalarRow>(
+      env.DB,
+      `SELECT COUNT(*) AS value
+       FROM sessions
+       WHERE revoked_at IS NOT NULL
+         AND revoked_at > datetime('now', '-1 day')`,
+    ),
+  ]);
+
+  return {
+    window,
+    daily: {
+      registrations: { source: "on_demand", points: mapSeriesPoints(dates, registrationsRows, "metric_date") },
+      activeBeings: { source: "rollup", points: mapSeriesPoints(dates, activeBeingsRows, "rollup_date") },
+      activeAgents: { source: "rollup", points: mapSeriesPoints(dates, activeAgentsRows, "rollup_date") },
+      topicsCreated: { source: "rollup", points: mapSeriesPoints(dates, topicsCreatedRows, "rollup_date") },
+      contributions: { source: "rollup", points: mapSeriesPoints(dates, contributionsRows, "rollup_date") },
+      verdicts: { source: "rollup", points: mapSeriesPoints(dates, verdictsRows, "rollup_date") },
+    },
+    pointInTime: {
+      activeTopics: { source: "rollup", value: countValue(activeTopicsRow?.value) },
+      topicsByStatus: {
+        source: "on_demand",
+        items: topicsByStatusRows.map((row) => ({ status: row.status, count: countValue(row.count) })),
+      },
+      quarantineVolume: { source: "on_demand", value: countValue(quarantineVolumeRow?.value) },
+      inactiveBeings: { source: "on_demand", value: countValue(inactiveBeingsRow?.value) },
+      revokedSessions24h: { source: "on_demand", value: countValue(revokedSessionsRow?.value) },
+    },
+  };
+}
+
+export async function updateAdminBeingCapability(
+  env: ApiEnv,
+  actorAgentId: string,
+  beingId: string,
+  input: { capability: AdminCapabilityKey; enabled: boolean; reason: string },
+) {
+  await requireBeingOwnership(env, beingId);
+  const column = capabilityColumnName(input.capability);
+  await runStatement(
+    env.DB.prepare(`UPDATE being_capabilities SET ${column} = ? WHERE being_id = ?`).bind(Number(input.enabled), beingId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "being_capability_set",
+    targetType: "being",
+    targetId: beingId,
+    metadata: {
+      capability: input.capability,
+      enabled: input.enabled,
+      reason: input.reason,
+    },
+  });
+  return getAdminBeingDetail(env, beingId);
+}
+
+export async function updateAdminBeingStatus(
+  env: ApiEnv,
+  actorAgentId: string,
+  beingId: string,
+  input: { status: AdminBeingStatus; reason: string },
+) {
+  await requireBeingOwnership(env, beingId);
+  const before = await getAdminBeingDetail(env, beingId);
+  await runStatement(
+    env.DB.prepare(`UPDATE beings SET status = ? WHERE id = ?`).bind(input.status, beingId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "being_status_set",
+    targetType: "being",
+    targetId: beingId,
+    metadata: buildAuditMetadata(input.reason, {
+      before: { status: before.status },
+      after: { status: input.status },
+    }),
+  });
+  return getAdminBeingDetail(env, beingId);
+}
+
+export async function revokeAdminBeingSessions(
+  env: ApiEnv,
+  actorAgentId: string,
+  beingId: string,
+  reason: string,
+) {
+  const being = await requireBeingOwnership(env, beingId);
+  const { revokedAt } = await revokeSessionsForAgent(env, being.agent_id);
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "being_sessions_revoked",
+    targetType: "being",
+    targetId: beingId,
+    metadata: buildAuditMetadata(reason, {
+      after: { revokedAt },
+    }),
+  });
+  return { beingId, revoked: true };
+}
+
+export async function createAdminRestrictionRecord(
+  env: ApiEnv,
+  actorAgentId: string,
+  input: CreateAdminRestriction,
+): Promise<AdminRestriction> {
+  if (input.scopeType === "being") {
+    await requireBeingOwnership(env, input.scopeId);
+  } else {
+    await requireTopicMetadataRow(env, input.scopeId);
+  }
+  const restrictionId = createId("rst");
+  await runStatement(
+    env.DB.prepare(
+      `INSERT INTO text_restrictions (id, scope_type, scope_id, mode, reason, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(
+      restrictionId,
+      input.scopeType,
+      input.scopeId,
+      input.mode,
+      input.reason,
+      input.expiresAt ?? null,
+    ),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "restriction_create",
+    targetType: "restriction",
+    targetId: restrictionId,
+    metadata: buildAuditMetadata(input.reason, {
+      after: {
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        mode: input.mode,
+        expiresAt: input.expiresAt ?? null,
+      },
+    }),
+  });
+  const row = await firstRow<RestrictionRow>(
+    env.DB,
+    `SELECT id, scope_type, scope_id, mode, reason, expires_at, created_at, updated_at
+     FROM text_restrictions
+     WHERE id = ?`,
+    restrictionId,
+  );
+  if (!row) {
+    notFound("The created restriction could not be read back.");
+  }
+  return {
+    id: row.id,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    mode: row.mode,
+    reason: row.reason,
+    expiresAt: row.expires_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function clearAdminRestrictionRecord(
+  env: ApiEnv,
+  actorAgentId: string,
+  restrictionId: string,
+  reason: string,
+) {
+  const existing = await firstRow<RestrictionRow>(
+    env.DB,
+    `SELECT id, scope_type, scope_id, mode, reason, expires_at, created_at, updated_at
+     FROM text_restrictions
+     WHERE id = ?`,
+    restrictionId,
+  );
+  if (!existing) {
+    notFound("The requested restriction was not found.");
+  }
+  const clearedAt = nowIso();
+  await runStatement(
+    env.DB.prepare(`UPDATE text_restrictions SET expires_at = ? WHERE id = ?`).bind(clearedAt, restrictionId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "restriction_clear",
+    targetType: "restriction",
+    targetId: restrictionId,
+    metadata: buildAuditMetadata(reason, {
+      before: {
+        scopeType: existing.scope_type,
+        scopeId: existing.scope_id,
+        mode: existing.mode,
+        expiresAt: existing.expires_at,
+      },
+      after: {
+        scopeType: existing.scope_type,
+        scopeId: existing.scope_id,
+        mode: existing.mode,
+        expiresAt: clearedAt,
+      },
+      clearedAt,
+    }),
+  });
+  return { restrictionId, clearedAt };
+}
+
+export async function archiveAdminTopic(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  reason: string,
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  const archivedAt = nowIso();
+  await runStatement(
+    env.DB.prepare(
+      `UPDATE topics
+       SET archived_at = ?, archived_by_agent_id = ?, archive_reason = ?
+       WHERE id = ?`,
+    ).bind(archivedAt, actorAgentId, reason, topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_archive",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(reason, {
+      before: {
+        archivedAt: topic.archived_at,
+      },
+      after: {
+        archivedAt,
+      },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function unarchiveAdminTopic(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  reason: string,
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  await runStatement(
+    env.DB.prepare(
+      `UPDATE topics
+       SET archived_at = NULL, archived_by_agent_id = NULL, archive_reason = NULL
+       WHERE id = ?`,
+    ).bind(topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_unarchive",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(reason, {
+      before: {
+        archivedAt: topic.archived_at,
+      },
+      after: {
+        archivedAt: null,
+      },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function setAdminTopicTitle(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  input: { title: string; reason: string },
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  assertAdminTopicFieldEditable(topic.status, "title");
+  await runStatement(
+    env.DB.prepare(`UPDATE topics SET title = ? WHERE id = ?`).bind(input.title, topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_title_set",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(input.reason, {
+      before: { title: topic.title },
+      after: { title: input.title },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function setAdminTopicVisibility(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  input: { visibility: string; reason: string },
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  assertAdminTopicFieldEditable(topic.status, "visibility");
+  await runStatement(
+    env.DB.prepare(`UPDATE topics SET visibility = ? WHERE id = ?`).bind(input.visibility, topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_visibility_set",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(input.reason, {
+      before: { visibility: topic.visibility },
+      after: { visibility: input.visibility },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function setAdminTopicPrompt(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  input: { prompt: string; reason: string },
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  assertAdminTopicFieldEditable(topic.status, "prompt");
+  await runStatement(
+    env.DB.prepare(`UPDATE topics SET prompt = ? WHERE id = ?`).bind(input.prompt, topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_prompt_set",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(input.reason, {
+      before: { prompt: topic.prompt },
+      after: { prompt: input.prompt },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function setAdminTopicDomain(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  input: { domainId: string; reason: string },
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  assertAdminTopicFieldEditable(topic.status, "domain_id");
+  const domain = await firstRow<{ id: string }>(env.DB, `SELECT id FROM domains WHERE id = ?`, input.domainId);
+  if (!domain) {
+    notFound("The requested admin domain was not found.");
+  }
+  await runStatement(
+    env.DB.prepare(`UPDATE topics SET domain_id = ? WHERE id = ?`).bind(input.domainId, topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_domain_set",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(input.reason, {
+      before: { domainId: topic.domain_id },
+      after: { domainId: input.domainId },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function setAdminTopicTrustThreshold(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  input: { minTrustTier: string; reason: string },
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  assertAdminTopicFieldEditable(topic.status, "trust_threshold");
+  await runStatement(
+    env.DB.prepare(`UPDATE topics SET min_trust_tier = ? WHERE id = ?`).bind(input.minTrustTier, topicId),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_trust_threshold_set",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: buildAuditMetadata(input.reason, {
+      before: { minTrustTier: topic.min_trust_tier },
+      after: { minTrustTier: input.minTrustTier },
+    }),
+  });
+  return getAdminTopicDetail(env, topicId);
+}
+
+export async function setAdminTopicCadence(
+  env: ApiEnv,
+  actorAgentId: string,
+  topicId: string,
+  input: {
+    cadencePreset?: string | null;
+    cadenceOverrideMinutes?: number | null;
+    startsAt?: string | null;
+    joinUntil?: string | null;
+    reason: string;
+  },
+) {
+  const topic = await requireTopicMetadataRow(env, topicId);
+  assertAdminTopicFieldEditable(topic.status, "cadence");
+  await runStatement(
+    env.DB.prepare(
+      `UPDATE topics
+       SET
+         cadence_preset = CASE WHEN ? = 1 THEN ? ELSE cadence_preset END,
+         cadence_override_minutes = CASE WHEN ? = 1 THEN ? ELSE cadence_override_minutes END,
+         starts_at = CASE WHEN ? = 1 THEN ? ELSE starts_at END,
+         join_until = CASE WHEN ? = 1 THEN ? ELSE join_until END
+       WHERE id = ?`,
+    ).bind(
+      Number(Object.prototype.hasOwnProperty.call(input, "cadencePreset")),
+      input.cadencePreset ?? null,
+      Number(Object.prototype.hasOwnProperty.call(input, "cadenceOverrideMinutes")),
+      input.cadenceOverrideMinutes ?? null,
+      Number(Object.prototype.hasOwnProperty.call(input, "startsAt")),
+      input.startsAt ?? null,
+      Number(Object.prototype.hasOwnProperty.call(input, "joinUntil")),
+      input.joinUntil ?? null,
+      topicId,
+    ),
+  );
+  await recordAdminAuditLog(env, {
+    actorAgentId,
+    action: "topic_cadence_set",
+    targetType: "topic",
+    targetId: topicId,
+    metadata: {
+      ...buildAuditMetadata(input.reason, {
+        before: {
+          cadencePreset: topic.cadence_preset,
+          cadenceOverrideMinutes: topic.cadence_override_minutes,
+          startsAt: topic.starts_at,
+          joinUntil: topic.join_until,
+        },
+        after: {
+          cadencePreset: Object.prototype.hasOwnProperty.call(input, "cadencePreset") ? input.cadencePreset ?? null : topic.cadence_preset,
+          cadenceOverrideMinutes: Object.prototype.hasOwnProperty.call(input, "cadenceOverrideMinutes") ? input.cadenceOverrideMinutes ?? null : topic.cadence_override_minutes,
+          startsAt: Object.prototype.hasOwnProperty.call(input, "startsAt") ? input.startsAt ?? null : topic.starts_at,
+          joinUntil: Object.prototype.hasOwnProperty.call(input, "joinUntil") ? input.joinUntil ?? null : topic.join_until,
+        },
+      }),
+    },
+  });
+  return getAdminTopicDetail(env, topicId);
 }
