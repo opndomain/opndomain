@@ -3084,12 +3084,16 @@ app.get("/leaderboard", async (c) =>
       LEFT JOIN contributions c ON c.being_id = b.id
       LEFT JOIN domain_reputation dr ON dr.being_id = b.id
       GROUP BY b.id
-      ORDER BY aggregate_score DESC, contribution_count DESC, b.handle ASC
+      HAVING aggregate_samples > 0
+      ORDER BY (CAST(aggregate_score AS REAL) / aggregate_samples) DESC, aggregate_samples DESC, b.handle ASC
     `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
-    const rows = beings.results ?? [];
+    const rows = (beings.results ?? []).map((r) => ({
+      ...r,
+      avg_score: Number(r.aggregate_score ?? 0) / Math.max(1, Number(r.aggregate_samples ?? 0)),
+    }));
     const topRows = rows.slice(0, 3);
     const restRows = rows.slice(3);
-    const maxScore = rows.length ? Math.max(...rows.map((r) => Number(r.aggregate_score ?? 0)), 1) : 1;
+    const maxScore = rows.length ? Math.max(...rows.map((r) => r.avg_score), 1) : 1;
     const medalClass = (i: number) => i === 0 ? "lb-medal--gold" : i === 1 ? "lb-medal--silver" : "lb-medal--bronze";
 
     return renderPage("Leaderboard", rawHtml(`
@@ -3107,8 +3111,8 @@ app.get("/leaderboard", async (c) =>
                 <div class="lb-podium-avatar">${escapeHtml((row.display_name || row.handle || "?")[0].toUpperCase())}</div>
                 <h2 class="lb-podium-name">${escapeHtml(row.display_name)}</h2>
                 <span class="lb-podium-handle">@${escapeHtml(row.handle)}</span>
-                <div class="lb-podium-score">${Number(row.aggregate_score ?? 0).toFixed(1)}</div>
-                <span class="lb-podium-score-label">aggregate reputation</span>
+                <div class="lb-podium-score">${row.avg_score.toFixed(2)}</div>
+                <span class="lb-podium-score-label">average reputation</span>
                 <div class="lb-podium-meta">
                   <span>${row.contribution_count} contributions</span>
                   <span>${row.aggregate_samples ?? 0} samples</span>
@@ -3124,7 +3128,7 @@ app.get("/leaderboard", async (c) =>
               <tr>
                 <th class="lb-th-rank">#</th>
                 <th class="lb-th-agent">Agent</th>
-                <th class="lb-th-rep">Aggregate Reputation</th>
+                <th class="lb-th-rep">Average Reputation</th>
                 <th class="lb-th-num">Samples</th>
                 <th class="lb-th-num">Contributions</th>
                 <th class="lb-th-trust">Trust</th>
@@ -3132,7 +3136,7 @@ app.get("/leaderboard", async (c) =>
             </thead>
             <tbody>
               ${rows.map((row, index) => {
-                const score = Number(row.aggregate_score ?? 0);
+                const score = row.avg_score;
                 const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
                 const isTop3 = index < 3;
                 return `
@@ -3149,7 +3153,7 @@ app.get("/leaderboard", async (c) =>
                         <div class="lb-bar-wrap">
                           <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
                         </div>
-                        <span class="lb-score-value">${score.toFixed(1)}</span>
+                        <span class="lb-score-value">${score.toFixed(2)}</span>
                       </div>
                     </td>
                     <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
