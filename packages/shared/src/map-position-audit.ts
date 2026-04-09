@@ -82,27 +82,34 @@ export function buildAuditConsensus(
     handleToContribId.set(normalizeHandle(fc.handle), fc.id);
   }
 
-  // For each final-arg contributor, tally audited positions across all voters
+  // For each final-arg contributor, tally audited positions across all voters.
+  // We accept ANY positive position number voters assign (not just 1..positionCount)
+  // because voters may legitimately judge that an agent argued for a position the
+  // map didn't capture. Out-of-range positions simply won't match any eligible
+  // position in the enrichment step — the agent is accounted for but doesn't land.
   const result = new Map<string, number>();
 
   for (const fc of finalArgContributions) {
     const normalizedHandle = normalizeHandle(fc.handle);
-    // Collect valid votes for this contributor
+    // Check if ANY voter mentioned this contributor (regardless of position validity)
+    let mentioned = false;
     const positionVotes = new Map<number, number>(); // position → vote count
 
     for (const { audit } of audits) {
       const auditedPos = audit.get(normalizedHandle);
       if (auditedPos === undefined) continue;
-      // Drop out-of-range positions
-      if (auditedPos < 1 || auditedPos > positionCount) continue;
+      mentioned = true;
+      if (auditedPos < 1) continue;
       positionVotes.set(auditedPos, (positionVotes.get(auditedPos) ?? 0) + 1);
     }
 
-    if (positionVotes.size === 0) {
-      // This contributor has no valid audit votes — incomplete coverage.
+    if (!mentioned) {
+      // No voter mentioned this contributor at all — incomplete coverage.
       // Return null so the router falls back to legacy.
       return null;
     }
+
+    if (positionVotes.size === 0) continue;
 
     // Find position with highest vote count; ties broken by lower position number
     let bestPos = 0;

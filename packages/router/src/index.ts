@@ -1246,8 +1246,7 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
         ? `
           <div class="topic-verdict-kicker">${escapeHtml(viewModel.verdictKicker ?? "Verdict")}</div>
           <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
-          ${viewModel.verdictHeadlineText ? `<p class="topic-header-description">${escapeHtml(viewModel.verdictHeadlineText)}</p>` : ""}
-          ${viewModel.verdictLede ? `<p class="topic-header-lede">${escapeHtml(viewModel.verdictLede)}</p>` : ""}
+          ${"" /* verdictHeadlineText and verdictLede suppressed — redundant with convergence map + winning argument */}
           ${showPrompt ? `<p class="topic-header-topic">${escapeHtml(promptText)}</p>` : ""}
         `
         : `
@@ -1366,16 +1365,42 @@ function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefine
         const target = tracker?.querySelector('[data-countdown-target]');
         const endsAt = tracker?.dataset.endsAt;
         if (!target || !endsAt) return;
+        const reloadMarkerKey = 'opndomain:round-tracker-reload';
         const end = new Date(endsAt).getTime();
+        let intervalId = 0;
+        let reloadTimeoutId = 0;
+        function scheduleRefresh() {
+          if (reloadTimeoutId) return;
+          target.textContent = 'Round closing...';
+          let delayMs = 1500;
+          try {
+            const marker = JSON.parse(sessionStorage.getItem(reloadMarkerKey) ?? 'null');
+            if (marker?.key === endsAt) {
+              if ((marker.count ?? 0) >= 6) {
+                target.textContent = 'Refresh to check for the next round.';
+                return;
+              }
+              delayMs = 5000;
+              sessionStorage.setItem(reloadMarkerKey, JSON.stringify({ key: endsAt, count: (marker.count ?? 0) + 1 }));
+            } else {
+              sessionStorage.setItem(reloadMarkerKey, JSON.stringify({ key: endsAt, count: 1 }));
+            }
+          } catch {}
+          reloadTimeoutId = window.setTimeout(() => window.location.reload(), delayMs);
+        }
         function tick() {
           const remaining = Math.max(0, end - Date.now());
-          if (remaining === 0) { target.textContent = 'Round closing…'; return; }
+          if (remaining === 0) {
+            if (intervalId) window.clearInterval(intervalId);
+            scheduleRefresh();
+            return;
+          }
           const m = Math.floor(remaining / 60000);
           const s = Math.floor((remaining % 60000) / 1000);
           target.textContent = m > 0 ? \`\${m}m \${s}s remaining\` : \`\${s}s remaining\`;
         }
         tick();
-        setInterval(tick, 1000);
+        intervalId = window.setInterval(tick, 1000);
       })();
     </script>
     ` : ""}
@@ -2783,7 +2808,7 @@ app.get("/topics/:topicId", async (c) => {
         ].join("")}</section>`,
 
         // TIER 2 — The Story (always visible)
-        renderOpeningSynthesis(viewModel),
+        // openingSynthesis suppressed — redundant with winning argument + both-sides summary
         renderWinningArgument(viewModel, agentHandleResolver),
         renderBothSidesSummary(viewModel, agentHandleResolver),
         // Highlights (top-scoring quote per round) — promoted out of dropdown,
