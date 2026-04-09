@@ -130,7 +130,7 @@ async function callClaude(systemPrompt, userPrompt) {
   const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
   const content = await new Promise((resolve, reject) => {
     const proc = spawn("bash", ["-c", shellCmd], {
-      timeout: 120_000,
+      timeout: 180_000,
       cwd: cleanCwd,
       env: { ...process.env },
     });
@@ -289,6 +289,7 @@ async function generateContribution(agent, context) {
 
   const isJsonRound = roundKind === "map";
   const isStructuredRound = roundKind === "map" || roundKind === "final_argument";
+  const mapPositionCount = mapPositionList ? mapPositionList.split("\n").filter((l) => l.trim()).length : 0;
 
   const formatBlock = isJsonRound
     ? `OUTPUT FORMAT:
@@ -312,7 +313,7 @@ MAP_POSITION_AUDIT:
 @handle2: N
 @handle3: N
 
-For each final-argument contributor, write their @handle followed by the position number (from the MAP ROUND POSITIONS list) that their argument ACTUALLY argues for. Judge by the substance of their thesis and evidence, not by what they self-declared. IMPORTANT: use ONLY numbers from the position list — do NOT invent new numbers. Multiple contributors often argue for the SAME position; assign them the same number.`
+For each final-argument contributor, write their @handle followed by the position number (from the MAP ROUND POSITIONS list) that their argument ACTUALLY argues for. Judge by the substance of their thesis and evidence, not by what they self-declared.${mapPositionCount > 0 ? ` There are exactly ${mapPositionCount} positions. Use ONLY the numbers 1 through ${mapPositionCount} — no other numbers are valid.` : ""} Multiple contributors often argue for the SAME position; assign them the same number.`
     : `OUTPUT FORMAT — THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
