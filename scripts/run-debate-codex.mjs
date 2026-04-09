@@ -249,9 +249,11 @@ async function generateContribution(agent, context) {
     .map((c) => `[@${c.beingHandle}] ${c.bodyClean}`)
     .slice(-20);
 
+  const isFinalVoteRound = roundKind === "vote" && context.currentRound?.sequenceIndex === 9;
+
   let mapRoundBlock = "";
   let mapPositionList = "";
-  if (roundKind === "final_argument") {
+  if (roundKind === "final_argument" || isFinalVoteRound) {
     const mapContribs = (context.transcript ?? []).filter((c) => c.roundKind === "map" && c.bodyClean);
     if (mapContribs.length > 0) {
       const sorted = [...mapContribs].sort((a, b) => (Number(b.finalScore ?? 0)) - (Number(a.finalScore ?? 0)));
@@ -268,6 +270,21 @@ async function generateContribution(agent, context) {
     }
   }
 
+  // For round 9 (final vote), inject all final_argument contributions in full
+  // so voters can audit each contributor's actual position.
+  let finalArgsBlock = "";
+  if (isFinalVoteRound) {
+    const finalArgContribs = (context.transcript ?? []).filter(
+      (c) => c.roundKind === "final_argument" && c.bodyClean
+    );
+    if (finalArgContribs.length > 0) {
+      const entries = finalArgContribs
+        .map((c) => `[@${c.beingHandle}] ${c.bodyClean}`)
+        .join("\n\n");
+      finalArgsBlock = `\nFINAL ARGUMENTS TO AUDIT (full text):\n${entries}`;
+    }
+  }
+
   const isJsonRound = roundKind === "map";
   const isStructuredRound = roundKind === "map" || roundKind === "final_argument";
 
@@ -280,6 +297,20 @@ The JSON must also include a top-level "kicker" field: one sentence, <=180 chara
 Follow the GUIDANCE below precisely. Your contribution MUST contain both PART A - MY POSITION and PART B - IMPARTIAL SYNTHESIS sections in that exact order, with the exact labels specified (MAP_POSITION, MY THESIS, WHY I HOLD IT, STRONGEST OBJECTION I CAN'T FULLY ANSWER, CHANGE-MY-MIND STATUS, WHAT THIS DEBATE SETTLED, WHAT REMAINS CONTESTED, NEUTRAL VERDICT, KICKER).
 Between labels, write plain prose. No markdown: no headers, no bold, no italic, no bullet points, no code blocks.
 PART A is your advocacy - you take a side and defend it. PART B is impartial - you drop your persona and write as a third-party reader. Doing both well is what wins the peer vote.`
+    : isFinalVoteRound
+    ? `OUTPUT FORMAT - THIS IS CRITICAL:
+Write your vote reasoning as plain prose paragraphs. No markdown formatting.
+
+After your prose, on a new line, append:
+KICKER: <one sentence, <=180 characters - your sharpest claim about the debate outcome.>
+
+Then on a new line, append your position audit:
+MAP_POSITION_AUDIT:
+@handle1: N
+@handle2: N
+@handle3: N
+
+For each final-argument contributor, write their @handle followed by the position number (from the MAP ROUND POSITIONS list) that their argument ACTUALLY argues for. Judge by the substance of their thesis and evidence, not by what they self-declared. List every final-argument contributor with exactly one number each.`
     : `OUTPUT FORMAT - THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: headers, bold, italic, bullet points, numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
@@ -319,8 +350,15 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
   if (mapRoundBlock) {
     userPrompt.push(mapRoundBlock);
     if (mapPositionList) {
-      userPrompt.push(`\nMAP_POSITION OPTIONS - pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`);
+      const posLabel = isFinalVoteRound
+        ? `\nMAP ROUND POSITIONS - use these numbers in your MAP_POSITION_AUDIT block:\n${mapPositionList}`
+        : `\nMAP_POSITION OPTIONS - pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`;
+      userPrompt.push(posLabel);
     }
+  }
+
+  if (finalArgsBlock) {
+    userPrompt.push(finalArgsBlock);
   }
 
   if (isJsonRound) {

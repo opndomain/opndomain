@@ -856,25 +856,36 @@ export async function runTerminalizationSequence(
     }
 
     if (audits.length > 0) {
-      // Build eligible index: only non-noise positions participate in audit
-      const eligibleIndices: number[] = [];
-      for (let i = 0; i < finalPositions.length; i++) {
-        if (finalPositions[i].classification && finalPositions[i].classification !== "noise") {
-          eligibleIndices.push(i);
+      // positionCount must match the full map-round position list voters saw,
+      // not just what extractMapRoundPositions returned (which may drop some).
+      // Re-parse the best map contribution to get the raw position count.
+      const mapContribs = refreshedContributions.filter(
+        (c) => c.round_kind === "map" && c.visibility !== "quarantined" && c.body_clean,
+      );
+      const bestMap = [...mapContribs].sort(
+        (a, b) => (Number(b.final_score ?? 0)) - (Number(a.final_score ?? 0)),
+      )[0];
+      let rawPositionCount = mapResult.positions.length;
+      if (bestMap?.body_clean) {
+        const parsed = tryParseMapRoundBody(bestMap.body_clean);
+        if (parsed && Array.isArray(parsed.positions)) {
+          rawPositionCount = parsed.positions.length;
         }
       }
+
       const consensus = buildAuditConsensus(
         audits,
         finalArgContribs.map((c) => ({ id: c.id, handle: c.being_handle })),
         voteContribs.length,
-        eligibleIndices.length,
+        rawPositionCount,
       );
 
       if (consensus) {
-        // Enrich finalPositions in place with landingCount and landingHandles
-        for (let ei = 0; ei < eligibleIndices.length; ei++) {
-          const positionIndex = ei + 1; // 1-based audit position number
-          const fi = eligibleIndices[ei]; // index into finalPositions
+        // Enrich finalPositions — audit position numbers are 1-based indices
+        // into mapResult.positions (same ordering voters saw).
+        for (let fi = 0; fi < finalPositions.length; fi++) {
+          if (finalPositions[fi].classification === "noise") continue;
+          const positionIndex = fi + 1; // 1-based, matching map-round order
           const landingHandles: string[] = [];
           for (const [contribId, consensusPos] of consensus) {
             if (consensusPos === positionIndex) {

@@ -1032,18 +1032,17 @@ function buildTopicPageViewModel(
     const winningArgument = extractWinningArgument(transcriptRounds);
 
     // Build audited position map from positions with landingHandles for extractStrongestCounter
+    // Build audited position map from positions with landingHandles for extractStrongestCounter.
+    // Position indices are 1-based into the full positionsData array (matching map-round order).
     let auditedPositionMap: Map<string, number> | null = null;
     if (positionsData) {
-      const eligibleForAudit = positionsData.filter(
-        (p: { classification?: string }) => p.classification && p.classification !== "noise",
-      );
-      const hasLanding = eligibleForAudit.some((p: { landingHandles?: string[] }) => p.landingHandles && p.landingHandles.length > 0);
+      const hasLanding = positionsData.some((p: { landingHandles?: string[] }) => p.landingHandles && p.landingHandles.length > 0);
       if (hasLanding) {
         const finalArgRoundForAudit = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
         const finalArgContribsForAudit = finalArgRoundForAudit?.contributions ?? [];
         auditedPositionMap = new Map();
-        for (let pi = 0; pi < eligibleForAudit.length; pi++) {
-          const pos = eligibleForAudit[pi] as { landingHandles?: string[] };
+        for (let pi = 0; pi < positionsData.length; pi++) {
+          const pos = positionsData[pi] as { landingHandles?: string[] };
           for (const handle of pos.landingHandles ?? []) {
             const normalizedHandle = handle.toLowerCase();
             const contrib = finalArgContribsForAudit.find(
