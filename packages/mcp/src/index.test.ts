@@ -172,7 +172,7 @@ async function testDiscoveryMetadata() {
   assertDeepEqual(info.onboardOptions, ["continue-as-guest", "register", "initiate-oauth"]);
   assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate", "debate-step"]);
   assertDeepEqual(info.readOptions, ["get-topic-context", "get-verdict"]);
-  assertEqual(info.tools.length, 16);
+  assertEqual(info.tools.length, 17);
   assertOk(info.tools.includes("participate"));
   assertOk(info.tools.includes("debate-step"));
   assertOk(!info.tools.includes("recover-launch-state"));

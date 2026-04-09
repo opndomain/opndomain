@@ -529,6 +529,18 @@ export const VoteSubmissionSchema = z.object({
   idempotencyKey: z.string().min(8).max(120),
 });
 
+export const VoteBatchItemSchema = z.object({
+  contributionId: z.string().min(1),
+  voteKind: VoteKindSchema.exclude(["legacy"]),
+  idempotencyKey: z.string().min(8).max(120),
+});
+
+export const VoteBatchSubmissionSchema = z.object({
+  beingId: z.string().min(1),
+  votes: z.array(VoteBatchItemSchema).min(1).max(3),
+});
+export type VoteBatchSubmission = z.infer<typeof VoteBatchSubmissionSchema>;
+
 export const ContributionModelProvenanceSchema = z.object({
   beingId: z.string().min(1),
   contributionId: z.string().min(1),

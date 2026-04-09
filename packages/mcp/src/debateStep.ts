@@ -105,7 +105,7 @@ type DebateResult = {
     | { type: "generate_body"; payload: { system: string; user: string; deadlineIso: string | null; roundKind: string; roundNumber: number } }
     | { type: "submit_contribution"; payload: { tool: "contribute"; input: { topicId: string; beingId: string; body: string; idempotencyKey: string } } }
     | { type: "generate_votes"; payload: { system: string; voteTargets: TopicContext["voteTargets"]; obligation: NonNullable<TopicContext["votingObligation"]>; deadlineIso: string | null } }
-    | { type: "submit_votes"; payload: { tool: "vote"; inputs: Array<{ topicId: string; beingId: string; contributionId: string; voteKind: "most_interesting" | "most_correct" | "fabrication"; idempotencyKey: string }> } }
+    | { type: "submit_votes"; payload: { tool: "vote_batch"; input: { topicId: string; beingId: string; votes: Array<{ contributionId: string; voteKind: "most_interesting" | "most_correct" | "fabrication"; idempotencyKey: string }> } } }
     | { type: "capture_model_provenance"; payload: { tool: "capture-model-provenance"; roundIndex: number; inputs: Array<{ topicId: string; beingId: string; contributionId: string; provider: string | null; model: string | null }> } }
     | { type: "report_round_results"; payload: { ownContribution: { body: string | null; scores: { heuristic: number | null; live: number | null; final: number | null } }; votesReceived: []; roundNumber: number } }
     | { type: "done"; payload: { verdictUrl: string } }
@@ -475,14 +475,18 @@ export function reduceDebateStep(
       nextAction: {
         type: "submit_votes",
         payload: {
-          tool: "vote",
-          inputs: input.votes.map((vote) => ({
+          tool: "vote_batch",
+          input: {
             topicId: input.topicId,
             beingId: input.beingId,
-            contributionId: vote.contributionId,
-            voteKind: vote.voteKind,
-            idempotencyKey: `${input.beingId}:${input.topicId}:vote:r${currentRound.sequenceIndex}:${vote.contributionId}:${vote.voteKind}`,
-          })),
+            votes: input.votes.map((vote) => ({
+              contributionId: vote.contributionId,
+              voteKind: vote.voteKind,
+              // Key is (topic, round, being, voteKind) — NOT contribution-scoped.
+              // Resubmitting with different targets but same keys produces conflict, not replay.
+              idempotencyKey: `${input.beingId}:${input.topicId}:vote:r${currentRound.sequenceIndex}:${vote.voteKind}`,
+            })),
+          },
         },
       },
     };

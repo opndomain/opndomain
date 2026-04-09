@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { VoteSubmissionSchema, ClaimVoteAxisSchema, ClaimVoteDirectionSchema } from "@opndomain/shared";
+import { VoteSubmissionSchema, VoteBatchSubmissionSchema, ClaimVoteAxisSchema, ClaimVoteDirectionSchema } from "@opndomain/shared";
 import { z } from "zod";
 import type { ApiEnv } from "../lib/env.js";
 import { firstRow } from "../lib/db.js";
@@ -53,7 +53,199 @@ function voteReplayResponse(row: ExistingVoteRow) {
   };
 }
 
+/** Pre-resolved batch context, invariant across all items in a single (topic, being, round) call. */
+type ResolvedBatchContext = {
+  topicId: string;
+  context: Awaited<ReturnType<typeof resolveVoteContext>>;
+  resolvedTargets: Awaited<ReturnType<typeof resolveVoteTargets>>;
+  policy: { maxVotesPerActor: number };
+};
+
+type SingleVoteItemResult = {
+  voteKind: string;
+  contributionId: string;
+  status: "accepted" | "replayed" | "failed";
+  voteId?: string;
+  code?: string;
+  message?: string;
+  details?: unknown;
+  /** Raw DO payload, only set for accepted/replayed via DO. */
+  doPayload?: Record<string, unknown>;
+  /** Raw DO response status, only set for DO 409. */
+  doStatus?: number;
+  /** Full replay response for D1 replays (singular adapter uses this). */
+  replayResponse?: ReturnType<typeof voteReplayResponse>;
+};
+
+/**
+ * Process a single vote item against pre-resolved batch context.
+ *
+ * **Never throws ApiError.** All per-item failures are returned as { status: "failed" } result objects.
+ * Only truly unexpected errors (D1 connection failures, JSON parse errors) propagate as thrown exceptions.
+ *
+ * **In-batch ordering dependency:** This function must be awaited sequentially within a batch loop.
+ * submitVote() is synchronous with respect to the DO write — once it returns, subsequent DO fetches
+ * (including pending-summary) observe the write. If submitVote is ever made fire-and-forget or
+ * eventually-consistent, in-batch ordering silently breaks.
+ */
+async function processSingleVote(
+  env: ApiEnv,
+  resolved: ResolvedBatchContext,
+  item: { contributionId: string; voteKind: string; idempotencyKey: string },
+): Promise<SingleVoteItemResult> {
+  const { topicId, context, resolvedTargets, policy } = resolved;
+  const { eligibleContributionIds } = resolvedTargets;
+  const baseResult = { voteKind: item.voteKind, contributionId: item.contributionId };
+
+  try {
+    // Target validation
+    if (!eligibleContributionIds.includes(item.contributionId)) {
+      return { ...baseResult, status: "failed", code: "invalid_vote_target", message: "The requested contribution is not in the active round's eligible vote target set." };
+    }
+
+    // Self-vote check
+    const contributionOwner = await firstRow<{ being_id: string | null }>(
+      env.DB,
+      `SELECT being_id FROM contributions WHERE id = ?`,
+      item.contributionId,
+    );
+    if (contributionOwner?.being_id === context.being.id) {
+      return { ...baseResult, status: "failed", code: "forbidden", message: "That being cannot vote on its own contribution." };
+    }
+
+    // D1 replay short-circuit
+    const persistedVote = await firstRow<ExistingVoteRow>(
+      env.DB,
+      `
+        SELECT id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_kind, created_at
+        FROM votes
+        WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ?
+      `,
+      context.activeRound.id,
+      item.voteKind,
+      context.being.id,
+    );
+    if (persistedVote) {
+      if (persistedVote.contribution_id !== item.contributionId) {
+        return { ...baseResult, status: "failed", code: "conflict", message: "You already cast this vote kind on a different contribution this round.", details: { existingContributionId: persistedVote.contribution_id } };
+      }
+      return { ...baseResult, status: "replayed", voteId: persistedVote.id, replayResponse: voteReplayResponse(persistedVote) };
+    }
+
+    // DO pending-summary fetch (per-item, not hoisted — must reflect earlier items in the same batch)
+    const namespaceId = env.TOPIC_STATE_DO.idFromName(topicId);
+    const stub = env.TOPIC_STATE_DO.get(namespaceId);
+    const pendingVoteSummaryResponse = await stub.fetch(
+      `https://topic-state.internal/vote-summary?roundId=${encodeURIComponent(context.activeRound.id)}&contributionId=${encodeURIComponent(item.contributionId)}&voterBeingId=${encodeURIComponent(context.being.id)}&voteKind=${encodeURIComponent(item.voteKind)}`,
+    );
+    const pendingVoteSummary = (await pendingVoteSummaryResponse.json()) as PendingVoteSummary;
+
+    // Quota check
+    const persistedVoteCountRow = await firstRow<VoteCountRow>(
+      env.DB,
+      `
+        SELECT COUNT(*) AS count
+        FROM votes
+        WHERE round_id = ? AND voter_being_id = ?
+      `,
+      context.activeRound.id,
+      context.being.id,
+    );
+    const requestedDirection = item.voteKind === "fabrication" ? -1 : 1;
+    const totalVotesThisRound =
+      Number(persistedVoteCountRow?.count ?? 0) + Number(pendingVoteSummary.pendingVoteCount ?? 0);
+    const isPendingReplay =
+      pendingVoteSummary.hasMatchingVoteKind && pendingVoteSummary.matchingDirection === requestedDirection;
+    if (totalVotesThisRound >= policy.maxVotesPerActor && !isPendingReplay) {
+      return { ...baseResult, status: "failed", code: "forbidden", message: "That being has already used all available votes for the active round." };
+    }
+
+    // 3-distinct: reject if this contribution is already targeted by a different vote kind
+    if (pendingVoteSummary.contributionAlreadyTargeted && !isPendingReplay) {
+      const existingVoteOnContribution = await firstRow<{ id: string }>(
+        env.DB,
+        `SELECT id FROM votes WHERE round_id = ? AND voter_being_id = ? AND contribution_id = ?`,
+        context.activeRound.id,
+        context.being.id,
+        item.contributionId,
+      );
+      if (existingVoteOnContribution) {
+        return { ...baseResult, status: "failed", code: "forbidden", message: "You have already voted on this contribution with a different vote kind." };
+      }
+    }
+    // Also check D1 for the 3-distinct rule
+    if (!isPendingReplay) {
+      const existingD1VoteOnContribution = await firstRow<{ id: string }>(
+        env.DB,
+        `SELECT id FROM votes WHERE round_id = ? AND voter_being_id = ? AND contribution_id = ?`,
+        context.activeRound.id,
+        context.being.id,
+        item.contributionId,
+      );
+      if (existingD1VoteOnContribution) {
+        return { ...baseResult, status: "failed", code: "forbidden", message: "You have already voted on this contribution with a different vote kind." };
+      }
+    }
+
+    // Submit to DO
+    const doResponse = await submitVote(env, {
+      topicId,
+      templateId: context.topic.template_id,
+      activeRoundId: context.activeRound.id,
+      activeRoundSequenceIndex: context.activeRound.sequence_index,
+      voterBeingId: context.being.id,
+      voterTrustTier: context.being.trust_tier,
+      roundConfig: context.roundConfig,
+      contributionId: item.contributionId,
+      voteKind: item.voteKind,
+      idempotencyKey: item.idempotencyKey,
+      resolvedTargets,
+    });
+
+    const payload = await doResponse.json() as Record<string, unknown>;
+
+    if (doResponse.status === 409) {
+      return { ...baseResult, status: "failed", code: "conflict", message: String(payload.message ?? "Conflict from DO"), details: payload, doPayload: payload, doStatus: 409 };
+    }
+
+    // Archive protocol event for newly accepted votes
+    if (doResponse.ok && payload.replayed !== true) {
+      try {
+        await archiveProtocolEvent(env, {
+          occurredAt: new Date().toISOString(),
+          kind: "vote_cast",
+          topicId,
+          roundId: context.activeRound.id,
+          targetRoundId: resolvedTargets.targetRoundId,
+          contributionId: item.contributionId,
+          voterBeingId: context.being.id,
+          voteKind: item.voteKind,
+          direction: requestedDirection as -1 | 1,
+          weight: Number(payload.weight ?? 0),
+        });
+      } catch (error) {
+        console.error("vote event archive failed", error);
+      }
+    }
+
+    return {
+      ...baseResult,
+      status: payload.replayed ? "replayed" : "accepted",
+      voteId: String(payload.id ?? ""),
+      doPayload: payload,
+      doStatus: doResponse.status,
+    };
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { ...baseResult, status: "failed", code: error.code, message: error.message, details: error.details };
+    }
+    throw error;
+  }
+}
+
 export const voteRoutes = new Hono<{ Bindings: ApiEnv }>();
+
+// --- Singular vote endpoint (thin adapter over processSingleVote) ---
 
 voteRoutes.post("/:topicId/votes", async (c) => {
   try {
@@ -79,136 +271,118 @@ voteRoutes.post("/:topicId/votes", async (c) => {
       context.roundConfig,
       context.topic.template_id,
     );
-    const { eligibleContributionIds, policy } = resolvedTargets;
-    if (!eligibleContributionIds.includes(body.contributionId)) {
-      badRequest("invalid_vote_target", "The requested contribution is not in the active round's eligible vote target set.");
-    }
 
-    const contributionOwner = await firstRow<{ being_id: string | null }>(
-      c.env.DB,
-      `SELECT being_id FROM contributions WHERE id = ?`,
-      body.contributionId,
-    );
-    if (contributionOwner?.being_id === body.beingId) {
-      forbidden("That being cannot vote on its own contribution.");
-    }
-
-    const persistedVote = await firstRow<ExistingVoteRow>(
-      c.env.DB,
-      `
-        SELECT id, topic_id, round_id, contribution_id, voter_being_id, direction, weight, vote_kind, created_at
-        FROM votes
-        WHERE round_id = ? AND vote_kind = ? AND voter_being_id = ?
-      `,
-      context.activeRound.id,
-      body.voteKind,
-      body.beingId,
-    );
-    if (persistedVote) {
-      if (persistedVote.contribution_id !== body.contributionId) {
-        conflict("You already cast this vote kind on a different contribution this round.", {
-          existingContributionId: persistedVote.contribution_id,
-        });
-      }
-      return jsonData(c, voteReplayResponse(persistedVote));
-    }
-
-    const namespaceId = c.env.TOPIC_STATE_DO.idFromName(pathTopicId);
-    const stub = c.env.TOPIC_STATE_DO.get(namespaceId);
-    const pendingVoteSummaryResponse = await stub.fetch(
-      `https://topic-state.internal/vote-summary?roundId=${encodeURIComponent(context.activeRound.id)}&contributionId=${encodeURIComponent(body.contributionId)}&voterBeingId=${encodeURIComponent(body.beingId)}&voteKind=${encodeURIComponent(body.voteKind)}`,
-    );
-    const pendingVoteSummary = (await pendingVoteSummaryResponse.json()) as PendingVoteSummary;
-
-    const persistedVoteCountRow = await firstRow<VoteCountRow>(
-      c.env.DB,
-      `
-        SELECT COUNT(*) AS count
-        FROM votes
-        WHERE round_id = ? AND voter_being_id = ?
-      `,
-      context.activeRound.id,
-      body.beingId,
-    );
-    const requestedDirection = body.voteKind === "fabrication" ? -1 : 1;
-    const totalVotesThisRound =
-      Number(persistedVoteCountRow?.count ?? 0) + Number(pendingVoteSummary.pendingVoteCount ?? 0);
-    const isPendingReplay =
-      pendingVoteSummary.hasMatchingVoteKind && pendingVoteSummary.matchingDirection === requestedDirection;
-    if (totalVotesThisRound >= policy.maxVotesPerActor && !isPendingReplay) {
-      forbidden("That being has already used all available votes for the active round.");
-    }
-
-    // 3-distinct: reject if this contribution is already targeted by a different vote kind
-    if (pendingVoteSummary.contributionAlreadyTargeted && !isPendingReplay) {
-      // Also check D1 for already-flushed votes targeting this contribution
-      const existingVoteOnContribution = await firstRow<{ id: string }>(
-        c.env.DB,
-        `SELECT id FROM votes WHERE round_id = ? AND voter_being_id = ? AND contribution_id = ?`,
-        context.activeRound.id,
-        body.beingId,
-        body.contributionId,
-      );
-      if (existingVoteOnContribution) {
-        forbidden("You have already voted on this contribution with a different vote kind.");
-      }
-    }
-    // Also check D1 for the 3-distinct rule
-    if (!isPendingReplay) {
-      const existingD1VoteOnContribution = await firstRow<{ id: string }>(
-        c.env.DB,
-        `SELECT id FROM votes WHERE round_id = ? AND voter_being_id = ? AND contribution_id = ?`,
-        context.activeRound.id,
-        body.beingId,
-        body.contributionId,
-      );
-      if (existingD1VoteOnContribution) {
-        forbidden("You have already voted on this contribution with a different vote kind.");
-      }
-    }
-
-    const doResponse = await submitVote(c.env, {
+    const resolved: ResolvedBatchContext = {
       topicId: pathTopicId,
-      templateId: context.topic.template_id,
-      activeRoundId: context.activeRound.id,
-      activeRoundSequenceIndex: context.activeRound.sequence_index,
-      voterBeingId: body.beingId,
-      voterTrustTier: context.being.trust_tier,
-      roundConfig: context.roundConfig,
+      context,
+      resolvedTargets,
+      policy: resolvedTargets.policy,
+    };
+
+    const result = await processSingleVote(c.env, resolved, {
       contributionId: body.contributionId,
       voteKind: body.voteKind,
       idempotencyKey: body.idempotencyKey,
-      resolvedTargets,
     });
 
-    const payload = await doResponse.json() as {
-      weight?: number;
-      replayed?: boolean;
-      id?: string;
+    // Translate helper result back into the singular endpoint's existing HTTP response shape.
+    if (result.status === "replayed" && result.replayResponse) {
+      // D1 replay path — use the replay response built by the helper.
+      return jsonData(c, result.replayResponse);
+    }
+    if (result.doStatus === 409 && result.doPayload) {
+      // DO 409 passthrough — return the raw DO payload verbatim at HTTP 409.
+      return c.json(result.doPayload, 409);
+    }
+    if (result.status === "failed") {
+      throw new ApiError(
+        result.code === "forbidden" ? 403 : result.code === "conflict" ? 409 : 400,
+        result.code ?? "unknown",
+        result.message ?? "Vote failed.",
+        result.details,
+      );
+    }
+    // accepted or DO-side replayed — preserve the original DO status code (e.g. 201 for created)
+    return jsonData(c, result.doPayload ?? result, result.doStatus ?? 200);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return c.json(
+        {
+          error: error.code,
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        },
+        error.status as never,
+      );
+    }
+    throw error;
+  }
+});
+
+// --- Bulk vote endpoint ---
+
+voteRoutes.post("/:topicId/votes/batch", async (c) => {
+  try {
+    const body = parseJsonBody(VoteBatchSubmissionSchema, await c.req.json());
+    const pathTopicId = c.req.param("topicId");
+
+    // Whole-batch pre-check: duplicate voteKind in the batch
+    const seenKinds = new Set<string>();
+    for (const item of body.votes) {
+      if (seenKinds.has(item.voteKind)) {
+        badRequest("duplicate_vote_kind", `Duplicate voteKind "${item.voteKind}" in the batch. Each vote kind may appear at most once.`);
+      }
+      seenKinds.add(item.voteKind);
+    }
+
+    const { agent } = await authenticateRequest(c.env, c.req.raw);
+    const context = await resolveVoteContext(c.env, agent, pathTopicId, body.beingId);
+    const votePolicy = resolveVotePolicyDefaults(
+      context.topic.template_id,
+      context.activeRound.sequence_index,
+      context.roundConfig,
+    );
+    if (!votePolicy.voteRequired || !votePolicy.voteTargetPolicy) {
+      badRequest("votes_disabled", "The active round is not accepting votes.");
+    }
+
+    const resolvedTargets = await resolveVoteTargets(
+      c.env,
+      pathTopicId,
+      context.activeRound.sequence_index,
+      body.beingId,
+      context.roundConfig,
+      context.topic.template_id,
+    );
+
+    const resolved: ResolvedBatchContext = {
+      topicId: pathTopicId,
+      context,
+      resolvedTargets,
+      policy: resolvedTargets.policy,
     };
 
-    if (doResponse.status === 409) {
-      return c.json(payload, 409);
+    // Process items sequentially to preserve in-batch ordering guarantees (see processSingleVote JSDoc).
+    const results: Array<{ voteKind: string; contributionId: string; status: string; voteId?: string; code?: string; message?: string; details?: unknown }> = [];
+    for (const item of body.votes) {
+      const result = await processSingleVote(c.env, resolved, {
+        contributionId: item.contributionId,
+        voteKind: item.voteKind,
+        idempotencyKey: item.idempotencyKey,
+      });
+      results.push({
+        voteKind: result.voteKind,
+        contributionId: result.contributionId,
+        status: result.status,
+        ...(result.voteId ? { voteId: result.voteId } : {}),
+        ...(result.code ? { code: result.code } : {}),
+        ...(result.message ? { message: result.message } : {}),
+        ...(result.details !== undefined ? { details: result.details } : {}),
+      });
     }
-    if (doResponse.ok && payload.replayed !== true) {
-      try {
-        await archiveProtocolEvent(c.env, {
-          occurredAt: new Date().toISOString(),
-          kind: "vote_cast",
-          topicId: pathTopicId,
-          roundId: context.activeRound.id,
-          targetRoundId: resolvedTargets.targetRoundId,
-          contributionId: body.contributionId,
-          voterBeingId: body.beingId,
-          voteKind: body.voteKind,
-          direction: requestedDirection as -1 | 1,
-          weight: Number(payload.weight ?? 0),
-        });
-      } catch (error) {
-        console.error("vote event archive failed", error);
-      }
-    }
-    return jsonData(c, payload, doResponse.status);
+
+    return jsonData(c, { results });
   } catch (error) {
     if (error instanceof ApiError) {
       return c.json(

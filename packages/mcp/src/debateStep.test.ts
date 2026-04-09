@@ -140,6 +140,78 @@ async function testInvalidVotes() {
   assertMatch(result.validationError ?? "", /not valid for this round/);
 }
 
+async function testSubmitVotesUsesVoteBatch() {
+  const result = reduceDebateStep({
+    ...baseContext,
+    currentRound: {
+      id: "rnd_3",
+      roundKind: "vote",
+      sequenceIndex: 3,
+      status: "active",
+      endsAt: "2026-04-01T04:00:00.000Z",
+    },
+    currentRoundConfig: {
+      roundKind: "vote",
+      voteRequired: true,
+      voteTargetPolicy: "prior_round",
+      roundInstruction: {
+        goal: "Vote on the prior round.",
+        guidance: "",
+        priorRoundContext: null,
+        qualityCriteria: [],
+        votingGuidance: "Assign each vote kind once.",
+      },
+    },
+    voteTargets: [
+      { contributionId: "cnt_a", beingId: "bng_2", beingHandle: "bravo", body: "A", submittedAt: "2026-04-01T00:00:00.000Z", roundIndex: 2 },
+      { contributionId: "cnt_b", beingId: "bng_3", beingHandle: "charlie", body: "B", submittedAt: "2026-04-01T00:10:00.000Z", roundIndex: 2 },
+      { contributionId: "cnt_c", beingId: "bng_4", beingHandle: "delta", body: "C", submittedAt: "2026-04-01T00:20:00.000Z", roundIndex: 2 },
+    ],
+    votingObligation: {
+      required: true,
+      minVotesPerActor: 3,
+      votesCast: 0,
+      missingKinds: ["most_interesting", "most_correct", "fabrication"],
+      fulfilled: false,
+    },
+  }, {
+    beingId: "bng_1",
+    topicId: "top_1",
+    votes: [
+      { contributionId: "cnt_a", voteKind: "most_interesting" },
+      { contributionId: "cnt_b", voteKind: "most_correct" },
+      { contributionId: "cnt_c", voteKind: "fabrication" },
+    ],
+  }, { rootDomain: "opndomain.com" });
+
+  assertEqual(result.status, "vote_required");
+  assertEqual(result.nextAction.type, "submit_votes");
+  const payload = result.nextAction.payload as {
+    tool: string;
+    input: {
+      topicId: string;
+      beingId: string;
+      votes: Array<{ contributionId: string; voteKind: string; idempotencyKey: string }>;
+    };
+  };
+  // Must use vote_batch tool, not singular vote
+  assertEqual(payload.tool, "vote_batch");
+  // Must have single input object, not array of inputs
+  assertEqual(payload.input.topicId, "top_1");
+  assertEqual(payload.input.beingId, "bng_1");
+  assertEqual(payload.input.votes.length, 3);
+  // Idempotency keys must NOT contain contributionId
+  for (const vote of payload.input.votes) {
+    if (vote.idempotencyKey.includes(vote.contributionId)) {
+      throw new Error(`Idempotency key "${vote.idempotencyKey}" must not contain contributionId "${vote.contributionId}"`);
+    }
+  }
+  // Keys should be (being, topic, vote, round, voteKind) shaped
+  assertEqual(payload.input.votes[0]?.idempotencyKey, "bng_1:top_1:vote:r3:most_interesting");
+  assertEqual(payload.input.votes[1]?.idempotencyKey, "bng_1:top_1:vote:r3:most_correct");
+  assertEqual(payload.input.votes[2]?.idempotencyKey, "bng_1:top_1:vote:r3:fabrication");
+}
+
 async function testDone() {
   const result = reduceDebateStep({
     ...baseContext,
@@ -298,6 +370,7 @@ export async function runAllTests() {
   await testGenerateBody();
   await testSubmitContribution();
   await testInvalidVotes();
+  await testSubmitVotesUsesVoteBatch();
   await testCaptureModelProvenance();
   await testSkipModelProvenance();
   await testDone();

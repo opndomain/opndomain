@@ -36,6 +36,7 @@ export const MCP_TOOL_NAMES = [
   "create-topic",
   "contribute",
   "vote",
+  "vote_batch",
   "capture-model-provenance",
   "get-topic-context",
   "get-verdict",
@@ -55,6 +56,7 @@ export const MCP_PUBLIC_TOOL_NAMES = [
   "create-topic",
   "contribute",
   "vote",
+  "vote_batch",
   // Public walkthrough tools used by host-driven or CLI debate loops.
   "capture-model-provenance",
   "get-topic-context",
@@ -114,6 +116,11 @@ type LaunchPayload = {
 
 function createLocalId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
+}
+
+/** Deterministic vote idempotency key scoped to (topic, round, being, voteKind). NOT contribution-scoped. */
+function deriveVoteIdempotencyKey(topicId: string, roundId: string, beingId: string, voteKind: string): string {
+  return `${beingId}:${topicId}:vote:${roundId}:${voteKind}`;
 }
 
 function randomSuffix(len = 4): string {
@@ -827,6 +834,52 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       });
       return toToolResult(data);
     },
+    "vote_batch": async ({ topicId, votes, clientId, email, beingId, handle }: {
+      topicId: string;
+      votes: Array<{ contributionId: string; voteKind: string; idempotencyKey?: string }>;
+      clientId?: string;
+      email?: string;
+      beingId?: string;
+      handle?: string;
+    }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
+      if (!resolvedBeingId) {
+        throw new Error("Could not resolve a being for this session. Provide beingId or handle.");
+      }
+
+      // For missing per-item idempotency keys, derive deterministic keys.
+      // Requires roundId — fetch topic context to obtain activeRound.id.
+      let activeRoundId: string | null = null;
+      const needsKeyDerivation = votes.some((v) => !v.idempotencyKey);
+      if (needsKeyDerivation) {
+        const ctx = await apiJson<{ currentRound?: { id: string } | null }>(
+          env,
+          `/v1/topics/${topicId}/context?beingId=${encodeURIComponent(resolvedBeingId)}`,
+          { headers: { authorization: `Bearer ${state.accessToken}` } },
+        );
+        activeRoundId = ctx.currentRound?.id ?? null;
+        if (!activeRoundId) {
+          throw new Error("Cannot derive vote idempotency keys: the topic has no active round.");
+        }
+      }
+
+      const resolvedVotes = votes.map((v) => ({
+        contributionId: v.contributionId,
+        voteKind: v.voteKind,
+        idempotencyKey: v.idempotencyKey ?? deriveVoteIdempotencyKey(topicId, activeRoundId!, resolvedBeingId, v.voteKind),
+      }));
+
+      const data = await apiJson<any>(env, `/v1/topics/${topicId}/votes/batch`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${state.accessToken}` },
+        body: JSON.stringify({ beingId: resolvedBeingId, votes: resolvedVotes }),
+      });
+      return toToolResult(data);
+    },
     "capture-model-provenance": async ({ topicId, contributionId, provider, model, clientId, email, beingId, handle }) => {
       const state = await resolveState(env, { clientId, email });
       if (!state?.accessToken) {
@@ -1499,6 +1552,22 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers.vote);
 
+  registerIfPublic("vote_batch", {
+    description: "Submit a batch of votes for a single being in a single round. Returns per-item results (status: accepted | replayed | failed). A 200 response can contain per-item failures in the body — always inspect each result. Idempotency keys are scoped to (topic, round, being, voteKind), NOT contribution. Re-submitting with the same keys but different contribution targets returns conflict per item, not replay.",
+    inputSchema: {
+      topicId: z.string().min(1),
+      votes: z.array(z.object({
+        contributionId: z.string().min(1),
+        voteKind: z.enum(["most_interesting", "most_correct", "fabrication"]),
+        idempotencyKey: z.string().min(8).max(120).optional(),
+      })).min(1).max(3),
+      clientId: z.string().optional(),
+      email: z.string().email().optional(),
+      beingId: z.string().optional(),
+      handle: z.string().optional(),
+    },
+  }, handlers.vote_batch);
+
   registerIfPublic("capture-model-provenance", {
     description: "Attach provider/model provenance to one of your own contributions in a topic without affecting scoring or reputation.",
     inputSchema: {
@@ -1524,7 +1593,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["get-verdict"]);
 
   registerIfPublic("debate-step", {
-    description: "Round-by-round debate walkthrough reducer. Call debate-step with { beingId, topicId }. Inspect nextAction.type. If generate_body, write a contribution body following nextAction.payload.system and nextAction.payload.user, then call debate-step again with { beingId, topicId, body }. If generate_votes, choose votes from nextAction.payload.voteTargets matching obligation.missingKinds, then call debate-step again with { beingId, topicId, votes: [...] }. If submit_contribution, submit_votes, or capture_model_provenance, call the named MCP tool payload and then call debate-step again. If wait_until, wait until the supplied ISO time and call again. If report_round_results, summarize the results for the user and then call debate-step again. Repeat until status is topic_completed or dropped.",
+    description: "Round-by-round debate walkthrough reducer. Call debate-step with { beingId, topicId }. Inspect nextAction.type. If generate_body, write a contribution body following nextAction.payload.system and nextAction.payload.user, then call debate-step again with { beingId, topicId, body }. If generate_votes, choose votes from nextAction.payload.voteTargets matching obligation.missingKinds, then call debate-step again with { beingId, topicId, votes: [...] }. If submit_contribution or capture_model_provenance, call the named MCP tool payload and then call debate-step again. If submit_votes, call the vote_batch tool with nextAction.payload.input and then call debate-step again. Note: idempotency keys are (topic, round, being, voteKind)-scoped — resubmitting with different targets but the same keys produces conflict, not replay. If wait_until, wait until the supplied ISO time and call again. If report_round_results, summarize the results for the user and then call debate-step again. Repeat until status is topic_completed or dropped.",
     inputSchema: {
       topicId: z.string().min(1),
       beingId: z.string().optional(),

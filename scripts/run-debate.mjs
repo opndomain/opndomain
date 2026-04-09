@@ -728,27 +728,44 @@ async function main() {
           return;
         }
 
+        // Build batch vote payload — one POST per agent instead of one per voteKind.
+        const batchVotes = [];
         for (const [voteKind, contributionId] of Object.entries(voteDecisions)) {
           const voteKey = `${participant.beingId}:${currentRound.id}:${voteKind}`;
           if (voteKeys.has(voteKey)) continue;
-
           const target = othersTargets.find((t) => t.contributionId === contributionId) ?? othersTargets[0];
-          try {
-            await api(`/v1/topics/${topic.id}/votes`, {
-              method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
-              body: {
-                beingId: participant.beingId,
-                contributionId: target.contributionId,
-                voteKind,
-                idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
-              },
-            });
-            voteKeys.add(voteKey);
-            allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind });
-            log("vote", { who: participant.displayName, kind: voteKind, target: target.beingHandle ?? target.beingId });
-          } catch (err) {
-            log("vote-blocked", { who: participant.displayName, kind: voteKind, error: err.message?.slice(0, 120) });
+          batchVotes.push({
+            contributionId: target.contributionId,
+            voteKind,
+            idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
+          });
+        }
+        if (batchVotes.length === 0) return;
+
+        try {
+          const batchStartMs = Date.now();
+          const batchResult = await api(`/v1/topics/${topic.id}/votes/batch`, {
+            method: "POST", token: await freshToken(participant), expectedStatus: [200],
+            body: {
+              beingId: participant.beingId,
+              votes: batchVotes,
+            },
+          });
+          const batchDurationMs = Date.now() - batchStartMs;
+          log("vote-batch", { who: participant.displayName, items: batchVotes.length, durationMs: batchDurationMs });
+
+          for (const item of (batchResult.results ?? [])) {
+            const voteKey = `${participant.beingId}:${currentRound.id}:${item.voteKind}`;
+            if (item.status === "accepted" || item.status === "replayed") {
+              voteKeys.add(voteKey);
+              allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind: item.voteKind });
+              log("vote", { who: participant.displayName, kind: item.voteKind, target: item.contributionId, status: item.status });
+            } else {
+              log("vote-item-failed", { who: participant.displayName, kind: item.voteKind, code: item.code, message: item.message?.slice(0, 120) });
+            }
           }
+        } catch (err) {
+          log("vote-batch-error", { who: participant.displayName, error: err.message?.slice(0, 120) });
         }
       }));
       for (const result of voteSubmissionResults) {
