@@ -285,6 +285,12 @@ async function buildVerdictPresentation(
   const claimGraph = await buildClaimGraph(env, topic.id);
   const confidence = verdict.confidence as VerdictConfidence;
 
+  // Prefer structured neutral verdict over the raw stitched summary
+  const headlineText =
+    reasoning.bothSidesSummary?.finalVerdict
+    ?? reasoning.parsedFinalArgument?.neutralVerdict
+    ?? topic.title;
+
   return VerdictPresentationSchema.parse({
     topicId: topic.id,
     title: topic.title,
@@ -293,10 +299,10 @@ async function buildVerdictPresentation(
     status: ARTIFACT_STATUS_PUBLISHED,
     headline: {
       label: "Verdict",
-      text: verdict.summary,
+      text: headlineText,
       stance: verdict.terminalization_mode === "insufficient_signal" ? "uncertain" : "mixed",
     },
-    summary: verdict.summary,
+    summary: headlineText,
     lede: reasoning.parsedFinalArgument?.myThesis ?? null,
     kicker: reasoning.parsedFinalArgument?.kicker,
     winningThesis: reasoning.parsedFinalArgument?.myThesis,

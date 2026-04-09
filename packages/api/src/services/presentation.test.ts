@@ -565,6 +565,11 @@ describe("presentation reconcile", () => {
           reasoning_json: JSON.stringify({
             editorialBody:
               "The topic closed with stronger late-round convergence after rebuttal pressure narrowed the live disagreement.\n\nReterminalization preserved the same publication path while refreshing the long-form verdict copy.",
+            bothSidesSummary: {
+              majorityCase: "The room agreed on X.",
+              counterArgument: "The surviving disagreement is Y.",
+              finalVerdict: "Updated summary after reterminalize",
+            },
             topContributionsPerRound: [
               {
                 roundKind: "propose",

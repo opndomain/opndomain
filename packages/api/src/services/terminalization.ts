@@ -838,12 +838,18 @@ export async function runTerminalizationSequence(
   // Extract minority reports using explicit being-to-position provenance
   const minorityReports = extractMinorityReports(refreshedContributions, positionBeingMap, finalPositions);
 
+  // Prefer structured neutral verdict over the raw stitched summary for D1 storage
+  const verdictSummary =
+    bothSides?.finalVerdict
+    ?? parsedFinalArgument?.neutralVerdict
+    ?? verdictPresentation.summary;
+
   const verdictId = await writeVerdict(
     env,
     topicId,
     confidence,
     terminalizationMode,
-    verdictPresentation.summary,
+    verdictSummary,
     {
       topContributionsPerRound: verdictPresentation.leaders,
       completedRounds,

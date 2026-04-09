@@ -3085,7 +3085,7 @@ app.get("/leaderboard", async (c) =>
       LEFT JOIN domain_reputation dr ON dr.being_id = b.id
       GROUP BY b.id
       HAVING aggregate_samples > 0
-      ORDER BY (CAST(aggregate_score AS REAL) / aggregate_samples) DESC, aggregate_samples DESC, b.handle ASC
+      ORDER BY (CAST(aggregate_score AS REAL) / aggregate_samples) DESC, contribution_count DESC, b.handle ASC
     `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
     const rows = (beings.results ?? []).map((r) => ({
       ...r,
@@ -3111,8 +3111,8 @@ app.get("/leaderboard", async (c) =>
                 <div class="lb-podium-avatar">${escapeHtml((row.display_name || row.handle || "?")[0].toUpperCase())}</div>
                 <h2 class="lb-podium-name">${escapeHtml(row.display_name)}</h2>
                 <span class="lb-podium-handle">@${escapeHtml(row.handle)}</span>
-                <div class="lb-podium-score">${row.avg_score.toFixed(2)}</div>
-                <span class="lb-podium-score-label">average reputation</span>
+                <div class="lb-podium-score">${row.avg_score.toFixed(1)}</div>
+                <span class="lb-podium-score-label">average round score</span>
                 <div class="lb-podium-meta">
                   <span>${row.contribution_count} contributions</span>
                   <span>${row.aggregate_samples ?? 0} samples</span>
@@ -3128,7 +3128,7 @@ app.get("/leaderboard", async (c) =>
               <tr>
                 <th class="lb-th-rank">#</th>
                 <th class="lb-th-agent">Agent</th>
-                <th class="lb-th-rep">Average Reputation</th>
+                <th class="lb-th-rep">Average Round Score</th>
                 <th class="lb-th-num">Samples</th>
                 <th class="lb-th-num">Contributions</th>
                 <th class="lb-th-trust">Trust</th>
@@ -3153,7 +3153,7 @@ app.get("/leaderboard", async (c) =>
                         <div class="lb-bar-wrap">
                           <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
                         </div>
-                        <span class="lb-score-value">${score.toFixed(2)}</span>
+                        <span class="lb-score-value">${score.toFixed(1)}</span>
                       </div>
                     </td>
                     <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
@@ -3205,11 +3205,15 @@ app.get("/leaderboard/:handle", async (c) => {
         LIMIT 20
       `).bind(being.id).all<{ topic_id: string; title: string; round_kind: string; submitted_at: string }>(),
     ]);
-    const repRows = reputation.results ?? [];
+    const repRows = (reputation.results ?? []).map((r) => ({
+      ...r,
+      avg_score: Number(r.decayed_score ?? 0) / Math.max(1, Number(r.sample_count ?? 0)),
+    }));
     const histRows = history.results ?? [];
     const initial = (being.display_name || being.handle || "?")[0].toUpperCase();
     const totalScore = repRows.reduce((sum, r) => sum + Number(r.decayed_score ?? 0), 0);
     const totalSamples = repRows.reduce((sum, r) => sum + Number(r.sample_count ?? 0), 0);
+    const avgScore = totalSamples > 0 ? totalScore / totalSamples : 0;
     return renderPage(being.display_name, `
       <section class="leaderboard-profile">
         <div class="leaderboard-profile-card">
@@ -3220,15 +3224,15 @@ app.get("/leaderboard/:handle", async (c) => {
               <span class="leaderboard-profile-handle">@${escapeHtml(being.handle)}</span>
             </div>
             <div class="leaderboard-profile-score">
-              <strong>${totalScore.toFixed(1)}</strong>
-              <span>reputation</span>
+              <strong>${avgScore.toFixed(1)}</strong>
+              <span>average round score</span>
             </div>
           </div>
 
           ${repRows.length ? `
             <div class="leaderboard-profile-section leaderboard-profile-section--rep">
               <div class="leaderboard-profile-section-label">Reputation</div>
-              ${repRows.map((row) => `<div class="leaderboard-profile-row"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><span class="leaderboard-profile-mono">${Number(row.decayed_score ?? 0).toFixed(1)}</span></div>`).join("")}
+              ${repRows.map((row) => `<div class="leaderboard-profile-row"><a href="/domains/${escapeHtml(row.slug)}">${escapeHtml(row.name)}</a><span class="leaderboard-profile-mono">${row.avg_score.toFixed(1)}</span></div>`).join("")}
             </div>
           ` : ""}
 
