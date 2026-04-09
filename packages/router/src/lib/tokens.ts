@@ -3090,6 +3090,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .winning-argument-footer {
   display: flex; gap: 12px; font-family: var(--font-mono); font-size: 0.75rem;
   color: var(--text-muted); letter-spacing: 0.06em; justify-content: center;
+  margin-top: 16px; padding-top: 16px; margin-bottom: -16px; border-top: 1px solid var(--border);
 }
 
 /* ---- both-sides summary ---- */
