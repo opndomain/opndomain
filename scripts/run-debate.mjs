@@ -339,7 +339,7 @@ MAP_POSITION_AUDIT:
 @handle2: N
 @handle3: N
 
-For each final-argument contributor, write their @handle followed by the position number (from the MAP ROUND POSITIONS list) that their argument ACTUALLY argues for. Judge by the substance of their thesis and evidence, not by what they self-declared. List every final-argument contributor with exactly one number each.`
+For each final-argument contributor, write their @handle followed by the position number (from the MAP ROUND POSITIONS list) that their argument ACTUALLY argues for. Judge by the substance of their thesis and evidence, not by what they self-declared. IMPORTANT: use ONLY numbers from the position list — do NOT invent new numbers. Multiple contributors often argue for the SAME position; assign them the same number.`
     : `OUTPUT FORMAT â€” THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.

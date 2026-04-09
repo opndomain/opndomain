@@ -2808,7 +2808,7 @@ app.get("/topics/:topicId", async (c) => {
         ].join("")}</section>`,
 
         // TIER 2 — The Story (always visible)
-        // openingSynthesis suppressed — redundant with winning argument + both-sides summary
+        renderOpeningSynthesis(viewModel),
         renderWinningArgument(viewModel, agentHandleResolver),
         renderBothSidesSummary(viewModel, agentHandleResolver),
         // Highlights (top-scoring quote per round) — promoted out of dropdown,

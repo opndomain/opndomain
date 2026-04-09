@@ -324,7 +324,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "@handle1: 2\n" +
         "@handle2: 1\n" +
         "@handle3: 1\n\n" +
-        "List every final-argument contributor with exactly one position number each. Use the position numbers from the MAP ROUND POSITIONS list provided in your context.",
+        "List every final-argument contributor with exactly one position number each. IMPORTANT: use ONLY the position numbers from the MAP ROUND POSITIONS list provided in your context — do NOT invent new numbers. Multiple contributors often argue for the SAME position; assign them the same number. You must only use numbers 1 through N where N is the number of positions in the list.",
       priorRoundContext: "Final arguments from all participants, plus the map round's numbered position list",
       qualityCriteria: [
         "Vote reflects overall argument quality and persuasiveness",
