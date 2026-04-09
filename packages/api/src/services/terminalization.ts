@@ -1,6 +1,8 @@
 import {
   PRESENTATION_RETRY_REASON_RECONCILE_UNKNOWN,
   parseFinalArgument,
+  parseMapPositionAudit,
+  buildAuditConsensus,
   TERMINALIZATION_CONFIDENCE_MAP,
   TERMINALIZATION_FORCE_FLUSH_EMPTY_REMAINING,
   TERMINALIZATION_FORCE_FLUSH_MAX_ATTEMPTS,
@@ -830,6 +832,64 @@ export async function runTerminalizationSequence(
           finalVerdict: parsedFinalArgument.neutralVerdict,
         }
       : extractBothSidesSummary(winningFinalArg.body);
+  }
+
+  // Voter-audited convergence: parse MAP_POSITION_AUDIT from final vote round
+  // to determine which map position each final-arg agent actually argued for.
+  // Only runs when mapResult succeeded — the audit position numbers reference the
+  // map-round position list, so they'd be meaningless against classifyPositions().
+  const finalVoteRound = [...rounds].reverse().find((r) => r.round_kind === "vote");
+  if (finalVoteRound && mapResult && mapResult.positions.length >= 2) {
+    const voteContribs = refreshedContributions.filter(
+      (c) => c.round_id === finalVoteRound.id && c.body_clean && c.visibility !== "quarantined",
+    );
+    const finalArgContribs = refreshedContributions.filter(
+      (c) => c.round_kind === "final_argument" && c.visibility !== "quarantined" && c.body_clean,
+    );
+
+    const audits: Array<{ audit: Map<string, number>; voterHandle: string }> = [];
+    for (const vc of voteContribs) {
+      const audit = parseMapPositionAudit(vc.body_clean!);
+      if (audit) {
+        audits.push({ audit, voterHandle: vc.being_handle });
+      }
+    }
+
+    if (audits.length > 0) {
+      // Build eligible index: only non-noise positions participate in audit
+      const eligibleIndices: number[] = [];
+      for (let i = 0; i < finalPositions.length; i++) {
+        if (finalPositions[i].classification && finalPositions[i].classification !== "noise") {
+          eligibleIndices.push(i);
+        }
+      }
+      const consensus = buildAuditConsensus(
+        audits,
+        finalArgContribs.map((c) => ({ id: c.id, handle: c.being_handle })),
+        voteContribs.length,
+        eligibleIndices.length,
+      );
+
+      if (consensus) {
+        // Enrich finalPositions in place with landingCount and landingHandles
+        for (let ei = 0; ei < eligibleIndices.length; ei++) {
+          const positionIndex = ei + 1; // 1-based audit position number
+          const fi = eligibleIndices[ei]; // index into finalPositions
+          const landingHandles: string[] = [];
+          for (const [contribId, consensusPos] of consensus) {
+            if (consensusPos === positionIndex) {
+              const contrib = finalArgContribs.find((c) => c.id === contribId);
+              if (contrib) landingHandles.push(contrib.being_handle);
+            }
+          }
+          finalPositions[fi] = {
+            ...finalPositions[fi],
+            landingCount: landingHandles.length,
+            landingHandles,
+          };
+        }
+      }
+    }
   }
 
   // Recompute verdictOutcome from finalPositions so convergence label stays aligned with positions_json

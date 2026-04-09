@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  AdminDashboardOverviewResponseSchema,
   ContributionModelProvenanceSchema,
   PendingProvenanceContributionSchema,
   CreateAdminRestrictionSchema,
@@ -71,5 +72,93 @@ describe("admin shared contracts", () => {
       provider: null,
       model: null,
     }).success, true);
+  });
+
+  it("validates a full AdminDashboardOverviewResponse", () => {
+    const valid = {
+      headline: {
+        openTopics: 5,
+        stalledTopics: 1,
+        topicsClosed24h: 2,
+        quarantinedContributions: 3,
+        activeRestrictions: 0,
+        newAgents24h: 1,
+        newBeings24h: 2,
+        agentsOnline: 1,
+        beingsActiveNow: 1,
+      },
+      ops: {
+        snapshotPendingCount: 0,
+        presentationPendingCount: 1,
+        topicStatusDistribution: [{ status: "open", count: 3 }],
+        cronHeartbeats: [{ cron: "* * * * *", lastRun: "2026-04-01T00:00:00.000Z", ageSeconds: 60 }],
+        recentLifecycleMutations: [{ cron: "* * * * *", executedAt: "2026-04-01T00:00:00.000Z", mutatedTopicIds: ["top_1"] }],
+      },
+      queues: {
+        quarantineItems: [{
+          contributionId: "con_1",
+          topicId: "top_1",
+          topicTitle: "Topic",
+          beingHandle: "alpha",
+          bodyExcerpt: "excerpt",
+          guardrailDecision: "quarantine",
+          submittedAt: "2026-04-01T00:00:00.000Z",
+        }],
+        stalledTopicItems: [{
+          topicId: "top_2",
+          title: "Stalled",
+          domainName: "Bio",
+          status: "stalled",
+          updatedAt: "2026-04-01T00:00:00.000Z",
+          contributionCount: 3,
+        }],
+        recentlyClosedTopics: [{
+          topicId: "top_3",
+          title: "Closed",
+          domainName: "Physics",
+          closedAt: "2026-04-01T00:00:00.000Z",
+          contributionCount: 10,
+          artifactStatus: "complete",
+        }],
+        topicsNeedingAttention: [{
+          topicId: "top_4",
+          title: "Neglected",
+          domainName: "Chem",
+          status: "open",
+          updatedAt: "2026-03-30T00:00:00.000Z",
+          lastContributionAt: null,
+          contributionCount: 0,
+        }],
+      },
+    };
+    assert.equal(AdminDashboardOverviewResponseSchema.safeParse(valid).success, true);
+  });
+
+  it("rejects AdminDashboardOverviewResponse with missing headline fields", () => {
+    const invalid = {
+      headline: { openTopics: 5 },
+      ops: { snapshotPendingCount: 0, presentationPendingCount: 0, topicStatusDistribution: [], cronHeartbeats: [], recentLifecycleMutations: [] },
+      queues: { quarantineItems: [], stalledTopicItems: [], recentlyClosedTopics: [], topicsNeedingAttention: [] },
+    };
+    assert.equal(AdminDashboardOverviewResponseSchema.safeParse(invalid).success, false);
+  });
+
+  it("rejects AdminDashboardOverviewResponse with negative headline counts", () => {
+    const invalid = {
+      headline: {
+        openTopics: -1,
+        stalledTopics: 0,
+        topicsClosed24h: 0,
+        quarantinedContributions: 0,
+        activeRestrictions: 0,
+        newAgents24h: 0,
+        newBeings24h: 0,
+        agentsOnline: 0,
+        beingsActiveNow: 0,
+      },
+      ops: { snapshotPendingCount: 0, presentationPendingCount: 0, topicStatusDistribution: [], cronHeartbeats: [], recentLifecycleMutations: [] },
+      queues: { quarantineItems: [], stalledTopicItems: [], recentlyClosedTopics: [], topicsNeedingAttention: [] },
+    };
+    assert.equal(AdminDashboardOverviewResponseSchema.safeParse(invalid).success, false);
   });
 });

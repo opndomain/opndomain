@@ -12,6 +12,7 @@ import type {
   AdminCapabilityKey,
   AdminDashboardMetricsQuery,
   AdminDashboardMetricsResponse,
+  AdminDashboardOverviewResponse,
   AdminDomainDetail,
   AdminDomainSummary,
   AdminExternalIdentity,
@@ -32,6 +33,8 @@ import { createId } from "../lib/ids.js";
 import { nowIso } from "../lib/time.js";
 import { ensureSeedDomains } from "./domains.js";
 import { revokeSessionsForAgent } from "./auth.js";
+import { readCronHeartbeatStatuses, listRecentLifecycleMutations } from "./lifecycle.js";
+import { listPendingSnapshotRetries } from "../lib/snapshot-sync.js";
 
 type CountRow = { count: number | string | null };
 
@@ -1623,4 +1626,257 @@ export async function setAdminTopicCadence(
     },
   });
   return getAdminTopicDetail(env, topicId);
+}
+
+// --- Admin Dashboard Overview (operational command center) ---
+
+type HeadlineTopicRow = {
+  open_topics: number | string | null;
+  stalled_topics: number | string | null;
+  closed_24h: number | string | null;
+};
+
+type HeadlineCountsRow = {
+  quarantined_contributions: number | string | null;
+  active_restrictions: number | string | null;
+  new_agents_24h: number | string | null;
+  new_beings_24h: number | string | null;
+};
+
+type SessionOnlineRow = {
+  agents_online: number | string | null;
+  beings_active_now: number | string | null;
+};
+
+type OverviewTopicStatusRow = { status: string; count: number | string | null };
+
+type QuarantineItemRow = {
+  contribution_id: string;
+  topic_id: string;
+  topic_title: string;
+  being_handle: string;
+  body: string | null;
+  guardrail_decision: string | null;
+  submitted_at: string;
+};
+
+type StalledTopicRow = {
+  topic_id: string;
+  title: string;
+  domain_name: string;
+  status: string;
+  updated_at: string;
+  contribution_count: number | string | null;
+};
+
+type ClosedTopicRow = {
+  topic_id: string;
+  title: string;
+  domain_name: string;
+  closed_at: string;
+  contribution_count: number | string | null;
+  artifact_status: string | null;
+};
+
+type AttentionTopicRow = {
+  topic_id: string;
+  title: string;
+  domain_name: string;
+  status: string;
+  updated_at: string;
+  last_contribution_at: string | null;
+  contribution_count: number | string | null;
+};
+
+export async function getAdminDashboardOverview(
+  env: ApiEnv,
+): Promise<AdminDashboardOverviewResponse> {
+  const [
+    headlineTopics,
+    headlineCounts,
+    sessionOnline,
+    topicStatusDistribution,
+    quarantineItems,
+    stalledTopicItems,
+    recentlyClosedTopics,
+    topicsNeedingAttention,
+    snapshotPending,
+    presentationPending,
+    cronHeartbeats,
+    recentLifecycleMutations,
+  ] = await Promise.all([
+    // Query 1: topic headline counts
+    firstRow<HeadlineTopicRow>(
+      env.DB,
+      `SELECT
+        SUM(CASE WHEN status IN ('open','countdown','started','stalled') AND archived_at IS NULL THEN 1 ELSE 0 END) AS open_topics,
+        SUM(CASE WHEN status = 'stalled' AND archived_at IS NULL THEN 1 ELSE 0 END) AS stalled_topics,
+        SUM(CASE WHEN closed_at >= datetime('now', '-1 day') THEN 1 ELSE 0 END) AS closed_24h
+      FROM topics`,
+    ),
+    // Query 2: other headline counts
+    firstRow<HeadlineCountsRow>(
+      env.DB,
+      `SELECT
+        (SELECT COUNT(*) FROM contributions WHERE visibility = 'quarantined') AS quarantined_contributions,
+        (SELECT COUNT(*) FROM text_restrictions WHERE expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) AS active_restrictions,
+        (SELECT COUNT(*) FROM agents WHERE created_at >= datetime('now', '-1 day')) AS new_agents_24h,
+        (SELECT COUNT(*) FROM beings WHERE created_at >= datetime('now', '-1 day')) AS new_beings_24h`,
+    ),
+    // Query 3: session-based online counts
+    firstRow<SessionOnlineRow>(
+      env.DB,
+      `SELECT
+        COUNT(DISTINCT agent_id) AS agents_online,
+        COUNT(DISTINCT being_id) AS beings_active_now
+      FROM sessions
+      WHERE revoked_at IS NULL
+        AND expires_at > CURRENT_TIMESTAMP
+        AND last_used_at >= datetime('now', '-15 minutes')`,
+    ),
+    // Query 4: topic status distribution
+    allRows<OverviewTopicStatusRow>(
+      env.DB,
+      `SELECT status, COUNT(*) AS count FROM topics GROUP BY status ORDER BY status ASC`,
+    ),
+    // Query 5: quarantine items (up to 25)
+    allRows<QuarantineItemRow>(
+      env.DB,
+      `SELECT
+        c.id AS contribution_id,
+        c.topic_id,
+        t.title AS topic_title,
+        b.handle AS being_handle,
+        c.body,
+        c.guardrail_decision,
+        c.submitted_at
+      FROM contributions c
+      INNER JOIN topics t ON t.id = c.topic_id
+      INNER JOIN beings b ON b.id = c.being_id
+      WHERE c.visibility = 'quarantined'
+      ORDER BY c.submitted_at DESC
+      LIMIT 25`,
+    ),
+    // Query 6: stalled topics
+    allRows<StalledTopicRow>(
+      env.DB,
+      `SELECT
+        t.id AS topic_id,
+        t.title,
+        COALESCE(d.name, 'unknown') AS domain_name,
+        t.status,
+        t.updated_at,
+        (SELECT COUNT(*) FROM contributions c WHERE c.topic_id = t.id) AS contribution_count
+      FROM topics t
+      LEFT JOIN domains d ON d.id = t.domain_id
+      WHERE t.status = 'stalled' AND t.archived_at IS NULL
+      ORDER BY t.updated_at DESC
+      LIMIT 25`,
+    ),
+    // Query 7: recently closed topics (last 24h)
+    allRows<ClosedTopicRow>(
+      env.DB,
+      `SELECT
+        t.id AS topic_id,
+        t.title,
+        COALESCE(d.name, 'unknown') AS domain_name,
+        t.closed_at,
+        (SELECT COUNT(*) FROM contributions c WHERE c.topic_id = t.id) AS contribution_count,
+        ta.artifact_status
+      FROM topics t
+      LEFT JOIN domains d ON d.id = t.domain_id
+      LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
+      WHERE t.closed_at >= datetime('now', '-1 day')
+      ORDER BY t.closed_at DESC
+      LIMIT 25`,
+    ),
+    // Query 8: topics needing attention (active but no recent contributions)
+    allRows<AttentionTopicRow>(
+      env.DB,
+      `SELECT
+        t.id AS topic_id,
+        t.title,
+        COALESCE(d.name, 'unknown') AS domain_name,
+        t.status,
+        t.updated_at,
+        (SELECT MAX(c2.submitted_at) FROM contributions c2 WHERE c2.topic_id = t.id) AS last_contribution_at,
+        (SELECT COUNT(*) FROM contributions c3 WHERE c3.topic_id = t.id) AS contribution_count
+      FROM topics t
+      LEFT JOIN domains d ON d.id = t.domain_id
+      WHERE t.status IN ('open','countdown','started','stalled')
+        AND t.archived_at IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM contributions c
+          WHERE c.topic_id = t.id
+            AND c.submitted_at >= datetime('now', '-1 day')
+        )
+      ORDER BY t.updated_at DESC
+      LIMIT 25`,
+    ),
+    // Reuse existing helpers
+    listPendingSnapshotRetries(env),
+    env.PUBLIC_CACHE.list({ prefix: "presentation-pending:" }),
+    readCronHeartbeatStatuses(env),
+    listRecentLifecycleMutations(env),
+  ]);
+
+  return {
+    headline: {
+      openTopics: countValue(headlineTopics?.open_topics),
+      stalledTopics: countValue(headlineTopics?.stalled_topics),
+      topicsClosed24h: countValue(headlineTopics?.closed_24h),
+      quarantinedContributions: countValue(headlineCounts?.quarantined_contributions),
+      activeRestrictions: countValue(headlineCounts?.active_restrictions),
+      newAgents24h: countValue(headlineCounts?.new_agents_24h),
+      newBeings24h: countValue(headlineCounts?.new_beings_24h),
+      agentsOnline: countValue(sessionOnline?.agents_online),
+      beingsActiveNow: countValue(sessionOnline?.beings_active_now),
+    },
+    ops: {
+      snapshotPendingCount: snapshotPending.length,
+      presentationPendingCount: presentationPending.keys.length,
+      topicStatusDistribution: topicStatusDistribution.map((row) => ({
+        status: row.status,
+        count: countValue(row.count),
+      })),
+      cronHeartbeats,
+      recentLifecycleMutations,
+    },
+    queues: {
+      quarantineItems: quarantineItems.map((row) => ({
+        contributionId: row.contribution_id,
+        topicId: row.topic_id,
+        topicTitle: row.topic_title,
+        beingHandle: row.being_handle,
+        bodyExcerpt: (row.body ?? "").slice(0, 200),
+        guardrailDecision: row.guardrail_decision,
+        submittedAt: row.submitted_at,
+      })),
+      stalledTopicItems: stalledTopicItems.map((row) => ({
+        topicId: row.topic_id,
+        title: row.title,
+        domainName: row.domain_name,
+        status: row.status,
+        updatedAt: row.updated_at,
+        contributionCount: countValue(row.contribution_count),
+      })),
+      recentlyClosedTopics: recentlyClosedTopics.map((row) => ({
+        topicId: row.topic_id,
+        title: row.title,
+        domainName: row.domain_name,
+        closedAt: row.closed_at,
+        contributionCount: countValue(row.contribution_count),
+        artifactStatus: row.artifact_status,
+      })),
+      topicsNeedingAttention: topicsNeedingAttention.map((row) => ({
+        topicId: row.topic_id,
+        title: row.title,
+        domainName: row.domain_name,
+        status: row.status,
+        updatedAt: row.updated_at,
+        lastContributionAt: row.last_contribution_at,
+        contributionCount: countValue(row.contribution_count),
+      })),
+    },
+  };
 }

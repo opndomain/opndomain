@@ -7,6 +7,7 @@ import {
   type AdminBeingDetail,
   type AdminBeingSummary,
   type AdminDashboardMetricsResponse,
+  type AdminDashboardOverviewResponse,
   type AdminDomainSummary,
   type AdminRestriction,
   type AdminTopicDetail,
@@ -32,12 +33,6 @@ type AdminHealthData = {
   snapshotPendingCount: number;
   presentationPendingCount: number;
   topicStatusDistribution?: Array<{ status: string; count: number }>;
-};
-
-type AdminDashboardData = {
-  topics: Array<{ id: string; title: string; status: string; domain_name: string }>;
-  beings: AdminBeingSummary[];
-  quarantined: Array<{ id: string; handle: string; topic_id: string; title: string }>;
 };
 
 type AdminPageState = {
@@ -131,13 +126,13 @@ function adminSidebar(active: string) {
   `;
 }
 
-function adminPage(active: string, title: string, body: string) {
+function adminPage(active: string, title: string, body: string, extraHead?: string) {
   return renderPage(
     title,
     body,
     "Protected operator backoffice for beings, topics, analytics, and audit trails.",
     undefined,
-    undefined,
+    extraHead ? { extraHead } : undefined,
     {
       variant: "interior-sidebar",
       sidebarHtml: adminSidebar(active),
@@ -235,75 +230,189 @@ async function loadRecentBeingContributions(c: any, beingId: string) {
   }>;
 }
 
-async function loadDashboardPage(c: any, session: AdminSession, health: AdminHealthData) {
-  const [topics, beings, quarantined] = await Promise.all([
-    loadAdminReads<{ items: AdminTopicSummary[] }>(c, "/v1/internal/admin/topics?pageSize=10"),
-    loadAdminReads<{ items: AdminBeingSummary[] }>(c, "/v1/internal/admin/beings?pageSize=10"),
-    c.env.DB.prepare(`
-      SELECT c.id, b.handle, t.id AS topic_id, t.title
-      FROM contributions c
-      INNER JOIN beings b ON b.id = c.being_id
-      INNER JOIN topics t ON t.id = c.topic_id
-      WHERE c.visibility = 'quarantined'
-      ORDER BY c.updated_at DESC
-      LIMIT 25
-    `).all() as Promise<D1Result<{ id: string; handle: string; topic_id: string; title: string }>>,
-  ]);
+async function loadDashboardPage(c: any, _session: AdminSession) {
+  const overviewResponse = await apiFetch(c.env, "/v1/internal/admin/dashboard/overview", {
+    headers: { cookie: c.req.header("cookie") ?? "" },
+  });
+  if (overviewResponse.status === 401) {
+    return redirectResponse("/login?next=%2Fadmin%2Fdashboard");
+  }
+  if (overviewResponse.status === 403) {
+    return htmlResponse(adminPage("dashboard", "Forbidden", hero("Admin", "Access denied.", "This account is not authorized to use the admin portal.")), 403);
+  }
+  if (!overviewResponse.ok) {
+    return htmlResponse(adminPage("dashboard", "Unavailable", hero("Admin", "Admin API unavailable.", "The overview endpoint did not return a healthy response.")), overviewResponse.status);
+  }
+  const { data: overview } = await overviewResponse.json() as { data: AdminDashboardOverviewResponse };
   const csrf = ensureCsrfToken(c);
-  const body = [
-    hero("Admin", "Dashboard", "Health, queue state, and quick links into beings and topics."),
-    grid("two", [
-      card("Health", [
-        statRow("Snapshot queue", String(health.snapshotPendingCount ?? 0)),
-        statRow("Presentation queue", String(health.presentationPendingCount ?? 0)),
-        ...(health.topicStatusDistribution ?? []).map((row) => statRow(row.status, String(row.count))),
-      ].join("")),
-      formCard("Lifecycle Sweep", `<form method="post" action="/admin/actions/sweep">${csrfHiddenInput(csrf.token)}<button type="submit">Run sweep</button></form>`, "Triggers the existing lifecycle sweep endpoint."),
-    ]),
-    card("Operator", `${statRow("Client ID", session.agent.clientId)}${statRow("Email", session.agent.email ?? "none")}`),
-    card("Recent topics", adminTable(
-      ["Title", "Status", "Updated"],
-      topics.items.map((topic) => [
-        rawHtml(`<a href="/admin/topics/${escapeHtml(topic.id)}">${escapeHtml(topic.title)}</a>`),
-        rawHtml(statusPill(topic.status)),
-        topic.updatedAt,
-      ]),
-    )),
-    card("Recent beings", adminTable(
-      ["Handle", "Status", "Trust"],
-      beings.items.map((being) => [
-        rawHtml(`<a href="/admin/beings/${escapeHtml(being.id)}">@${escapeHtml(being.handle)}</a>`),
-        rawHtml(statusPill(being.status)),
-        being.trustTier,
-      ]),
-    )),
-    card(
-      "Quarantine Queue",
-      (quarantined.results ?? []).map((row) => `
-        <div class="card" style="margin-top:12px">
-          <p>
-            <a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><br>
-            <span class="mono">${escapeHtml(row.id)} | @${escapeHtml(row.handle)}</span>
-          </p>
-          <div class="actions">
-            <form method="post" action="/admin/contributions/${escapeHtml(row.id)}/release">
-              ${csrfHiddenInput(csrf.token)}
-              <input type="hidden" name="reason" value="admin_ui" />
-              <input type="hidden" name="redirectTo" value="/admin/dashboard" />
-              <button class="secondary" type="submit">Release</button>
-            </form>
-            <form method="post" action="/admin/contributions/${escapeHtml(row.id)}/block">
-              ${csrfHiddenInput(csrf.token)}
-              <input type="hidden" name="reason" value="admin_ui" />
-              <input type="hidden" name="redirectTo" value="/admin/dashboard" />
-              <button class="secondary" type="submit">Block</button>
-            </form>
+  const flash = readFlash(c);
+  const h = overview.headline;
+  const ops = overview.ops;
+  const q = overview.queues;
+
+  const kpiStrip = `<section class="card" style="margin-bottom:24px">
+    <h3>At a glance</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px">
+      ${[
+        ["Open topics", h.openTopics],
+        ["Stalled topics", h.stalledTopics],
+        ["Closed 24h", h.topicsClosed24h],
+        ["Quarantined", h.quarantinedContributions],
+        ["Restrictions", h.activeRestrictions],
+        ["Agents online", h.agentsOnline],
+        ["Beings active", h.beingsActiveNow],
+      ].map(([label, value]) => `<div>${statRow(String(label), String(value))}</div>`).join("")}
+    </div>
+  </section>`;
+
+  const quarantineQueue = card(
+    "Quarantine queue",
+    q.quarantineItems.length
+      ? q.quarantineItems.map((item) => `
+          <div class="card" style="margin-top:12px">
+            <p>
+              <a href="/admin/topics/${escapeHtml(item.topicId)}">${escapeHtml(item.topicTitle)}</a><br>
+              <span class="mono">@${escapeHtml(item.beingHandle)}</span>
+              ${item.guardrailDecision ? ` &middot; ${escapeHtml(item.guardrailDecision)}` : ""}
+              &middot; ${escapeHtml(item.submittedAt)}
+            </p>
+            <p style="color:var(--muted,#667085);font-size:0.875rem">${escapeHtml(item.bodyExcerpt)}</p>
+            <div style="display:flex;gap:8px">
+              <form method="post" action="/admin/contributions/${escapeHtml(item.contributionId)}/release">
+                ${csrfHiddenInput(csrf.token)}
+                <input type="hidden" name="reason" value="admin_ui" />
+                <input type="hidden" name="redirectTo" value="/admin/dashboard" />
+                <button class="secondary" type="submit">Release</button>
+              </form>
+              <form method="post" action="/admin/contributions/${escapeHtml(item.contributionId)}/block">
+                ${csrfHiddenInput(csrf.token)}
+                <input type="hidden" name="reason" value="admin_ui" />
+                <input type="hidden" name="redirectTo" value="/admin/dashboard" />
+                <button class="secondary" type="submit">Block</button>
+              </form>
+            </div>
           </div>
-        </div>
-      `).join("") || "<p>No quarantined contributions.</p>",
-    ),
+        `).join("")
+      : "<p>No quarantined contributions.</p>",
+  );
+
+  const stalledQueue = card(
+    "Stalled topics",
+    q.stalledTopicItems.length
+      ? adminTable(
+          ["Title", "Domain", "Updated", "Contributions"],
+          q.stalledTopicItems.map((item) => [
+            rawHtml(`<a href="/admin/topics/${escapeHtml(item.topicId)}">${escapeHtml(item.title)}</a>`),
+            item.domainName,
+            item.updatedAt,
+            String(item.contributionCount),
+          ]),
+        )
+      : "<p>No stalled topics.</p>",
+  );
+
+  const attentionQueue = card(
+    "Topics needing attention",
+    q.topicsNeedingAttention.length
+      ? adminTable(
+          ["Title", "Domain", "Status", "Last contribution", "Count"],
+          q.topicsNeedingAttention.map((item) => [
+            rawHtml(`<a href="/admin/topics/${escapeHtml(item.topicId)}">${escapeHtml(item.title)}</a>`),
+            item.domainName,
+            rawHtml(statusPill(item.status)),
+            item.lastContributionAt ?? "never",
+            String(item.contributionCount),
+          ]),
+        )
+      : "<p>All active topics have recent contributions.</p>",
+  );
+
+  const closedQueue = card(
+    "Recently closed (24h)",
+    q.recentlyClosedTopics.length
+      ? adminTable(
+          ["Title", "Domain", "Closed at", "Contributions", "Artifacts"],
+          q.recentlyClosedTopics.map((item) => [
+            rawHtml(`<a href="/admin/topics/${escapeHtml(item.topicId)}">${escapeHtml(item.title)}</a>`),
+            item.domainName,
+            item.closedAt,
+            String(item.contributionCount),
+            item.artifactStatus ?? "none",
+          ]),
+        )
+      : "<p>No topics closed in the last 24 hours.</p>",
+  );
+
+  const healthBlock = grid("two", [
+    card("Infrastructure", [
+      statRow("Snapshot queue", String(ops.snapshotPendingCount)),
+      statRow("Presentation queue", String(ops.presentationPendingCount)),
+    ].join("")),
+    card("Topic status distribution", ops.topicStatusDistribution.length
+      ? adminTable(
+          ["Status", "Count"],
+          ops.topicStatusDistribution.map((row) => [row.status, String(row.count)]),
+        )
+      : "<p>No topics.</p>"),
+  ]);
+
+  const cronBlock = card(
+    "Cron heartbeats",
+    ops.cronHeartbeats.length
+      ? adminTable(
+          ["Cron", "Last run", "Age (s)"],
+          ops.cronHeartbeats.map((hb) => [
+            hb.cron,
+            hb.lastRun ?? "never",
+            hb.ageSeconds !== null ? String(hb.ageSeconds) : "n/a",
+          ]),
+        )
+      : "<p>No cron heartbeat data.</p>",
+  );
+
+  const lifecycleBlock = card(
+    "Recent lifecycle mutations",
+    ops.recentLifecycleMutations.length
+      ? adminTable(
+          ["Cron", "Executed at", "Topics mutated"],
+          ops.recentLifecycleMutations.map((m) => [
+            m.cron,
+            m.executedAt,
+            String(m.mutatedTopicIds.length),
+          ]),
+        )
+      : "<p>No recent lifecycle mutations.</p>",
+  );
+
+  const sweepForm = formCard(
+    "Lifecycle sweep",
+    `<form method="post" action="/admin/actions/sweep">${csrfHiddenInput(csrf.token)}<button type="submit">Run sweep</button></form>`,
+    "Triggers the existing lifecycle sweep endpoint.",
+  );
+
+  const drilldowns = card("Drilldowns", `
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a class="button secondary" href="/admin/topics">Topics</a>
+      <a class="button secondary" href="/admin/beings">Beings</a>
+      <a class="button secondary" href="/admin/agents">Agents</a>
+      <a class="button secondary" href="/admin/audit-log">Audit Log</a>
+      <a class="button secondary" href="/admin/analytics">Analytics</a>
+    </div>
+  `);
+
+  const body = [
+    hero("Admin", "Dashboard", "Operational command center. Updates every 60s."),
+    errorCard(flash),
+    kpiStrip,
+    quarantineQueue,
+    grid("two", [stalledQueue, attentionQueue]),
+    closedQueue,
+    healthBlock,
+    grid("two", [cronBlock, lifecycleBlock]),
+    sweepForm,
+    drilldowns,
   ].join("");
-  return htmlResponseWithCsrf(c, adminPage("dashboard", "Admin Dashboard", body));
+  return htmlResponseWithCsrf(c, adminPage("dashboard", "Admin Dashboard", body, '<meta http-equiv="refresh" content="60" />'));
 }
 
 function renderDailyMetric(title: string, metric: AdminDashboardMetricsResponse["daily"][keyof AdminDashboardMetricsResponse["daily"]]) {
@@ -587,9 +696,11 @@ async function renderAuditLogDetail(c: any, auditLogId: string) {
 
 adminRoutes.get("/", (c) => redirectResponse("/admin/dashboard"));
 adminRoutes.get("/dashboard", async (c) => {
-  const admin = await requireAdminSession(c);
-  if (admin instanceof Response) return admin;
-  return loadDashboardPage(c, admin.session, admin.health);
+  const session = await validateSession(c.env, c.req.raw);
+  if (!session) {
+    return redirectResponse("/login?next=%2Fadmin%2Fdashboard");
+  }
+  return loadDashboardPage(c, session);
 });
 adminRoutes.get("/analytics", async (c) => {
   const admin = await requireAdminSession(c);

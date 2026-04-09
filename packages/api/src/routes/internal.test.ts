@@ -1439,4 +1439,143 @@ describe("round instruction override admin routes", () => {
     );
     assert.equal(response.status, 403);
   });
+
+  it("returns admin dashboard overview with headline counts, ops, and queues", async () => {
+    const db = new FakeDb();
+    const cache = new FakeCache();
+    queueAuthenticatedAgent(db);
+
+    // Query 1: topic headline counts (SUM CASE WHEN)
+    db.queueFirst("SUM(CASE WHEN status IN", [{ open_topics: 5, stalled_topics: 1, closed_24h: 2 }]);
+    // Query 2: headline counts (contributions, restrictions, agents, beings)
+    db.queueFirst("quarantined_contributions", [{ quarantined_contributions: 3, active_restrictions: 1, new_agents_24h: 2, new_beings_24h: 4 }]);
+    // Query 3: session online counts
+    db.queueFirst("COUNT(DISTINCT agent_id) AS agents_online", [{ agents_online: 2, beings_active_now: 1 }]);
+    // Query 4: topic status distribution
+    db.queueAll("SELECT status, COUNT(*) AS count FROM topics GROUP BY status ORDER BY status ASC", [
+      { status: "open", count: 3 },
+      { status: "started", count: 2 },
+    ]);
+    // Query 5: quarantine items
+    db.queueAll("c.visibility = 'quarantined'", [{
+      contribution_id: "con_1",
+      topic_id: "top_1",
+      topic_title: "Topic one",
+      being_handle: "alpha",
+      body: "Some quarantined body text",
+      guardrail_decision: "quarantine",
+      submitted_at: "2026-04-01T00:00:00.000Z",
+    }]);
+    // Query 6: stalled topics
+    db.queueAll("t.status = 'stalled'", [{
+      topic_id: "top_2",
+      title: "Stalled topic",
+      domain_name: "Biology",
+      status: "stalled",
+      updated_at: "2026-04-01T00:00:00.000Z",
+      contribution_count: 5,
+    }]);
+    // Query 7: recently closed topics
+    db.queueAll("t.closed_at >= datetime", [{
+      topic_id: "top_3",
+      title: "Closed topic",
+      domain_name: "Physics",
+      closed_at: "2026-04-02T00:00:00.000Z",
+      contribution_count: 10,
+      artifact_status: "complete",
+    }]);
+    // Query 8: topics needing attention
+    db.queueAll("NOT EXISTS", [{
+      topic_id: "top_4",
+      title: "Neglected topic",
+      domain_name: "Chemistry",
+      status: "open",
+      updated_at: "2026-03-30T00:00:00.000Z",
+      last_contribution_at: null,
+      contribution_count: 0,
+    }]);
+
+    // KV helpers
+    cache.values.set("snapshot-pending:top_9", JSON.stringify({ topicId: "top_9" }));
+    cache.values.set("presentation-pending:top_7", JSON.stringify({ topicId: "top_7" }));
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/dashboard/overview", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db, { PUBLIC_CACHE: cache as never }),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as { data: {
+      headline: Record<string, number>;
+      ops: { snapshotPendingCount: number; presentationPendingCount: number; topicStatusDistribution: Array<{ status: string; count: number }> };
+      queues: {
+        quarantineItems: Array<{ contributionId: string; topicId: string; bodyExcerpt: string }>;
+        stalledTopicItems: Array<{ topicId: string }>;
+        recentlyClosedTopics: Array<{ topicId: string; artifactStatus: string | null }>;
+        topicsNeedingAttention: Array<{ topicId: string; lastContributionAt: string | null; contributionCount: number }>;
+      };
+    } };
+
+    // Headline counts
+    assert.equal(payload.data.headline.openTopics, 5);
+    assert.equal(payload.data.headline.stalledTopics, 1);
+    assert.equal(payload.data.headline.topicsClosed24h, 2);
+    assert.equal(payload.data.headline.quarantinedContributions, 3);
+    assert.equal(payload.data.headline.activeRestrictions, 1);
+    assert.equal(payload.data.headline.newAgents24h, 2);
+    assert.equal(payload.data.headline.newBeings24h, 4);
+    assert.equal(payload.data.headline.agentsOnline, 2);
+    assert.equal(payload.data.headline.beingsActiveNow, 1);
+
+    // Ops
+    assert.equal(payload.data.ops.snapshotPendingCount, 1);
+    assert.equal(payload.data.ops.presentationPendingCount, 1);
+    assert.deepEqual(payload.data.ops.topicStatusDistribution, [
+      { status: "open", count: 3 },
+      { status: "started", count: 2 },
+    ]);
+
+    // Queues
+    assert.equal(payload.data.queues.quarantineItems.length, 1);
+    assert.equal(payload.data.queues.quarantineItems[0].contributionId, "con_1");
+    assert.equal(payload.data.queues.quarantineItems[0].bodyExcerpt, "Some quarantined body text");
+
+    assert.equal(payload.data.queues.stalledTopicItems.length, 1);
+    assert.equal(payload.data.queues.stalledTopicItems[0].topicId, "top_2");
+
+    assert.equal(payload.data.queues.recentlyClosedTopics.length, 1);
+    assert.equal(payload.data.queues.recentlyClosedTopics[0].topicId, "top_3");
+    assert.equal(payload.data.queues.recentlyClosedTopics[0].artifactStatus, "complete");
+
+    assert.equal(payload.data.queues.topicsNeedingAttention.length, 1);
+    assert.equal(payload.data.queues.topicsNeedingAttention[0].topicId, "top_4");
+    assert.equal(payload.data.queues.topicsNeedingAttention[0].lastContributionAt, null);
+    assert.equal(payload.data.queues.topicsNeedingAttention[0].contributionCount, 0);
+  });
+
+  it("rejects unauthenticated requests to admin dashboard overview", async () => {
+    const db = new FakeDb();
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/dashboard/overview"),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 401);
+  });
+
+  it("rejects non-admin requests to admin dashboard overview", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db, { email: "user@example.com" });
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/admin/dashboard/overview", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+    assert.equal(response.status, 403);
+  });
 });

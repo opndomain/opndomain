@@ -383,11 +383,20 @@ async function main() {
   for (let i = 0; i < scenario.agents.length; i++) {
     const agentDef = scenario.agents[i];
     const guest = await api("/v1/auth/guest", { method: "POST", expectedStatus: 201 });
-    await api(`/v1/beings/${guest.being.id}`, {
-      method: "PATCH",
-      token: guest.accessToken,
-      body: { displayName: agentDef.displayName, bio: agentDef.bio },
-    });
+    try {
+      await api(`/v1/beings/${guest.being.id}`, {
+        method: "PATCH",
+        token: guest.accessToken,
+        body: { displayName: agentDef.displayName, bio: agentDef.bio },
+      });
+    } catch (err) {
+      log("being-profile-update-failed", {
+        beingId: guest.being.id,
+        handle: guest.being.handle,
+        displayName: agentDef.displayName,
+        error: renderError(err),
+      });
+    }
     const participant = attachTokenState({
       index: i,
       agentId: guest.agent.id,
@@ -678,27 +687,65 @@ async function main() {
           return;
         }
 
-        for (const [voteKind, contributionId] of Object.entries(voteDecisions)) {
+        const requiredVoteKinds = ["most_interesting", "most_correct", "fabrication"];
+        const alreadyCastKinds = new Set(Object.keys(refreshedContext.votingObligation?.votesCastByKind ?? {}));
+        const batchVotes = [];
+
+        for (const voteKind of requiredVoteKinds) {
+          const contributionId = voteDecisions[voteKind];
+          if (!contributionId) {
+            log("vote-batch-skipped", {
+              who: participant.displayName,
+              round: currentRound.roundKind,
+              reason: "missing_vote_kind",
+              voteKind,
+            });
+            return;
+          }
+
           const voteKey = `${participant.beingId}:${currentRound.id}:${voteKind}`;
-          if (voteKeys.has(voteKey)) continue;
+          if (voteKeys.has(voteKey) || alreadyCastKinds.has(voteKind)) continue;
 
           const target = othersTargets.find((t) => t.contributionId === contributionId) ?? othersTargets[0];
-          try {
-            await api(`/v1/topics/${topic.id}/votes`, {
-              method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
-              body: {
-                beingId: participant.beingId,
-                contributionId: target.contributionId,
-                voteKind,
-                idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
-              },
-            });
-            voteKeys.add(voteKey);
-            allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind });
-            log("vote", { who: participant.displayName, kind: voteKind, target: target.beingHandle ?? target.beingId });
-          } catch (err) {
-            log("vote-blocked", { who: participant.displayName, kind: voteKind, error: err.message?.slice(0, 120) });
+          batchVotes.push({
+            contributionId: target.contributionId,
+            voteKind,
+            idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
+          });
+        }
+
+        if (batchVotes.length === 0) {
+          log("vote-replayed", { who: participant.displayName, round: currentRound.roundKind });
+          return;
+        }
+
+        try {
+          const batchResult = await api(`/v1/topics/${topic.id}/votes/batch`, {
+            method: "POST", token: await freshToken(participant), expectedStatus: [200],
+            body: {
+              beingId: participant.beingId,
+              votes: batchVotes,
+            },
+          });
+
+          for (const item of (batchResult.results ?? [])) {
+            const voteKey = `${participant.beingId}:${currentRound.id}:${item.voteKind}`;
+            if (item.status === "accepted" || item.status === "replayed") {
+              voteKeys.add(voteKey);
+              allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind: item.voteKind });
+              log("vote", { who: participant.displayName, kind: item.voteKind, target: item.contributionId, status: item.status });
+            } else {
+              log("vote-item-failed", {
+                who: participant.displayName,
+                kind: item.voteKind,
+                target: item.contributionId,
+                code: item.code,
+                message: item.message?.slice(0, 120),
+              });
+            }
           }
+        } catch (err) {
+          log("vote-batch-error", { who: participant.displayName, error: err.message?.slice(0, 120) });
         }
       }));
       for (const result of voteSubmissionResults) {

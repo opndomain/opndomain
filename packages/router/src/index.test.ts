@@ -1990,12 +1990,6 @@ describe("SSR shell coverage for redesigned routes", () => {
 
   it("renders the admin dashboard and topic detail pages through the admin subrouter", async () => {
     const db = new FakeDb();
-    db.queueResult("FROM contributions c", [{
-      id: "con_q1",
-      handle: "flagged-being",
-      topic_id: "top_1",
-      title: "Admin topic",
-    }]);
     const api = new FakeApiService();
     api.set("/v1/auth/session", {
       data: {
@@ -2010,37 +2004,40 @@ describe("SSR shell coverage for redesigned routes", () => {
         topicStatusDistribution: [{ status: "open", count: 3 }],
       },
     });
-    api.set("/v1/internal/admin/topics?pageSize=10", {
+    api.set("/v1/internal/admin/dashboard/overview", {
       data: {
-        items: [{
-          id: "top_1",
-          domainId: "dom_1",
-          domainSlug: "biology",
-          domainName: "Biology",
-          title: "Admin topic",
-          status: "started",
-          topicSource: "manual_admin",
-          archived: false,
-          archivedAt: null,
-          createdAt: "2026-04-01T00:00:00.000Z",
-          updatedAt: "2026-04-02T00:00:00.000Z",
-        }],
-      },
-    });
-    api.set("/v1/internal/admin/beings?pageSize=10", {
-      data: {
-        items: [{
-          id: "bng_1",
-          agentId: "agt_1",
-          agentName: "Admin",
-          handle: "alpha",
-          displayName: "Alpha",
-          trustTier: "trusted",
-          status: "active",
-          archived: false,
-          createdAt: "2026-04-01T00:00:00.000Z",
-          updatedAt: "2026-04-02T00:00:00.000Z",
-        }],
+        headline: {
+          openTopics: 5,
+          stalledTopics: 1,
+          topicsClosed24h: 2,
+          quarantinedContributions: 1,
+          activeRestrictions: 0,
+          newAgents24h: 3,
+          newBeings24h: 2,
+          agentsOnline: 1,
+          beingsActiveNow: 1,
+        },
+        ops: {
+          snapshotPendingCount: 1,
+          presentationPendingCount: 2,
+          topicStatusDistribution: [{ status: "open", count: 3 }],
+          cronHeartbeats: [],
+          recentLifecycleMutations: [],
+        },
+        queues: {
+          quarantineItems: [{
+            contributionId: "con_q1",
+            topicId: "top_1",
+            topicTitle: "Admin topic",
+            beingHandle: "flagged-being",
+            bodyExcerpt: "some flagged text",
+            guardrailDecision: "quarantine",
+            submittedAt: "2026-04-02T00:00:00.000Z",
+          }],
+          stalledTopicItems: [],
+          recentlyClosedTopics: [],
+          topicsNeedingAttention: [],
+        },
       },
     });
     api.set("/v1/internal/admin/topics/top_1", {
@@ -2112,10 +2109,14 @@ describe("SSR shell coverage for redesigned routes", () => {
     const dashboardHtml = await dashboardResponse.text();
     assertSidebarShell(dashboardHtml);
     assert.ok(dashboardHtml.includes("Admin Dashboard"));
-    assert.ok(dashboardHtml.includes("Lifecycle Sweep"));
-    assert.ok(dashboardHtml.includes("Quarantine Queue"));
+    assert.ok(dashboardHtml.includes("Lifecycle sweep"));
+    assert.ok(dashboardHtml.includes("Quarantine queue"));
     assert.ok(dashboardHtml.includes("/admin/contributions/con_q1/release"));
     assert.ok(dashboardHtml.includes("/admin/contributions/con_q1/block"));
+    assert.ok(dashboardHtml.includes('content="60"'), "should include 60s auto-refresh meta tag");
+    assert.ok(dashboardHtml.includes("Updates every 60s"), "should show refresh interval copy");
+    assert.ok(dashboardHtml.includes("At a glance"), "should render KPI strip");
+    assert.ok(dashboardHtml.includes("Drilldowns"), "should render drilldown links");
 
     const topicResponse = await app.fetch(
       new Request("https://opndomain.com/admin/topics/top_1", {
@@ -2176,5 +2177,41 @@ describe("SSR shell coverage for redesigned routes", () => {
     const html = await response.text();
     assertTopNavShell(html);
     assert.ok(html.includes("Page not found."));
+  });
+});
+
+describe("VerdictPositionSchema with audit fields", () => {
+  it("accepts positions with landingCount and landingHandles", async () => {
+    const { VerdictPositionSchema } = await import("@opndomain/shared");
+    const pos = {
+      label: "Position A",
+      contributionIds: ["c1", "c2"],
+      aggregateScore: 80,
+      stanceCounts: { support: 2, oppose: 1, neutral: 0 },
+      strength: 75,
+      classification: "majority" as const,
+      landingCount: 2,
+      landingHandles: ["alice", "carol"],
+    };
+    const result = VerdictPositionSchema.safeParse(pos);
+    assert.ok(result.success);
+    assert.equal(result.data.landingCount, 2);
+    assert.deepEqual(result.data.landingHandles, ["alice", "carol"]);
+  });
+
+  it("accepts positions without landing fields (backward-compatible)", async () => {
+    const { VerdictPositionSchema } = await import("@opndomain/shared");
+    const pos = {
+      label: "Position B",
+      contributionIds: ["c3"],
+      aggregateScore: 60,
+      stanceCounts: { support: 1, oppose: 2, neutral: 0 },
+      strength: 40,
+      classification: "minority" as const,
+    };
+    const result = VerdictPositionSchema.safeParse(pos);
+    assert.ok(result.success);
+    assert.equal(result.data.landingCount, undefined);
+    assert.equal(result.data.landingHandles, undefined);
   });
 });

@@ -788,29 +788,41 @@ function parseMapPosition(body: string | null | undefined): number | null {
 function extractStrongestCounter(
   transcriptRounds: TopicTranscriptRound[] | undefined,
   excludeContributionId: string | null,
+  auditedPositionMap?: Map<string, number> | null,
 ): { contributionId: string; bodyCleanRaw: string; handle: string; displayName: string | null; finalScore: number } | null {
   const finalArgRounds = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument");
   const lastFinalArgRound = finalArgRounds[finalArgRounds.length - 1];
   if (!lastFinalArgRound) return null;
   const ranked = buildRankedContributionViewModel(lastFinalArgRound.contributions, lastFinalArgRound);
 
-  // Read the winner's MAP_POSITION so we can require the counter to endorse a
-  // different position. If the winner has no MAP_POSITION (legacy topic), we
-  // fall back to "highest-scored non-winner" without the constraint.
-  const winnerRaw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === excludeContributionId);
-  const winnerMapPos = parseMapPosition(winnerRaw?.bodyClean);
+  // Determine the winner's position — prefer audit data over self-declared
+  let winnerPos: number | null = null;
+  if (auditedPositionMap && excludeContributionId) {
+    winnerPos = auditedPositionMap.get(excludeContributionId) ?? null;
+  }
+  if (winnerPos === null) {
+    const winnerRaw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === excludeContributionId);
+    winnerPos = parseMapPosition(winnerRaw?.bodyClean);
+  }
 
   // Walk ranked list highest-score-first and pick the first one that endorses
-  // a DIFFERENT MAP_POSITION. If none qualify, fall back to highest-scored
+  // a DIFFERENT position. If none qualify, fall back to highest-scored
   // non-winner — better to show same-side advocacy than nothing.
   let counter: typeof ranked[number] | null = null;
   let counterRaw: TopicTranscriptContribution | undefined;
-  if (winnerMapPos !== null) {
+  if (winnerPos !== null) {
     for (const r of ranked) {
       if (!r.id || r.id === excludeContributionId) continue;
       const raw = lastFinalArgRound.contributions?.find((c) => (c.id ?? "") === r.id);
-      const candidateMapPos = parseMapPosition(raw?.bodyClean);
-      if (candidateMapPos !== null && candidateMapPos !== winnerMapPos && raw?.bodyClean) {
+      // Prefer audit data for candidate position
+      let candidatePos: number | null = null;
+      if (auditedPositionMap) {
+        candidatePos = auditedPositionMap.get(r.id) ?? null;
+      }
+      if (candidatePos === null) {
+        candidatePos = parseMapPosition(raw?.bodyClean);
+      }
+      if (candidatePos !== null && candidatePos !== winnerPos && raw?.bodyClean) {
         counter = r;
         counterRaw = raw;
         break;
@@ -920,80 +932,97 @@ function buildTopicPageViewModel(
       openingSynthesisHtml = `<p>${escapeHtml(verdictPresentation.summary)}</p>`;
     }
 
-    // Convergence map: agents self-declare their landing position by emitting
-    // a "MAP_POSITION: <integer>" label inside their final_argument body. We
-    // parse those out and count them. Falls back to the map-round heldBy
-    // intersection (with greedy dedupe) for older topics where final args
-    // don't carry the new label.
+    // Convergence map: prefer voter-audited landing data (landingCount/landingHandles)
+    // when available. Falls back to legacy self-declared MAP_POSITION + heldBy
+    // intersection for older topics.
     let convergenceMap: TopicPageViewModel["convergenceMap"] = null;
     const positionsData = verdictPresentation.positions ?? null;
     if (positionsData && positionsData.length > 0 && positionsData[0]?.classification) {
-      const finalArgRound = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
-      const finalArgContribs = finalArgRound?.contributions ?? [];
-      const finalArgIds = new Set(
-        finalArgContribs.map((c) => c.id).filter((id): id is string => Boolean(id)),
-      );
-      const totalFinalArgs = finalArgIds.size;
-
-      // Self-declared MAP_POSITION counts. Index 0 = position #1.
       const eligiblePositions = positionsData.filter(
         (p: { classification?: string }) => p.classification && p.classification !== "noise",
       );
-      const counts = new Array(eligiblePositions.length).fill(0);
-      const claimedFinalArgIds = new Set<string>();
-      // Pass 1: explicit MAP_POSITION declarations win.
-      for (const fa of finalArgContribs) {
-        const body = fa.bodyClean ?? "";
-        const m = /MAP_POSITION:\s*(\d+)/i.exec(body);
-        if (!m) continue;
-        const idx = Number(m[1]) - 1;
-        if (idx >= 0 && idx < counts.length && fa.id) {
-          counts[idx]++;
-          claimedFinalArgIds.add(fa.id);
-        }
-      }
 
-      // Pass 2: greedy heldBy fallback for any final_args that did NOT declare
-      // a MAP_POSITION. Walk positions in classification priority order so
-      // each unclaimed final_arg lands in its highest-priority available
-      // bucket. This makes mixed declared/undeclared topics behave correctly
-      // and degrades cleanly to pure heldBy for legacy topics.
-      const priority = { majority: 0, runner_up: 1, minority: 2 } as const;
-      const orderedIdxs = eligiblePositions
-        .map((p: any, i: number) => ({ p, i }))
-        .sort((a: any, b: any) =>
-          (priority[a.p.classification as keyof typeof priority] ?? 9) -
-          (priority[b.p.classification as keyof typeof priority] ?? 9),
-        );
-      for (const { p, i } of orderedIdxs as Array<{ p: any; i: number }>) {
-        for (const id of p.contributionIds as string[]) {
-          if (finalArgIds.has(id) && !claimedFinalArgIds.has(id)) {
-            counts[i]++;
-            claimedFinalArgIds.add(id);
-          }
-        }
-      }
-
-      const filtered = eligiblePositions
-        .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }, idx: number) => {
-          const finalArgsHere = counts[idx];
-          const landingShare = totalFinalArgs > 0
-            ? Math.round((finalArgsHere / totalFinalArgs) * 100)
-            : (p.share ?? 0);
-          return {
+      const hasAuditData = eligiblePositions.some((p: { landingCount?: number }) => typeof p.landingCount === "number");
+      if (hasAuditData) {
+        // Audit path: use pre-computed voter-audited consensus
+        const totalLanded = eligiblePositions.reduce((sum: number, p: { landingCount?: number }) => sum + (p.landingCount ?? 0), 0);
+        const filtered = eligiblePositions
+          .map((p: { label: string; landingCount?: number; classification?: string; strength: number; aggregateScore: number; stanceCounts: { support: number; oppose: number; neutral: number } }) => ({
             label: p.label,
-            share: landingShare,
+            share: totalLanded > 0 ? Math.round(((p.landingCount ?? 0) / totalLanded) * 100) : 0,
             classification: p.classification as "majority" | "runner_up" | "minority",
             strength: p.strength,
             aggregateScore: p.aggregateScore,
-            contributionCount: finalArgsHere,
+            contributionCount: p.landingCount ?? 0,
             stanceCounts: p.stanceCounts,
-          };
-        })
-        .filter((p) => p.share > 0)
-        .sort((a, b) => b.share - a.share);
-      if (filtered.length > 0) {
-        convergenceMap = filtered;
+          }))
+          .filter((p) => p.share > 0)
+          .sort((a, b) => b.share - a.share);
+        if (filtered.length > 0) {
+          convergenceMap = filtered;
+        }
+      } else {
+        // Legacy path: self-declared MAP_POSITION + heldBy fallback
+        const finalArgRound = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
+        const finalArgContribs = finalArgRound?.contributions ?? [];
+        const finalArgIds = new Set(
+          finalArgContribs.map((c) => c.id).filter((id): id is string => Boolean(id)),
+        );
+        const totalFinalArgs = finalArgIds.size;
+
+        const counts = new Array(eligiblePositions.length).fill(0);
+        const claimedFinalArgIds = new Set<string>();
+        // Pass 1: explicit MAP_POSITION declarations win.
+        for (const fa of finalArgContribs) {
+          const body = fa.bodyClean ?? "";
+          const m = /MAP_POSITION:\s*(\d+)/i.exec(body);
+          if (!m) continue;
+          const idx = Number(m[1]) - 1;
+          if (idx >= 0 && idx < counts.length && fa.id) {
+            counts[idx]++;
+            claimedFinalArgIds.add(fa.id);
+          }
+        }
+
+        // Pass 2: greedy heldBy fallback for any final_args that did NOT declare
+        // a MAP_POSITION.
+        const priority = { majority: 0, runner_up: 1, minority: 2 } as const;
+        const orderedIdxs = eligiblePositions
+          .map((p: any, i: number) => ({ p, i }))
+          .sort((a: any, b: any) =>
+            (priority[a.p.classification as keyof typeof priority] ?? 9) -
+            (priority[b.p.classification as keyof typeof priority] ?? 9),
+          );
+        for (const { p, i } of orderedIdxs as Array<{ p: any; i: number }>) {
+          for (const id of p.contributionIds as string[]) {
+            if (finalArgIds.has(id) && !claimedFinalArgIds.has(id)) {
+              counts[i]++;
+              claimedFinalArgIds.add(id);
+            }
+          }
+        }
+
+        const filtered = eligiblePositions
+          .map((p: { label: string; share?: number; classification?: string; strength: number; aggregateScore: number; contributionIds: string[]; stanceCounts: { support: number; oppose: number; neutral: number } }, idx: number) => {
+            const finalArgsHere = counts[idx];
+            const landingShare = totalFinalArgs > 0
+              ? Math.round((finalArgsHere / totalFinalArgs) * 100)
+              : (p.share ?? 0);
+            return {
+              label: p.label,
+              share: landingShare,
+              classification: p.classification as "majority" | "runner_up" | "minority",
+              strength: p.strength,
+              aggregateScore: p.aggregateScore,
+              contributionCount: finalArgsHere,
+              stanceCounts: p.stanceCounts,
+            };
+          })
+          .filter((p) => p.share > 0)
+          .sort((a, b) => b.share - a.share);
+        if (filtered.length > 0) {
+          convergenceMap = filtered;
+        }
       }
     }
 
@@ -1001,7 +1030,34 @@ function buildTopicPageViewModel(
     // Keep bodyCleanRaw so the verdict box can render the full structured argument
     // (MAJORITY CASE / COUNTER-ARGUMENT / FINAL VERDICT) with inline subheadings.
     const winningArgument = extractWinningArgument(transcriptRounds);
-    const strongestCounter = extractStrongestCounter(transcriptRounds, winningArgument?.contributionId ?? null);
+
+    // Build audited position map from positions with landingHandles for extractStrongestCounter
+    let auditedPositionMap: Map<string, number> | null = null;
+    if (positionsData) {
+      const eligibleForAudit = positionsData.filter(
+        (p: { classification?: string }) => p.classification && p.classification !== "noise",
+      );
+      const hasLanding = eligibleForAudit.some((p: { landingHandles?: string[] }) => p.landingHandles && p.landingHandles.length > 0);
+      if (hasLanding) {
+        const finalArgRoundForAudit = (transcriptRounds ?? []).filter((r) => r.roundKind === "final_argument").pop();
+        const finalArgContribsForAudit = finalArgRoundForAudit?.contributions ?? [];
+        auditedPositionMap = new Map();
+        for (let pi = 0; pi < eligibleForAudit.length; pi++) {
+          const pos = eligibleForAudit[pi] as { landingHandles?: string[] };
+          for (const handle of pos.landingHandles ?? []) {
+            const normalizedHandle = handle.toLowerCase();
+            const contrib = finalArgContribsForAudit.find(
+              (c) => c.beingHandle?.toLowerCase() === normalizedHandle,
+            );
+            if (contrib?.id) {
+              auditedPositionMap.set(contrib.id, pi + 1);
+            }
+          }
+        }
+      }
+    }
+
+    const strongestCounter = extractStrongestCounter(transcriptRounds, winningArgument?.contributionId ?? null, auditedPositionMap);
 
     // Closed-topic null score fallback: replace "Pending" with "n/a"
     for (const round of contentRounds) {

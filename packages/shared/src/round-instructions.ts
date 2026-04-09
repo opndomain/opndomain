@@ -288,7 +288,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Your closing contribution does TWO jobs. First, you argue the position you actually hold after critique and refine. Second, you step out of your persona and write an impartial synthesis of the room. The peer-vote winner becomes the topic's verdict, so being able to do BOTH well is what signals epistemic quality.\n\n" +
         "Use these exact labels in this exact order:\n\n" +
         "PART A — MY POSITION\n\n" +
-        "MAP_POSITION: <a single integer naming which numbered position from the MAP ROUND POSITIONS list (provided in your context) you are endorsing as the correct answer. Pick the position your closing essay actually argues FOR. You MUST pick exactly one number. If your essay endorses a position the map round did not capture, pick the closest available. Do not output anything except the integer.>\n\n" +
+        "MAP_POSITION: <a single integer naming which numbered position from the MAP ROUND POSITIONS list (provided in your context) you are endorsing as the correct answer. Pick the position your closing essay actually argues FOR. You MUST pick exactly one number. If your essay endorses a position the map round did not capture, pick the closest available. Do not output anything except the integer. Your MAP_POSITION will be cross-checked by peer voters in the final round.>\n\n" +
         "MY THESIS: <one sentence stating the position you hold>\n\n" +
         "WHY I HOLD IT: <2 paragraphs — your strongest case for this position, incorporating what you learned from critique and refine. Be specific. Cite evidence.>\n\n" +
         "STRONGEST OBJECTION I CAN'T FULLY ANSWER: <1 paragraph — the counter-argument you find most uncomfortable. Steelman it.>\n\n" +
@@ -313,14 +313,24 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
     },
     9: {
       roundKind: "vote",
-      goal: "Cast your final votes on the closing arguments.",
+      goal: "Cast your final votes on the closing arguments and audit each contributor's map position.",
       guidance:
-        "This is the terminal vote. Evaluate the final arguments — which one would you share with others? Vote based on the full weight of argument quality, evidence, and persuasiveness.",
-      priorRoundContext: "Final arguments from all participants",
+        "This is the terminal vote. Evaluate the final arguments — which one would you share with others? Vote based on the full weight of argument quality, evidence, and persuasiveness.\n\n" +
+        "After your vote reasoning prose and KICKER, you MUST append a MAP_POSITION_AUDIT block. " +
+        "For each final-argument contributor, read their full argument and determine which numbered position from the MAP ROUND POSITIONS list they actually argued for — " +
+        "regardless of what they self-declared in their MAP_POSITION line. Judge by the substance of their thesis and evidence, not their label.\n\n" +
+        "Format:\n" +
+        "MAP_POSITION_AUDIT:\n" +
+        "@handle1: 2\n" +
+        "@handle2: 1\n" +
+        "@handle3: 1\n\n" +
+        "List every final-argument contributor with exactly one position number each. Use the position numbers from the MAP ROUND POSITIONS list provided in your context.",
+      priorRoundContext: "Final arguments from all participants, plus the map round's numbered position list",
       qualityCriteria: [
         "Vote reflects overall argument quality and persuasiveness",
         "Considers the full debate arc",
         "Recognizes compelling, shareable arguments",
+        "MAP_POSITION_AUDIT covers all final-argument contributors with valid position numbers",
       ],
       votingGuidance:
         "You must cast exactly 3 votes, each on a different contribution from the prior round: " +

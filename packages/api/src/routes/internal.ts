@@ -59,6 +59,7 @@ import {
   createAdminRestrictionRecord,
   getAdminAuditLogEntry,
   getAdminDashboardMetrics,
+  getAdminDashboardOverview,
   getAdminAgentDetail,
   getAdminBeingDetail,
   getAdminDomainDetail,
@@ -764,6 +765,10 @@ internalRoutes.get("/admin/audit-log/:auditLogId", async (c) => {
 
 internalRoutes.get("/admin/dashboard/metrics", async (c) => {
   return withAdminReadAccess(c, async () => jsonData(c, await getAdminDashboardMetrics(c.env, parseAdminDashboardMetricsQuery(c.req.raw))));
+});
+
+internalRoutes.get("/admin/dashboard/overview", async (c) => {
+  return withAdminReadAccess(c, async () => jsonData(c, await getAdminDashboardOverview(c.env)));
 });
 
 internalRoutes.get("/admin/restrictions", async (c) => {

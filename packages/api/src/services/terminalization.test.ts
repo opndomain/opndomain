@@ -7,6 +7,7 @@ import {
   extractMinorityReports,
   extractBothSidesSummary,
 } from "./terminalization.js";
+import { parseMapPositionAudit, buildAuditConsensus } from "@opndomain/shared";
 
 class FakePreparedStatement {
   constructor(
@@ -1475,5 +1476,82 @@ describe("extractMinorityReports", () => {
     ];
     const result = extractMinorityReports(contributions, positionBeingMap, classifiedPositions);
     assert.equal(result.length, 0);
+  });
+});
+
+describe("voter-audited convergence integration", () => {
+  it("parses audit blocks from mock round-9 contributions and builds consensus", () => {
+    const voterBodies = [
+      `Great arguments all around.\nKICKER: Oversight wins.\nMAP_POSITION_AUDIT:\n@alice: 1\n@bob: 2\n@carol: 1`,
+      `Solid debate.\nKICKER: Evidence matters.\nMAP_POSITION_AUDIT:\n@alice: 1\n@bob: 2\n@carol: 1`,
+      `Mixed results.\nKICKER: Nuance needed.\nMAP_POSITION_AUDIT:\n@alice: 1\n@bob: 2\n@carol: 2`,
+    ];
+
+    const audits = voterBodies
+      .map((body, i) => {
+        const audit = parseMapPositionAudit(body);
+        return audit ? { audit, voterHandle: `voter${i}` } : null;
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    assert.equal(audits.length, 3);
+
+    const finalArgContribs = [
+      { id: "c1", handle: "alice" },
+      { id: "c2", handle: "bob" },
+      { id: "c3", handle: "carol" },
+    ];
+
+    const consensus = buildAuditConsensus(audits, finalArgContribs, 3, 2);
+    assert.ok(consensus);
+    assert.equal(consensus.get("c1"), 1); // alice: 3/3 → position 1
+    assert.equal(consensus.get("c2"), 2); // bob: 3/3 → position 2
+    assert.equal(consensus.get("c3"), 1); // carol: 2/3 → position 1 (majority)
+  });
+
+  it("produces landingCount/landingHandles from consensus", () => {
+    const consensus = new Map([["c1", 1], ["c2", 2], ["c3", 1]]);
+    const finalArgContribs = [
+      { id: "c1", being_handle: "alice" },
+      { id: "c2", being_handle: "bob" },
+      { id: "c3", being_handle: "carol" },
+    ];
+    const positions = [
+      { label: "Position A", classification: "majority" as const, landingCount: 0, landingHandles: [] as string[] },
+      { label: "Position B", classification: "minority" as const, landingCount: 0, landingHandles: [] as string[] },
+    ];
+
+    for (let i = 0; i < positions.length; i++) {
+      const posIndex = i + 1;
+      const handles: string[] = [];
+      for (const [contribId, pos] of consensus) {
+        if (pos === posIndex) {
+          const c = finalArgContribs.find((fc) => fc.id === contribId);
+          if (c) handles.push(c.being_handle);
+        }
+      }
+      positions[i].landingCount = handles.length;
+      positions[i].landingHandles = handles;
+    }
+
+    assert.equal(positions[0].landingCount, 2);
+    assert.deepEqual(positions[0].landingHandles, ["alice", "carol"]);
+    assert.equal(positions[1].landingCount, 1);
+    assert.deepEqual(positions[1].landingHandles, ["bob"]);
+  });
+
+  it("falls back gracefully when no audit blocks present", () => {
+    const voterBodies = [
+      "Plain vote text without audit.",
+      "Another plain vote.",
+    ];
+    const audits = voterBodies
+      .map((body, i) => {
+        const audit = parseMapPositionAudit(body);
+        return audit ? { audit, voterHandle: `voter${i}` } : null;
+      })
+      .filter((a): a is NonNullable<typeof a> => a !== null);
+
+    assert.equal(audits.length, 0);
   });
 });

@@ -13,6 +13,7 @@ export type PageHeadMetadata = {
   twitterDescription?: string;
   twitterImageUrl?: string;
   twitterImageAlt?: string;
+  extraHead?: string;
 };
 
 export type PageShellOptions = {
@@ -158,6 +159,7 @@ export function renderPage(
     ${FONT_PRECONNECT}
     <style>${GLOBAL_STYLES}</style>
     ${pageStyles ? `<style>${pageStyles}</style>` : ""}
+    ${head?.extraHead ?? ""}
     <noscript><style>[data-animate]{opacity:1!important;transform:none!important}</style></noscript>
   </head>
   <body${variant === "default" ? "" : ` class="shell-body shell-body--${variant}${bodyClassName}"`}>

@@ -275,9 +275,11 @@ async function generateContribution(agent, context) {
   // For final_argument round, always inject the highest-scored map-round
   // contribution (the JSON with positions) so the agent can pick a numbered
   // map position even if it falls outside the sliding window above.
+  const isFinalVoteRound = roundKind === "vote" && context.currentRound?.sequenceIndex === 9;
+
   let mapRoundBlock = "";
   let mapPositionList = "";
-  if (roundKind === "final_argument") {
+  if (roundKind === "final_argument" || isFinalVoteRound) {
     const mapContribs = (context.transcript ?? []).filter((c) => c.roundKind === "map" && c.bodyClean);
     if (mapContribs.length > 0) {
       // Pick the one with highest final_score; fall back to first.
@@ -296,6 +298,21 @@ async function generateContribution(agent, context) {
     }
   }
 
+  // For round 9 (final vote), inject all final_argument contributions in full
+  // so voters can audit each contributor's actual position.
+  let finalArgsBlock = "";
+  if (isFinalVoteRound) {
+    const finalArgContribs = (context.transcript ?? []).filter(
+      (c) => c.roundKind === "final_argument" && c.bodyClean
+    );
+    if (finalArgContribs.length > 0) {
+      const entries = finalArgContribs
+        .map((c) => `[@${c.beingHandle}] ${c.bodyClean}`)
+        .join("\n\n");
+      finalArgsBlock = `\nFINAL ARGUMENTS TO AUDIT (full text):\n${entries}`;
+    }
+  }
+
   // Map rounds output JSON, final_argument uses structured labels, others are plain prose.
   const isJsonRound = roundKind === "map";
   const isStructuredRound = roundKind === "map" || roundKind === "final_argument";
@@ -309,6 +326,20 @@ The JSON must also include a top-level "kicker" field: one sentence, â‰¤180 
 Follow the GUIDANCE below precisely. Your contribution MUST contain both PART A — MY POSITION and PART B — IMPARTIAL SYNTHESIS sections in that exact order, with the exact labels specified (MAP_POSITION, MY THESIS, WHY I HOLD IT, STRONGEST OBJECTION I CAN'T FULLY ANSWER, WHAT THIS DEBATE SETTLED, WHAT REMAINS CONTESTED, NEUTRAL VERDICT, KICKER).
 Between labels, write plain prose. No markdown: no # headers, no **bold**, no *italic*, no bullet points, no code blocks.
 PART A is your advocacy — you take a side and defend it. PART B is impartial — you drop your persona and write as a third-party reader. Doing both well is what wins the peer vote.`
+    : isFinalVoteRound
+    ? `OUTPUT FORMAT — THIS IS CRITICAL:
+Write your vote reasoning as plain prose paragraphs. No markdown formatting.
+
+After your prose, on a new line, append:
+KICKER: <one sentence, ≤180 characters — your sharpest claim about the debate outcome.>
+
+Then on a new line, append your position audit:
+MAP_POSITION_AUDIT:
+@handle1: N
+@handle2: N
+@handle3: N
+
+For each final-argument contributor, write their @handle followed by the position number (from the MAP ROUND POSITIONS list) that their argument ACTUALLY argues for. Judge by the substance of their thesis and evidence, not by what they self-declared. List every final-argument contributor with exactly one number each.`
     : `OUTPUT FORMAT â€” THIS IS CRITICAL:
 You must write plain prose paragraphs only. Your output will be displayed directly on a web page that does not render markdown.
 NEVER use: # headers, ## subheaders, **bold**, *italic*, bullet points (- or *), numbered lists, block quotes, code blocks, or any markdown syntax whatsoever.
@@ -348,8 +379,15 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
   if (mapRoundBlock) {
     userPrompt.push(mapRoundBlock);
     if (mapPositionList) {
-      userPrompt.push(`\nMAP_POSITION OPTIONS — pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`);
+      const posLabel = isFinalVoteRound
+        ? `\nMAP ROUND POSITIONS — use these numbers in your MAP_POSITION_AUDIT block:\n${mapPositionList}`
+        : `\nMAP_POSITION OPTIONS — pick exactly one of these numbers when you write your MAP_POSITION line:\n${mapPositionList}`;
+      userPrompt.push(posLabel);
     }
+  }
+
+  if (finalArgsBlock) {
+    userPrompt.push(finalArgsBlock);
   }
 
   if (isJsonRound) {
@@ -644,57 +682,25 @@ async function main() {
     }
 
     // Cast categorical votes â€” use LLM to read contributions and pick targets
-    const pendingVoters = contexts.filter(({ participant, context }) => {
+    const voteRoundRequired = canonical.status === "started" && Boolean(canonical.currentRoundConfig?.voteRequired);
+    const pendingVoters = voteRoundRequired ? contexts.filter(({ participant, context }) => {
       const currentRound = context.currentRound;
       if (!currentRound || context.status !== "started") return false;
       if (!isBeingActiveInContext(context, participant.beingId)) return false;
       return !context.votingObligation?.fulfilled;
-    });
+    }) : [];
 
-    if (pendingVoters.length > 0) {
-      // Fetch fresh context for vote targets (need latest after contributions land)
-      const voterContexts = await Promise.all(
-        pendingVoters.map(async ({ participant }) => {
-          const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${participant.beingId}`, { token: await freshToken(participant) });
-          return { participant, context: ctx };
-        }),
-      );
+    if (pendingVoters.length > 0 && canonical.currentRound) {
+      await wait(2_000);
 
-      // Run vote decisions in parallel via LLM
-      const voteResults = await Promise.allSettled(
-        voterContexts.map(async ({ participant, context: ctx }) => {
-          const voteRequired = Boolean(ctx.currentRoundConfig?.voteRequired);
-          const voteTargets = Array.isArray(ctx.voteTargets) ? ctx.voteTargets : [];
-          if (!voteRequired || voteTargets.length === 0) return null;
+      const voteBlockStartedAt = Date.now();
+      log("vote-block-start", {
+        roundId: canonical.currentRound.id,
+        voterCount: pendingVoters.length,
+      });
 
-          const othersTargets = voteTargets.filter((t) => t.beingId !== participant.beingId);
-          if (othersTargets.length < 3) return null; // need at least 3 distinct targets
-
-          // Build the contribution text for each vote target from transcript
-          const transcript = ctx.transcript ?? [];
-          const targetTexts = othersTargets.map((t) => {
-            const contrib = transcript.find((c) => c.id === t.contributionId);
-            return {
-              contributionId: t.contributionId,
-              beingHandle: t.beingHandle ?? t.beingId,
-              body: contrib?.bodyClean?.slice(0, 600) ?? "[contribution not visible]",
-            };
-          });
-
-          // Ask LLM to pick votes
-          const voteDecisions = await generateVoteDecisions(participant, ctx, targetTexts);
-          return { participant, context: ctx, voteDecisions, othersTargets };
-        }),
-      );
-
-      const voteSubmissionResults = await Promise.allSettled(voteResults.map(async (result) => {
-        if (result.status === "rejected") {
-          log("vote-llm-error", { error: renderError(result.reason) });
-          return;
-        }
-        if (!result.value) return;
-        const { participant, context: ctx, voteDecisions, othersTargets } = result.value;
-        const currentRound = ctx.currentRound;
+      const voteSubmissionResults = await Promise.allSettled(pendingVoters.map(async ({ participant, context }) => {
+        const currentRound = context.currentRound;
         const refreshedContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participant.beingId)}`, {
           token: await freshToken(participant),
         });
@@ -711,7 +717,7 @@ async function main() {
             actualRoundId: refreshedContext.currentRound?.id ?? null,
             status: refreshedContext.status,
           });
-          return;
+          return { acceptedCount: 0, failedCount: 0 };
         }
 
         if (!isBeingActiveInContext(refreshedContext, participant.beingId)) {
@@ -720,15 +726,32 @@ async function main() {
             reason: "member_not_active_before_submit",
             round: currentRound.roundKind,
           });
-          return;
+          return { acceptedCount: 0, failedCount: 0 };
         }
 
         if (refreshedContext.votingObligation?.fulfilled) {
           log("vote-replayed", { who: participant.displayName, round: currentRound.roundKind });
-          return;
+          return { acceptedCount: 0, failedCount: 0 };
         }
 
-        // Build batch vote payload — one POST per agent instead of one per voteKind.
+        const voteTargets = Array.isArray(refreshedContext.voteTargets) ? refreshedContext.voteTargets : [];
+        if (voteTargets.length === 0) return { acceptedCount: 0, failedCount: 0 };
+
+        const othersTargets = voteTargets.filter((t) => t.beingId !== participant.beingId);
+        if (othersTargets.length < 3) return { acceptedCount: 0, failedCount: 0 };
+
+        const transcript = refreshedContext.transcript ?? [];
+        const targetTexts = othersTargets.map((t) => {
+          const contrib = transcript.find((c) => c.id === t.contributionId);
+          return {
+            contributionId: t.contributionId,
+            beingHandle: t.beingHandle ?? t.beingId,
+            body: contrib?.bodyClean?.slice(0, 600) ?? "[contribution not visible]",
+          };
+        });
+
+        const voteDecisions = await generateVoteDecisions(participant, refreshedContext, targetTexts);
+
         const batchVotes = [];
         for (const [voteKind, contributionId] of Object.entries(voteDecisions)) {
           const voteKey = `${participant.beingId}:${currentRound.id}:${voteKind}`;
@@ -740,7 +763,7 @@ async function main() {
             idempotencyKey: idempotencyKey(["debate", voteKind, topic.id.slice(-12), currentRound.id.slice(-12), participant.beingId.slice(-12)]),
           });
         }
-        if (batchVotes.length === 0) return;
+        if (batchVotes.length === 0) return { acceptedCount: 0, failedCount: 0 };
 
         try {
           const batchStartMs = Date.now();
@@ -754,27 +777,46 @@ async function main() {
           const batchDurationMs = Date.now() - batchStartMs;
           log("vote-batch", { who: participant.displayName, items: batchVotes.length, durationMs: batchDurationMs });
 
+          let acceptedCount = 0;
+          let failedCount = 0;
           for (const item of (batchResult.results ?? [])) {
             const voteKey = `${participant.beingId}:${currentRound.id}:${item.voteKind}`;
             if (item.status === "accepted" || item.status === "replayed") {
+              acceptedCount++;
               voteKeys.add(voteKey);
               allVotes.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, voter: participant.displayName, voteKind: item.voteKind });
               log("vote", { who: participant.displayName, kind: item.voteKind, target: item.contributionId, status: item.status });
             } else {
+              failedCount++;
               log("vote-item-failed", { who: participant.displayName, kind: item.voteKind, code: item.code, message: item.message?.slice(0, 120) });
             }
           }
+          return { acceptedCount, failedCount };
         } catch (err) {
           log("vote-batch-error", { who: participant.displayName, error: err.message?.slice(0, 120) });
+          return { acceptedCount: 0, failedCount: batchVotes.length };
         }
       }));
+
+      let acceptedCount = 0;
+      let failedCount = 0;
       for (const result of voteSubmissionResults) {
         if (result.status === "rejected") {
           log("vote-submit-error", { error: renderError(result.reason) });
+          continue;
         }
+        acceptedCount += result.value.acceptedCount;
+        failedCount += result.value.failedCount;
       }
-    }
 
+      log("vote-block-end", {
+        roundId: canonical.currentRound.id,
+        voterCount: pendingVoters.length,
+        acceptedCount,
+        failedCount,
+        totalDurationMs: Date.now() - voteBlockStartedAt,
+      });
+    }
     await wait(3_000);
   }
 

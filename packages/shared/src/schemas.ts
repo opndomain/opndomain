@@ -601,6 +601,8 @@ export const VerdictPositionSchema = z.object({
   strength: z.number().min(0).max(100),
   share: z.number().optional(),
   classification: z.enum(["majority", "runner_up", "minority", "noise"]).optional(),
+  landingCount: z.number().int().nonnegative().optional(),
+  landingHandles: z.array(z.string()).optional(),
 });
 export type VerdictPosition = z.infer<typeof VerdictPositionSchema>;
 
@@ -916,6 +918,89 @@ export const AdminDashboardMetricsResponseSchema = z.object({
     inactiveBeings: AdminDashboardScalarMetricSchema,
     revokedSessions24h: AdminDashboardScalarMetricSchema,
   }),
+});
+
+export const AdminDashboardOverviewHeadlineSchema = z.object({
+  openTopics: z.number().int().nonnegative(),
+  stalledTopics: z.number().int().nonnegative(),
+  topicsClosed24h: z.number().int().nonnegative(),
+  quarantinedContributions: z.number().int().nonnegative(),
+  activeRestrictions: z.number().int().nonnegative(),
+  newAgents24h: z.number().int().nonnegative(),
+  newBeings24h: z.number().int().nonnegative(),
+  agentsOnline: z.number().int().nonnegative(),
+  beingsActiveNow: z.number().int().nonnegative(),
+});
+
+export const AdminDashboardOverviewCronHeartbeatSchema = z.object({
+  cron: z.string(),
+  lastRun: z.string().nullable(),
+  ageSeconds: z.number().nullable(),
+});
+
+export const AdminDashboardOverviewLifecycleMutationSchema = z.object({
+  cron: z.string(),
+  executedAt: z.string(),
+  mutatedTopicIds: z.array(z.string()),
+});
+
+export const AdminDashboardOverviewOpsSchema = z.object({
+  snapshotPendingCount: z.number().int().nonnegative(),
+  presentationPendingCount: z.number().int().nonnegative(),
+  topicStatusDistribution: z.array(AdminDashboardStatusCountSchema),
+  cronHeartbeats: z.array(AdminDashboardOverviewCronHeartbeatSchema),
+  recentLifecycleMutations: z.array(AdminDashboardOverviewLifecycleMutationSchema),
+});
+
+export const AdminDashboardOverviewQuarantineItemSchema = z.object({
+  contributionId: z.string(),
+  topicId: z.string(),
+  topicTitle: z.string(),
+  beingHandle: z.string(),
+  bodyExcerpt: z.string(),
+  guardrailDecision: z.string().nullable(),
+  submittedAt: z.string(),
+});
+
+export const AdminDashboardOverviewStalledTopicSchema = z.object({
+  topicId: z.string(),
+  title: z.string(),
+  domainName: z.string(),
+  status: z.string(),
+  updatedAt: z.string(),
+  contributionCount: z.number().int().nonnegative(),
+});
+
+export const AdminDashboardOverviewClosedTopicSchema = z.object({
+  topicId: z.string(),
+  title: z.string(),
+  domainName: z.string(),
+  closedAt: z.string(),
+  contributionCount: z.number().int().nonnegative(),
+  artifactStatus: z.string().nullable(),
+});
+
+export const AdminDashboardOverviewAttentionTopicSchema = z.object({
+  topicId: z.string(),
+  title: z.string(),
+  domainName: z.string(),
+  status: z.string(),
+  updatedAt: z.string(),
+  lastContributionAt: z.string().nullable(),
+  contributionCount: z.number().int().nonnegative(),
+});
+
+export const AdminDashboardOverviewQueuesSchema = z.object({
+  quarantineItems: z.array(AdminDashboardOverviewQuarantineItemSchema),
+  stalledTopicItems: z.array(AdminDashboardOverviewStalledTopicSchema),
+  recentlyClosedTopics: z.array(AdminDashboardOverviewClosedTopicSchema),
+  topicsNeedingAttention: z.array(AdminDashboardOverviewAttentionTopicSchema),
+});
+
+export const AdminDashboardOverviewResponseSchema = z.object({
+  headline: AdminDashboardOverviewHeadlineSchema,
+  ops: AdminDashboardOverviewOpsSchema,
+  queues: AdminDashboardOverviewQueuesSchema,
 });
 
 export const AdminTopicEditableFieldSchema = z.enum([
@@ -1528,6 +1613,14 @@ export type UpdateAdminBeingStatus = z.infer<typeof UpdateAdminBeingStatusSchema
 export type AdminDashboardMetricsQuery = z.infer<typeof AdminDashboardMetricsQuerySchema>;
 export type AdminDashboardSeriesPoint = z.infer<typeof AdminDashboardSeriesPointSchema>;
 export type AdminDashboardMetricsResponse = z.infer<typeof AdminDashboardMetricsResponseSchema>;
+export type AdminDashboardOverviewResponse = z.infer<typeof AdminDashboardOverviewResponseSchema>;
+export type AdminDashboardOverviewHeadline = z.infer<typeof AdminDashboardOverviewHeadlineSchema>;
+export type AdminDashboardOverviewOps = z.infer<typeof AdminDashboardOverviewOpsSchema>;
+export type AdminDashboardOverviewQueues = z.infer<typeof AdminDashboardOverviewQueuesSchema>;
+export type AdminDashboardOverviewQuarantineItem = z.infer<typeof AdminDashboardOverviewQuarantineItemSchema>;
+export type AdminDashboardOverviewStalledTopic = z.infer<typeof AdminDashboardOverviewStalledTopicSchema>;
+export type AdminDashboardOverviewClosedTopic = z.infer<typeof AdminDashboardOverviewClosedTopicSchema>;
+export type AdminDashboardOverviewAttentionTopic = z.infer<typeof AdminDashboardOverviewAttentionTopicSchema>;
 export type AdminTopicEditableField = z.infer<typeof AdminTopicEditableFieldSchema>;
 export type AdminTopicLifecycleStatus = z.infer<typeof AdminTopicLifecycleStatusSchema>;
 export type TopicCandidateStatus = z.infer<typeof TopicCandidateStatusSchema>;
