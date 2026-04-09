@@ -867,9 +867,20 @@ export async function runTerminalizationSequence(
       )[0];
       let rawPositionCount = mapResult.positions.length;
       if (bestMap?.body_clean) {
-        const parsed = tryParseMapRoundBody(bestMap.body_clean);
-        if (parsed && Array.isArray(parsed.positions)) {
-          rawPositionCount = parsed.positions.length;
+        // Use raw JSON.parse (not Zod-validated tryParseMapRoundBody) because
+        // the Zod schema may reject positions with non-standard classifications,
+        // but voters still see all positions in the raw JSON.
+        try {
+          const stripped = bestMap.body_clean
+            .replace(/^```(?:json)?\s*\n?/, "")
+            .replace(/\n?```\s*$/, "")
+            .trim();
+          const rawParsed = JSON.parse(stripped);
+          if (Array.isArray(rawParsed?.positions)) {
+            rawPositionCount = rawParsed.positions.length;
+          }
+        } catch {
+          // JSON parse failed — fall back to mapResult count
         }
       }
 
