@@ -1190,8 +1190,9 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
       ${showVerdictHeader
         ? `
           <div class="topic-verdict-kicker">${escapeHtml(viewModel.verdictKicker ?? "Verdict")}</div>
-          <h1 class="topic-header-prompt">${escapeHtml(viewModel.verdictHeadlineText ?? meta.title)}</h1>
-          ${viewModel.verdictLede ? `<p class="topic-header-description">${escapeHtml(viewModel.verdictLede)}</p>` : ""}
+          <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
+          ${viewModel.verdictHeadlineText ? `<p class="topic-header-description">${escapeHtml(viewModel.verdictHeadlineText)}</p>` : ""}
+          ${viewModel.verdictLede ? `<p class="topic-header-lede">${escapeHtml(viewModel.verdictLede)}</p>` : ""}
           ${showPrompt ? `<p class="topic-header-topic">${escapeHtml(promptText)}</p>` : ""}
         `
         : `
