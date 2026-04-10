@@ -117,6 +117,7 @@ type TopicSummaryRow = {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  active_member_count: number | string | null;
 };
 
 type TopicDetailRow = TopicSummaryRow & {
@@ -277,6 +278,7 @@ function mapTopicSummary(row: TopicSummaryRow): AdminTopicSummary {
     archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    activeMemberCount: countValue(row.active_member_count),
   };
 }
 
@@ -620,7 +622,12 @@ export async function listAdminTopics(env: ApiEnv, query: AdminListQuery): Promi
         t.topic_source,
         t.archived_at,
         t.created_at,
-        t.updated_at
+        t.updated_at,
+        (
+          SELECT COUNT(*)
+          FROM topic_members tm
+          WHERE tm.topic_id = t.id AND tm.status = 'active'
+        ) AS active_member_count
       FROM topics t
       INNER JOIN domains d ON d.id = t.domain_id
       ${whereSql}

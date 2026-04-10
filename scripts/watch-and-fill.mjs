@@ -123,12 +123,11 @@ async function freshToken(holder) {
 
 // ---- LLM via claude CLI ----
 
-async function callClaude(systemPrompt, userPrompt) {
-  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
+async function callClaudeOnce(systemPrompt, userPrompt, cleanCwd) {
   const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
   fs.writeFileSync(systemPromptFile, systemPrompt);
   const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
-  const content = await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const proc = spawn("bash", ["-c", shellCmd], {
       timeout: 180_000,
       cwd: cleanCwd,
@@ -146,8 +145,21 @@ async function callClaude(systemPrompt, userPrompt) {
     });
     proc.on("error", reject);
   });
-  try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
-  return content;
+}
+
+async function callClaude(systemPrompt, userPrompt) {
+  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
+  try {
+    return await callClaudeOnce(systemPrompt, userPrompt, cleanCwd);
+  } catch (firstError) {
+    log("llm-retry", { error: firstError.message?.slice(0, 120) });
+    await wait(3_000);
+    try {
+      return await callClaudeOnce(systemPrompt, userPrompt, cleanCwd);
+    } finally {
+      try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
+    }
+  }
 }
 
 // ---- Persona generation ----

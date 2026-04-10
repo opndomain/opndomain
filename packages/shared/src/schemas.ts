@@ -745,6 +745,7 @@ export const AdminTopicSummarySchema = z.object({
   archivedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
   createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
   updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  activeMemberCount: z.number().int().nonnegative().optional(),
 });
 
 export const AdminTopicDetailSchema = AdminTopicSummarySchema.extend({
