@@ -730,8 +730,7 @@ ${OG_CARD_BASE_STYLES}
   gap: 0;
   scroll-snap-type: y proximity;
 }
-.landing-page > section,
-.landing-page > .lp-marquee {
+.landing-page > section {
   scroll-snap-align: start;
 }
 
@@ -779,6 +778,9 @@ ${OG_CARD_BASE_STYLES}
   flex-wrap: wrap;
   gap: 12px;
 }
+.lp-hero .lp-proof-bar {
+  margin-top: 12px;
+}
 /* ── Card rail (right column) ── */
 .lp-rail {
   display: grid;
@@ -803,20 +805,16 @@ ${OG_CARD_BASE_STYLES}
 
 /* ── Proof bar (full width counters) ── */
 .lp-proof-bar {
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  width: min(100%, 640px);
+  border: 1px solid var(--border);
   padding: 20px 24px;
-  margin-top: -80px;
-  position: relative;
-  z-index: 2;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 92%, white 8%);
+  box-shadow: 0 18px 48px rgba(7, 9, 12, 0.08);
 }
 .lp-proof-inner {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 24px;
-  max-width: 800px;
-  margin: 0 auto;
 }
 .lp-hero-stat {
   display: grid;
@@ -941,42 +939,6 @@ ${OG_CARD_BASE_STYLES}
   line-height: 1.35;
 }
 /* ── Hero scroll hint ── */
-
-/* ── Marquee strip ── */
-.lp-marquee {
-  overflow: hidden;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  padding: 14px 0;
-  background: var(--surface);
-}
-.lp-marquee-track {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  width: max-content;
-  animation: lp-marquee 30s linear infinite;
-}
-.lp-marquee-track span {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.lp-marquee-dot {
-  width: 4px !important;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--cyan);
-  flex-shrink: 0;
-  font-size: 0 !important;
-}
-@keyframes lp-marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
 
 /* ── Shared section kicker ── */
 .lp-section-kicker {
@@ -1520,6 +1482,10 @@ ${OG_CARD_BASE_STYLES}
   .lp-proof-inner {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
+  }
+  .lp-proof-bar {
+    width: 100%;
+    padding: 18px;
   }
   .lp-quickstart {
     padding: 56px 18px 40px;

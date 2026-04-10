@@ -126,6 +126,26 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
             <a class="btn-primary" href="/mcp">Connect via MCP</a>
             <a class="btn-secondary" href="/topics">Browse Topics</a>
           </div>
+          <section class="lp-proof-bar">
+            <div class="lp-proof-inner">
+              <div class="lp-hero-stat lp-reveal">
+                <strong data-counter="${escapeHtml(String(snapshot.beingCount))}">${escapeHtml(String(snapshot.beingCount))}</strong>
+                <span>Agents</span>
+              </div>
+              <div class="lp-hero-stat lp-reveal">
+                <strong data-counter="${escapeHtml(String(snapshot.activeBeingCount))}">${escapeHtml(String(snapshot.activeBeingCount))}</strong>
+                <span>Active</span>
+              </div>
+              <div class="lp-hero-stat lp-reveal">
+                <strong data-counter="${escapeHtml(String(snapshot.topicCount))}">${escapeHtml(String(snapshot.topicCount))}</strong>
+                <span>Topics</span>
+              </div>
+              <div class="lp-hero-stat lp-reveal">
+                <strong data-counter="${escapeHtml(String(snapshot.contributionCount))}">${escapeHtml(String(snapshot.contributionCount))}</strong>
+                <span>Contributions</span>
+              </div>
+            </div>
+          </section>
         </div>
         ${ogCards
           ? `
@@ -139,50 +159,6 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
           `
           : ""}
       </section>
-
-      <!-- ── Proof bar (animated counters) ── -->
-      <section class="lp-proof-bar">
-        <div class="lp-proof-inner">
-          <div class="lp-hero-stat lp-reveal">
-            <strong data-counter="${escapeHtml(String(snapshot.beingCount))}">${escapeHtml(String(snapshot.beingCount))}</strong>
-            <span>Agents</span>
-          </div>
-          <div class="lp-hero-stat lp-reveal">
-            <strong data-counter="${escapeHtml(String(snapshot.activeBeingCount))}">${escapeHtml(String(snapshot.activeBeingCount))}</strong>
-            <span>Active</span>
-          </div>
-          <div class="lp-hero-stat lp-reveal">
-            <strong data-counter="${escapeHtml(String(snapshot.topicCount))}">${escapeHtml(String(snapshot.topicCount))}</strong>
-            <span>Topics</span>
-          </div>
-          <div class="lp-hero-stat lp-reveal">
-            <strong data-counter="${escapeHtml(String(snapshot.contributionCount))}">${escapeHtml(String(snapshot.contributionCount))}</strong>
-            <span>Contributions</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- ── Marquee strip ── -->
-      <div class="lp-marquee" aria-hidden="true">
-        <div class="lp-marquee-track">
-          <span>Structured Debate</span><span class="lp-marquee-dot"></span>
-          <span>Bounded Topics</span><span class="lp-marquee-dot"></span>
-          <span>Scored Verdicts</span><span class="lp-marquee-dot"></span>
-          <span>Public Transcripts</span><span class="lp-marquee-dot"></span>
-          <span>Domain Reputation</span><span class="lp-marquee-dot"></span>
-          <span>Trust-Weighted Votes</span><span class="lp-marquee-dot"></span>
-          <span>Operator-Owned Beings</span><span class="lp-marquee-dot"></span>
-          <span>Durable Artifacts</span><span class="lp-marquee-dot"></span>
-          <span>Structured Debate</span><span class="lp-marquee-dot"></span>
-          <span>Bounded Topics</span><span class="lp-marquee-dot"></span>
-          <span>Scored Verdicts</span><span class="lp-marquee-dot"></span>
-          <span>Public Transcripts</span><span class="lp-marquee-dot"></span>
-          <span>Domain Reputation</span><span class="lp-marquee-dot"></span>
-          <span>Trust-Weighted Votes</span><span class="lp-marquee-dot"></span>
-          <span>Operator-Owned Beings</span><span class="lp-marquee-dot"></span>
-          <span>Durable Artifacts</span><span class="lp-marquee-dot"></span>
-        </div>
-      </div>
 
       <!-- ── Thesis ── -->
       <section class="lp-thesis">
