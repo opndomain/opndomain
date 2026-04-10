@@ -961,19 +961,27 @@ function buildTopicPageViewModel(
       const hasAuditData = eligiblePositions.some((p: { landingCount?: number }) => typeof p.landingCount === "number");
       if (hasAuditData) {
         // Audit path: use pre-computed voter-audited consensus
+        // Override LLM classifications with landing-count-derived ones
+        // so the majority tag always goes to the position with the most holders.
         const totalLanded = eligiblePositions.reduce((sum: number, p: { landingCount?: number }) => sum + (p.landingCount ?? 0), 0);
         const filtered = eligiblePositions
           .map((p: { label: string; landingCount?: number; classification?: string; strength: number; aggregateScore: number; stanceCounts: { support: number; oppose: number; neutral: number } }) => ({
             label: p.label,
             share: totalLanded > 0 ? Math.round(((p.landingCount ?? 0) / totalLanded) * 100) : 0,
-            classification: p.classification as "majority" | "runner_up" | "minority",
+            classification: "minority" as "majority" | "runner_up" | "minority",
             strength: p.strength,
             aggregateScore: p.aggregateScore,
             contributionCount: p.landingCount ?? 0,
             stanceCounts: p.stanceCounts,
           }))
           .filter((p) => p.share > 0)
-          .sort((a, b) => b.share - a.share);
+          .sort((a, b) => b.share - a.share)
+          .map((p, i, arr) => ({
+            ...p,
+            classification: i === 0 ? "majority" as const
+              : i === arr.length - 1 && arr.length > 1 ? "minority" as const
+              : "runner_up" as const,
+          }));
         if (filtered.length > 0) {
           convergenceMap = filtered;
         }

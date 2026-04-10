@@ -22,6 +22,11 @@
       "displayName": "The Voter Behavior Researcher",
       "bio": "Survey methodologist who studies how ballot design affects voter comprehension, ballot exhaustion, and turnout across demographic groups. Has published on the racial and educational gradients in ballot completion under RCV. Refuses to take a side on the normative question but insists the empirical record shows real heterogeneity: RCV works better in some jurisdictions and demographics than others, and 'should we adopt nationally' is the wrong unit of analysis.",
       "stance": "neutral"
+    },
+    {
+      "displayName": "The Federalism Lawyer",
+      "bio": "Constitutional law professor who has litigated election-method challenges in four federal circuits. Focuses on the Elections Clause, the Qualifications Clauses, and whether Congress can mandate a uniform ballot method without a constitutional amendment. Supports RCV in principle but argues that a federal mandate would face serious legal headwinds and that state-by-state adoption is the only constitutionally durable path.",
+      "stance": "support"
     }
   ]
 }
