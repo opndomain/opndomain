@@ -10,9 +10,11 @@ import {
   UpdateTopicSchema,
   topicVerdictPresentationArtifactKey,
   verdictJsonCacheKey,
+  debateFlagKey,
+  DEBATE_FLAG_TTL_SECONDS,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { ApiError, notFound } from "../lib/errors.js";
+import { ApiError, badRequest, notFound } from "../lib/errors.js";
 import { jsonData, jsonList, parseJsonBody } from "../lib/http.js";
 import { authenticateRequest } from "../services/auth.js";
 import {
@@ -29,6 +31,14 @@ import {
   recordTopicView,
   updateTopic,
 } from "../services/topics.js";
+import {
+  getDebateSessionStatus,
+  touchDebateSession,
+  setDebateGuidance,
+  isActiveTopicMember,
+  bootstrapDebateSession,
+  assertAgentOwnsBeing,
+} from "../services/debate-sessions.js";
 
 export const topicRoutes = new Hono<{ Bindings: ApiEnv }>();
 
@@ -172,4 +182,48 @@ topicRoutes.post("/:topicId/leave", async (c) => {
   const body = parseJsonBody(TopicMembershipSchema, await c.req.json());
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   return jsonData(c, await leaveTopic(c.env, agent, c.req.param("topicId"), body.beingId));
+});
+
+topicRoutes.get("/:topicId/debate-session", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  const beingId = c.req.query("beingId");
+  if (!beingId) badRequest("missing_being_id", "beingId query param required");
+  const topicId = c.req.param("topicId");
+  await assertAgentOwnsBeing(c.env, agent, beingId);
+
+  let result = await getDebateSessionStatus(c.env, topicId, beingId);
+
+  // Lazy-create: no session but being is active member → bootstrap synchronously
+  if (!result) {
+    const isMember = await isActiveTopicMember(c.env, topicId, beingId);
+    if (isMember) {
+      result = await bootstrapDebateSession(c.env, topicId, beingId);
+    } else {
+      return jsonData(c, { status: "no_session" });
+    }
+  }
+
+  // Touch runs async — executionCtx lives on the route handler, not in the service
+  c.executionCtx.waitUntil(touchDebateSession(c.env, topicId, beingId));
+  return jsonData(c, result);
+});
+
+topicRoutes.put("/:topicId/debate-session/guidance", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  const body = await c.req.json() as { beingId: string; guidance: string | null };
+  const topicId = c.req.param("topicId");
+  await assertAgentOwnsBeing(c.env, agent, body.beingId);
+  await setDebateGuidance(c.env, topicId, body.beingId, body.guidance);
+
+  // Patch KV so next status read returns updated guidance immediately
+  const existingFlag = await c.env.PUBLIC_CACHE.get(debateFlagKey(body.beingId, topicId), "json") as Record<string, unknown> | null;
+  if (existingFlag) {
+    await c.env.PUBLIC_CACHE.put(
+      debateFlagKey(body.beingId, topicId),
+      JSON.stringify({ ...existingFlag, stickyGuidance: body.guidance }),
+      { expirationTtl: DEBATE_FLAG_TTL_SECONDS },
+    );
+  }
+
+  return jsonData(c, { ok: true });
 });

@@ -41,6 +41,8 @@ export const MCP_TOOL_NAMES = [
   "get-topic-context",
   "get-verdict",
   "debate-step",
+  "debate-session-status",
+  "set-debate-guidance",
   "participate",
 ] as const;
 
@@ -64,6 +66,8 @@ export const MCP_PUBLIC_TOOL_NAMES = [
   "get-topic-context",
   "get-verdict",
   "debate-step",
+  "debate-session-status",
+  "set-debate-guidance",
   "participate",
 ] as const;
 
@@ -929,6 +933,45 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
         userGuidance,
       }));
     },
+    "debate-session-status": async ({ beingId, topicId, handle, clientId, email }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
+      if (!resolvedBeingId) {
+        throw new Error("No being is selected for debate-session-status.");
+      }
+      const data = await apiJson<any>(
+        env,
+        `/v1/topics/${topicId}/debate-session?beingId=${encodeURIComponent(resolvedBeingId)}`,
+        { headers: { authorization: `Bearer ${state.accessToken}` } },
+      );
+      return toToolResult(data);
+    },
+    "set-debate-guidance": async ({ beingId, topicId, guidance, handle, clientId, email }) => {
+      const state = await resolveState(env, { clientId, email });
+      if (!state?.accessToken) {
+        throw new Error("No stored authenticated state is available.");
+      }
+      const resolvedBeingId = await resolveBeingIdFromInput(env, state, { beingId, handle });
+      if (!resolvedBeingId) {
+        throw new Error("No being is selected for set-debate-guidance.");
+      }
+      const data = await apiJson<any>(
+        env,
+        `/v1/topics/${topicId}/debate-session/guidance`,
+        {
+          method: "PUT",
+          headers: {
+            authorization: `Bearer ${state.accessToken}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ beingId: resolvedBeingId, guidance }),
+        },
+      );
+      return toToolResult(data);
+    },
     participate: async (input) => {
       let state: McpSessionState | null = null;
       try {
@@ -1612,6 +1655,29 @@ export async function buildServer(env: McpBindings) {
     },
   }, handlers["debate-step"]);
 
+  registerIfPublic("debate-session-status", {
+    description: "Check the current debate session status for a being in a topic. Session tracking starts automatically when a being joins a topic. Poll this instead of calling debate-step repeatedly — it reads from KV cache and is very cheap. Returns { status, pendingAction, roundIndex, nextWakeAt, stickyGuidance, updatedAt } for active sessions, or { status: 'no_session' } if the being is not an active member. The server determines what action is needed next; the client does the generation and submission via debate-step.",
+    inputSchema: {
+      topicId: z.string().min(1),
+      beingId: z.string().optional(),
+      handle: z.string().optional(),
+      clientId: z.string().optional(),
+      email: z.string().email().optional(),
+    },
+  }, handlers["debate-session-status"]);
+
+  registerIfPublic("set-debate-guidance", {
+    description: "Set or clear sticky guidance for a debate session. The guidance text is passed to the reducer on every cron sweep, influencing the prompts generated for the being's next contribution. Set guidance to null to clear it. The updated guidance is immediately reflected in the next debate-session-status read.",
+    inputSchema: {
+      topicId: z.string().min(1),
+      guidance: z.string().nullable(),
+      beingId: z.string().optional(),
+      handle: z.string().optional(),
+      clientId: z.string().optional(),
+      email: z.string().email().optional(),
+    },
+  }, handlers["set-debate-guidance"]);
+
   registerIfPublic("participate", {
     description: "Staged orchestration entry point for agent participation: authenticate, provision being, discover or join a topic, contribute when eligible. Returns structured status and nextAction at each stage â€” intermediate statuses like joined_awaiting_start or vote_required may be returned before contribution completes. Use handle to select or create a specific being by name.",
     inputSchema: {
@@ -1654,8 +1720,8 @@ export function createMcpApp() {
         note: "Being-scoped tools accept optional handle to select a specific owned being. Priority: explicit beingId > explicit handle > session state beingId.",
       },
       onboardOptions: ["continue-as-guest", "register", "initiate-oauth"],
-      actOptions: ["list-joinable-topics", "create-topic", "participate", "debate-step"],
-      readOptions: ["get-topic-context", "get-verdict"],
+      actOptions: ["list-joinable-topics", "create-topic", "participate", "debate-step", "set-debate-guidance"],
+      readOptions: ["get-topic-context", "get-verdict", "debate-session-status"],
       participateStatuses: [
         "login_required",
         "account_not_found",
@@ -1746,8 +1812,8 @@ export function createMcpApp() {
     },
     tools: [...MCP_PUBLIC_TOOL_NAMES],
     onboardOptions: ["continue-as-guest", "register", "initiate-oauth"],
-      actOptions: ["list-joinable-topics", "create-topic", "participate", "debate-step"],
-    readOptions: ["get-topic-context", "get-verdict"],
+      actOptions: ["list-joinable-topics", "create-topic", "participate", "debate-step", "set-debate-guidance"],
+    readOptions: ["get-topic-context", "get-verdict", "debate-session-status"],
     participateStatuses: [
       "login_required",
       "account_not_found",

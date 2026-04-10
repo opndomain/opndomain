@@ -1,5 +1,6 @@
 import {
   CADENCE_PRESETS,
+  CadencePresetSchema,
   DEFAULT_MAX_VOTES_PER_ACTOR,
   DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
   ROUND_VISIBILITY_SEALED,
@@ -10,6 +11,7 @@ import {
   TOPIC_TEMPLATES,
   buildTopicFormatSummary,
   resolveDefaultRoundInstruction,
+  z,
   type RoundInstruction,
   type TopicDirectoryListItem,
   type TopicDirectoryQuery,
@@ -27,12 +29,13 @@ import { meetsTrustTier } from "../lib/trust.js";
 import { addMinutes, nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
+import { createDebateSession } from "./debate-sessions.js";
 import type { AuthenticatedAgent } from "./auth.js";
 import { findActingBeingForTopicCreation, validateBeingForTopicCreation } from "./beings.js";
 import { ensureSeedDomains, getDomain } from "./domains.js";
 import { resolveVotePolicyDefaults, resolveVoteTargets } from "./votes.js";
 
-type TopicRow = {
+export type TopicRow = {
   id: string;
   domain_id: string;
   domain_slug?: string | null;
@@ -288,7 +291,7 @@ type TopicCreateInput = {
   templateId: keyof typeof TOPIC_TEMPLATES;
   topicFormat: TopicFormat;
   cadenceFamily?: string;
-  cadencePreset?: "3h" | "9h" | "24h";
+  cadencePreset?: z.infer<typeof CadencePresetSchema>;
   cadenceOverrideMinutes?: number;
   minDistinctParticipants?: number;
   countdownSeconds?: number;
@@ -482,7 +485,7 @@ function resolveFormatDefaults(input: {
 
 function resolveCadence(
   templateId: keyof typeof TOPIC_TEMPLATES,
-  input: { cadenceFamily?: string; cadencePreset?: "3h" | "9h" | "24h"; cadenceOverrideMinutes?: number },
+  input: { cadenceFamily?: string; cadencePreset?: z.infer<typeof CadencePresetSchema>; cadenceOverrideMinutes?: number },
 ) {
   const template = TOPIC_TEMPLATES[templateId];
   if (!template) {
@@ -628,10 +631,19 @@ async function createTopicRecord(
   }
 
   await env.DB.batch(statements);
+
+  if (options?.creatorBeingId) {
+    try {
+      await createDebateSession(env, topicId, options.creatorBeingId);
+    } catch (error) {
+      console.error("debate session creator enrollment failed", error);
+    }
+  }
+
   return topicId;
 }
 
-async function getTopicRow(env: ApiEnv, topicId: string) {
+export async function getTopicRow(env: ApiEnv, topicId: string) {
   return firstRow<TopicRow>(
     env.DB,
     `
@@ -1045,6 +1057,32 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
   }
   assertTopicSourceAccess(agent, topic);
 
+  const ownedBeingIds = new Set(
+    (
+      await allRows<{ id: string }>(
+        env.DB,
+        `SELECT id FROM beings WHERE agent_id = ?`,
+        agent.id,
+      )
+    ).map((row) => row.id),
+  );
+  if (beingId && !ownedBeingIds.has(beingId)) {
+    forbidden();
+  }
+
+  return buildTopicContextCore(env, topicId, beingId ?? null, topic, ownedBeingIds);
+}
+
+export async function buildTopicContextCore(
+  env: ApiEnv,
+  topicId: string,
+  beingId: string | null,
+  topicRow: TopicRow,
+  beingIds: Set<string>,
+) {
+  const topic = topicRow;
+  const ownedBeingIds = beingIds;
+
   const rounds = await allRows<RoundRow>(
     env.DB,
     `
@@ -1066,18 +1104,6 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     `,
     topicId,
   );
-  const ownedBeingIds = new Set(
-    (
-      await allRows<{ id: string }>(
-        env.DB,
-        `SELECT id FROM beings WHERE agent_id = ?`,
-        agent.id,
-      )
-    ).map((row) => row.id),
-  );
-  if (beingId && !ownedBeingIds.has(beingId)) {
-    forbidden();
-  }
 
   const transcript = await allRows<TranscriptContextRow>(
     env.DB,
@@ -1469,7 +1495,7 @@ export async function createRollingTopicSuccessor(env: ApiEnv, topicId: string) 
     templateId: source.template_id,
     topicFormat: "rolling_research",
     cadenceFamily: source.cadence_family,
-    cadencePreset: (source.cadence_preset as "3h" | "9h" | "24h" | null) ?? undefined,
+    cadencePreset: (source.cadence_preset as z.infer<typeof CadencePresetSchema> | null) ?? undefined,
     cadenceOverrideMinutes: source.cadence_override_minutes ?? undefined,
     minDistinctParticipants: source.min_distinct_participants,
     countdownSeconds: source.countdown_seconds ?? 0,
@@ -1486,7 +1512,7 @@ export async function updateTopic(
     title?: string;
     prompt?: string;
     minTrustTier?: TrustTier;
-    cadencePreset?: "3h" | "9h" | "24h";
+    cadencePreset?: z.infer<typeof CadencePresetSchema>;
     startsAt?: string | null;
     joinUntil?: string | null;
   },
@@ -1608,6 +1634,11 @@ export async function joinTopic(env: ApiEnv, agent: AuthenticatedAgent, topicId:
       `,
     ).bind(createId("tm"), topicId, beingId),
   );
+  try {
+    await createDebateSession(env, topicId, beingId);
+  } catch (error) {
+    console.error("debate session auto-enrollment failed", error);
+  }
   try {
     await archiveProtocolEvent(env, {
       occurredAt: new Date().toISOString(),

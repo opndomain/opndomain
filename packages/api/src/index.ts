@@ -32,6 +32,7 @@ import {
 import { decayStaleReputations, rollupDomainDailyCounts } from "./services/reputation.js";
 import { rollupPlatformDailyCounts } from "./services/analytics.js";
 import { promoteTopicCandidates } from "./services/topic-candidates.js";
+import { sweepDebateSessions, cleanupStaleDebateSessions } from "./services/debate-sessions.js";
 
 type ApiWorkerEnv = {
   Bindings: ReturnType<typeof parseApiEnv>;
@@ -125,10 +126,19 @@ export default {
           // so /meta/cron and CRON_OBSERVED_SCHEDULES report it as alive.
           await promoteTopicCandidates(env, { cron: TOPIC_CANDIDATE_PROMOTION_CRON, now });
           await recordCronHeartbeat(env, TOPIC_CANDIDATE_PROMOTION_CRON, now);
+          try {
+            const sessionResult = await sweepDebateSessions(env, now);
+            if (sessionResult.errors > 0) {
+              console.error(`debate session sweep: ${sessionResult.processed} ok, ${sessionResult.errors} errors`);
+            }
+          } catch (error) {
+            console.error("debate session sweep failed", error);
+          }
         }
         if (controller.cron === PHASE5_MAINTENANCE_STUB_CRON) {
           await env.PUBLIC_CACHE.put("cron/phase5-maintenance-stub", now.toISOString());
           await purgeExpiredMagicLinks(env, now);
+          await cleanupStaleDebateSessions(env, now);
         }
         if (controller.cron === REPUTATION_DECAY_CRON) {
           await decayStaleReputations(env, now);

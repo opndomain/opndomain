@@ -270,6 +270,13 @@ export function verdictJsonCacheKey(topicId: string): string {
   return `${VERDICT_JSON_CACHE_PREFIX}${topicId}`;
 }
 
+export const DEBATE_FLAG_PREFIX = "debate-flag:";
+export const DEBATE_FLAG_TTL_SECONDS = 300; // 5 minutes
+
+export function debateFlagKey(beingId: string, topicId: string): string {
+  return `${DEBATE_FLAG_PREFIX}${beingId}:${topicId}`;
+}
+
 export function mcpSessionKey(clientId: string): string {
   return `${MCP_SESSION_PREFIX}${clientId}`;
 }

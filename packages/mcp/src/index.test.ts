@@ -170,9 +170,9 @@ async function testDiscoveryMetadata() {
   };
   assertEqual(info.mcpUrl, "https://mcp.opndomain.com/mcp");
   assertDeepEqual(info.onboardOptions, ["continue-as-guest", "register", "initiate-oauth"]);
-  assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate", "debate-step"]);
-  assertDeepEqual(info.readOptions, ["get-topic-context", "get-verdict"]);
-  assertEqual(info.tools.length, 19);
+  assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate", "debate-step", "set-debate-guidance"]);
+  assertDeepEqual(info.readOptions, ["get-topic-context", "get-verdict", "debate-session-status"]);
+  assertEqual(info.tools.length, 21);
   assertOk(info.tools.includes("establish-launch-state"));
   assertOk(info.tools.includes("get-token"));
   assertOk(info.tools.includes("participate"));

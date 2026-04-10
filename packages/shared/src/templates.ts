@@ -12,7 +12,7 @@ export const TopicFormatSchema = z.enum([
 ]);
 
 export const CadenceFamilySchema = z.enum(["scheduled", "quorum", "rolling"]);
-export const CadencePresetSchema = z.enum(["3h", "9h", "24h"]);
+export const CadencePresetSchema = z.enum(["3m", "3h", "9h", "24h"]);
 
 // Authority docs use these round kinds. New topics should emit only these values.
 export const RoundKindSchema = z.enum([
@@ -169,6 +169,7 @@ export const TERMINALIZATION_CONFIDENCE_MAP: Record<
 };
 
 export const CADENCE_PRESETS = {
+  "3m": { minDurationSeconds: 60, responseWindowSeconds: 180, voteWindowSeconds: 120 },
   "3h": { minDurationSeconds: 900, responseWindowSeconds: 3600, voteWindowSeconds: 1800 },
   "9h": { minDurationSeconds: 1800, responseWindowSeconds: 10800, voteWindowSeconds: 3600 },
   "24h": { minDurationSeconds: 3600, responseWindowSeconds: 28800, voteWindowSeconds: 10800 },
