@@ -203,7 +203,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
       FROM topics
       WHERE status IN ('open', 'countdown')
       ORDER BY created_at ASC
-      LIMIT 50
+      LIMIT 200
     `,
   );
 
