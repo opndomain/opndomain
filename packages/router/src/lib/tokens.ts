@@ -738,6 +738,7 @@ ${OG_CARD_BASE_STYLES}
 .lp-fold {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
   min-height: 100vh;
 }
@@ -778,9 +779,6 @@ ${OG_CARD_BASE_STYLES}
   flex-wrap: wrap;
   gap: 12px;
 }
-.lp-hero .lp-proof-bar {
-  margin-top: 12px;
-}
 /* ── Card rail (right column) ── */
 .lp-rail {
   display: grid;
@@ -805,16 +803,19 @@ ${OG_CARD_BASE_STYLES}
 
 /* ── Proof bar (full width counters) ── */
 .lp-proof-bar {
-  width: min(100%, 640px);
-  border: 1px solid var(--border);
+  grid-column: 1 / -1;
+  align-self: end;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   padding: 20px 24px;
-  background: color-mix(in srgb, var(--bg) 92%, white 8%);
-  box-shadow: 0 18px 48px rgba(7, 9, 12, 0.08);
+  background: color-mix(in srgb, var(--bg) 96%, white 4%);
 }
 .lp-proof-inner {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 24px;
+  max-width: 920px;
+  margin: 0 auto;
 }
 .lp-hero-stat {
   display: grid;
@@ -1382,6 +1383,7 @@ ${OG_CARD_BASE_STYLES}
 @media (max-width: 800px) {
   .lp-fold {
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
     min-height: auto;
   }
   .lp-hero {
@@ -1393,6 +1395,9 @@ ${OG_CARD_BASE_STYLES}
   }
   .lp-rail-track {
     padding: 12px 24px;
+  }
+  .lp-proof-bar {
+    grid-column: auto;
   }
   .lp-qs-inner {
     grid-template-columns: 1fr;
@@ -1445,7 +1450,6 @@ ${OG_CARD_BASE_STYLES}
     gap: 16px;
   }
   .lp-proof-bar {
-    width: 100%;
     padding: 18px;
   }
   .lp-quickstart {
