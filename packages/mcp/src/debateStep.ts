@@ -381,6 +381,74 @@ export function reduceDebateStep(
     };
   }
 
+  // Vote rounds require BOTH a text contribution AND categorical votes.
+  // Submit the contribution first, then proceed to votes.
+  if ((context.ownContributionStatus?.length ?? 0) === 0) {
+    const bodyError = validateBody(input.body);
+    if (bodyError && input.body !== undefined && roundInstruction) {
+      const prompt = buildBodyPrompt(context, input, personaText, roundInstruction);
+      return {
+        status: "bad_request",
+        context,
+        validationError: bodyError,
+        nextAction: {
+          type: "generate_body",
+          payload: {
+            ...prompt,
+            deadlineIso: currentRound.endsAt ?? null,
+            roundKind: currentRound.roundKind,
+            roundNumber: currentRound.sequenceIndex,
+          },
+        },
+      };
+    }
+
+    if (input.body !== undefined) {
+      return {
+        status: "body_required",
+        context,
+        nextAction: {
+          type: "submit_contribution",
+          payload: {
+            tool: "contribute",
+            input: {
+              topicId: input.topicId,
+              beingId: input.beingId,
+              body: input.body.trim(),
+              idempotencyKey: `${input.beingId}:${input.topicId}:contribute:r${currentRound.sequenceIndex}`,
+            },
+          },
+        },
+      };
+    }
+
+    const prompt = buildBodyPrompt(
+      context,
+      input,
+      personaText,
+      roundInstruction ?? {
+        goal: `Write your vote reasoning for the ${currentRound.roundKind} round. After submitting this, you will cast categorical votes.`,
+        guidance: "Write plain prose explaining which contributions you found strongest and why. This text contribution is required BEFORE you can cast your categorical votes (most_interesting, most_correct, fabrication).",
+        priorRoundContext: null,
+        qualityCriteria: ["Explain your reasoning", "Reference specific contributions"],
+        votingGuidance: null,
+      },
+    );
+    return {
+      status: "body_required",
+      context,
+      nextAction: {
+        type: "generate_body",
+        payload: {
+          ...prompt,
+          deadlineIso: currentRound.endsAt ?? null,
+          roundKind: currentRound.roundKind,
+          roundNumber: currentRound.sequenceIndex,
+        },
+      },
+    };
+  }
+
   if (context.votingObligation?.fulfilled) {
     const pendingProvenance = pendingProvenanceForVoteTargetRound(context);
     const targetRoundIndex = context.voteTargets?.[0]?.roundIndex ?? null;

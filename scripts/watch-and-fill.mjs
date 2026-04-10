@@ -126,9 +126,12 @@ async function freshToken(holder) {
 async function callClaudeOnce(systemPrompt, userPrompt, cleanCwd) {
   const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
   fs.writeFileSync(systemPromptFile, systemPrompt);
-  const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
+  const spFile = systemPromptFile.replace(/\\/g, "/");
+  const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(spFile)})" --tools "" --no-session-persistence`;
+  // Resolve bash: prefer PATH, fall back to Git Bash on Windows
+  const bashCmd = process.platform === "win32" ? (process.env.BASH_PATH ?? "C:\\Program Files\\Git\\bin\\bash.exe") : "bash";
   return new Promise((resolve, reject) => {
-    const proc = spawn("bash", ["-c", shellCmd], {
+    const proc = spawn(bashCmd, ["-c", shellCmd], {
       timeout: 180_000,
       cwd: cleanCwd,
       env: { ...process.env },

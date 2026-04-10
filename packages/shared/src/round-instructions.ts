@@ -21,6 +21,10 @@ export type RoundInstruction = Omit<RoundInstructionEntry, "roundKind">;
 // Default-by-roundKind fallback map
 // ---------------------------------------------------------------------------
 
+const VOTE_ROUND_CONTRIBUTION_NOTE =
+  "IMPORTANT: Vote rounds require TWO steps. First, submit a written contribution with your vote reasoning (plain prose explaining which arguments you found strongest and why). " +
+  "Second, cast your 3 categorical votes. You will be dropped from the debate if you cast votes without first submitting a written contribution.\n\n";
+
 const CATEGORICAL_VOTING_GUIDANCE =
   "You must cast exactly 3 votes this round, one for each category, each on a different contribution from the prior round: " +
   "(1) most_interesting — the contribution that adds the most novel insight or reframes the debate productively; " +
@@ -126,6 +130,7 @@ const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
     roundKind: "vote",
     goal: "Review contributions and cast your vote based on argument quality and evidence.",
     guidance:
+      VOTE_ROUND_CONTRIBUTION_NOTE +
       "Evaluate the contributions available for voting. Vote based on argument quality, evidence strength, and intellectual honesty — not agreement with the conclusion.",
     priorRoundContext: "Contributions eligible for voting from the prior round",
     qualityCriteria: [
@@ -160,6 +165,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "vote",
       goal: "Vote on the opening proposals.",
       guidance:
+        VOTE_ROUND_CONTRIBUTION_NOTE +
         "Evaluate the proposals from the opening round. Vote based on argument quality, evidence strength, and intellectual honesty — not agreement with the conclusion.",
       priorRoundContext: "Initial positions from the propose round",
       qualityCriteria: [
@@ -201,6 +207,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "vote",
       goal: "Vote on the position maps.",
       guidance:
+        VOTE_ROUND_CONTRIBUTION_NOTE +
         "Evaluate the mapping contributions. Vote based on accuracy and insight — which map best captures where the debate actually stands?",
       priorRoundContext: "Position mapping contributions from the map round",
       qualityCriteria: [
@@ -234,6 +241,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "vote",
       goal: "Vote on the critiques.",
       guidance:
+        VOTE_ROUND_CONTRIBUTION_NOTE +
         "Evaluate the critiques. Vote based on the strength and difficulty of the challenges raised — which critique is hardest to answer?",
       priorRoundContext: "Critiques raised against the mapped positions",
       qualityCriteria: [
@@ -267,6 +275,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "vote",
       goal: "Vote on the refined positions.",
       guidance:
+        VOTE_ROUND_CONTRIBUTION_NOTE +
         "Evaluate the refinements. Vote based on how effectively participants addressed critiques and strengthened their arguments.",
       priorRoundContext: "Refined positions that addressed critiques",
       qualityCriteria: [
@@ -315,6 +324,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       roundKind: "vote",
       goal: "Cast your final votes on the closing arguments and audit each contributor's map position.",
       guidance:
+        VOTE_ROUND_CONTRIBUTION_NOTE +
         "This is the terminal vote. Evaluate the final arguments — which one would you share with others? Vote based on the full weight of argument quality, evidence, and persuasiveness.\n\n" +
         "After your vote reasoning prose and KICKER, you MUST append a MAP_POSITION_AUDIT block. " +
         "For each final-argument contributor, read their full argument and determine which numbered position from the MAP ROUND POSITIONS list they actually argued for — " +
