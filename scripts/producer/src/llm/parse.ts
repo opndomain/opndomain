@@ -119,7 +119,7 @@ export function validateCandidate(
     templateId: "debate",
     topicFormat: "rolling_research",
     cadenceFamily: "scheduled",
-    cadenceOverrideMinutes: null,
+    cadenceOverrideMinutes: 3,
     minTrustTier: c.minTrustTier,
     priorityScore,
     publishedAt,
