@@ -172,7 +172,9 @@ async function testDiscoveryMetadata() {
   assertDeepEqual(info.onboardOptions, ["continue-as-guest", "register", "initiate-oauth"]);
   assertDeepEqual(info.actOptions, ["list-joinable-topics", "create-topic", "participate", "debate-step"]);
   assertDeepEqual(info.readOptions, ["get-topic-context", "get-verdict"]);
-  assertEqual(info.tools.length, 17);
+  assertEqual(info.tools.length, 19);
+  assertOk(info.tools.includes("establish-launch-state"));
+  assertOk(info.tools.includes("get-token"));
   assertOk(info.tools.includes("participate"));
   assertOk(info.tools.includes("debate-step"));
   assertOk(!info.tools.includes("recover-launch-state"));
@@ -205,6 +207,8 @@ async function testHomepageHighlightsParticipate() {
   assertOk(body.includes("vote_required"));
   assertOk(body.includes("Onboard:"));
   assertOk(body.includes("continue-as-guest"));
+  assertOk(body.includes("Guest mode:"));
+  assertOk(body.includes("OAuth providers such as Google"));
 }
 
 async function testJoinableTopicsMerge() {
@@ -620,6 +624,49 @@ async function testRecoveryMagicLinkParticipationPath() {
   assertEqual(result.status, "awaiting_magic_link");
   assertEqual((result.delivery as { loginUrl: string }).loginUrl, "https://opndomain.com/login?token=magic-token");
   assertEqual((result.nextAction as { tool: string }).tool, "recover-launch-state");
+}
+
+async function testGoogleOAuthFlow() {
+  const { env, kv } = buildEnv(({ method, url }) => {
+    if (method === "GET" && url.pathname === "/v1/auth/oauth/google/authorize") {
+      assertEqual(url.searchParams.get("source"), "cli");
+      return jsonResponse({
+        authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth?client_id=test",
+        cliSessionId: "cli_oauth_1",
+      });
+    }
+    if (method === "GET" && url.pathname === "/v1/auth/oauth/cli/poll") {
+      assertEqual(url.searchParams.get("sessionId"), "cli_oauth_1");
+      return jsonResponse({
+        status: "complete",
+        clientId: "cli_google",
+        agentId: "agt_google",
+        email: "google@example.com",
+        clientSecret: "secret-google",
+        accessToken: "access-google",
+        refreshToken: "refresh-google",
+        expiresAt: "2999-01-01T00:00:00.000Z",
+        isNewAccount: false,
+      });
+    }
+    throw new Error(`Unhandled request: ${method} ${url.pathname}${url.search}`);
+  });
+
+  const initResult = structured(await createToolHandlers(env)["initiate-oauth"]({
+    provider: "google",
+  }));
+  assertEqual(initResult.cliSessionId, "cli_oauth_1");
+  assertEqual(initResult.authorizeUrl, "https://accounts.google.com/o/oauth2/v2/auth?client_id=test");
+
+  const completeResult = structured(await createToolHandlers(env)["complete-oauth"]({
+    cliSessionId: "cli_oauth_1",
+    email: "google@example.com",
+  }));
+  assertEqual(completeResult.status, "launch_ready");
+  assertEqual(completeResult.clientId, "cli_google");
+  const persisted = await kv.get(mcpSessionKey("cli_google"), "json") as any;
+  assertEqual(persisted.refreshToken, "refresh-google");
+  assertEqual(await kv.get(mcpBootstrapKey("google@example.com")), "cli_google");
 }
 
 async function testRefreshTokenParticipationPath() {
@@ -1107,6 +1154,7 @@ export async function runAllTests() {
   await testAwaitingVerificationBranch();
   await testLoginRequiredBranch();
   await testContinueAsGuest();
+  await testGoogleOAuthFlow();
   await testEstablishLaunchStateFromStoredSession();
   await testRecoverLaunchStateFromMagicLinkUrl();
   await testRecoveryMagicLinkParticipationPath();

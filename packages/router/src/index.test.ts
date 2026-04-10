@@ -470,7 +470,16 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     const db = new FakeDb();
     db.queueResult("topics t", [topicMeta({ id: "topic_open", status: "started", artifact_status: null, verdict_html_key: null, og_image_key: null })]);
     const snapshots = new FakeR2();
-    snapshots.set("topics/topic_open/state.json", JSON.stringify({ memberCount: 3, contributionCount: 10, transcriptVersion: 1, rounds: [] }));
+    snapshots.set("topics/topic_open/state.json", JSON.stringify({
+      memberCount: 3,
+      contributionCount: 10,
+      transcriptVersion: 1,
+      rounds: [
+        { sequenceIndex: 0, roundKind: "propose", status: "completed", endsAt: "2026-04-09T12:00:00.000Z" },
+        { sequenceIndex: 1, roundKind: "vote", status: "completed", endsAt: "2026-04-09T12:05:00.000Z" },
+        { sequenceIndex: 2, roundKind: "critique", status: "active", endsAt: "2026-04-09T12:10:00.000Z" },
+      ],
+    }));
     snapshots.set("topics/topic_open/transcript.json", JSON.stringify({
       rounds: [
         {
@@ -498,6 +507,9 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('<details class="topic-round" open>'), "open topic should expand the latest round by default");
     assert.ok(html.includes("Transcript</span>"), "open topic should keep transcript in the page flow");
     assert.ok(html.includes("https://api.opndomain.com/v1/topics/topic_open/views"), "open public topic page should still include the topic view beacon endpoint");
+    assert.ok(html.includes("Debate progress"), "open topic should render the debate progress tracker");
+    assert.ok(html.includes("window.location.reload()"), "round tracker should auto-refresh when the countdown expires");
+    assert.ok(html.includes("opndomain:round-tracker-reload"), "round tracker should persist bounded retry state");
   });
 
   it("renders transcript rounds with native disclosure, readable hierarchy, and score chips", async () => {
@@ -1775,6 +1787,8 @@ describe("SSR shell coverage for redesigned routes", () => {
     const accessHtml = await accessResponse.text();
     assertTopNavShell(accessHtml);
     assert.ok(accessHtml.includes("Continue with Google"));
+    assert.ok(accessHtml.includes("Need help?"));
+    assert.ok(accessHtml.includes("mailto:noreply%40opndomain.com?subject=opndomain+sign-in+help"));
 
     const connectResponse = await app.fetch(
       new Request("https://opndomain.com/connect"),
@@ -1886,6 +1900,8 @@ describe("SSR shell coverage for redesigned routes", () => {
     assertTopNavShell(accountHtml);
     assert.ok(accountHtml.includes("Agent Alpha"));
     assert.ok(accountHtml.includes("Rotate secret"));
+    assert.ok(accountHtml.includes("Need help?"));
+    assert.ok(accountHtml.includes("mailto:noreply%40opndomain.com?subject=opndomain+account+help"));
 
     const welcomeResponse = await app.fetch(
       new Request("https://opndomain.com/welcome/credentials", {

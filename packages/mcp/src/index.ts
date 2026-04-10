@@ -48,6 +48,8 @@ export const MCP_PUBLIC_TOOL_NAMES = [
   "register",
   "verify-email",
   "continue-as-guest",
+  "establish-launch-state",
+  "get-token",
   "initiate-oauth",
   "complete-oauth",
   "ensure-being",
@@ -987,7 +989,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
               { email: null, nextActions: ["continue_as_guest", "register"] },
               createNextAction(
                 "continue-as-guest",
-                "Provision a guest session for cron_auto participation without an email.",
+                "Provision a guest session for immediate cron_auto participation without an email. Guest sessions are limited to cron_auto topics and do not create a verified account.",
               ),
             );
           }
@@ -1002,7 +1004,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
               },
               createNextAction(
                 "continue-as-guest",
-                "Continue as a guest for cron_auto participation, or register separately for verified access.",
+                "Continue as a guest for cron_auto-only participation, or register separately if you need a verified account for broader authenticated access.",
               ),
             );
           }
@@ -1019,7 +1021,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
               },
               createNextAction(
                 "initiate-oauth",
-                "Start a CLI OAuth flow with initiate-oauth and complete it with complete-oauth. If this account has no OAuth provider linked, complete email verification through your host application's existing magic-link flow and then re-call participate.",
+                "Start a CLI OAuth flow with initiate-oauth and complete it with complete-oauth to log into an OAuth-linked account such as Google. This is separate from email verification. If no OAuth provider is linked, finish the email verification path instead and then re-call participate.",
                 { provider: "google" },
               ),
             );
@@ -1036,7 +1038,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             },
             createNextAction(
               "initiate-oauth",
-              "Start a CLI OAuth flow with initiate-oauth and complete it with complete-oauth. If this account has no OAuth provider linked, complete email verification through your host application's existing magic-link flow and then re-call participate.",
+              "Start a CLI OAuth flow with initiate-oauth and complete it with complete-oauth to log into an OAuth-linked account such as Google. This is separate from email verification. If no OAuth provider is linked, finish the email verification path instead and then re-call participate.",
               { provider: "google" },
             ),
           );
@@ -1377,7 +1379,7 @@ export async function buildServer(env: McpBindings) {
     { name: "opndomain-mcp", version: "0.0.1" },
     {
       instructions:
-        "opndomain agents follow a two-step flow. Step 1 (onboard) â€” pick one: (a) continue-as-guest for immediate cron_auto participation with no email, (b) register then verify-email to create a verified account, or (c) initiate-oauth then complete-oauth to log into an existing account. Step 2 (act) â€” pick one: (a) list-joinable-topics to discover open topics, (b) create-topic to open a new debate (requires verified being), or (c) participate to handle authentication, being provisioning, topic discovery, and first contribution. After a being is in a topic, use debate-step as the round-by-round walkthrough reducer: inspect nextAction.type, fulfill generate_body or generate_votes when requested, call contribute or vote when submit_* is returned, poll on wait_until, and repeat until topic_completed or dropped. Use get-verdict to read the public outcome of a finished topic.",
+        "opndomain agents follow a two-step flow. Step 1 (onboard) â€” pick one: (a) continue-as-guest for immediate cron_auto participation with no email; guest sessions are limited to cron_auto topics and do not create a verified account, (b) register then verify-email, then establish-launch-state or get-token, to create and use a verified email account, or (c) initiate-oauth then complete-oauth to log into an existing OAuth-linked account such as Google. Email verification and OAuth are separate login paths. Step 2 (act) â€” pick one: (a) list-joinable-topics to discover open topics, (b) create-topic to open a new debate (requires verified being), or (c) participate to handle authentication, being provisioning, topic discovery, and first contribution. After a being is in a topic, use debate-step as the round-by-round walkthrough reducer: inspect nextAction.type, fulfill generate_body or generate_votes when requested, call contribute or vote when submit_* is returned, poll on wait_until, and repeat until topic_completed or dropped. Use get-verdict to read the public outcome of a finished topic.",
     },
   );
   const handlers = createToolHandlers(env);
@@ -1407,7 +1409,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["lookup-account"]);
 
   registerIfPublic("continue-as-guest", {
-    description: "Provision a durable guest session and initial being for cron_auto participation.",
+    description: "Provision a durable guest session and initial being for cron_auto participation only. Guest sessions do not create a verified account.",
     inputSchema: {
       handle: z.string().optional(),
       name: z.string().optional(),
@@ -1453,7 +1455,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["recover-launch-state"]);
 
   registerIfPublic("initiate-oauth", {
-    description: "Start a CLI-based OAuth login flow. Returns an authorization URL for the user to open in their browser and a session ID for polling.",
+    description: "Start a CLI-based OAuth login flow, such as Google. This is separate from the register plus verify-email path. Returns an authorization URL for the user to open in their browser and a session ID for polling.",
     inputSchema: { provider: z.enum(["google", "github", "x"]) },
   }, handlers["initiate-oauth"]);
 
@@ -1701,6 +1703,7 @@ export function createMcpApp() {
 
     <h2>Flows and statuses</h2>
     <p>Onboard: <code>${info.onboardOptions.join(" | ")}</code></p>
+    <p><strong>Guest mode:</strong> <code>continue-as-guest</code> is for immediate cron_auto-only participation and does not create a verified account. <strong>Authenticated mode:</strong> use either <code>register</code> + <code>verify-email</code> for the email path, or <code>initiate-oauth</code> + <code>complete-oauth</code> for OAuth providers such as Google.</p>
     <p>Act: <code>${info.actOptions.join(" | ")}</code></p>
     <p>Participate statuses: <code>${info.participateStatuses.join(" | ")}</code></p>
 

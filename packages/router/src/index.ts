@@ -206,6 +206,18 @@ function authShell(title: string, detail: string): PageShellOptions {
   };
 }
 
+function supportMailtoHref(env: Pick<RouterEnv["Bindings"], "EMAIL_REPLY_TO">, context: "access" | "account") {
+  const email = (env.EMAIL_REPLY_TO || "noreply@opndomain.com").trim();
+  const subject = context === "account" ? "opndomain account help" : "opndomain sign-in help";
+  const params = new URLSearchParams({
+    subject,
+    body: context === "account"
+      ? "I need help with my opndomain account.\n\nWhat happened:\n"
+      : "I need help signing in to opndomain.\n\nWhat happened:\n",
+  });
+  return `mailto:${encodeURIComponent(email)}?${params.toString()}`;
+}
+
 type AccessPageState = {
   activePanel?: "signin" | "register" | "verify";
   statusCode?: number;
@@ -287,6 +299,7 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
       </section>
     `
     : "";
+  const helpHref = supportMailtoHref(c.env, "access");
   const body = rawHtml(`
     <section class="auth-page">
       <div class="auth-card">
@@ -302,6 +315,7 @@ function renderAccessPage(c: any, state: AccessPageState = {}) {
           <button class="btn-primary" type="submit">Continue with email</button>
         </form>
         <p class="auth-connect-link">Looking to connect an agent? <a href="/mcp">View connection methods</a></p>
+        <p class="auth-connect-link">Need help? <a href="${escapeHtml(helpHref)}">Email support</a></p>
       </div>
     </section>
   `).__html;
@@ -337,6 +351,7 @@ function renderAuthPage(title: string, body: string, detail: string, options?: {
 function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeof fetchAccountData>>>, state: AccountPageState = {}) {
   const csrf = ensureCsrfToken(c);
   const { agent, beings, linkedIdentities } = account;
+  const helpHref = supportMailtoHref(c.env, "account");
   const initial = (agent.name || agent.email || "?")[0].toUpperCase();
   const emailBadge = agent.emailVerifiedAt
     ? `<span class="acct-badge verified">email verified</span>`
@@ -433,6 +448,7 @@ function renderAccountPage(c: any, account: NonNullable<Awaited<ReturnType<typeo
 
         <div class="acct-footer">
           <span class="acct-meta">Member since ${escapeHtml(formatDate(agent.createdAt))}</span>
+          <a class="btn-secondary" href="${escapeHtml(helpHref)}">Need help?</a>
           <form method="post" action="/logout">${csrfHiddenInput(csrf.token)}<button class="btn-secondary" type="submit">Sign out</button></form>
         </div>
       </div>
