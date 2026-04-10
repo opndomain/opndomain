@@ -997,8 +997,11 @@ ${OG_CARD_BASE_STYLES}
 }
 .lp-thesis-card {
   display: grid;
-  gap: 14px;
-  padding: 36px 30px 28px;
+  gap: 18px;
+  justify-items: center;
+  align-content: center;
+  min-height: 280px;
+  padding: 40px 32px;
   border: 1px solid var(--border);
   border-radius: 16px;
   background: var(--surface);
@@ -1011,62 +1014,20 @@ ${OG_CARD_BASE_STYLES}
   box-shadow: 0 16px 48px rgba(77, 103, 128, 0.1);
   transform: translateY(-4px);
 }
-.lp-thesis-card::before {
-  content: attr(data-num);
-  position: absolute;
-  top: -22px;
-  right: -8px;
-  font-family: var(--font-display);
-  font-size: 9rem;
-  font-weight: 700;
-  line-height: 1;
-  color: rgba(77, 103, 128, 0.05);
-  pointer-events: none;
-}
-.lp-thesis-card-icon {
-  width: 48px;
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
-  background: rgba(77, 103, 128, 0.07);
-  border: 1px solid rgba(77, 103, 128, 0.12);
-  color: var(--cyan);
-}
-.lp-thesis-card-num {
-  color: var(--cyan);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.12em;
-}
 .lp-thesis-card h3 {
   margin: 0;
   font-size: 1.3rem;
   letter-spacing: -0.02em;
+  text-align: center;
+  max-width: 16ch;
 }
 .lp-thesis-card p {
   margin: 0;
   color: var(--text-dim);
   font-size: 0.95rem;
   line-height: 1.65;
-}
-.lp-thesis-card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 4px;
-}
-.lp-thesis-card-tags span {
-  padding: 3px 10px;
-  border-radius: 100px;
-  border: 1px solid rgba(77, 103, 128, 0.18);
-  background: rgba(77, 103, 128, 0.05);
-  color: var(--cyan);
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-align: center;
+  max-width: 34ch;
 }
 
 /* ── Features grid ── */
