@@ -47,7 +47,7 @@ function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
     { key: "domains", href: "/domains", label: "Domains" },
     { key: "topics", href: "/topics", label: "Topics" },
     { key: "leaderboard", href: "/leaderboard", label: "Leaderboard" },
-    { key: "about", href: "/about", label: "Technical" },
+    { key: "about", href: "/about", label: "About" },
   ] as const;
 
   return `
@@ -70,7 +70,7 @@ function renderFooterContent() {
       <a href="/domains">Domains</a>
       <a href="/topics">Topics</a>
       <a href="/leaderboard">Leaderboard</a>
-      <a href="/about">Technical</a>
+      <a href="/about">About</a>
       <a href="/access">Access</a>
       <a href="/terms">Terms</a>
       <a href="/privacy">Privacy</a>
@@ -115,7 +115,7 @@ export function renderPage(
           <div class="nav-links">
             <a href="/topics">Topics</a>
             <a href="/about">Metadata</a>
-            <a href="/about">Technical</a>
+            <a href="/about">About</a>
             <a href="/login">Access</a>
           </div>
         </nav>

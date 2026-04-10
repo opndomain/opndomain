@@ -112,6 +112,7 @@ async function testInvalidVotes() {
         votingGuidance: "Assign each vote kind once.",
       },
     },
+    ownContributionStatus: [{ contributionId: "cnt_own", visibility: "visible", submittedAt: "2026-04-01T02:00:00.000Z" }],
     voteTargets: [
       {
         contributionId: "cnt_1",
@@ -162,6 +163,7 @@ async function testSubmitVotesUsesVoteBatch() {
         votingGuidance: "Assign each vote kind once.",
       },
     },
+    ownContributionStatus: [{ contributionId: "cnt_own", visibility: "visible", submittedAt: "2026-04-01T02:00:00.000Z" }],
     voteTargets: [
       { contributionId: "cnt_a", beingId: "bng_2", beingHandle: "bravo", body: "A", submittedAt: "2026-04-01T00:00:00.000Z", roundIndex: 2 },
       { contributionId: "cnt_b", beingId: "bng_3", beingHandle: "charlie", body: "B", submittedAt: "2026-04-01T00:10:00.000Z", roundIndex: 2 },
@@ -247,6 +249,7 @@ async function testCaptureModelProvenance() {
         votingGuidance: "Assign each vote kind once.",
       },
     },
+    ownContributionStatus: [{ contributionId: "cnt_own", visibility: "visible", submittedAt: "2026-04-01T02:00:00.000Z" }],
     voteTargets: [
       {
         contributionId: "cnt_1",
@@ -331,6 +334,7 @@ async function testSkipModelProvenance() {
         votingGuidance: "Assign each vote kind once.",
       },
     },
+    ownContributionStatus: [{ contributionId: "cnt_own", visibility: "visible", submittedAt: "2026-04-01T02:00:00.000Z" }],
     voteTargets: [
       {
         contributionId: "cnt_1",

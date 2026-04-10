@@ -381,9 +381,9 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('class="topic-confidence-widget topic-confidence-widget--verdict"'), "closed topic should render the confidence widget");
     assert.ok(html.includes("Share on X"), "closed topic should have share panel");
     assert.ok(html.includes("Test prompt"), "closed topic should lead with the topic prompt");
-    assert.ok(html.includes("Structured oversight should be required for frontier labs."), "closed topic should push the verdict headline into the live header");
-    assert.ok(html.includes("Frontier labs should not ship without mandatory oversight review."), "closed topic should render the parsed thesis lede in the live header");
-    assert.ok(html.includes("Mandatory oversight is a release condition."), "closed topic should render the parsed kicker chip in the live header");
+    assert.ok(!html.includes("Structured oversight should be required for frontier labs."), "verdict headline should be suppressed (redundant with convergence map)");
+    assert.ok(!html.includes("Frontier labs should not ship without mandatory oversight review."), "verdict lede should be suppressed (redundant with convergence map)");
+    assert.ok(html.includes("Mandatory oversight is a release condition."), "verdict kicker chip should still appear in the header");
     assert.ok(html.includes('class="topic-editorial"'), "closed topic should render the editorial body section");
     assert.ok(html.includes("Mandatory oversight should be treated as a release condition for frontier labs."), "closed topic should render the editorial copy from the artifact");
     assert.ok(html.includes('class="topic-score-story"'), "closed topic should render the score storytelling section");
@@ -463,7 +463,7 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     const matches = html.match(/Structured oversight should be required for frontier labs\./g) ?? [];
-    assert.equal(matches.length, 1, "legacy header should not repeat the headline as a lede");
+    assert.equal(matches.length, 0, "legacy header should suppress the headline entirely (redundant with convergence map)");
   });
 
   it("does not render share panel on open topics", async () => {
@@ -1595,14 +1595,14 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("What happens when thousands of LLMs form councils"), "landing page should use the current hero headline");
-    assert.ok(html.includes("opndomain turns structured debate and recursive research into a permanent, public, scored board for collective machine intelligence."), "landing page should render the current hero support line");
+    assert.ok(html.includes("Run agents on bounded questions, score their work in public"), "landing page should use the current hero headline");
+    assert.ok(html.includes("opndomain gives operators a place to register agents, join structured debate topics"), "landing page should render the current hero support line");
     assert.ok(html.includes("Quick Connect"), "landing page should expose the primary access action");
     assert.ok(html.includes('href="/mcp"'), "landing page should point primary access actions to the MCP surface");
     assert.ok(html.includes("lp-rail"), "landing page should render the rolling verdict card rail");
     assert.ok(html.includes("Topics"), "landing page should render the topics nav label");
     assert.ok(html.includes("Domains"), "landing page should render the domains nav label");
-    assert.ok(html.includes("Technical"), "landing page should render the technical nav label");
+    assert.ok(html.includes("About"), "landing page should render the about nav label");
     assert.ok(html.includes("Access"), "landing page should render the access nav label");
     assert.ok(html.includes("Verdict Topic 1"), "landing page should render the verdict card title");
     assert.ok(html.includes("Summary 1"), "landing page should render the opening verdict response in the card");
@@ -1776,7 +1776,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(aboutResponse.status, 200);
     const aboutHtml = await aboutResponse.text();
     assertTopNavShell(aboutHtml);
-    assert.ok(aboutHtml.includes("Public reasoning for agents."));
+    assert.ok(aboutHtml.includes("What opndomain is actually building."));
 
     const accessResponse = await app.fetch(
       new Request("https://opndomain.com/access"),
@@ -1805,7 +1805,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     );
     assert.equal(mcpResponse.status, 200);
     const mcpHtml = await mcpResponse.text();
-    assert.ok(mcpHtml.includes("Get your agent on the board"), "MCP connect page should render with connection methods");
+    assert.ok(mcpHtml.includes("Connect your agent to the protocol"), "MCP connect page should render with connection methods");
   });
 
   it("renders canonical access and legal pages inside the top-nav-only shell", async () => {
