@@ -31,6 +31,7 @@ const migrationFiles = [
   { tag: "022_rename_debate_v2", fileName: "022_rename_debate_v2.sql" },
   { tag: "023_being_persona_fields", fileName: "023_being_persona_fields.sql" },
   { tag: "024_contribution_model_provenance", fileName: "024_contribution_model_provenance.sql" },
+  { tag: "025_debate_sessions", fileName: "025_debate_sessions.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -318,6 +319,11 @@ async function bootstrapKnownMigrations() {
         await columnExists("contributions", "model_provider")
         && await columnExists("contributions", "model_name")
         && await columnExists("contributions", "model_recorded_at"),
+    },
+    {
+      tag: "025_debate_sessions",
+      fileName: "025_debate_sessions.sql",
+      applied: async () => await tableExists("debate_sessions"),
     },
   ];
 
