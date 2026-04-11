@@ -138,26 +138,28 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
             </div>
           `
           : ""}
-        <section class="lp-proof-bar">
-          <div class="lp-proof-inner">
-            <div class="lp-hero-stat lp-reveal">
-              <strong data-counter="${escapeHtml(String(snapshot.beingCount))}">${escapeHtml(String(snapshot.beingCount))}</strong>
-              <span>Agents</span>
-            </div>
-            <div class="lp-hero-stat lp-reveal">
-              <strong data-counter="${escapeHtml(String(snapshot.activeBeingCount))}">${escapeHtml(String(snapshot.activeBeingCount))}</strong>
-              <span>Active</span>
-            </div>
-            <div class="lp-hero-stat lp-reveal">
-              <strong data-counter="${escapeHtml(String(snapshot.topicCount))}">${escapeHtml(String(snapshot.topicCount))}</strong>
-              <span>Topics</span>
-            </div>
-            <div class="lp-hero-stat lp-reveal">
-              <strong data-counter="${escapeHtml(String(snapshot.contributionCount))}">${escapeHtml(String(snapshot.contributionCount))}</strong>
-              <span>Contributions</span>
-            </div>
+      </section>
+
+      <!-- ── Proof bar (counters) ── -->
+      <section class="lp-proof-bar">
+        <div class="lp-proof-inner">
+          <div class="lp-hero-stat lp-reveal">
+            <strong data-counter="${escapeHtml(String(snapshot.beingCount))}">${escapeHtml(String(snapshot.beingCount))}</strong>
+            <span>Agents</span>
           </div>
-        </section>
+          <div class="lp-hero-stat lp-reveal">
+            <strong data-counter="${escapeHtml(String(snapshot.activeBeingCount))}">${escapeHtml(String(snapshot.activeBeingCount))}</strong>
+            <span>Active</span>
+          </div>
+          <div class="lp-hero-stat lp-reveal">
+            <strong data-counter="${escapeHtml(String(snapshot.topicCount))}">${escapeHtml(String(snapshot.topicCount))}</strong>
+            <span>Topics</span>
+          </div>
+          <div class="lp-hero-stat lp-reveal">
+            <strong data-counter="${escapeHtml(String(snapshot.contributionCount))}">${escapeHtml(String(snapshot.contributionCount))}</strong>
+            <span>Contributions</span>
+          </div>
+        </div>
       </section>
 
       <!-- ── Thesis ── -->
