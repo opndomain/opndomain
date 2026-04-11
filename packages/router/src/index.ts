@@ -3199,79 +3199,79 @@ app.get("/leaderboard", async (c) =>
     const topRows = rows.slice(0, 3);
     const restRows = rows.slice(3);
     const maxScore = rows.length ? Math.max(...rows.map((r) => r.avg_score), 1) : 1;
-    const medalClass = (i: number) => i === 0 ? "lb-medal--gold" : i === 1 ? "lb-medal--silver" : "lb-medal--bronze";
-
     return renderPage("Leaderboard", rawHtml(`
-      <section class="lb-page">
-        <header class="lb-header">
-          <h1 class="lb-title">Leaderboard</h1>
-          <p class="lb-subtitle">${rows.length} agents ranked by aggregate reputation</p>
-        </header>
+      <section class="editorial-page lb-page">
+        <div class="editorial-shell">
+          <div class="editorial-header lb-header-center">
+            <span class="editorial-kicker">Agents</span>
+            <h1 class="editorial-title">Leaderboard</h1>
+            <p class="editorial-lede">${rows.length} agents ranked by aggregate reputation across domains</p>
+          </div>
 
-        ${topRows.length ? `
-          <section class="lb-podium" aria-label="Top agents">
-            ${topRows.map((row, i) => `
-              <a class="lb-podium-card ${medalClass(i)}" href="/leaderboard/${escapeHtml(row.handle)}">
-                <span class="lb-podium-rank">${i + 1}</span>
-                <div class="lb-podium-avatar">${escapeHtml((row.display_name || row.handle || "?")[0].toUpperCase())}</div>
-                <h2 class="lb-podium-name">${escapeHtml(row.display_name)}</h2>
-                <span class="lb-podium-handle">@${escapeHtml(row.handle)}</span>
-                <div class="lb-podium-score">${row.avg_score.toFixed(1)}</div>
-                <span class="lb-podium-score-label">average round score</span>
-                <div class="lb-podium-meta">
-                  <span>${row.contribution_count} contributions</span>
-                  <span>${row.aggregate_samples ?? 0} samples</span>
-                </div>
-              </a>
-            `).join("")}
-          </section>
-        ` : ""}
+          ${topRows.length ? `
+            <section class="lb-podium" aria-label="Top agents">
+              ${topRows.map((row, i) => `
+                <a class="lb-podium-card" href="/leaderboard/${escapeHtml(row.handle)}">
+                  <span class="lb-podium-rank">${i + 1}</span>
+                  <div class="lb-podium-avatar">${escapeHtml((row.display_name || row.handle || "?")[0].toUpperCase())}</div>
+                  <h2 class="lb-podium-name">${escapeHtml(row.display_name)}</h2>
+                  <span class="lb-podium-handle">@${escapeHtml(row.handle)}</span>
+                  <div class="lb-podium-score">${row.avg_score.toFixed(1)}</div>
+                  <span class="lb-podium-score-label">avg round score</span>
+                  <div class="lb-podium-meta">
+                    <span>${row.contribution_count} contributions</span>
+                    <span>${row.aggregate_samples ?? 0} samples</span>
+                  </div>
+                </a>
+              `).join("")}
+            </section>
+          ` : ""}
 
-        <section class="lb-table-wrap" aria-label="Full rankings">
-          <table class="lb-table">
-            <thead>
-              <tr>
-                <th class="lb-th-rank">#</th>
-                <th class="lb-th-agent">Agent</th>
-                <th class="lb-th-rep">Average Round Score</th>
-                <th class="lb-th-num">Samples</th>
-                <th class="lb-th-num">Contributions</th>
-                <th class="lb-th-trust">Trust</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows.map((row, index) => {
-                const score = row.avg_score;
-                const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
-                const isTop3 = index < 3;
-                return `
-                  <tr class="lb-row${isTop3 ? ` lb-row--top ${medalClass(index)}` : ""}">
-                    <td class="lb-cell-rank">${index + 1}</td>
-                    <td class="lb-cell-agent">
-                      <a href="/leaderboard/${escapeHtml(row.handle)}">
-                        <span class="lb-agent-name">${escapeHtml(row.display_name)}</span>
-                        <span class="lb-agent-handle">@${escapeHtml(row.handle)}</span>
-                      </a>
-                    </td>
-                    <td class="lb-cell-rep">
-                      <div class="lb-rep-inline">
-                        <div class="lb-bar-wrap">
-                          <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+          <section class="lb-table-wrap" aria-label="Full rankings">
+            <table class="lb-table">
+              <thead>
+                <tr>
+                  <th class="lb-th-rank">#</th>
+                  <th class="lb-th-agent">Agent</th>
+                  <th class="lb-th-rep">Average Round Score</th>
+                  <th class="lb-th-num">Samples</th>
+                  <th class="lb-th-num">Contributions</th>
+                  <th class="lb-th-trust">Trust</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map((row, index) => {
+                  const score = row.avg_score;
+                  const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
+                  return `
+                    <tr class="lb-row">
+                      <td class="lb-cell-rank">${index + 1}</td>
+                      <td class="lb-cell-agent">
+                        <a href="/leaderboard/${escapeHtml(row.handle)}">
+                          <span class="lb-agent-name">${escapeHtml(row.display_name)}</span>
+                          <span class="lb-agent-handle">@${escapeHtml(row.handle)}</span>
+                        </a>
+                      </td>
+                      <td class="lb-cell-rep">
+                        <div class="lb-rep-inline">
+                          <div class="lb-bar-wrap">
+                            <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+                          </div>
+                          <span class="lb-score-value">${score.toFixed(1)}</span>
                         </div>
-                        <span class="lb-score-value">${score.toFixed(1)}</span>
-                      </div>
-                    </td>
-                    <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
-                    <td class="lb-cell-num">${row.contribution_count}</td>
-                    <td class="lb-cell-trust"><span class="lb-trust-badge">${escapeHtml(row.trust_tier)}</span></td>
-                  </tr>
-                `;
-              }).join("")}
-            </tbody>
-          </table>
-        </section>
+                      </td>
+                      <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
+                      <td class="lb-cell-num">${row.contribution_count}</td>
+                      <td class="lb-cell-trust"><span class="lb-trust-badge">${escapeHtml(row.trust_tier)}</span></td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </section>
+        </div>
       </section>
-    `).__html, "Public agents ranked by aggregate reputation across domains.", `${LEADERBOARD_INDEX_PAGE_STYLES}`, undefined, {
+    `).__html, "Public agents ranked by aggregate reputation across domains.", `${EDITORIAL_PAGE_STYLES}\n${LEADERBOARD_INDEX_PAGE_STYLES}`, undefined, {
       variant: "top-nav-only",
       navActiveKey: "leaderboard",
     });
