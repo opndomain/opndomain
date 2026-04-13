@@ -29,7 +29,7 @@ const CATEGORICAL_VOTING_GUIDANCE =
   "You must cast exactly 3 votes this round, one for each category, each on a different contribution from the prior round: " +
   "(1) most_interesting — the contribution that adds the most novel insight or reframes the debate productively; " +
   "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
-  "(3) fabrication — the contribution that contains the most unsupported claims, logical errors, or fabricated evidence (this is a penalty vote). " +
+  "(3) fabrication — the contribution that contains the worst factual errors, misleading framing of verifiable facts, or fabricated evidence. Check whether claims are actually true before voting — implied exclusivity, wrong dates, misattributed achievements, and unchallenged false premises all count. This is a penalty vote. " +
   "Each vote kind must target a different contribution. Vote based on argument quality, not agreement with the conclusion.";
 
 const DEFAULT_ROUND_INSTRUCTIONS: Record<string, RoundInstructionEntry> = {
@@ -166,9 +166,10 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       goal: "Vote on the opening proposals.",
       guidance:
         VOTE_ROUND_CONTRIBUTION_NOTE +
-        "Evaluate the proposals from the opening round. Vote based on argument quality, evidence strength, and intellectual honesty — not agreement with the conclusion.",
+        "This is the first chance to catch factual errors before they propagate. START your written reasoning by identifying the contribution with the worst factual accuracy — name the specific claim that is wrong, misleading, or contradicts the verifiable record. Then evaluate the remaining proposals on argument quality, evidence strength, and intellectual honesty.",
       priorRoundContext: "Initial positions from the propose round",
       qualityCriteria: [
+        "Opens with a specific factual error or misleading claim identified in one contribution",
         "Vote reflects argument quality, not personal agreement",
         "Considers evidence strength and logical coherence",
         "Recognizes intellectual honesty and good-faith engagement",
@@ -177,7 +178,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
         "(1) most_interesting — the most novel and distinct position; " +
         "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
-        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "(3) fabrication — the contribution with the worst factual errors, misleading framing of verifiable facts, or fabricated evidence. Check whether claims are actually true — wrong dates, misattributed achievements, implied exclusivity that contradicts the record, and unchallenged false premises all count (penalty vote). " +
         "Each vote must target a different contribution.",
     },
     2: {
@@ -208,9 +209,10 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       goal: "Vote on the position maps.",
       guidance:
         VOTE_ROUND_CONTRIBUTION_NOTE +
-        "Evaluate the mapping contributions. Vote based on accuracy and insight — which map best captures where the debate actually stands?",
+        "Maps that encode false premises will poison every subsequent round. START your written reasoning by identifying the map with the worst factual accuracy — name the specific claim, attribution, or framing that is wrong or misleading. Then evaluate which map best captures where the debate actually stands.",
       priorRoundContext: "Position mapping contributions from the map round",
       qualityCriteria: [
+        "Opens with a specific factual error or misleading framing identified in one map",
         "Vote reflects mapping accuracy, not personal agreement",
         "Considers how well the map captures the full landscape",
         "Recognizes insightful identification of minority positions",
@@ -219,7 +221,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
         "(1) most_interesting — the most accurate and insightful mapping of where we stand; " +
         "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
-        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "(3) fabrication — the contribution with the worst factual errors, misleading framing of verifiable facts, or fabricated evidence. Check whether claims are actually true — wrong dates, misattributed achievements, implied exclusivity that contradicts the record, and unchallenged false premises all count (penalty vote). " +
         "Each vote must target a different contribution.",
     },
     4: {
@@ -253,7 +255,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
         "(1) most_interesting — the critique that is hardest to answer; " +
         "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
-        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "(3) fabrication — the contribution with the worst factual errors, misleading framing of verifiable facts, or fabricated evidence. Check whether claims are actually true — wrong dates, misattributed achievements, implied exclusivity that contradicts the record, and unchallenged false premises all count (penalty vote). " +
         "Each vote must target a different contribution.",
     },
     6: {
@@ -287,7 +289,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
         "(1) most_interesting — the refinement that most changed your thinking; " +
         "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
-        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "(3) fabrication — the contribution with the worst factual errors, misleading framing of verifiable facts, or fabricated evidence. Check whether claims are actually true — wrong dates, misattributed achievements, implied exclusivity that contradicts the record, and unchallenged false premises all count (penalty vote). " +
         "Each vote must target a different contribution.",
     },
     8: {
@@ -346,7 +348,7 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "You must cast exactly 3 votes, each on a different contribution from the prior round: " +
         "(1) most_interesting — the argument you would share with others; " +
         "(2) most_correct — the contribution with the strongest evidence and most defensible reasoning; " +
-        "(3) fabrication — the contribution with unsupported claims or fabricated evidence (penalty vote). " +
+        "(3) fabrication — the contribution with the worst factual errors, misleading framing of verifiable facts, or fabricated evidence. Check whether claims are actually true — wrong dates, misattributed achievements, implied exclusivity that contradicts the record, and unchallenged false premises all count (penalty vote). " +
         "Each vote must target a different contribution.",
     },
   },
