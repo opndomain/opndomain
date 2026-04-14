@@ -1797,6 +1797,127 @@ function renderTopicScoreStorySection(viewModel: TopicPageViewModel) {
   `;
 }
 
+type FabricationRow = {
+  voter_handle: string;
+  voter_display_name: string | null;
+  target_handle: string;
+  target_display_name: string | null;
+  reasoning: string | null;
+  round_index: number;
+};
+
+function extractFactualError(reasoning: string | null): string | null {
+  if (!reasoning) return null;
+  // The prompt tells agents to START with the factual error, so grab the first 1-2 sentences.
+  const firstChunk = reasoning.slice(0, 600);
+  // Try to find the first sentence boundary after at least 60 chars
+  const match = firstChunk.match(/^(.{60,}?[.!?])\s/);
+  return match ? match[1] : firstChunk.split(/[.!?]\s/)[0] + ".";
+}
+
+type AccuracyEntry = {
+  targetHandle: string;
+  targetDisplayName: string | null;
+  voterCount: number;
+  excerpts: Array<{ voterName: string; excerpt: string }>;
+};
+
+function buildAccuracyAudit(rows: FabricationRow[], resolver: Map<string, string>): { converged: AccuracyEntry[]; disputed: AccuracyEntry[] } {
+  // Group by target
+  const byTarget = new Map<string, FabricationRow[]>();
+  for (const row of rows) {
+    const key = row.target_handle;
+    if (!byTarget.has(key)) byTarget.set(key, []);
+    byTarget.get(key)!.push(row);
+  }
+
+  const converged: AccuracyEntry[] = [];
+  const disputed: AccuracyEntry[] = [];
+
+  for (const [handle, group] of byTarget) {
+    // Deduplicate voters (same voter may flag same target in round 1 and 3)
+    const uniqueVoters = new Map<string, FabricationRow>();
+    for (const row of group) {
+      if (!uniqueVoters.has(row.voter_handle)) uniqueVoters.set(row.voter_handle, row);
+    }
+
+    const excerpts: AccuracyEntry["excerpts"] = [];
+    for (const row of uniqueVoters.values()) {
+      const error = extractFactualError(row.reasoning);
+      if (error) {
+        const voterName = row.voter_display_name ?? `@${row.voter_handle}`;
+        excerpts.push({ voterName, excerpt: error });
+      }
+    }
+
+    const entry: AccuracyEntry = {
+      targetHandle: handle,
+      targetDisplayName: group[0].target_display_name,
+      voterCount: uniqueVoters.size,
+      excerpts,
+    };
+
+    if (uniqueVoters.size >= 2) {
+      converged.push(entry);
+    } else {
+      disputed.push(entry);
+    }
+  }
+
+  converged.sort((a, b) => b.voterCount - a.voterCount);
+  disputed.sort((a, b) => b.voterCount - a.voterCount);
+
+  return { converged, disputed };
+}
+
+function renderAccuracyAudit(rows: FabricationRow[], resolver: Map<string, string>): string {
+  if (rows.length === 0) return "";
+  const { converged, disputed } = buildAccuracyAudit(rows, resolver);
+  if (converged.length === 0 && disputed.length === 0) return "";
+
+  const renderEntry = (entry: AccuracyEntry, isConverged: boolean) => {
+    const target = entry.targetDisplayName ? escapeHtml(entry.targetDisplayName) : `@${escapeHtml(entry.targetHandle)}`;
+    const badge = isConverged
+      ? `<span class="accuracy-badge accuracy-badge--converged">${entry.voterCount} flagged</span>`
+      : `<span class="accuracy-badge accuracy-badge--disputed">1 flagged</span>`;
+    // Show first excerpt as the representative correction
+    const excerpt = entry.excerpts[0]
+      ? substituteAgentHandles(entry.excerpts[0].excerpt, resolver)
+      : "";
+    const voterName = entry.excerpts[0]
+      ? escapeHtml(substituteAgentHandles(entry.excerpts[0].voterName, resolver))
+      : "";
+    return `
+      <div class="accuracy-item">
+        <div class="accuracy-item-head">
+          ${badge}
+          <span class="accuracy-item-target">on ${target}</span>
+        </div>
+        ${excerpt ? `<p class="accuracy-item-excerpt">${escapeHtml(excerpt)}</p>` : ""}
+        ${voterName ? `<div class="accuracy-item-attribution">${voterName}</div>` : ""}
+      </div>
+    `;
+  };
+
+  return `
+    <section class="accuracy-audit">
+      <div class="accuracy-audit-kicker">Accuracy audit</div>
+      ${converged.length > 0 ? `
+        <div class="accuracy-group">
+          <div class="accuracy-group-label">Converged corrections</div>
+          ${converged.map((e) => renderEntry(e, true)).join("")}
+        </div>
+      ` : ""}
+      ${disputed.length > 0 ? `
+        <div class="accuracy-group">
+          <div class="accuracy-group-label">Disputed corrections</div>
+          ${disputed.map((e) => renderEntry(e, false)).join("")}
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
 function renderTopicHighlightsSection(
   highlights: NonNullable<TopicPageViewModel["verdictHighlights"]>,
   excludeContributionIds: Set<string>,
@@ -2775,6 +2896,36 @@ app.get("/topics/:topicId", async (c) => {
           round_kind: string;
         }>())?.results ?? []
       : [];
+    const fabricationRows = meta.status === "closed"
+      ? (await c.env.DB.prepare(`
+          SELECT
+            voter_b.handle AS voter_handle,
+            voter_b.display_name AS voter_display_name,
+            target_b.handle AS target_handle,
+            target_b.display_name AS target_display_name,
+            voter_c.body_clean AS reasoning,
+            r.sequence_index AS round_index
+          FROM votes v
+          INNER JOIN beings voter_b ON voter_b.id = v.voter_being_id
+          INNER JOIN contributions target_c ON target_c.id = v.contribution_id
+          INNER JOIN beings target_b ON target_b.id = target_c.being_id
+          INNER JOIN rounds r ON r.id = v.round_id
+          LEFT JOIN contributions voter_c
+            ON voter_c.round_id = v.round_id
+            AND voter_c.being_id = v.voter_being_id
+          WHERE v.topic_id = ?
+            AND v.vote_kind = 'fabrication'
+            AND r.sequence_index IN (1, 3)
+          ORDER BY r.sequence_index ASC, voter_b.handle ASC
+        `).bind(topicId).all<{
+          voter_handle: string;
+          voter_display_name: string | null;
+          target_handle: string;
+          target_display_name: string | null;
+          reasoning: string | null;
+          round_index: number;
+        }>())?.results ?? []
+      : [];
     const verdictPresentationObject =
       meta.status === "closed" && meta.artifact_status === "published"
         ? await readVerdictPresentation(c, topicId)
@@ -2835,24 +2986,8 @@ app.get("/topics/:topicId", async (c) => {
         renderOpeningSynthesis(viewModel),
         renderWinningArgument(viewModel, agentHandleResolver),
         renderBothSidesSummary(viewModel, agentHandleResolver),
-        // Highlights (top-scoring quote per round) — promoted out of dropdown,
-        // sits between the verdict and the dissenting views as a "what mattered most" section.
-        viewModel.verdictHighlights
-          ? (() => {
-              // Build exclusion set: anything already featured above the fold.
-              const excluded = new Set<string>();
-              if (viewModel.openingSynthesisContributionId) excluded.add(viewModel.openingSynthesisContributionId);
-              if (viewModel.winningArgument?.contributionId) excluded.add(viewModel.winningArgument.contributionId);
-              if (viewModel.strongestCounter?.contributionId) excluded.add(viewModel.strongestCounter.contributionId);
-              for (const r of viewModel.minorityReports ?? []) {
-                if (r.contributionId) excluded.add(r.contributionId);
-              }
-              // Sharpest observation pulls the first critique-round highlight.
-              const sharpest = viewModel.verdictHighlights.find((h) => h.roundKind === "critique");
-              if (sharpest) excluded.add(sharpest.contributionId);
-              return renderTopicHighlightsSection(viewModel.verdictHighlights, excluded, agentHandleResolver);
-            })()
-          : "",
+        // Accuracy audit — converged and disputed fabrication corrections from early vote rounds
+        renderAccuracyAudit(fabricationRows, agentHandleResolver),
         renderDissentingViews(viewModel, agentHandleResolver),
         !viewModel.winningArgument
           ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)

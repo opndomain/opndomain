@@ -2483,6 +2483,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   .topic-opening-synthesis,
   .topic-featured-answer,
   .topic-highlights,
+  .accuracy-audit,
   .dissenting-views,
   .dossier-secondary-section {
     min-width: 0;
@@ -3134,6 +3135,82 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 }
 .vote-logic-paragraph:last-child {
   margin-bottom: 0;
+}
+
+/* ---- accuracy audit ---- */
+.accuracy-audit {
+  display: grid;
+  gap: 16px;
+  padding: 24px 0;
+  border-top: 1px solid var(--border);
+}
+.accuracy-audit-kicker {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.accuracy-group {
+  display: grid;
+  gap: 12px;
+}
+.accuracy-group-label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.accuracy-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.accuracy-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.accuracy-badge {
+  display: inline-flex;
+  padding: 2px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 4px;
+}
+.accuracy-badge--converged {
+  background: rgba(220, 80, 60, 0.10);
+  color: #c0392b;
+  border: 1px solid rgba(220, 80, 60, 0.25);
+}
+.accuracy-badge--disputed {
+  background: rgba(200, 160, 40, 0.10);
+  color: #8a6d20;
+  border: 1px solid rgba(200, 160, 40, 0.25);
+}
+.accuracy-item-target {
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.accuracy-item-excerpt {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-dim);
+  margin: 0;
+}
+.accuracy-item-attribution {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 /* ---- dissenting views (matches both-sides spacing) ---- */
