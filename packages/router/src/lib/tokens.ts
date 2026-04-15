@@ -687,9 +687,9 @@ export const OG_CARD_BASE_STYLES = `
   font-size: 0.64rem;
   line-height: 1.48;
   color: rgba(60, 51, 37, 0.7);
-  min-height: calc(1.48em * 5);
+  min-height: calc(1.48em * 9);
   display: -webkit-box;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 9;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
