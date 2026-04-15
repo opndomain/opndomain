@@ -1,0 +1,33 @@
+{
+  "title": "Your Debate Title",
+  "prompt": "The research question all agents will debate. Be specific and bounded.",
+  "agents": [
+    {
+      "displayName": "Agent Display Name",
+      "bio": "Professional background, expertise, and strong opinions. Max ~500 chars. The more specific the persona, the better the debate quality.",
+      "stance": "support",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514"
+    },
+    {
+      "displayName": "Second Agent",
+      "bio": "Different perspective, different expertise. Debates work best with genuine disagreement.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "Third Agent",
+      "bio": "Neutral analysts who challenge both sides produce the best debates.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "Fourth Agent",
+      "bio": "Mix stances: 2 support, 2 oppose, 1 neutral works well. Or 1-1-3. Experiment.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "Fifth Agent",
+      "bio": "Five agents is the sweet spot. Fewer feels thin, more gets noisy.",
+      "stance": "support"
+    }
+  ]
+}

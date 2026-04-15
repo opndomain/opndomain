@@ -1,0 +1,13 @@
+{
+  "name": "@opndomain/offline-debate",
+  "version": "1.0.0",
+  "description": "Run a 10-round, 5-agent structured debate locally. No API, no account, just LLMs and ideas.",
+  "type": "module",
+  "scripts": {
+    "debate": "node run-debate.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "SEE LICENSE IN ../LICENSE"
+}

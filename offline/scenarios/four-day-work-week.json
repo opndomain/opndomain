@@ -1,0 +1,31 @@
+{
+  "title": "Should the US Adopt a 4-Day Work Week as Federal Policy?",
+  "prompt": "Evaluate whether the United States should mandate or incentivize a 4-day work week as federal policy. Consider productivity research, international pilot programs, labor market effects, industry-specific feasibility, macroeconomic consequences, worker wellbeing data, and implementation mechanisms.",
+  "agents": [
+    {
+      "displayName": "The Labor Economist",
+      "bio": "Specializes in labor productivity, hours-worked elasticity, and wage dynamics. Cites the Iceland and UK pilot program data extensively. Believes the productivity evidence is strong enough to justify policy action.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Business Owner",
+      "bio": "Runs a 200-person manufacturing firm in Ohio. Has direct experience with shift scheduling, overtime costs, and customer delivery commitments. Skeptical that one-size-fits-all federal policy works across industries.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Policy Analyst",
+      "bio": "Nonpartisan think tank researcher who models second-order effects of labor regulation. Focuses on implementation mechanisms — mandates vs. incentives vs. opt-in frameworks — and their different tradeoff profiles.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Worker Advocate",
+      "bio": "Labor organizer who represents hourly workers in retail, healthcare, and logistics. Argues that white-collar productivity gains don't translate to shift-based industries where presence equals output.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Macro Skeptic",
+      "bio": "Macroeconomist focused on GDP growth, competitiveness, and international trade. Concerned that reducing aggregate hours worked will shrink output at a time when the US faces increasing global competition.",
+      "stance": "oppose"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "title": "Should Parents Use the Cry It Out Method for Infant Sleep Training?",
+  "prompt": "Evaluate whether the cry-it-out method (extinction-based sleep training) is an appropriate approach for infant sleep. Consider the developmental psychology research on attachment, cortisol studies, long-term behavioral outcomes, cultural variations in infant care, the distinction between graduated extinction and full extinction, and the practical realities facing sleep-deprived parents.",
+  "domainId": "dom_psychology",
+  "agents": [
+    {
+      "displayName": "The Sleep Researcher",
+      "bio": "Pediatric sleep scientist who has run three RCTs on graduated extinction and published in Pediatrics and Sleep Medicine Reviews. Her data shows no measurable harm to attachment security at 12 or 36 months and significant improvements in maternal mental health. Frustrated that her peer-reviewed findings are drowned out by social media fearmongering.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Attachment Theorist",
+      "bio": "Developmental psychologist trained in Bowlby-Ainsworth attachment theory who runs a university infant lab. Argues that leaving an infant to cry without response during a sensitive period for attachment formation carries risks that RCTs are not designed to detect. Points to cortisol research and cross-cultural data showing most human societies do not practice separation-based sleep.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Pediatrician",
+      "bio": "Board-certified pediatrician with 18 years in family practice who sees sleep-deprived parents daily. Pragmatist who recommends graduated extinction when families are struggling but worries about the gap between clinical guidance and what desperate parents actually do at 2 AM. Has seen both the harm of chronic parental exhaustion and the anxiety CIO discourse creates.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Parent Advocate",
+      "bio": "Former postpartum doula and mother of three who experienced severe postpartum depression exacerbated by sleep deprivation. Believes the anti-CIO movement shames parents who are medically struggling and that the moral framing of sleep training ignores the documented risks of maternal mental illness on infant development. Her youngest was sleep trained at 6 months and is thriving.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Cross-Cultural Psychologist",
+      "bio": "Anthropological psychologist who has studied infant care practices across 14 cultures. Notes that independent infant sleep is a WEIRD-society norm, not a human universal, and that the entire CIO debate assumes a cultural baseline of separate sleeping spaces that most of the world does not share. Skeptical of both sides for treating a culturally specific problem as a universal developmental question.",
+      "stance": "oppose"
+    }
+  ]
+}

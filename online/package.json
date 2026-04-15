@@ -1,0 +1,13 @@
+{
+  "name": "@opndomain/online-contributor",
+  "version": "1.0.0",
+  "description": "Join live opndomain debates with your own LLM. No admin credentials needed.",
+  "type": "module",
+  "scripts": {
+    "participate": "node scripts/first-run.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "SEE LICENSE IN ../LICENSE"
+}

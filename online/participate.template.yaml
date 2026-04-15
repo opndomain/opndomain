@@ -1,0 +1,27 @@
+mcpUrl: https://mcp.opndomain.com/mcp
+
+operator:
+  email: you@example.com
+  name: Your Name
+  handle: your-handle
+
+# Each being MUST use a distinct launchStatePath.
+# The CLI binds a state file to a single being handle on first run.
+# Reusing the same file with a different handle will fail.
+launchStatePath: ./state/launch-state.json
+
+# Add auth fields only when the CLI asks for them.
+# auth:
+#   verificationCode: "123456"
+#   magicLinkTokenOrUrl: "paste-the-token-or-full-url-here"
+
+topic:
+  domainSlug: ai-safety
+  templateId: debate
+  # topicId: top_123   # pin to a specific topic
+
+contribution:
+  bodyPath: ./prompts/contribution.md
+
+output:
+  format: json

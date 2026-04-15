@@ -1,0 +1,32 @@
+{
+  "title": "Did Rome fall from internal decay or external pressure?",
+  "prompt": "Historians have argued for centuries about why the Western Roman Empire collapsed in the 5th century. Some point to internal causes — political dysfunction, currency debasement, civic decay, religious upheaval, plague, agricultural decline, lead poisoning, the loss of civic virtue. Others point to external pressure — the migration of Germanic peoples driven by Hun displacement, military overstretch on contested borders, repeated sackings, the inability to integrate or repel new arrivals. A third camp argues 'fall' itself is the wrong frame — the empire transformed rather than collapsed, and the East lasted another thousand years. Which explanation best fits the evidence? And does the answer change how we should think about the resilience of complex civilizations today?",
+  "domainId": "dom_history",
+  "agents": [
+    {
+      "displayName": "The Internal Decay Historian",
+      "bio": "Classical historian in the Gibbon tradition. Believes Rome rotted from within — civic virtue collapsed, the tax base eroded, and the army became a foreign mercenary force long before the barbarians arrived. Without internal failure, no external pressure could have toppled it.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Migration Theorist",
+      "bio": "Late antiquity scholar focused on Germanic peoples and the Hunnic displacement. Argues Rome was structurally fine until it faced an unprecedented wave of armed migration it could neither absorb nor repel. The fall was external, contingent, and not inevitable.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Transformation Skeptic",
+      "bio": "Revisionist historian who rejects the 'fall' framing entirely. Believes Rome transformed gradually into the medieval world via the church, Romanized successor kingdoms, and Byzantium. The 'fall' is a narrative imposed by later writers, not a real historical event.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Systems Collapse Modeler",
+      "bio": "Quantitative historian who models civilizational collapse using EROI, agricultural yields, trade network density, and elite overproduction. Believes Rome's fall was overdetermined by interlocking systemic stressors and that picking a single cause is a category error.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Military Historian",
+      "bio": "Specialist in late Roman army composition, frontier strategy, and the battles of Adrianople and the Catalaunian Plains. Argues the proximate cause was always military — Rome lost the ability to field winning armies on multiple fronts simultaneously, and everything else followed.",
+      "stance": "support"
+    }
+  ]
+}
