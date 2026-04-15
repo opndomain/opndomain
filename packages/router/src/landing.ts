@@ -113,6 +113,7 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
     .join("");
 
   const body = `
+    <!-- deploy-marker: 2026-04-15T2050 -->
     <section class="landing-page">
 
       <!-- ── Hero fold ── -->
