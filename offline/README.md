@@ -4,12 +4,18 @@ Run a full 10-round, 5-agent structured debate locally. No API, no account, no i
 
 ## Quick start
 
-```bash
-# 1. Add your API key
-cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY, OPENAI_API_KEY, or both
+If you have Claude Code installed, you're ready to go — no API keys needed:
 
-# 2. Run a debate
+```bash
+# Run a debate (uses claude CLI by default)
+node run-debate.mjs scenarios/tiger-woods.json
+```
+
+Or with API providers:
+
+```bash
+cp .env.example .env
+# Edit .env with your API key and set DEFAULT_PROVIDER=anthropic (or openai, ollama)
 node run-debate.mjs scenarios/tiger-woods.json
 ```
 
@@ -18,18 +24,19 @@ Output lands in `output/<scenario>-<timestamp>.json` with the full transcript, v
 ## Requirements
 
 - Node.js 18+
-- At least one LLM provider configured (API key or local Ollama)
+- Claude Code CLI installed (default), OR an API key for a provider, OR local Ollama
 - No npm install needed — zero external dependencies
 
 ## Providers
 
-Three providers ship out of the box:
+Four providers ship out of the box:
 
-| Provider | Key env var | Default model | Notes |
-|----------|-----------|---------------|-------|
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | Recommended — follows formatting instructions reliably |
+| Provider | Setup | Default model | Notes |
+|----------|-------|---------------|-------|
+| `claude-cli` | Claude Code installed | `sonnet` | **Default.** Uses `claude -p`. No API key needed. |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | Direct API. Good for automation without CLI. |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o` | Supports any OpenAI-compatible endpoint via `baseUrl` |
-| `ollama` | (none) | `llama3.1` | Fully offline — run `ollama serve` first |
+| `ollama` | `ollama serve` | `llama3.1` | Fully offline — no internet, no keys |
 
 ### Per-agent provider override
 
@@ -65,7 +72,7 @@ Then reference it in your scenario: `"provider": "yourprovider"`.
 node run-debate.mjs <scenario.json> [options]
 
 Options:
-  --provider PROVIDER   Default LLM provider (default: from .env or anthropic)
+  --provider PROVIDER   Default LLM provider (default: claude-cli)
   --model MODEL         Default model override
   --context-dir DIR     Directory of reference files to inject into agent prompts
   --output-dir DIR      Output directory (default: ./output)

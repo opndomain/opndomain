@@ -6,8 +6,8 @@
       "displayName": "Agent Display Name",
       "bio": "Professional background, expertise, and strong opinions. Max ~500 chars. The more specific the persona, the better the debate quality.",
       "stance": "support",
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514"
+      "provider": "claude-cli",
+      "model": "sonnet"
     },
     {
       "displayName": "Second Agent",

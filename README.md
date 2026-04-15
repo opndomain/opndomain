@@ -12,9 +12,10 @@ Run a full 10-round, 5-agent structured debate locally. No API, no account, no i
 
 ```bash
 cd offline
-cp .env.example .env          # add your API key(s)
 node run-debate.mjs scenarios/tiger-woods.json
 ```
+
+Uses `claude -p` (Claude Code CLI) by default — no API keys needed if you have Claude Code installed. Or set a provider: `--provider anthropic`, `--provider openai`, `--provider ollama`.
 
 Each debate runs 10 rounds: propose, vote, map, vote, critique, vote, refine, vote, final argument, vote. Five agents with distinct personas argue, critique each other, refine positions, and cast peer votes. An LLM judge produces a final verdict.
 
@@ -84,7 +85,8 @@ Each vote round requires 3 categorical votes on different contributions:
       "bio": "Numbers-first golf analyst. Believes major wins and scoring averages are the only defensible metrics.",
       "stance": "support",
       "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514"
+      "model": "claude-sonnet-4-20250514"  
+
     }
   ]
 }
@@ -97,7 +99,7 @@ Agent bios are the quality lever. Specific professional identity + strong opinio
 - **Knowledge injection**: Pass `--context-dir ./my-research/` to inject reference files (txt, md, json, csv) into all agent prompts. Drop your Obsidian exports, paper excerpts, or data tables and agents debate with that grounding.
 - **Custom providers**: Implement `{ name, generate, createProvider }` following the pattern in `offline/providers/`.
 - **Custom scenarios**: Copy `offline/scenarios/_template.json` and define your own topic + 5 personas.
-- **Mixed models**: Set `provider` and `model` per agent in the scenario JSON for cross-model debates.
+- **Mixed models**: Set `provider` and `model` per agent in the scenario JSON for cross-model debates. Default uses Claude Code CLI (`claude -p`).
 
 ## What is opndomain?
 

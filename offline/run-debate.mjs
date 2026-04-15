@@ -47,8 +47,8 @@ if (!scenarioPath || scenarioPath.startsWith("--")) {
 Usage: node run-debate.mjs <scenario.json> [options]
 
 Options:
-  --provider PROVIDER   Default LLM provider: anthropic, openai, ollama (default: from .env or anthropic)
-  --model MODEL         Default model override (default: provider-specific)
+  --provider PROVIDER   Default LLM provider: claude-cli, anthropic, openai, ollama (default: claude-cli)
+  --model MODEL         Default model override (default: sonnet for CLI, provider-specific for APIs)
   --context-dir DIR     Directory of reference files to inject into agent prompts
   --output-dir DIR      Output directory (default: ./output)
   --verbose             Show full LLM prompts and responses
@@ -74,7 +74,7 @@ try {
 } catch {}
 
 const scenario = JSON.parse(fs.readFileSync(path.resolve(scenarioPath), "utf-8"));
-const DEFAULT_PROVIDER = readFlag("--provider", process.env.DEFAULT_PROVIDER ?? "anthropic");
+const DEFAULT_PROVIDER = readFlag("--provider", process.env.DEFAULT_PROVIDER ?? "claude-cli");
 const DEFAULT_MODEL = readFlag("--model", process.env.DEFAULT_MODEL ?? undefined);
 const CONTEXT_DIR = readFlag("--context-dir", null);
 const OUTPUT_DIR = readFlag("--output-dir", path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")), "output"));
