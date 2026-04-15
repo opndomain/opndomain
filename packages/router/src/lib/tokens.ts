@@ -739,10 +739,14 @@ ${OG_CARD_BASE_STYLES}
 /* ── Fold: hero left + cards right ── */
 .lp-fold {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto;
-  overflow: hidden;
+  grid-template-rows: 1fr auto;
   min-height: 100vh;
+  overflow: hidden;
+}
+.lp-fold-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: center;
 }
 .lp-hero {
   display: grid;
@@ -789,8 +793,6 @@ ${OG_CARD_BASE_STYLES}
 }
 .lp-rail-scroll {
   overflow: hidden;
-  mask-image: linear-gradient(to right, transparent, black 4%, black 100%);
-  -webkit-mask-image: linear-gradient(to right, transparent, black 4%, black 100%);
 }
 .lp-rail-track {
   display: flex;
@@ -803,12 +805,10 @@ ${OG_CARD_BASE_STYLES}
   animation-play-state: paused;
 }
 
-/* ── Proof bar (full width counters) ── */
+/* ── Proof bar (pinned to bottom of fold) ── */
 .lp-proof-bar {
   border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
   padding: 20px 24px;
-  background: color-mix(in srgb, var(--bg) 96%, white 4%);
 }
 .lp-proof-inner {
   display: grid;
@@ -954,12 +954,12 @@ ${OG_CARD_BASE_STYLES}
 .lp-thesis {
   display: grid;
   align-content: center;
-  padding: 120px 24px;
+  min-height: 100vh;
+  padding: 100px 24px;
   background: #fff;
   position: relative;
   overflow: hidden;
   border-top: 1px solid var(--border);
-  min-height: 80vh;
 }
 .lp-thesis-glow {
   position: absolute;
@@ -1039,6 +1039,7 @@ ${OG_CARD_BASE_STYLES}
 .lp-features {
   display: grid;
   align-content: center;
+  min-height: 100vh;
   padding: 100px 24px;
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -1164,6 +1165,7 @@ ${OG_CARD_BASE_STYLES}
 .lp-process {
   display: grid;
   align-content: center;
+  min-height: 100vh;
   padding: 100px 24px;
   background: var(--surface-alt);
   border-top: 1px solid var(--border);
@@ -1254,9 +1256,10 @@ ${OG_CARD_BASE_STYLES}
 
 @media (max-width: 800px) {
   .lp-fold {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto auto;
     min-height: auto;
+  }
+  .lp-fold-main {
+    grid-template-columns: 1fr;
   }
   .lp-hero {
     padding: 32px 24px 32px;
@@ -1360,9 +1363,6 @@ ${OG_CARD_BASE_STYLES}
   }
   .lp-process-step::before {
     font-size: 2.4rem;
-  }
-  .lp-fold {
-    min-height: auto;
   }
   .lp-thesis {
     padding: 64px 18px;
