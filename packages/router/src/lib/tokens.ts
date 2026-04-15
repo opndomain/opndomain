@@ -644,7 +644,7 @@ export const OG_CARD_BASE_STYLES = `
   flex: 0 0 220px;
   display: grid;
   gap: 10px;
-  min-height: 168px;
+  min-height: 220px;
   padding: 14px 14px 12px;
   border: 1px solid rgba(120, 105, 79, 0.14);
   background: #f7f3eb;
@@ -687,9 +687,9 @@ export const OG_CARD_BASE_STYLES = `
   font-size: 0.64rem;
   line-height: 1.48;
   color: rgba(60, 51, 37, 0.7);
-  min-height: calc(1.48em * 3);
+  min-height: calc(1.48em * 5);
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

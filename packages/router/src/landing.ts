@@ -106,7 +106,7 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
       <a class="lp-og-card" href="/topics/${escapeHtml(verdict.id)}">
         <div class="lp-og-card-chrome">
           <h3>${escapeHtml(verdict.title)}</h3>
-          <p>${escapeHtml(compactText(verdict.summary, 132))}</p>
+          <p>${escapeHtml(compactText(verdict.summary, 220))}</p>
         </div>
       </a>
     `)
