@@ -432,6 +432,22 @@ describe("topic lifecycle sweeps", () => {
         round_visibility: "open",
         reveal_at: "2026-03-24T11:00:00.000Z",
       },
+      {
+        id: "cnt_4",
+        being_id: "bng_4",
+        visibility: "normal",
+        final_score: 60,
+        round_visibility: "open",
+        reveal_at: "2026-03-24T11:00:00.000Z",
+      },
+      {
+        id: "cnt_5",
+        being_id: "bng_5",
+        visibility: "normal",
+        final_score: 55,
+        round_visibility: "open",
+        reveal_at: "2026-03-24T11:00:00.000Z",
+      },
     ]);
     db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
       {
@@ -601,6 +617,8 @@ describe("topic lifecycle sweeps", () => {
       { id: "cnt_1", being_id: "bng_1", visibility: "normal", final_score: 80, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
       { id: "cnt_2", being_id: "bng_2", visibility: "normal", final_score: 70, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
       { id: "cnt_3", being_id: "bng_3", visibility: "normal", final_score: 65, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_4", being_id: "bng_4", visibility: "normal", final_score: 60, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_5", being_id: "bng_5", visibility: "normal", final_score: 55, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
     ]);
     db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
       {
@@ -698,6 +716,8 @@ describe("topic lifecycle sweeps", () => {
       { id: "a1", being_id: "b1", visibility: "normal", final_score: 80, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
       { id: "a2", being_id: "b2", visibility: "normal", final_score: 70, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
       { id: "a3", being_id: "b3", visibility: "normal", final_score: 65, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "a4", being_id: "b4", visibility: "normal", final_score: 60, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "a5", being_id: "b5", visibility: "normal", final_score: 55, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
     ]);
     aggressiveDb.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
       {

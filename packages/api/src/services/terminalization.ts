@@ -11,7 +11,7 @@ import {
 } from "@opndomain/shared";
 import type { RoundKind, TerminalizationMode, VerdictConfidence, VerdictPosition } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { allRows, firstRow } from "../lib/db.js";
+import { allRows, firstRow, runStatement } from "../lib/db.js";
 import { createId } from "../lib/ids.js";
 import { queuePresentationRetry, reconcileTopicPresentation } from "./presentation.js";
 import {
@@ -25,6 +25,8 @@ import { MAP_POSITION_REGEX } from "../lib/map-round.js";
 import { evaluateTrustForTopicParticipants } from "./trust-promotion.js";
 import { analyzePositions, classifyPositions, synthesizeOutcome, type ContributionWithStance } from "./verdict-positions.js";
 import { assembleDossier } from "./dossier.js";
+import { createSlotsFromOutput } from "./canonical-slots.js";
+import { recordProvenance } from "./claim-provenance.js";
 
 export async function backfillTopicClaims(
   env: ApiEnv,
@@ -916,6 +918,85 @@ export async function runTerminalizationSequence(
 
   // Recompute verdictOutcome from finalPositions so convergence label stays aligned with positions_json
   const verdictOutcome = synthesizeOutcome(finalPositions, verdictPresentation.participantCount);
+
+  // --- Canonical slot creation for standard debates ---
+  // Standard debates lack a topic_instances row, so create a synthetic one
+  // to satisfy the FK on canonical_slots. instance_index=0, immediately finalized.
+  // Guard: skip for autonomous topics — they have real instances managed by the
+  // autonomous lifecycle and instance-finalization creates slots there.
+  const isAutonomous = await firstRow<{ autonomous_config_json: string | null }>(
+    env.DB,
+    `SELECT autonomous_config_json FROM topics WHERE id = ?`,
+    topicId,
+  );
+  const nonNoisePositions = finalPositions.filter(
+    (p) => p.classification !== "noise" && p.label.length >= 8,
+  );
+  if (nonNoisePositions.length > 0 && !isAutonomous?.autonomous_config_json) {
+    try {
+      // Use instance_index = -1 for the synthetic instance so it never collides
+      // with real autonomous instances (which start at 0).
+      const syntheticInstanceId = createId("inst");
+      await runStatement(
+        env.DB
+          .prepare(
+            `INSERT OR IGNORE INTO topic_instances
+             (id, topic_id, instance_index, status, participant_count, finalized_at)
+             VALUES (?, ?, -1, 'finalized', ?, CURRENT_TIMESTAMP)`,
+          )
+          .bind(syntheticInstanceId, topicId, verdictPresentation.participantCount),
+      );
+
+      // Check if a synthetic instance already exists (reterminalize case)
+      const existingInstance = await firstRow<{ id: string }>(
+        env.DB,
+        `SELECT id FROM topic_instances WHERE topic_id = ? AND instance_index = -1`,
+        topicId,
+      );
+      const instanceId = existingInstance?.id ?? syntheticInstanceId;
+
+      const slots = nonNoisePositions.map((p) => ({
+        slotKind: "position" as const,
+        slotLabel: p.label,
+      }));
+      const createdSlots = await createSlotsFromOutput(env, topicId, instanceId, "verdict", slots);
+
+      // Record provenance: link each position's contributions to the created slot
+      for (let i = 0; i < nonNoisePositions.length; i++) {
+        const position = nonNoisePositions[i];
+        const slot = createdSlots[i];
+        if (!slot) continue;
+
+        for (const contribId of position.contributionIds) {
+          const contrib = refreshedContributions.find((c) => c.id === contribId);
+          if (!contrib) continue;
+
+          // Seed (propose) contribution is the author; others by stance
+          let role: "author" | "support" | "objection" | "refinement" = "support";
+          if (contrib.round_kind === "propose") {
+            role = "author";
+          } else if (contrib.stance === "oppose") {
+            role = "objection";
+          } else if (contrib.round_kind === "final_argument") {
+            role = "refinement";
+          }
+
+          await recordProvenance(env, {
+            canonicalSlotId: slot.id,
+            instanceId,
+            contributionId: contribId,
+            beingId: contrib.being_id,
+            role,
+            roundKind: contrib.round_kind,
+          });
+        }
+      }
+      console.info("canonical_slots_created", { topicId, slotCount: createdSlots.length });
+    } catch (error) {
+      // Non-fatal — verdict still writes without slots
+      console.error(`canonical slot creation failed for topic ${topicId}`, error);
+    }
+  }
 
   // Extract minority reports using explicit being-to-position provenance
   const minorityReports = extractMinorityReports(refreshedContributions, positionBeingMap, finalPositions);

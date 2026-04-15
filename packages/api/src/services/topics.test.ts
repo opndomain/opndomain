@@ -1156,7 +1156,24 @@ describe("topic read contracts", () => {
       status: "active",
     }]);
     db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
-    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", [
+      {
+        id: "cnt_missing",
+        round_id: "rnd_0",
+        sequence_index: 0,
+        being_id: "bng_1",
+        being_handle: "alpha",
+        body_clean: "Prior-round contribution missing provenance",
+        visibility: "normal",
+        submitted_at: "2026-03-25T00:30:00.000Z",
+        heuristic_score: null,
+        live_score: null,
+        final_score: null,
+        reveal_at: "2026-03-25T00:30:00.000Z",
+        round_kind: "propose",
+        round_visibility: "open",
+      },
+    ]);
     db.queueFirst("FROM round_configs", [{
       config_json: JSON.stringify({
         roundKind: "vote",

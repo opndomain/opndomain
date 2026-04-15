@@ -10,6 +10,10 @@ import { forceFlushTopicState } from "./terminalization.js";
 import { recomputeContributionFinalScore } from "./votes.js";
 import { updateDomainReputation } from "./reputation.js";
 import { computeInstanceEpistemicAdjustments } from "./claim-provenance.js";
+import { createSlotsFromOutput } from "./canonical-slots.js";
+import { recordProvenance } from "./claim-provenance.js";
+import { analyzePositions, type ContributionWithStance } from "./verdict-positions.js";
+import { AutonomousConfigSchema } from "@opndomain/shared";
 
 type FinalizationStepRow = {
   id: string;
@@ -332,12 +336,17 @@ async function runVerdictWritten(env: ApiEnv, instance: InstanceRow): Promise<vo
     id: string;
     being_id: string;
     body: string;
+    body_clean: string | null;
     round_kind: string;
+    sequence_index: number;
     final_score: number;
+    stance: string | null;
+    target_contribution_id: string | null;
   }>(
     env.DB,
-    `SELECT c.id, c.being_id, c.body, r.round_kind,
-            COALESCE(cs.final_score, 0) as final_score
+    `SELECT c.id, c.being_id, c.body, c.body_clean, r.round_kind, r.sequence_index,
+            COALESCE(cs.final_score, 0) as final_score,
+            c.stance, c.target_contribution_id
      FROM contributions c
      JOIN rounds r ON r.id = c.round_id
      JOIN contribution_scores cs ON cs.contribution_id = c.id
@@ -389,6 +398,81 @@ async function runVerdictWritten(env: ApiEnv, instance: InstanceRow): Promise<vo
       )
       .bind(packageId, instance.id, verdictJson, confidence, terminalizationMode, uniqueParticipants),
   );
+
+  // --- Canonical slot creation from instance positions ---
+  // Non-fatal: slot/provenance errors must not block finalization or merge.
+  try {
+    // Load autonomous config for ballot eligibility cap and min label length
+    const topicRow = await firstRow<{ autonomous_config_json: string | null }>(
+      env.DB,
+      `SELECT autonomous_config_json FROM topics WHERE id = ?`,
+      instance.topic_id,
+    );
+    const autonomousConfig = topicRow?.autonomous_config_json
+      ? AutonomousConfigSchema.parse(JSON.parse(topicRow.autonomous_config_json))
+      : undefined;
+
+    const positionContribs: ContributionWithStance[] = contributions.map((c) => ({
+      id: c.id,
+      being_id: c.being_id,
+      round_kind: c.round_kind,
+      sequence_index: c.sequence_index,
+      body_clean: c.body_clean,
+      stance: c.stance,
+      target_contribution_id: c.target_contribution_id,
+      final_score: c.final_score,
+    }));
+    const positions = analyzePositions(positionContribs);
+    const nonNoisePositions = positions.filter(
+      (p) => p.label.length >= (autonomousConfig?.minSlotLabelLength ?? 8),
+    );
+
+    if (nonNoisePositions.length > 0) {
+      const slots = nonNoisePositions.map((p) => ({
+        slotKind: "position" as const,
+        slotLabel: p.label,
+      }));
+      const createdSlots = await createSlotsFromOutput(
+        env, instance.topic_id, instance.id, "verdict", slots, autonomousConfig,
+      );
+
+      for (let i = 0; i < nonNoisePositions.length; i++) {
+        const position = nonNoisePositions[i];
+        const slot = createdSlots[i];
+        if (!slot) continue;
+
+        for (const contribId of position.contributionIds) {
+          const contrib = contributions.find((c) => c.id === contribId);
+          if (!contrib) continue;
+
+          let role: "author" | "support" | "objection" | "refinement" = "support";
+          if (contrib.round_kind === "propose") {
+            role = "author";
+          } else if (contrib.stance === "oppose") {
+            role = "objection";
+          } else if (contrib.round_kind === "final_argument") {
+            role = "refinement";
+          }
+
+          await recordProvenance(env, {
+            canonicalSlotId: slot.id,
+            instanceId: instance.id,
+            contributionId: contribId,
+            beingId: contrib.being_id,
+            role,
+            roundKind: contrib.round_kind,
+          });
+        }
+      }
+      console.info("canonical_slots_created", {
+        instanceId: instance.id,
+        slotCount: createdSlots.length,
+      });
+    }
+  } catch (error) {
+    // Non-fatal — verdict package already written, finalization continues
+    console.error(`canonical slot creation failed for instance ${instance.id}`, error);
+  }
 }
 
 async function runEpistemicApplied(env: ApiEnv, instance: InstanceRow): Promise<void> {
