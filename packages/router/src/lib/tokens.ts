@@ -710,11 +710,15 @@ ${OG_CARD_BASE_STYLES}
 }
 /* stagger children */
 .lp-thesis-cards .lp-reveal:nth-child(2) { transition-delay: 0.12s; }
-.lp-features-grid .lp-reveal:nth-child(2) { transition-delay: 0.08s; }
-.lp-features-grid .lp-reveal:nth-child(3) { transition-delay: 0.16s; }
-.lp-features-grid .lp-reveal:nth-child(4) { transition-delay: 0.24s; }
-.lp-features-grid .lp-reveal:nth-child(5) { transition-delay: 0.32s; }
-.lp-features-grid .lp-reveal:nth-child(6) { transition-delay: 0.40s; }
+.lp-rounds-grid .lp-reveal:nth-child(2) { transition-delay: 0.06s; }
+.lp-rounds-grid .lp-reveal:nth-child(3) { transition-delay: 0.12s; }
+.lp-rounds-grid .lp-reveal:nth-child(4) { transition-delay: 0.18s; }
+.lp-rounds-grid .lp-reveal:nth-child(5) { transition-delay: 0.24s; }
+.lp-rounds-grid .lp-reveal:nth-child(6) { transition-delay: 0.30s; }
+.lp-rounds-grid .lp-reveal:nth-child(7) { transition-delay: 0.36s; }
+.lp-rounds-grid .lp-reveal:nth-child(8) { transition-delay: 0.42s; }
+.lp-rounds-grid .lp-reveal:nth-child(9) { transition-delay: 0.48s; }
+.lp-rounds-grid .lp-reveal:nth-child(10) { transition-delay: 0.54s; }
 .lp-process-steps .lp-reveal:nth-child(2) { transition-delay: 0.1s; }
 .lp-process-steps .lp-reveal:nth-child(3) { transition-delay: 0.2s; }
 .lp-process-steps .lp-reveal:nth-child(4) { transition-delay: 0.3s; }
@@ -950,19 +954,20 @@ ${OG_CARD_BASE_STYLES}
 .lp-thesis {
   display: grid;
   align-content: center;
-  padding: 80px 24px;
+  padding: 120px 24px;
   background: #fff;
   position: relative;
   overflow: hidden;
   border-top: 1px solid var(--border);
+  min-height: 80vh;
 }
 .lp-thesis-glow {
   position: absolute;
   top: -40%;
   left: 50%;
   transform: translateX(-50%);
-  width: 800px;
-  height: 800px;
+  width: 1000px;
+  height: 1000px;
   background: radial-gradient(circle, rgba(77, 103, 128, 0.06) 0%, transparent 70%);
   pointer-events: none;
   animation: lp-glow-pulse 8s ease-in-out infinite alternate;
@@ -973,8 +978,9 @@ ${OG_CARD_BASE_STYLES}
 }
 .lp-thesis-inner {
   display: grid;
-  gap: 40px;
-  max-width: 1080px;
+  gap: 48px;
+  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
   position: relative;
   z-index: 1;
@@ -983,7 +989,7 @@ ${OG_CARD_BASE_STYLES}
 }
 .lp-thesis-inner h2 {
   margin: 0;
-  font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+  font-size: clamp(2.2rem, 4vw, 3.4rem);
   line-height: 1.05;
   letter-spacing: -0.03em;
   max-width: 22ch;
@@ -1029,89 +1035,82 @@ ${OG_CARD_BASE_STYLES}
   max-width: 34ch;
 }
 
-/* ── Features grid ── */
+/* ── Round-by-round grid ── */
 .lp-features {
   display: grid;
   align-content: center;
-  min-height: 100vh;
-  padding: 80px 24px;
+  padding: 100px 24px;
   background: var(--surface);
   border-top: 1px solid var(--border);
 }
 .lp-features-inner {
   display: grid;
   gap: 48px;
-  max-width: 1080px;
+  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
 }
 .lp-features-header {
   display: grid;
   gap: 12px;
+  text-align: center;
+  justify-items: center;
 }
 .lp-features-header h2 {
   margin: 0;
-  font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+  font-size: clamp(2rem, 3.6vw, 3rem);
   line-height: 1.05;
   letter-spacing: -0.03em;
-  max-width: 24ch;
 }
-.lp-features-grid {
+.lp-rounds-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
 }
-.lp-feature-card {
+.lp-round-card {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
-  padding: 28px 24px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  padding: 24px 20px;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transition: background 0.3s ease;
+}
+.lp-round-card:nth-child(1),
+.lp-round-card:nth-child(6) {
+  border-left: none;
+}
+.lp-round-card:nth-child(n+6) {
+  border-bottom: none;
+}
+.lp-round-card:hover {
   background: var(--bg);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease;
-  position: relative;
-  overflow: hidden;
 }
-.lp-feature-card::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--cyan), transparent);
-  opacity: 0;
-  transition: opacity 0.3s ease;
+.lp-round-num {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--border);
+  letter-spacing: -0.04em;
+  transition: color 0.3s ease;
 }
-.lp-feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 40px rgba(0,0,0,0.06);
-  border-color: var(--cyan);
-}
-.lp-feature-card:hover::after {
-  opacity: 1;
-}
-.lp-feature-icon {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  background: rgba(77, 103, 128, 0.08);
-  border: 1px solid rgba(77, 103, 128, 0.15);
+.lp-round-card:hover .lp-round-num {
   color: var(--cyan);
 }
-.lp-feature-card h3 {
+.lp-round-vote {
+  background: rgba(77, 103, 128, 0.03);
+}
+.lp-round-card h3 {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1rem;
   letter-spacing: -0.01em;
 }
-.lp-feature-card p {
+.lp-round-card p {
   margin: 0;
   color: var(--text-dim);
-  font-size: 0.88rem;
-  line-height: 1.6;
+  font-size: 0.82rem;
+  line-height: 1.55;
 }
 
 /* ── Origin narrative (used inside thesis) ── */
@@ -1165,8 +1164,7 @@ ${OG_CARD_BASE_STYLES}
 .lp-process {
   display: grid;
   align-content: center;
-  min-height: 100vh;
-  padding: 80px 24px;
+  padding: 100px 24px;
   background: var(--surface-alt);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
@@ -1174,21 +1172,25 @@ ${OG_CARD_BASE_STYLES}
 .lp-process-inner {
   display: grid;
   gap: 48px;
-  max-width: 1080px;
+  max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
+  text-align: center;
+  justify-items: center;
 }
 .lp-process-inner h2 {
   margin: 0;
-  font-size: clamp(1.8rem, 3.4vw, 2.8rem);
+  font-size: clamp(2rem, 3.6vw, 3rem);
   line-height: 1;
   letter-spacing: -0.03em;
-  max-width: 24ch;
 }
 .lp-process-steps {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0;
   counter-reset: step;
+  width: 100%;
+  text-align: left;
 }
 .lp-process-step {
   display: grid;
@@ -1272,14 +1274,30 @@ ${OG_CARD_BASE_STYLES}
   .lp-thesis-cards {
     grid-template-columns: 1fr;
   }
-  .lp-features-grid {
+  .lp-rounds-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .lp-process-steps {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .lp-process-step:nth-child(4) {
+  .lp-rounds-grid .lp-round-card {
     border-left: none;
+  }
+  .lp-rounds-grid .lp-round-card:nth-child(even) {
+    border-left: 1px solid var(--border);
+  }
+  .lp-rounds-grid .lp-round-card:nth-child(n+9) {
+    border-bottom: none;
+  }
+  .lp-rounds-grid .lp-round-card:nth-child(-n+8) {
+    border-bottom: 1px solid var(--border);
+  }
+  .lp-process-steps {
+    grid-template-columns: 1fr;
+  }
+  .lp-process-step {
+    border-left: none !important;
+    border-top: 1px solid var(--border);
+  }
+  .lp-process-step:first-child {
+    border-top: none;
   }
   .lp-thesis,
   .lp-process,
@@ -1322,11 +1340,15 @@ ${OG_CARD_BASE_STYLES}
     padding: 20px 18px;
     font-size: 0.75rem;
   }
-  .lp-features-grid {
+  .lp-rounds-grid {
     grid-template-columns: 1fr;
   }
-  .lp-process-steps {
-    grid-template-columns: 1fr;
+  .lp-rounds-grid .lp-round-card {
+    border-left: none !important;
+    border-bottom: 1px solid var(--border) !important;
+  }
+  .lp-rounds-grid .lp-round-card:last-child {
+    border-bottom: none !important;
   }
   .lp-process-step {
     border-left: none;
@@ -1342,7 +1364,10 @@ ${OG_CARD_BASE_STYLES}
   .lp-fold {
     min-height: auto;
   }
-  .lp-thesis,
+  .lp-thesis {
+    padding: 64px 18px;
+    min-height: auto;
+  }
   .lp-process,
   .lp-features {
     padding: 48px 18px;
