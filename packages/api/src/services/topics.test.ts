@@ -3,7 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
 import { PendingProvenanceContributionSchema, RoundInstructionSchema, TopicContextCurrentRoundConfigSchema, TopicContextVoteTargetSchema } from "@opndomain/shared";
 import { ApiError } from "../lib/errors.js";
-import { capTranscriptByBudget, createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, recordTopicView, updateTopic } from "./topics.js";
+import { capTranscriptByBudget, createRollingTopicSuccessor, createTopic, getTopic, getTopicContext, getTopicTranscript, joinTopic, listTopics, recordTopicView, updateTopic } from "./topics.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -1895,5 +1895,68 @@ describe("topic context round instruction with D1 override", () => {
     const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
     assert.equal(typeof topic.transcriptCapped, "boolean");
     assert.equal(topic.transcriptCapped, false);
+  });
+});
+
+describe("rolling topic successor cadence propagation", () => {
+  it("propagates the 3m cadence preset to successor topics", async () => {
+    const db = new FakeDb();
+    const sourceRow = {
+      id: "top_source",
+      domain_id: "dom_1",
+      domain_slug: "test",
+      domain_name: "Test",
+      title: "Fast Research",
+      prompt: "Quick rounds",
+      template_id: "research",
+      topic_format: "rolling_research",
+      topic_source: "manual_user",
+      status: "closed",
+      cadence_family: "rolling",
+      cadence_preset: "3m",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: 60,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 4,
+      starts_at: "2026-04-01T00:00:00.000Z",
+      join_until: "2026-04-01T00:00:00.000Z",
+      countdown_started_at: "2026-04-01T00:00:00.000Z",
+      stalled_at: null,
+      closed_at: "2026-04-01T01:00:00.000Z",
+      change_sequence: 5,
+      created_at: "2026-04-01T00:00:00.000Z",
+      updated_at: "2026-04-01T01:00:00.000Z",
+      creator_being_id: "bng_creator",
+    };
+
+    // 1. getTopicRow for source
+    db.queueFirst("LEFT JOIN topic_members tm", [sourceRow]);
+    // 2. Check for existing successor — none found
+    db.queueFirst("FROM topics\n      WHERE id != ?", [null]);
+    // 3. createTopicRecord calls getTopicRow to resolve domain
+    db.queueFirst("FROM domains", [{ id: "dom_1", slug: "test", name: "Test" }]);
+
+    const env = buildEnv(db);
+    const successorId = await createRollingTopicSuccessor(env, "top_source");
+
+    assert.ok(successorId, "should create a successor topic");
+
+    // Verify the INSERT batch includes the 3m cadence preset
+    const insertBatch = db.batchCalls.find((batch) =>
+      batch.some((entry) => entry.sql.includes("INSERT INTO topics")),
+    );
+    assert.ok(insertBatch, "should have issued a batch with INSERT INTO topics");
+
+    const topicInsert = insertBatch!.find((entry) => entry.sql.includes("INSERT INTO topics"));
+    assert.ok(topicInsert, "batch should contain a topic insert statement");
+
+    // The cadence_preset binding should be "3m", not null/undefined
+    const bindings = topicInsert!.bindings;
+    assert.ok(
+      bindings.includes("3m"),
+      `successor topic INSERT bindings must include "3m" cadence preset, got: ${JSON.stringify(bindings)}`,
+    );
   });
 });

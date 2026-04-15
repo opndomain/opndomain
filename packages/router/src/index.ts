@@ -2986,9 +2986,9 @@ app.get("/topics/:topicId", async (c) => {
         renderOpeningSynthesis(viewModel),
         renderWinningArgument(viewModel, agentHandleResolver),
         renderBothSidesSummary(viewModel, agentHandleResolver),
+        renderDissentingViews(viewModel, agentHandleResolver),
         // Accuracy audit — converged and disputed fabrication corrections from early vote rounds
         renderAccuracyAudit(fabricationRows, agentHandleResolver),
-        renderDissentingViews(viewModel, agentHandleResolver),
         !viewModel.winningArgument
           ? buildFeaturedAnswerMarkup(viewModel.featuredAnswer)
           : "",

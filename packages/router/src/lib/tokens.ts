@@ -2914,6 +2914,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .topic-opening-synthesis,
 .topic-featured-answer,
 .topic-highlights,
+.accuracy-audit,
 .dissenting-views,
 .dossier-secondary-section {
   width: min(100%, 720px);
@@ -3140,7 +3141,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 /* ---- accuracy audit ---- */
 .accuracy-audit {
   display: grid;
-  gap: 16px;
+  gap: 0;
   padding: 24px 0;
   border-top: 1px solid var(--border);
 }
@@ -3150,32 +3151,38 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  margin-bottom: 16px;
 }
 .accuracy-group {
   display: grid;
-  gap: 12px;
+  gap: 0;
 }
 .accuracy-group-label {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.82rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.accuracy-group + .accuracy-group {
+  padding-top: 16px;
 }
 .accuracy-item {
   display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  gap: 0;
+  padding: 0 0 16px;
+}
+.accuracy-item + .accuracy-item {
+  padding-top: 16px;
 }
 .accuracy-item-head {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 6px;
 }
 .accuracy-badge {
   display: inline-flex;
@@ -3184,17 +3191,12 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   font-size: 0.64rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  border-radius: 4px;
 }
 .accuracy-badge--converged {
-  background: rgba(220, 80, 60, 0.10);
-  color: #c0392b;
-  border: 1px solid rgba(220, 80, 60, 0.25);
+  color: var(--cyan);
 }
 .accuracy-badge--disputed {
-  background: rgba(200, 160, 40, 0.10);
-  color: #8a6d20;
-  border: 1px solid rgba(200, 160, 40, 0.25);
+  color: var(--text-muted);
 }
 .accuracy-item-target {
   font-family: var(--font-mono);
@@ -3202,15 +3204,17 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   color: var(--text-muted);
 }
 .accuracy-item-excerpt {
-  font-size: 0.88rem;
-  line-height: 1.55;
-  color: var(--text-dim);
+  max-width: 68ch;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--text);
   margin: 0;
 }
 .accuracy-item-attribution {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--text-muted);
+  margin-top: 6px;
 }
 
 /* ---- dissenting views (matches both-sides spacing) ---- */

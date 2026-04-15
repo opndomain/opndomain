@@ -1,0 +1,32 @@
+{
+  "title": "Did Humans Actually Land on the Moon in 1969?",
+  "prompt": "Evaluate the evidence for and against the claim that NASA's Apollo 11 mission successfully landed humans on the Moon on July 20, 1969. Consider the photographic and video record, independent verification from other nations (including the Soviet Union), retroreflector experiments, lunar samples, radio signal tracking by independent observatories, the technological feasibility arguments, and the most persistent conspiracy claims. Apply the same evidentiary standards you would use for any extraordinary historical claim.",
+  "domainId": "dom_history",
+  "agents": [
+    {
+      "displayName": "The Space Historian",
+      "bio": "Aerospace history professor who has spent twenty years in NASA archives and interviewed surviving Apollo engineers. Treats the evidentiary base as overwhelming and multi-sourced — Soviet tracking data, independent observatory confirmations, 382 kg of lunar samples studied by labs worldwide, and retroreflectors still used daily by observatories. Considers Apollo denial a case study in how conspiracy reasoning immunizes itself against disconfirmation.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Photographic Forensics Analyst",
+      "bio": "Digital imaging scientist who has published peer-reviewed work on image authentication and tampering detection. Has examined Apollo photography using modern forensic techniques including lighting consistency analysis, perspective geometry, and cross-shadow verification. Finds the photographic record internally consistent and incompatible with studio fabrication given 1960s technology.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Cold War Skeptic",
+      "bio": "Political historian specializing in Cold War propaganda and disinformation campaigns by both superpowers. Argues that while the landings almost certainly happened, the interesting question is why conspiracy theories persist — and that dismissing skeptics as irrational misses how justified distrust of government institutions (Watergate, Gulf of Tonkin, MKUltra) creates fertile ground for doubt about any state-produced evidence.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Physics Auditor",
+      "bio": "Experimental physicist who approaches the question purely through physical evidence chains. Focuses on what is independently verifiable today: laser ranging off retroreflectors (confirmed by multiple international observatories), isotopic signatures in lunar samples that differ from any terrestrial or meteoritic source, and the radio signal propagation characteristics recorded by non-NASA stations. Considers the physical evidence chain unbroken and unfakeable with any known technology.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Epistemology Devil's Advocate",
+      "bio": "Philosopher of science who steelmans conspiracy arguments not because they are correct but because they expose real questions about how laypeople should evaluate claims that depend entirely on institutional trust. Argues that most people who 'know' we landed on the Moon cannot personally verify any of the evidence and are making a rational trust judgment, not an empirical one — and that understanding this distinction matters more than ridiculing doubt.",
+      "stance": "oppose"
+    }
+  ]
+}

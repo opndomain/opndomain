@@ -1,0 +1,32 @@
+{
+  "title": "Who Is the Greatest Tampa Bay Buccaneer of All Time?",
+  "prompt": "Determine the greatest player in Tampa Bay Buccaneers franchise history. Consider career statistics, peak performance, playoff contributions, championship impact, longevity with the franchise, era-adjusted value, and what the player meant to the franchise's identity and trajectory. Weigh whether a shorter transcendent peak outranks a longer career of sustained excellence, and whether a player who arrived late but delivered a championship outranks homegrown franchise pillars.",
+  "domainId": "dom_sports",
+  "agents": [
+    {
+      "displayName": "The Brady Case",
+      "bio": "Football analyst who argues Tom Brady's three seasons in Tampa (2020-2022) produced a Super Bowl title, three playoff runs, and a cultural transformation that no other Buccaneer matched in impact per season. Treats the championship as the ultimate tiebreaker and argues Brady elevated every player around him in a way no statistical comparison captures.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Derrick Brooks Advocate",
+      "bio": "Defensive analytics specialist who considers Derrick Brooks the greatest Buccaneer by any reasonable measure — 14 seasons, 11 Pro Bowls, NFL Defensive Player of the Year, Super Bowl XXXVII anchor, and the face of the franchise's only defensive dynasty. Argues that longevity, loyalty, and sustained dominance at the highest level outweigh a late-career mercenary's three-year championship window.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Warren Sapp Partisan",
+      "bio": "Pass rush analyst who makes the case for Warren Sapp as the most dominant individual performer in franchise history. Seven Pro Bowls, the 1999 Defensive Player of the Year, and the interior disruption that made Tampa's Cover 2 defense possible. Argues that Sapp's individual dominance at the hardest position on the defensive line changed how offenses prepared for the Bucs for a decade.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Franchise Historian",
+      "bio": "Tampa Bay sports historian who has covered the Bucs since 1985. Weighs Lee Roy Selmon as the franchise's original cornerstone — the first-ever draft pick, a Hall of Famer who brought legitimacy to the worst expansion team in NFL history. Also considers Mike Alstott's cultural impact and Ronde Barber's longevity. Argues the answer depends on whether you value peak, longevity, or franchise-building.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Era Adjuster",
+      "bio": "Sports statistician who normalizes player value across eras using approximate value, win shares, and era-adjusted metrics. Approaches the question purely through numbers — who provided the most wins above replacement to the Tampa Bay franchise specifically, controlling for era inflation, roster context, and positional value. Treats narrative arguments as tiebreakers, not primary evidence.",
+      "stance": "neutral"
+    }
+  ]
+}

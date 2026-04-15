@@ -1,20 +1,21 @@
 #!/usr/bin/env node
 
 /**
- * run-debate-codex.mjs - Universal e2e debate driver with Codex CLI-powered agents.
+ * run-debate-codex.mjs - Mixed-model debate driver (Codex + Claude).
  *
- * Each agent gets a persona prompt and generates contributions by calling
- * `codex exec` with the round context from the API.
+ * First 3 agents use Codex CLI, last 2 use Claude CLI, so both models
+ * contribute to the same debate.
  *
  * Usage:
  *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json
  *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --cadence 3
  *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --model gpt-5.4-mini
- *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --domain-id dom_ai-safety
+ *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --claude-model sonnet
  *   node scripts/run-debate-codex.mjs scripts/scenarios/tiger-woods.json --api-base-url http://localhost:8787
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { Agent, setGlobalDispatcher } from "undici";
@@ -40,6 +41,8 @@ Options:
   --domain-id ID        Domain ID (default: dom_game-theory)
   --cadence MINUTES     Round duration in minutes (default: 2)
   --model MODEL         Codex model (default: gpt-5.4-mini)
+  --claude-model MODEL  Claude model (default: sonnet)
+  --codex-agents N      Number of agents using Codex (default: 3, rest use Claude)
 `);
   process.exit(1);
 }
@@ -50,7 +53,9 @@ const API_BASE_URL = readFlag("--api-base-url", "https://api.opndomain.com");
 const DOMAIN_ID = scenario.domainId ?? readFlag("--domain-id", "dom_game-theory");
 const TEMPLATE_ID = scenario.templateId ?? "debate";
 const CADENCE_MINUTES = Number(readFlag("--cadence", scenario.cadenceMinutes ?? 2));
-const LLM_MODEL = readFlag("--model", "gpt-5.4-mini");
+const CODEX_MODEL = readFlag("--model", "gpt-5.4-mini");
+const CLAUDE_MODEL = readFlag("--claude-model", "sonnet");
+const CODEX_AGENT_COUNT = Number(readFlag("--codex-agents", 3));
 const EXISTING_TOPIC_ID = readFlag("--existing-topic", null);
 
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
@@ -135,7 +140,7 @@ async function freshToken(holder) {
 async function runCodexPrompt(prompt) {
   return new Promise((resolve, reject) => {
     const args = ["exec", "--full-auto"];
-    if (LLM_MODEL) args.push("--model", LLM_MODEL);
+    if (CODEX_MODEL) args.push("--model", CODEX_MODEL);
     args.push("-");
 
     const proc = spawn("codex", args, {
@@ -175,6 +180,57 @@ async function callCodex(systemPrompt, userPrompt) {
   return await runCodexPrompt(combinedPrompt);
 }
 
+// ---- LLM via claude CLI ----
+
+async function callClaudeOnce(systemPrompt, userPrompt, cleanCwd) {
+  const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
+  fs.writeFileSync(systemPromptFile, systemPrompt);
+
+  const shellCmd = `claude -p --model ${CLAUDE_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn("bash", ["-c", shellCmd], {
+      timeout: 180_000,
+      cwd: cleanCwd,
+      env: { ...process.env },
+    });
+
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (chunk) => { stdout += chunk; });
+    proc.stderr.on("data", (chunk) => { stderr += chunk; });
+    proc.stdin.write(userPrompt);
+    proc.stdin.end();
+    proc.on("close", (code) => {
+      if (code !== 0) reject(new Error(`claude CLI exited ${code}: ${stderr.slice(0, 200)}`));
+      else resolve(stdout.trim());
+    });
+    proc.on("error", reject);
+  });
+}
+
+async function callClaude(systemPrompt, userPrompt) {
+  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
+  try {
+    return await callClaudeOnce(systemPrompt, userPrompt, cleanCwd);
+  } catch (firstError) {
+    log("llm-retry", { runner: "claude", error: firstError.message?.slice(0, 120) });
+    await wait(3_000);
+    try {
+      return await callClaudeOnce(systemPrompt, userPrompt, cleanCwd);
+    } finally {
+      try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
+    }
+  }
+}
+
+// ---- Unified LLM dispatcher ----
+
+async function callLLM(runner, systemPrompt, userPrompt) {
+  if (runner === "claude") return callClaude(systemPrompt, userPrompt);
+  return callCodex(systemPrompt, userPrompt);
+}
+
 async function generateVoteDecisions(agent, context, targetTexts) {
   const roundInstruction = context.currentRoundConfig?.roundInstruction;
   const votingGuidance = roundInstruction?.votingGuidance ?? "";
@@ -212,8 +268,10 @@ Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else - no exp
     "\nRespond with exactly 3 lines - one per vote kind - using the exact contribution IDs above:",
   ].filter(Boolean).join("\n");
 
-  log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length, model: LLM_MODEL });
-  const raw = await callCodex(systemPrompt, userPrompt);
+  const runner = agent.runner ?? "codex";
+  const model = runner === "claude" ? CLAUDE_MODEL : CODEX_MODEL;
+  log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length, model, runner });
+  const raw = await callLLM(runner, systemPrompt, userPrompt);
   log("vote-llm-done", { who: agent.displayName, raw: raw.slice(0, 200) });
 
   const decisions = {};
@@ -370,8 +428,9 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
     userPrompt.push("\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever - no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:");
   }
 
-  const content = await callCodex(systemPrompt, userPrompt.join("\n"));
-  if (!content) throw new Error("codex CLI returned empty output");
+  const runner = agent.runner ?? "codex";
+  const content = await callLLM(runner, systemPrompt, userPrompt.join("\n"));
+  if (!content) throw new Error(`${runner} CLI returned empty output`);
 
   if (isJsonRound) {
     return content
@@ -403,9 +462,12 @@ async function main() {
     domainId: DOMAIN_ID,
     templateId: TEMPLATE_ID,
     cadenceMinutes: CADENCE_MINUTES,
-    model: LLM_MODEL,
+    codexModel: CODEX_MODEL,
+    claudeModel: CLAUDE_MODEL,
     agentCount: scenario.agents.length,
-    runner: "codex",
+    codexAgents: CODEX_AGENT_COUNT,
+    claudeAgents: Math.max(0, scenario.agents.length - CODEX_AGENT_COUNT),
+    runner: "mixed",
   });
 
   logStep("Step 1: Authenticate admin");
@@ -436,6 +498,7 @@ async function main() {
         error: renderError(err),
       });
     }
+    const runner = i < CODEX_AGENT_COUNT ? "codex" : "claude";
     const participant = attachTokenState({
       index: i,
       agentId: guest.agent.id,
@@ -444,9 +507,10 @@ async function main() {
       displayName: agentDef.displayName,
       stance: agentDef.stance,
       bio: agentDef.bio,
+      runner,
     }, guest);
     participants.push(participant);
-    log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
+    log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance, runner });
   }
 
   let topic;
@@ -568,12 +632,15 @@ async function main() {
 
     if (pendingContributions.length > 0) {
       const roundKind = pendingContributions[0].context.currentRound.roundKind;
-      log("llm-batch", { round: roundKind, agents: pendingContributions.length, model: LLM_MODEL, runner: "codex" });
+      const codexCount = pendingContributions.filter(({ participant }) => participant.runner === "codex").length;
+      const claudeCount = pendingContributions.length - codexCount;
+      log("llm-batch", { round: roundKind, agents: pendingContributions.length, codex: codexCount, claude: claudeCount });
 
       const results = await Promise.allSettled(
         pendingContributions.map(async ({ participant, context }) => {
           const currentRound = context.currentRound;
-          log("llm-call", { who: participant.displayName, round: currentRound.roundKind, model: LLM_MODEL });
+          const model = participant.runner === "claude" ? CLAUDE_MODEL : CODEX_MODEL;
+          log("llm-call", { who: participant.displayName, round: currentRound.roundKind, model, runner: participant.runner });
           const body = await generateContribution(participant, context);
           log("llm-done", { who: participant.displayName, round: currentRound.roundKind, length: body.length, preview: body.slice(0, 120) });
           return { participant, context, body };
@@ -819,9 +886,10 @@ SUMMARY:
   Title:          ${scenario.title}
   Template:       ${TEMPLATE_ID}
   Domain:         ${DOMAIN_ID}
-  Model:          ${LLM_MODEL}
-  Runner:         codex
-  Agents:         ${participants.map((p) => p.displayName).join(", ")}
+  Codex Model:    ${CODEX_MODEL}
+  Claude Model:   ${CLAUDE_MODEL}
+  Runner:         mixed (${CODEX_AGENT_COUNT} codex, ${Math.max(0, participants.length - CODEX_AGENT_COUNT)} claude)
+  Agents:         ${participants.map((p) => `${p.displayName} [${p.runner}]`).join(", ")}
   Contributions:  ${allContributions.length}
   Votes:          ${allVotes.length}
   Final Status:   ${finalContext.status}

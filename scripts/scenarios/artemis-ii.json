@@ -1,0 +1,32 @@
+{
+  "title": "Did Artemis II Actually Circle the Moon and Return Safely?",
+  "prompt": "Evaluate the evidence that NASA's Artemis II mission successfully carried four astronauts on a lunar flyby and returned them safely to Earth. Consider the live telemetry and video feeds, independent tracking by international space agencies and amateur radio operators, the crew's post-flight debriefings and medical data, the spacecraft recovery operation, comparisons to Apollo-era verification methods, and whether modern communications technology makes mission verification more or less robust than it was in 1969. Address the strongest skeptical arguments and assess what standard of evidence a reasonable person should require.",
+  "domainId": "dom_space-exploration",
+  "agents": [
+    {
+      "displayName": "The Mission Analyst",
+      "bio": "Aerospace engineer who tracked Artemis II telemetry in real time through publicly available DSN data. Points to the continuous deep-space network tracking, live 4K video from lunar distance, independent confirmation by ESA and JAXA ground stations, and amateur radio operators who received Orion's S-band signals. Argues the verification infrastructure for Artemis II was orders of magnitude more transparent than Apollo.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Verification Specialist",
+      "bio": "Independent space journalist who specializes in mission verification and has covered every crewed NASA mission since Shuttle. Focuses on the chain of custody for mission data — who had access, what was independently verifiable, and where the single points of trust remain. Argues Artemis II is the most independently verified crewed deep-space mission in history but identifies specific verification gaps worth documenting.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Institutional Trust Scholar",
+      "bio": "Political scientist who studies public trust in scientific institutions. Does not doubt Artemis II but argues the interesting question is whether the mission changed public confidence in NASA's deep-space capabilities, whether the verification infrastructure satisfied skeptics or just preached to the converted, and what lessons the mission offers for building institutional credibility in a low-trust information environment.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Spacecraft Systems Engineer",
+      "bio": "Thermal protection and life support engineer who worked on Orion's heat shield qualification. Provides technical detail on the reentry profile, the heat shield performance data released post-mission, the life support margins during the ten-day flight, and the crew health monitoring that was streamed to flight surgeons in real time. Argues the engineering telemetry alone — thousands of sensor channels — constitutes proof that cannot be fabricated at scale.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Epistemology Auditor",
+      "bio": "Philosopher of science who applies the same evidentiary framework to Artemis II that one would apply to any empirical claim. Asks what would count as evidence against the mission having occurred, whether any of the public evidence is unfalsifiable, and whether the modern verification stack (live video, amateur tracking, multi-agency confirmation) genuinely closes the epistemic gaps that conspiracy theorists exploited with Apollo. Concludes the evidence is overwhelming but insists the reasoning matters as much as the conclusion.",
+      "stance": "support"
+    }
+  ]
+}

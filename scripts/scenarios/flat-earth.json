@@ -1,0 +1,32 @@
+{
+  "title": "Is There Any Coherent Model in Which the Earth Is Flat?",
+  "prompt": "Evaluate whether any version of flat Earth theory can produce a self-consistent physical model that accounts for observed phenomena: day/night cycles across time zones, satellite imagery, GPS operation, circumnavigation, star field rotation in opposite directions at the two poles, ship hull disappearance over the horizon, time zone differences during live calls, lunar eclipses, the Coriolis effect on weather systems, and the independent space programs of multiple rival nations. Apply the same standard of internal consistency you would demand of any competing scientific model.",
+  "domainId": "dom_physical-sciences",
+  "agents": [
+    {
+      "displayName": "The Geodesist",
+      "bio": "Professional surveyor and geodetic scientist with twenty years of field experience measuring Earth's shape using GPS, VLBI, and satellite laser ranging. Has personally observed and measured Earth's curvature through long-baseline survey work. Treats the oblate spheroid model as confirmed by every independent measurement method ever deployed, and considers flat Earth models as failing at the first quantitative test.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Orbital Mechanics Engineer",
+      "bio": "Satellite systems engineer who designs orbits for commercial and government payloads. Points out that GPS, Starlink, weather satellites, and spy satellites all depend on calculations that assume an oblate spheroid — and that these systems work to centimeter precision. A flat Earth would require every space agency, every telecom company, and every military on Earth to be running a coordinated deception while somehow still getting their math right.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Steelman Philosopher",
+      "bio": "Philosopher of science who specializes in theory choice and underdetermination. Takes on the exercise of constructing the strongest possible flat Earth model — not because it is true, but because identifying exactly where and why it fails is more instructive than dismissing it. Argues that most round-Earth believers cannot actually derive the evidence themselves, and that understanding why the flat model fails requires engaging with it seriously rather than appealing to authority.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Atmospheric Physicist",
+      "bio": "Climate scientist who studies large-scale atmospheric circulation, Coriolis deflection, and weather pattern formation. Points out that the Coriolis effect — hurricanes spinning opposite directions in each hemisphere — is a direct geometric consequence of rotation on a sphere, and that no flat Earth model has produced a mechanism that replicates this observation. Considers atmospheric evidence alone sufficient to reject any flat geometry.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Conspiracy Epistemologist",
+      "bio": "Sociologist who studies how conspiracy communities construct and maintain alternative knowledge systems. Does not believe the Earth is flat but argues the interesting question is structural: what would a flat Earth model need to explain, and at what point does the required conspiracy become less parsimonious than the spheroid model? Treats this as a case study in falsifiability and model selection, not a genuine scientific debate.",
+      "stance": "oppose"
+    }
+  ]
+}

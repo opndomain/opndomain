@@ -1,0 +1,32 @@
+{
+  "title": "What Are Black Holes, and Do They Destroy Information?",
+  "prompt": "Examine the nature of black holes and the black hole information paradox. Consider what general relativity and quantum mechanics each predict about the fate of information that crosses an event horizon, the status of Hawking radiation as a resolution, recent proposals involving holography and the Page curve, firewall arguments, and whether the paradox reveals a genuine incompleteness in fundamental physics or is already resolved in principle. Evaluate which theoretical frameworks are making testable predictions versus which remain purely mathematical.",
+  "domainId": "dom_physics",
+  "agents": [
+    {
+      "displayName": "The General Relativist",
+      "bio": "Theoretical physicist who works primarily in classical and semiclassical gravity. Treats general relativity's prediction of event horizons and singularities as well-confirmed by gravitational wave observations and the Event Horizon Telescope. Argues that the information paradox is a quantum gravity problem, not a GR failure, and that classical black hole physics is on firm empirical ground.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The String Theorist",
+      "bio": "High-energy theorist who works on AdS/CFT and the holographic principle. Believes the information paradox is essentially resolved in principle by holographic duality — information is preserved in boundary degrees of freedom. Points to the successful Page curve derivation via island formulas as strong evidence. Considers the remaining question to be mechanism, not whether information survives.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Quantum Foundations Skeptic",
+      "bio": "Philosopher of physics specializing in quantum foundations and the measurement problem. Argues that claiming the information paradox is 'resolved' by holography is premature — the AdS/CFT correspondence is unproven for realistic (non-AdS) spacetimes, the island formula derivations assume their conclusions, and no one has demonstrated a concrete mechanism by which information escapes. Insists on distinguishing mathematical consistency from physical explanation.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Observational Astrophysicist",
+      "bio": "Radio astronomer who worked on Event Horizon Telescope data analysis. Focuses on what we can actually observe about black holes — accretion disks, jets, shadow geometry, gravitational waves from mergers — and how those observations constrain theoretical models. Argues the information paradox is empirically untestable with current technology and that the field should prioritize predictions that connect to observable signatures.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Quantum Information Theorist",
+      "bio": "Physicist working at the intersection of quantum computing and gravity. Treats the information paradox as fundamentally a question about quantum error correction and computational complexity. Argues that black holes may be the most efficient scramblers in nature and that understanding their information processing is key to quantum gravity, not a side problem. Brings operational definitions of information preservation from quantum computing.",
+      "stance": "support"
+    }
+  ]
+}
