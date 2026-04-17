@@ -44,6 +44,7 @@ type ActiveRoundRow = {
   ends_at: string | null;
   reveal_at: string | null;
   cadence_preset: string | null;
+  cadence_override_minutes?: number | null;
   config_json: string;
 };
 
@@ -115,6 +116,55 @@ function resolveRoundDurationMs(round: Pick<RoundPlanRow, "starts_at" | "ends_at
   const config = parseConfig(round.config_json);
   const roundDurationMinutes = Number(config.roundDurationMinutes ?? 0);
   return Math.max(0, roundDurationMinutes * 60 * 1000);
+}
+
+function resolveCadenceWindowMs(input: {
+  cadencePreset?: string | null;
+  cadenceOverrideMinutes?: number | null;
+  configJson?: string | null;
+}): number {
+  const overrideMinutes = Number(input.cadenceOverrideMinutes ?? 0);
+  if (overrideMinutes > 0) {
+    return overrideMinutes * 60 * 1000;
+  }
+  const cadencePreset = input.cadencePreset ?? "";
+  if (cadencePreset && cadencePreset in CADENCE_PRESETS) {
+    const preset = CADENCE_PRESETS[cadencePreset as keyof typeof CADENCE_PRESETS];
+    const responseWindowSeconds = Number(
+      (preset as { responseWindowSeconds?: number; minDurationSeconds?: number }).responseWindowSeconds
+        ?? preset.minDurationSeconds
+        ?? 0,
+    );
+    if (responseWindowSeconds > 0) {
+      return responseWindowSeconds * 1000;
+    }
+  }
+  if (input.configJson) {
+    try {
+      const config = parseConfig(input.configJson);
+      const roundDurationMinutes = Number(config.roundDurationMinutes ?? 0);
+      if (roundDurationMinutes > 0) {
+        return roundDurationMinutes * 60 * 1000;
+      }
+    } catch {
+      // Ignore malformed config and fall through to default grace.
+    }
+  }
+  return 0;
+}
+
+function resolveStallGraceMs(input: {
+  cadencePreset?: string | null;
+  cadenceOverrideMinutes?: number | null;
+  configJson?: string | null;
+  isOpeningRound: boolean;
+}): number {
+  const cadenceWindowMs = resolveCadenceWindowMs(input);
+  const baseGraceMs = Math.max(2 * cadenceWindowMs, 8 * 60 * 1000);
+  if (!input.isOpeningRound) {
+    return baseGraceMs;
+  }
+  return baseGraceMs + Math.max(cadenceWindowMs, 2 * 60 * 1000);
 }
 
 function nextMinuteBoundary(now: Date): Date {
@@ -220,7 +270,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
         const countdownStartsAt = nextMinuteBoundary(now).toISOString();
         const changed = await runCas(
           env.DB.prepare(
-            `UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ? WHERE id = ? AND status = 'open'`,
+            `UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'open'`,
           ).bind(nowIso(now), countdownStartsAt, countdownStartsAt, topic.id),
         );
         if (changed) {
@@ -239,7 +289,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
       if (topic.status === "countdown" && startsAt && startsAt.getTime() <= now.getTime()) {
         const started = await runCas(
           env.DB.prepare(
-            `UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status = 'countdown'`,
+            `UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'countdown'`,
           ).bind(participantCount, topic.id),
         );
         if (started) {
@@ -281,7 +331,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
 
     if (topic.cadence_family === "quorum" && topic.status === "open" && hasMinimumParticipants && startsAt && startsAt.getTime() > now.getTime()) {
       const changed = await runCas(
-        env.DB.prepare(`UPDATE topics SET status = 'countdown', countdown_started_at = ? WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
+        env.DB.prepare(`UPDATE topics SET status = 'countdown', countdown_started_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
       );
       if (changed) {
         await invalidateTopicPublicSurfaces(env, {
@@ -303,7 +353,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
     ) {
       if (hasMinimumParticipants) {
         const started = await runCas(
-          env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status = 'open'`).bind(participantCount, topic.id),
+          env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'open'`).bind(participantCount, topic.id),
         );
         if (started) {
           const firstRound = await firstRow<RoundPlanRow>(
@@ -330,7 +380,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
         }
       } else {
         const stalled = await runCas(
-          env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
+          env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
         );
         if (stalled) {
           await invalidateTopicPublicSurfaces(env, {
@@ -354,7 +404,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
       startsAt.getTime() > now.getTime()
     ) {
       const changed = await runCas(
-        env.DB.prepare(`UPDATE topics SET status = 'countdown', countdown_started_at = ? WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
+        env.DB.prepare(`UPDATE topics SET status = 'countdown', countdown_started_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'open'`).bind(nowIso(now), topic.id),
       );
       if (changed) {
         await invalidateTopicPublicSurfaces(env, {
@@ -376,7 +426,7 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
         continue;
       }
       const started = await runCas(
-        env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ? WHERE id = ? AND status IN ('open', 'countdown')`).bind(participantCount, topic.id),
+        env.DB.prepare(`UPDATE topics SET status = 'started', current_round_index = 0, active_participant_count = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status IN ('open', 'countdown')`).bind(participantCount, topic.id),
       );
       if (started) {
         const firstRound = await firstRow<RoundPlanRow>(
@@ -577,42 +627,45 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
     console.error("round closed event archive failed", error);
   }
 
-  const activeMembers = await allRows<ActiveMemberRow>(
-    env.DB,
-    `
-      SELECT being_id
-      FROM topic_members
-      WHERE topic_id = ? AND status = 'active'
-    `,
-    round.topic_id,
-  );
-  const contributingMembers = new Set(
-    (await allRows<ActiveMemberRow>(
+  const completingRoundKind = round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown");
+  if (completingRoundKind !== "vote") {
+    const activeMembers = await allRows<ActiveMemberRow>(
       env.DB,
       `
-        SELECT DISTINCT being_id
-        FROM contributions
-        WHERE topic_id = ? AND round_id = ?
+        SELECT being_id
+        FROM topic_members
+        WHERE topic_id = ? AND status = 'active'
       `,
       round.topic_id,
-      round.id,
-    )).map((row) => row.being_id),
-  );
-  for (const member of activeMembers) {
-    if (contributingMembers.has(member.being_id)) {
-      continue;
-    }
-    const dropped = await runCas(
-      env.DB.prepare(
-        `UPDATE topic_members
-         SET status = 'dropped', updated_at = ?, dropped_at = ?, drop_reason = ?
-         WHERE topic_id = ? AND being_id = ? AND status = 'active'`,
-      ).bind(nowIso(now), nowIso(now), "missed_round_contribution", round.topic_id, member.being_id),
     );
-    if (dropped) {
-      await runCas(
-        env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
+    const contributingMembers = new Set(
+      (await allRows<ActiveMemberRow>(
+        env.DB,
+        `
+          SELECT DISTINCT being_id
+          FROM contributions
+          WHERE topic_id = ? AND round_id = ?
+        `,
+        round.topic_id,
+        round.id,
+      )).map((row) => row.being_id),
+    );
+    for (const member of activeMembers) {
+      if (contributingMembers.has(member.being_id)) {
+        continue;
+      }
+      const dropped = await runCas(
+        env.DB.prepare(
+          `UPDATE topic_members
+           SET status = 'dropped', updated_at = ?, dropped_at = ?, drop_reason = ?
+           WHERE topic_id = ? AND being_id = ? AND status = 'active'`,
+        ).bind(nowIso(now), nowIso(now), "missed_round_contribution", round.topic_id, member.being_id),
       );
+      if (dropped) {
+        await runCas(
+          env.DB.prepare(`UPDATE beings SET drop_count = COALESCE(drop_count, 0) + 1, updated_at = ? WHERE id = ?`).bind(nowIso(now), member.being_id),
+        );
+      }
     }
   }
 
@@ -687,7 +740,6 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   }
 
   // Deferred score finalization: when a vote round completes, finalize the paired content round
-  const completingRoundKind = round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown");
   if (completingRoundKind === "vote" && round.sequence_index > 0) {
     try {
       const namespaceId = env.TOPIC_STATE_DO.idFromName(round.topic_id);
@@ -731,13 +783,13 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
       const activeParticipantCount = await countActiveParticipants(env, round.topic_id);
       await runCas(
         env.DB
-          .prepare(`UPDATE topics SET current_round_index = ?, status = 'started', stalled_at = NULL, active_participant_count = ? WHERE id = ?`)
+          .prepare(`UPDATE topics SET current_round_index = ?, status = 'started', stalled_at = NULL, active_participant_count = ?, change_sequence = change_sequence + 1 WHERE id = ?`)
           .bind(nextRound.sequence_index, activeParticipantCount, round.topic_id),
       );
     }
   } else {
     const closed = await runCas(
-      env.DB.prepare(`UPDATE topics SET status = 'closed', closed_at = ? WHERE id = ? AND status != 'closed'`).bind(nowIso(now), round.topic_id),
+      env.DB.prepare(`UPDATE topics SET status = 'closed', closed_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status != 'closed'`).bind(nowIso(now), round.topic_id),
     );
     if (closed) {
       await runTerminalizationSequence(env, round.topic_id);
@@ -777,6 +829,7 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
         r.ends_at,
         r.reveal_at,
         t.cadence_preset,
+        t.cadence_override_minutes,
         rc.config_json
       FROM rounds r
       INNER JOIN topics t ON t.id = r.topic_id
@@ -788,7 +841,16 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
   );
 
   const mutatedTopicIds = new Set<string>();
+  const preflightFlushedTopicIds = new Set<string>();
   for (const round of activeRounds) {
+    if (!preflightFlushedTopicIds.has(round.topic_id) && env.TOPIC_STATE_DO) {
+      try {
+        await forceFlushTopicState(env, round.topic_id);
+      } catch (flushError) {
+        console.error("pre-advance force-flush failed for topic", round.topic_id, flushError);
+      }
+      preflightFlushedTopicIds.add(round.topic_id);
+    }
     if (!(await shouldCompleteRound(env, round, now))) {
       continue;
     }
@@ -803,9 +865,19 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
         round.id,
       );
       if ((contributionCount?.c ?? 0) === 0) {
+        const roundStartsAtMs = round.starts_at ? Date.parse(round.starts_at) : Number.NaN;
+        const stallGraceMs = resolveStallGraceMs({
+          cadencePreset: round.cadence_preset,
+          cadenceOverrideMinutes: round.cadence_override_minutes,
+          configJson: round.config_json,
+          isOpeningRound: round.sequence_index === 0,
+        });
+        if (Number.isFinite(roundStartsAtMs) && now.getTime() - roundStartsAtMs < stallGraceMs) {
+          continue;
+        }
         try {
           const stalled = await runCas(
-            env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'started'`).bind(nowIso(now), round.topic_id),
+            env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'started'`).bind(nowIso(now), round.topic_id),
           );
           if (stalled) {
             await invalidateTopicPublicSurfaces(env, {
@@ -837,7 +909,16 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
   // race where a sweep observes the gap between one round completing and the
   // next being activated by advanceRound — D1 read replicas can also return
   // stale "no active round" results during normal transitions.
-  const startedTopics = await allRows<{ id: string }>(env.DB, `SELECT id FROM topics WHERE status = 'started' AND closed_at IS NULL`);
+  const startedTopics = await allRows<{
+    id: string;
+    current_round_index: number;
+    starts_at: string | null;
+    cadence_preset: string | null;
+    cadence_override_minutes: number | null;
+  }>(
+    env.DB,
+    `SELECT id, current_round_index, starts_at, cadence_preset, cadence_override_minutes FROM topics WHERE status = 'started' AND closed_at IS NULL`,
+  );
   const nowIsoStr = nowIso(now);
   for (const topic of startedTopics) {
     const activeRound = await firstRow<{ id: string }>(
@@ -858,18 +939,35 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
 
     // If the most recent round completed within the last 60s, give the next
     // sweep a chance to advance instead of stalling on a transient gap.
-    const recent = await firstRow<{ ends_at: string | null }>(
+    const recent = await firstRow<{ ends_at: string | null; sequence_index: number; config_json: string | null }>(
       env.DB,
-      `SELECT ends_at FROM rounds WHERE topic_id = ? AND status = 'completed' ORDER BY sequence_index DESC LIMIT 1`,
+      `
+        SELECT r.ends_at, r.sequence_index, rc.config_json
+        FROM rounds r
+        INNER JOIN round_configs rc ON rc.round_id = r.id
+        WHERE r.topic_id = ? AND r.status = 'completed'
+        ORDER BY r.sequence_index DESC
+        LIMIT 1
+      `,
       topic.id,
     );
+    const stallGraceMs = resolveStallGraceMs({
+      cadencePreset: topic.cadence_preset,
+      cadenceOverrideMinutes: topic.cadence_override_minutes,
+      configJson: recent?.config_json ?? null,
+      isOpeningRound: Number(topic.current_round_index ?? 0) === 0,
+    });
     if (recent?.ends_at) {
       const endsMs = Date.parse(recent.ends_at);
-      if (Number.isFinite(endsMs) && now.getTime() - endsMs < 60_000) continue;
+      if (Number.isFinite(endsMs) && now.getTime() - endsMs < stallGraceMs) continue;
+    }
+    if (Number(topic.current_round_index ?? 0) === 0 && topic.starts_at) {
+      const startsAtMs = Date.parse(topic.starts_at);
+      if (Number.isFinite(startsAtMs) && now.getTime() - startsAtMs < stallGraceMs) continue;
     }
 
     const stalled = await runCas(
-      env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ? WHERE id = ? AND status = 'started'`).bind(nowIsoStr, topic.id),
+      env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'started'`).bind(nowIsoStr, topic.id),
     );
     if (stalled) {
       mutatedTopicIds.add(topic.id);
@@ -881,6 +979,9 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
 
 async function retryPendingFinalizations(env: ApiEnv): Promise<Set<string>> {
   const mutated = new Set<string>();
+  if (!env.TOPIC_STATE_DO) {
+    return mutated;
+  }
   const pending = await allRows<{ topic_id: string; sequence_index: number }>(
     env.DB,
     `SELECT DISTINCT r.topic_id, r.sequence_index

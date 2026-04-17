@@ -184,6 +184,8 @@ function buildEnv(db: FakeDb, overrides: Record<string, unknown> = {}) {
   return {
     DB: db as never,
     PUBLIC_CACHE: {
+      get: async () => null,
+      put: async () => undefined,
       list: async () => {
         throw new Error("kv unavailable");
       },

@@ -1,5 +1,4 @@
 import {
-  OG_IMAGE_SUMMARY_MAX_LENGTH,
   OG_IMAGE_TITLE_MAX_LENGTH,
   topicOgPngArtifactKey,
   topicVerdictPresentationArtifactKey,
@@ -414,12 +413,15 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
   const width = 1200;
   const height = 630;
   const pixels = createPixelBuffer(width, height, [241, 236, 229, 255]);
+  const shell: Rgba = [226, 219, 210, 255];
   const cardBackground: Rgba = [252, 248, 242, 255];
+  const verdictPanel: Rgba = [247, 241, 233, 255];
   const ink: Rgba = [28, 41, 48, 255];
   const mutedInk: Rgba = [78, 92, 96, 255];
   const rail: Rgba = [22, 57, 64, 255];
   const confidenceBox: Rgba = [227, 198, 154, 255];
   const domainChip: Rgba = [207, 226, 220, 255];
+  const footerChip: Rgba = [234, 225, 214, 255];
   const accent = input.headline.stance === "support"
     ? [84, 138, 110, 255] as const
     : input.headline.stance === "oppose"
@@ -428,16 +430,49 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
         ? [105, 109, 127, 255] as const
         : [179, 136, 73, 255] as const;
 
-  fillRoundedRect(pixels, width, height, 36, 36, 1128, 558, 34, [226, 219, 210, 255]);
+  const verdictText = input.bothSidesSummary?.finalVerdict
+    ?? input.editorialBody
+    ?? input.headline.text
+    ?? input.summary;
+  const titleLines = wrapText(sanitizeText(input.title, OG_IMAGE_TITLE_MAX_LENGTH), 3, 3, 480, 3);
+  const verdictLines = wrapText(sanitizeText(verdictText, 460), 4, 4, 776, 7);
+  const domainLines = wrapText(sanitizeText(input.domain, 24), 3, 3, 170, 1);
+  const confidenceLines = wrapText(sanitizeText(input.confidence.label, 16), 3, 3, 132, 1);
+  const scoreLines = wrapText(sanitizeText(`${Math.round(input.confidence.score * 100)} SCORE`, 18), 3, 3, 184, 1);
+  const roundLines = wrapText(
+    sanitizeText(`${input.scoreBreakdown.completedRounds}/${input.scoreBreakdown.totalRounds} ROUNDS`, 24),
+    3,
+    3,
+    184,
+    1,
+  );
+  const participantLines = wrapText(
+    sanitizeText(`${input.scoreBreakdown.participantCount} PARTICIPANTS`, 28),
+    3,
+    3,
+    184,
+    1,
+  );
+  const modeLines = wrapText(
+    sanitizeText(input.scoreBreakdown.terminalizationMode.replaceAll("_", " "), 28),
+    2,
+    2,
+    206,
+    2,
+  );
+
+  fillRoundedRect(pixels, width, height, 36, 36, 1128, 558, 34, shell);
   fillRoundedRect(pixels, width, height, 54, 54, 1092, 522, 28, cardBackground);
   fillRoundedRect(pixels, width, height, 54, 54, 154, 522, 28, rail);
-  fillRoundedRect(pixels, width, height, 232, 88, 840, 454, 24, [248, 243, 236, 255]);
+  fillRoundedRect(pixels, width, height, 232, 88, 840, 454, 24, verdictPanel);
   fillRoundedRect(pixels, width, height, 232, 88, 840, 12, 6, accent);
-  fillRoundedRect(pixels, width, height, 266, 120, 250, 46, 12, domainChip);
-  fillRoundedRect(pixels, width, height, 810, 120, 228, 46, 12, confidenceBox);
-  fillRoundedRect(pixels, width, height, 810, 182, 228, 116, 18, [236, 229, 219, 255]);
-  fillRoundedRect(pixels, width, height, 266, 444, 372, 62, 16, [234, 225, 214, 255]);
-  fillRoundedRect(pixels, width, height, 884, 458, 154, 38, 10, rail);
+  fillRoundedRect(pixels, width, height, 266, 120, 214, 46, 12, domainChip);
+  fillRoundedRect(pixels, width, height, 838, 120, 202, 46, 12, confidenceBox);
+  fillRoundedRect(pixels, width, height, 824, 182, 216, 136, 18, [236, 229, 219, 255]);
+  fillRoundedRect(pixels, width, height, 266, 206, 520, 96, 14, cardBackground);
+  fillRoundedRect(pixels, width, height, 266, 320, 520, 162, 18, cardBackground);
+  fillRoundedRect(pixels, width, height, 266, 496, 360, 60, 16, footerChip);
+  fillRoundedRect(pixels, width, height, 810, 496, 230, 60, 16, rail);
 
   drawTextBlock(
     pixels,
@@ -461,7 +496,7 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     3,
     3,
     8,
-    ["EDITORIAL", "VERDICT", "CARD"],
+    ["VERDICT", "PREVIEW", "BOX"],
     [187, 202, 198, 255],
   );
 
@@ -474,7 +509,7 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     3,
     3,
     8,
-    wrapText(sanitizeText(input.domain, 24), 3, 3, 206, 1),
+    domainLines,
     ink,
   );
 
@@ -482,12 +517,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    824,
+    850,
     134,
     3,
     3,
     8,
-    wrapText(sanitizeText(input.confidence.label, 16), 3, 3, 120, 1),
+    confidenceLines,
     ink,
   );
 
@@ -495,12 +530,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    824,
+    844,
     198,
     3,
     3,
     8,
-    wrapText(sanitizeText(`${Math.round(input.confidence.score * 100)} SCORE`, 18), 3, 3, 194, 1),
+    scoreLines,
     mutedInk,
   );
 
@@ -508,12 +543,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    824,
+    844,
     232,
     3,
     3,
     8,
-    wrapText(sanitizeText(`${input.scoreBreakdown.completedRounds}/${input.scoreBreakdown.totalRounds} ROUNDS`, 24), 3, 3, 194, 1),
+    roundLines,
     mutedInk,
   );
 
@@ -521,12 +556,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    824,
+    844,
     266,
     3,
     3,
     8,
-    wrapText(sanitizeText(input.scoreBreakdown.terminalizationMode.replaceAll("_", " "), 28), 3, 3, 194, 2),
+    participantLines,
     mutedInk,
   );
 
@@ -534,12 +569,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    266,
-    188,
-    4,
-    4,
-    10,
-    wrapText(sanitizeText(input.title, OG_IMAGE_TITLE_MAX_LENGTH), 4, 4, 500, 3),
+    284,
+    224,
+    3,
+    3,
+    8,
+    titleLines,
     mutedInk,
   );
 
@@ -547,12 +582,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    266,
-    300,
-    6,
-    6,
-    14,
-    wrapText(sanitizeText(input.headline.text, OG_IMAGE_SUMMARY_MAX_LENGTH), 6, 6, 700, 3),
+    284,
+    342,
+    4,
+    4,
+    12,
+    verdictLines,
     ink,
   );
 
@@ -561,7 +596,7 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     width,
     height,
     284,
-    462,
+    516,
     3,
     3,
     8,
@@ -573,12 +608,12 @@ export function renderOgPng(input: VerdictPresentation): Uint8Array {
     pixels,
     width,
     height,
-    904,
-    468,
+    830,
+    514,
     2,
     2,
     6,
-    ["API.OPNDOMAIN.COM"],
+    modeLines,
     [244, 239, 230, 255],
   );
 

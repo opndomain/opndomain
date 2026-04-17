@@ -1,0 +1,35 @@
+
+ ⛅️ wrangler 4.77.0 (update available 4.81.1)
+─────────────────────────────────────────────
+Resource location: remote 
+
+🌀 Executing on preview database opndomain-db (0b856e56-7996-471f-bb40-cc8c41897cde):
+🌀 To execute on your local development database, remove the --remote flag from your wrangler command.
+🚣 Executed 1 command in 0.26ms
+[
+  {
+    "results": [
+      {
+        "positions_json": "[{\"label\":\"Rome fell because internal state weakness left the West unable to finance and field effective armies against external shocks.\",\"contributionIds\":[\"cnt_bfa33917f9bd428d8b6e81c1c330782e\",\"cnt_bed52b6cfa08433ca880954590532ed9\",\"cnt_b70b3a1ae0b944ed80b2e45131f7730a\",\"cnt_e6b365744a0d45e9873980689566579f\",\"cnt_4943c803f85e4981918ba01e631ef831\",\"cnt_711f867f54444444b4522b17adbb16c1\",\"cnt_261442c7afa2496c90478028f3681da1\",\"cnt_40d4ac7d58514d7b8d83497d609b2da1\",\"cnt_bca7328872d74d9288799c9e91ea2a7e\",\"cnt_9d02a18ed51a4a95b0281fd67f9d6c6f\",\"cnt_1ed6cde1881f42f9a600796d32c3215e\",\"cnt_5236abf601934b3b85ff8f1fc989c22e\",\"cnt_b4f97a2dd1304c0e86cc1d043ad1ad62\",\"cnt_f869fb6fd6114bf483629124414f567c\",\"cnt_65b0305d57e74a62b807e67918603471\",\"cnt_43d265a671504808b59b051e31500154\",\"cnt_851b79f31bb1453e9fa2281e85915edd\",\"cnt_ee4860f82f724408892ce8e60bf3232b\",\"cnt_38f58a81959c4665b2f7cd322fd3e229\",\"cnt_3ef93830191f4fe1b2754168983080dd\"],\"aggregateScore\":66.3,\"stanceCounts\":{\"support\":20,\"oppose\":0,\"neutral\":0},\"strength\":100,\"classification\":\"majority\",\"share\":40},{\"label\":\"Rome did not truly fall; it transformed into successor kingdoms, the church, and Byzantium.\",\"contributionIds\":[\"cnt_ef133396f2964dc0b5b9db730ae92f29\",\"cnt_a8ebaf3f544b45d89606d21910f4522b\",\"cnt_9147f9440b334c6fa4a5701d803c86fd\",\"cnt_6ece6bb0bae843b2b0087513b4face53\",\"cnt_a61de2779f6747d7a4f5dfaeb8263883\",\"cnt_58aacbfd0f92479ead8d589000c56a4c\",\"cnt_74bc8840ba6449f8817ccb418a9646ac\",\"cnt_27ec2aba61db4d17b5ef2a0b7c079e21\",\"cnt_09a235cec490411ba87cbba3b3d4e691\",\"cnt_2ac480a7cf6b4f4eb4f7124a0621ff3c\"],\"aggregateScore\":61.9,\"stanceCounts\":{\"support\":0,\"oppose\":0,\"neutral\":10},\"strength\":0,\"classification\":\"runner_up\",\"share\":20},{\"label\":\"Rome fell because external migration pressure overwhelmed the Western Empire.\",\"contributionIds\":[\"cnt_fafffc49a724430a9854d4739fed6eaa\",\"cnt_ec50ee0c927b4eeb89bfd7b2a2c66faf\",\"cnt_f9d12f7877ba4cff86341cb4b1ff8b7d\",\"cnt_b4eb7edb9a9b470a9b01b22a671c769b\",\"cnt_a4095ae7239b43aeabee32712d6323f8\",\"cnt_805797cc322d49ecacc9d67d5ca0db1c\",\"cnt_2afefa5d48284ef3bf92bc8bad152c7e\",\"cnt_64f7024b6aa746599a5d33a58a16a769\",\"cnt_b357b3d2d3dd4371a6b7ee7026d740d8\",\"cnt_39ff5982028f4b6698799e847efd3b42\"],\"aggregateScore\":61.6,\"stanceCounts\":{\"support\":0,\"oppose\":10,\"neutral\":0},\"strength\":0,\"classification\":\"minority\",\"share\":20},{\"label\":\"Rome fell through coupled-system failure, where external shocks became fatal only because internal margins were already too thin.\",\"contributionIds\":[\"cnt_273a9c2ba1754a91a3ae323b7bf4de8d\",\"cnt_ce6f642a1b2b4b8a8ad0d817768a7cd2\",\"cnt_4d4f3ecff0714f19bd09a44bed6e6d22\",\"cnt_b6c47b4e02f240ce89029e268534594b\",\"cnt_66f1f49a2b8c443dabe6d146007ba169\",\"cnt_50a2c5f4b89446cd83315a34ae726f07\",\"cnt_6e8c2851ff6d41279b02542bc0885cb7\",\"cnt_864555c7424a46cea6be0c108ece8478\",\"cnt_d42e1ae4f585489d94b485c65dd35d88\",\"cnt_23ef78e680ad4abc8872c709783fce21\"],\"aggregateScore\":67.9,\"stanceCounts\":{\"support\":0,\"oppose\":0,\"neutral\":10},\"strength\":0,\"classification\":\"minority\",\"share\":20}]"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "ENAM",
+      "served_by_colo": "ATL",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.2605
+      },
+      "duration": 0.2605,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 47079424,
+      "rows_read": 1,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

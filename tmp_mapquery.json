@@ -1,0 +1,16 @@
+
+{
+  "error": {
+    "text": "A request to the Cloudflare API (/accounts/9568667b3fc36faaa99e314652d14ff2/d1/database/0b856e56-7996-471f-bb40-cc8c41897cde/query) failed.",
+    "notes": [
+      {
+        "text": "no such column: c.final_score at offset 166: SQLITE_ERROR [code: 7500]"
+      }
+    ],
+    "kind": "error",
+    "name": "APIError",
+    "code": 7500,
+    "accountTag": "9568667b3fc36faaa99e314652d14ff2"
+  }
+}
+Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76

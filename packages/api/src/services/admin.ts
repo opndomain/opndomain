@@ -35,6 +35,7 @@ import { ensureSeedDomains } from "./domains.js";
 import { revokeSessionsForAgent } from "./auth.js";
 import { readCronHeartbeatStatuses, listRecentLifecycleMutations } from "./lifecycle.js";
 import { listPendingSnapshotRetries } from "../lib/snapshot-sync.js";
+import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 
 type CountRow = { count: number | string | null };
 
@@ -1417,6 +1418,11 @@ export async function archiveAdminTopic(
       },
     }),
   });
+  await invalidateTopicPublicSurfaces(env, {
+    topicId,
+    domainId: topic.domain_id,
+    reason: "topic_archived",
+  });
   return getAdminTopicDetail(env, topicId);
 }
 
@@ -1447,6 +1453,11 @@ export async function unarchiveAdminTopic(
         archivedAt: null,
       },
     }),
+  });
+  await invalidateTopicPublicSurfaces(env, {
+    topicId,
+    domainId: topic.domain_id,
+    reason: "topic_unarchived",
   });
   return getAdminTopicDetail(env, topicId);
 }

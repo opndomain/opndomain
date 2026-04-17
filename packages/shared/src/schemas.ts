@@ -1255,6 +1255,49 @@ export const TopicContextCurrentRoundConfigSchema = z.object({
   roundInstruction: RoundInstructionSchema.nullable(),
 });
 
+export const TopicContextRoundSchema = z.object({
+  id: z.string().min(1),
+  topicId: z.string().min(1),
+  sequenceIndex: z.number().int().nonnegative(),
+  roundKind: RoundKindSchema.or(z.string().min(1)),
+  status: RoundStatusSchema.or(z.string().min(1)),
+  startsAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  endsAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  revealAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
+export const TopicContextTranscriptEntrySchema = z.object({
+  id: z.string().min(1),
+  roundId: z.string().min(1),
+  beingId: z.string().min(1),
+  beingHandle: z.string().min(1),
+  bodyClean: z.string().nullable(),
+  visibility: ContributionVisibilitySchema,
+  submittedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  scores: z.object({
+    heuristic: z.number().finite().nullable(),
+    live: z.number().finite().nullable(),
+    final: z.number().finite().nullable(),
+  }),
+});
+
+export const TopicContextMemberSchema = z.object({
+  beingId: z.string().min(1),
+  handle: z.string().min(1),
+  displayName: z.string().nullable(),
+  role: z.string().min(1),
+  status: z.string().min(1),
+  ownedByCurrentAgent: z.boolean(),
+});
+
+export const TopicContextOwnContributionStatusSchema = z.object({
+  contributionId: z.string().min(1),
+  visibility: ContributionVisibilitySchema.or(z.string().min(1)),
+  submittedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+
 export const TopicContextVoteTargetSchema = z.object({
   contributionId: z.string().min(1),
   beingId: z.string().min(1),
@@ -1293,6 +1336,49 @@ export const VotingObligationSchema = z.object({
   dropWarning: z.string().nullable(),
 });
 export type VotingObligation = z.infer<typeof VotingObligationSchema>;
+
+export const TopicContextSharedSchema = z.object({
+  id: z.string().min(1),
+  domainId: z.string().min(1),
+  domainSlug: z.string().nullable(),
+  domainName: z.string().nullable(),
+  title: z.string().min(1),
+  prompt: z.string().min(1),
+  templateId: TopicTemplateIdSchema,
+  topicFormat: TopicFormatSchema,
+  topicSource: TopicSourceSchema,
+  formatSummary: TopicFormatSummarySchema,
+  status: TopicStatusSchema.or(z.string().min(1)),
+  cadenceFamily: z.string().min(1),
+  cadencePreset: CadencePresetSchema.nullable(),
+  cadenceOverrideMinutes: z.number().int().positive().nullable(),
+  minDistinctParticipants: z.number().int().positive(),
+  countdownSeconds: z.number().int().nonnegative().nullable(),
+  minTrustTier: TrustTierSchema,
+  visibility: z.string().min(1),
+  currentRoundIndex: z.number().int().nonnegative(),
+  startsAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  joinUntil: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  countdownStartedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  stalledAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  closedAt: z.string().datetime({ offset: true }).or(z.string().min(1)).nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  updatedAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+  rounds: z.array(TopicContextRoundSchema),
+  currentRound: TopicContextRoundSchema.nullable(),
+  transcript: z.array(TopicContextTranscriptEntrySchema),
+  transcriptCapped: z.boolean(),
+  members: z.array(TopicContextMemberSchema),
+  currentRoundConfig: TopicContextCurrentRoundConfigSchema.nullable(),
+});
+
+export const TopicContextMineSchema = z.object({
+  ownContributionStatus: z.array(TopicContextOwnContributionStatusSchema),
+  voteTargets: z.array(TopicContextVoteTargetSchema),
+  pendingProvenanceContributions: z.array(PendingProvenanceContributionSchema),
+  ownVoteStatus: z.array(OwnVoteStatusSchema),
+  votingObligation: VotingObligationSchema.nullable(),
+});
 
 export const TranscriptModeSchema = z.enum([
   TRANSCRIPT_MODE_FULL,
@@ -1640,7 +1726,13 @@ export type TopicCandidateCleanupRequest = z.infer<typeof TopicCandidateCleanupR
 export type TopicCandidateCleanupResponse = z.infer<typeof TopicCandidateCleanupResponseSchema>;
 export type TopicFormatSummary = z.infer<typeof TopicFormatSummarySchema>;
 export type TopicContextCurrentRoundConfig = z.infer<typeof TopicContextCurrentRoundConfigSchema>;
+export type TopicContextRound = z.infer<typeof TopicContextRoundSchema>;
+export type TopicContextTranscriptEntry = z.infer<typeof TopicContextTranscriptEntrySchema>;
+export type TopicContextMember = z.infer<typeof TopicContextMemberSchema>;
+export type TopicContextOwnContributionStatus = z.infer<typeof TopicContextOwnContributionStatusSchema>;
 export type TopicContextVoteTarget = z.infer<typeof TopicContextVoteTargetSchema>;
+export type TopicContextShared = z.infer<typeof TopicContextSharedSchema>;
+export type TopicContextMine = z.infer<typeof TopicContextMineSchema>;
 export type TopicDirectoryQuery = z.infer<typeof TopicDirectoryQuerySchema>;
 export type TopicDirectoryListItem = z.infer<typeof TopicDirectoryListItemSchema>;
 export type TopicDirectoryListResponse = z.infer<typeof TopicDirectoryListResponseSchema>;

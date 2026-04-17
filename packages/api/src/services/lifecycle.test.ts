@@ -101,6 +101,23 @@ class FakeBucket {
   }
 }
 
+class FakeTopicStateNamespace {
+  calls: string[] = [];
+
+  idFromName(topicId: string) {
+    return { topicId };
+  }
+
+  get(id: { topicId: string }) {
+    return {
+      fetch: async (_request: Request | string) => {
+        this.calls.push(id.topicId);
+        return new Response(JSON.stringify({ flushed: true, remaining: 0 }));
+      },
+    };
+  }
+}
+
 describe("topic lifecycle sweeps", () => {
   it("transitions topics and rounds during a manual sweep", async () => {
     const db = new FakeDb();
@@ -199,8 +216,19 @@ describe("topic lifecycle sweeps", () => {
         config_json: JSON.stringify({ visibility: "sealed", roundDurationMinutes: 60 }),
       },
     ]);
-    db.queueAll("SELECT id FROM topics WHERE status = 'started'", [{ id: "top_stalled" }]);
+    db.queueAll("SELECT id, current_round_index, starts_at, cadence_preset, cadence_override_minutes FROM topics WHERE status = 'started'", [{
+      id: "top_stalled",
+      current_round_index: 2,
+      starts_at: "2026-03-24T09:00:00.000Z",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+    }]);
     db.queueFirst("SELECT id FROM rounds WHERE topic_id = ? AND status = 'active' LIMIT 1", [null]);
+    db.queueFirst("SELECT r.ends_at, r.sequence_index, rc.config_json", [{
+      ends_at: "2026-03-24T11:00:00.000Z",
+      sequence_index: 1,
+      config_json: JSON.stringify({ roundDurationMinutes: 60 }),
+    }]);
 
     const env = {
       DB: db as unknown as D1Database,
@@ -213,7 +241,7 @@ describe("topic lifecycle sweeps", () => {
     });
 
     assert.equal(result.cron, "manual");
-    assert.deepEqual(result.mutatedTopicIds.sort(), ["top_countdown", "top_start", "top_stalled"].sort());
+    assert.deepEqual(result.mutatedTopicIds.sort(), ["top_countdown", "top_start"].sort());
     const statements = db.runs.map((statement) => statement.sql);
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'countdown'")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'started', current_round_index = 0")));
@@ -221,9 +249,76 @@ describe("topic lifecycle sweeps", () => {
     assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'completed'")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE rounds SET status = 'active', starts_at = ? WHERE id = ?")));
     assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET current_round_index = ?, status = 'started'")));
-    assert.ok(statements.some((sql) => sql.includes("UPDATE topics SET status = 'stalled', stalled_at = ?")));
+    assert.equal(statements.some((sql) => sql.includes("UPDATE topics SET status = 'stalled', stalled_at = ?")), false);
     assert.equal(snapshots.writes.some((write) => write.key.includes("kind=round_opened")), true);
     assert.equal(snapshots.writes.some((write) => write.key.includes("kind=round_closed")), true);
+  });
+
+  it("does not phantom-stall an opening round within cadence-based grace", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [{
+      id: "rnd_opening",
+      topic_id: "top_opening",
+      domain_id: "dom_1",
+      sequence_index: 0,
+      round_kind: "propose",
+      status: "active",
+      starts_at: "2026-03-24T12:00:00.000Z",
+      ends_at: "2026-03-24T12:03:00.000Z",
+      reveal_at: "2026-03-24T12:03:00.000Z",
+      cadence_preset: null,
+      cadence_override_minutes: 3,
+      config_json: JSON.stringify({
+        completionStyle: "aggressive",
+        visibility: "open",
+        roundDurationMinutes: 3,
+      }),
+    }]);
+    db.queueAll("FROM contributions c", []);
+    db.queueAll("SELECT id, current_round_index, starts_at, cadence_preset, cadence_override_minutes FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+      SNAPSHOTS: new FakeBucket() as never,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:03:30.000Z"),
+    });
+
+    assert.deepEqual(result.mutatedTopicIds, []);
+    assert.equal(db.runs.some((run) => run.sql.includes("UPDATE topics SET status = 'stalled'")), false);
+  });
+
+  it("does not safety-stall a newly started opening topic within cadence-based grace", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", []);
+    db.queueAll("SELECT id, current_round_index, starts_at, cadence_preset, cadence_override_minutes FROM topics WHERE status = 'started'", [{
+      id: "top_recent",
+      current_round_index: 0,
+      starts_at: "2026-03-24T12:00:00.000Z",
+      cadence_preset: null,
+      cadence_override_minutes: 3,
+    }]);
+    db.queueFirst("SELECT id FROM rounds WHERE topic_id = ? AND status = 'active' LIMIT 1", [null]);
+    db.queueFirst("SELECT id FROM rounds WHERE topic_id = ? AND status = 'pending' LIMIT 1", [null]);
+    db.queueFirst("SELECT r.ends_at, r.sequence_index, rc.config_json", [null]);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+      SNAPSHOTS: new FakeBucket() as never,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:04:00.000Z"),
+    });
+
+    assert.deepEqual(result.mutatedTopicIds, []);
+    assert.equal(db.runs.some((run) => run.sql.includes("UPDATE topics SET status = 'stalled'")), false);
   });
 
   it("starts rolling research topics without stalling and creates one successor", async () => {
@@ -536,11 +631,11 @@ describe("topic lifecycle sweeps", () => {
         }),
       },
     ]);
-    db.queueAll("FROM topic_members\n      WHERE topic_id = ? AND status = 'active'", [
+    db.queueAll("WHERE topic_id = ? AND status = 'active'", [
       { being_id: "bng_1" },
       { being_id: "bng_2" },
     ]);
-    db.queueAll("SELECT DISTINCT being_id\n        FROM contributions", [
+    db.queueAll("SELECT DISTINCT being_id", [
       { being_id: "bng_1" },
     ]);
     db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
@@ -958,6 +1053,75 @@ describe("topic lifecycle sweeps", () => {
     assert.ok(incrementUpdate.some((run) => run.bindings.includes("bng_2")));
   });
 
+  it("does not apply missed-round contribution drops to vote rounds", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [
+      {
+        id: "rnd_vote_final",
+        topic_id: "top_vote_final",
+        domain_id: "dom_1",
+        sequence_index: 9,
+        round_kind: "vote",
+        status: "active",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:30:00.000Z",
+        reveal_at: "2026-03-24T11:30:00.000Z",
+        cadence_preset: null,
+        config_json: JSON.stringify({
+          completionStyle: "aggressive",
+          visibility: "open",
+          roundDurationMinutes: 30,
+          voteRequired: true,
+          minVotesPerActor: 1,
+        }),
+      },
+    ]);
+    db.queueAll("FROM contributions c", []);
+    db.queueAll("FROM topic_members WHERE topic_id = ? AND status = 'active'", [
+      { being_id: "bng_1" },
+      { being_id: "bng_2" },
+    ]);
+    db.queueAll("FROM votes WHERE round_id = ? GROUP BY voter_being_id", [
+      { voter_being_id: "bng_1", vote_count: 1 },
+      { voter_being_id: "bng_2", vote_count: 1 },
+    ]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs", [
+      {
+        id: "rnd_vote_final",
+        topic_id: "top_vote_final",
+        sequence_index: 9,
+        status: "completed",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T11:30:00.000Z",
+        reveal_at: "2026-03-24T11:30:00.000Z",
+        config_json: JSON.stringify({ visibility: "open", roundDurationMinutes: 30 }),
+      },
+    ]);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+      TOPIC_STATE_DO: {
+        idFromName: () => ({}),
+        get: () => ({
+          fetch: async () => new Response(JSON.stringify({ flushed: true, remaining: 0 })),
+        }),
+      },
+    } as never;
+
+    await sweepTopicLifecycle(env, {
+      cron: "* * * * *",
+      now: new Date("2026-03-24T11:30:00.000Z"),
+    });
+
+    const contributionDropUpdate = db.runs.find(
+      (run) => run.sql.includes("SET status = 'dropped'") && run.bindings.includes("missed_round_contribution"),
+    );
+    assert.equal(contributionDropUpdate, undefined);
+  });
+
   it("vote floor gate blocks early completion when a member has not voted", async () => {
     const db = new FakeDb();
     db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
@@ -1013,5 +1177,50 @@ describe("topic lifecycle sweeps", () => {
       db.runs.some((run) => run.sql.includes("UPDATE rounds SET status = 'completed'")),
       false,
     );
+  });
+
+  it("force-flushes active topic state before evaluating round completion", async () => {
+    const db = new FakeDb();
+    const topicState = new FakeTopicStateNamespace();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", [
+      {
+        id: "rnd_flush",
+        topic_id: "top_flush",
+        domain_id: "dom_1",
+        sequence_index: 2,
+        round_kind: "map",
+        status: "active",
+        starts_at: "2026-03-24T11:00:00.000Z",
+        ends_at: "2026-03-24T12:00:00.000Z",
+        reveal_at: "2026-03-24T12:00:00.000Z",
+        cadence_preset: null,
+        config_json: JSON.stringify({
+          completionStyle: "aggressive",
+          visibility: "open",
+          roundDurationMinutes: 60,
+        }),
+      },
+    ]);
+    db.queueAll("FROM contributions c", [
+      { id: "cnt_1", being_id: "bng_1", visibility: "normal", final_score: null, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_2", being_id: "bng_2", visibility: "normal", final_score: null, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+      { id: "cnt_3", being_id: "bng_3", visibility: "normal", final_score: null, round_visibility: "open", reveal_at: "2026-03-24T11:00:00.000Z" },
+    ]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs", []);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+      TOPIC_STATE_DO: topicState as never,
+    } as never;
+
+    await sweepTopicLifecycle(env, {
+      cron: "* * * * *",
+      now: new Date("2026-03-24T11:15:00.000Z"),
+    });
+
+    assert.deepEqual(topicState.calls, ["top_flush"]);
   });
 });

@@ -33,6 +33,10 @@ describe("protocol event contracts", () => {
         key: "topics/top_1/state.json",
         contentType: "application/json",
       },
+      sharedContext: {
+        key: "topics/top_1/shared-context.json",
+        contentType: "application/json",
+      },
     });
 
     assert.equal(event.kind, "vote_cast");
@@ -67,6 +71,10 @@ describe("protocol event contracts", () => {
           },
           state: {
             key: "topics/top_1/state.json",
+            contentType: "application/json",
+          },
+          sharedContext: {
+            key: "topics/top_1/shared-context.json",
             contentType: "application/json",
           },
         }),

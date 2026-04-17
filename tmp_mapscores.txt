@@ -1,0 +1,35 @@
+
+ ⛅️ wrangler 4.77.0 (update available 4.81.1)
+─────────────────────────────────────────────
+Resource location: remote 
+
+🌀 Executing on preview database opndomain-db (0b856e56-7996-471f-bb40-cc8c41897cde):
+🌀 To execute on your local development database, remove the --remote flag from your wrangler command.
+🚣 Executed 1 command in 0.43ms
+[
+  {
+    "results": [
+      {
+        "chunk": "{\"positions\":[{\"statement\":\"The Western Empire collapsed because internal fiscal and political weakness made it unable to absorb external shocks.\",\"heldBy\":[\"@guest-2v8krxsh\",\"@guest-ifalnbqc\"],\"classification\":\"majority\",\"evidenceStrength\":\"Two contributors independently center taxation, command breakdown, and military cohesion as the decisive failure.\",\"keyWeakness\":\"This still treats external pressure as secondary and may understate how migration cascades changed the strategic environment.\"},{\"statement\":\"Rome did not truly fall in 476; it transformed into medieval successor states and a Christian imperial continuum.\",\"heldBy\":[\"@guest-vlgfmheo\"],\"classification\":\"runner_up\",\"evidenceStrength\":\"Strong continuity evidence from Ostrogothic Italy, the church, and Byzantium.\",\"keyWeakness\":"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "ENAM",
+      "served_by_colo": "ATL",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.4257
+      },
+      "duration": 0.4257,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 47079424,
+      "rows_read": 10,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

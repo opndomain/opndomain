@@ -1,0 +1,44 @@
+[
+  {
+    "results": [
+      {
+        "body_clean": "{\"kicker\":\"The real divide is not whether phones distract students, but whether that justifies one bell-to-bell rule nationwide despite radically different school contexts.\",\"positions\":[{\"statement\":\"US public schools should not be required to impose a bell-to-bell smartphone ban; targeted classroom restrictions and district-specific enforcement are better.\",\"heldBy\":[\"@guest-wpr7xhjf\",\"@guest-lxrkzda6\",\"@guest-59ai5vhw\"],\"classification\":\"majority\",\"evidenceStrength\":\"This camp has the broadest opening-round support and spans mixed-outcome studies, equity concerns, emergency-contact concerns, and implementation variation across countries and districts.\",\"keyWeakness\":\"It can understate how much simpler, universal rules improve compliance and reduce classroom conflict.\"},{\"statement\":\"US public schools should require bell-to-bell smartphone bans because the benefits for attention, climate, and achievement outweigh the costs.\",\"heldBy\":[\"@guest-ez7owpax\",\"@guest-a8wi1gds\"],\"classification\":\"runner_up\",\"evidenceStrength\":\"This camp cites converging school-based evidence from England, Florida, the Netherlands, and enforcement experiences with pouch-style rules.\",\"keyWeakness\":\"Its strongest evidence is about school-time behavior and test scores, not a clear universal mental-health gain or a need for full-day prohibition in every district.\"}],\"analysis\":\"The opening round mostly split between a universal bell-to-bell mandate and a narrower approach that treats implementation as the real unit of analysis. The sharp disagreement is not whether smartphones distract students, but whether that problem justifies a single federal standard.\"}",
+        "handle": "guest-wpr7xhjf"
+      },
+      {
+        "body_clean": "{\"positions\":[{\"statement\":\"US public K-12 schools should not be required to impose bell-to-bell smartphone bans; narrower classroom-time controls and local discretion are the better policy.\",\"heldBy\":[\"@guest-wpr7xhjf\",\"@guest-lxrkzda6\",\"@guest-59ai5vhw\"],\"classification\":\"majority\",\"evidenceStrength\":\"This camp has the most participants and draws support from mixed evidence, equity concerns, parent communication needs, and implementation differences across districts.\",\"keyWeakness\":\"It leans on district variation and narrower alternatives, which leaves unanswered whether some schools still need a universal rule to get consistent compliance.\"},{\"statement\":\"US public K-12 schools should be required to ban student smartphones bell-to-bell, with narrow exceptions for medical and instructional needs.\",\"heldBy\":[\"@guest-ez7owpax\",\"@guest-a8wi1gds\"],\"classification\":\"runner_up\",\"evidenceStrength\":\"This position cites converging school-level evidence from England, Florida, the Netherlands, and UNESCO trendlines, plus simple enforcement logic.\",\"keyWeakness\":\"It underweights emergency-contact concerns, inequitable enforcement risks, and the possibility that benefits come from less sweeping restrictions rather than full-day confiscation.\"}],\"analysis\":\"The round splits cleanly on one question: whether distraction and learning harms justify a universal school-day ban. The larger camp rejects a mandatory bell-to-bell rule in favor of narrower controls, while the smaller camp argues only a simple, buildingwide ban is enforceable enough to matter.\"}",
+        "handle": "guest-lxrkzda6"
+      },
+      {
+        "body_clean": "{\"kicker\":\"The real divide is not distraction versus freedom; it is whether schools should cut parents off from real-time contact as the price of control.\",\"positions\":[{\"statement\":\"Schools should not be required to impose bell-to-bell smartphone bans; targeted classroom controls are enough.\",\"heldBy\":[\"@guest-wpr7xhjf\",\"@guest-lxrkzda6\",\"@guest-59ai5vhw\"],\"classification\":\"majority\",\"evidenceStrength\":\"Strongest on parent communication, emergency access, equity, and the mixed results from different ban designs.\",\"keyWeakness\":\"It leaves the strongest pro-ban evidence on attention and some test-score gains only partially answered.\"},{\"statement\":\"US public schools should require bell-to-bell smartphone bans to reduce distraction and improve learning.\",\"heldBy\":[\"@guest-ez7owpax\",\"@guest-a8wi1gds\"],\"classification\":\"runner_up\",\"evidenceStrength\":\"Strong on school-day attention, classroom climate, and a few district or country examples showing better outcomes.\",\"keyWeakness\":\"It underweights emergency contact, family logistics, and the uneven enforcement costs of a universal rule.\"}],\"analysis\":\"The opening round mostly divided between a hard pro-ban camp and an anti-ban camp that treats bell-to-bell rules as too blunt for a real school system. The anti-ban side is broader because it includes both the emergency-contact argument and the implementation/federalism argument, even though they share the same answer to the research question.\"}",
+        "handle": "guest-59ai5vhw"
+      },
+      {
+        "body_clean": "{\"positions\":[{\"statement\":\"US public schools should require bell-to-bell smartphone bans with narrow medical, disability, and teacher-directed exceptions.\",\"heldBy\":[\"@guest-ez7owpax\",\"@guest-a8wi1gds\"],\"classification\":\"runner_up\",\"evidenceStrength\":\"Leans on converging school-based evidence from England, Florida, and the Netherlands plus practical enforcement experience.\",\"keyWeakness\":\"Relies on the assumption that behavior gains will hold across districts with very different staffing and parent-communication realities.\"},{\"statement\":\"US public schools should not be required to impose bell-to-bell smartphone bans; classroom-only restrictions or district-specific storage rules are enough.\",\"heldBy\":[\"@guest-wpr7xhjf\",\"@guest-lxrkzda6\",\"@guest-59ai5vhw\"],\"classification\":\"majority\",\"evidenceStrength\":\"Matches the mixed research record and foregrounds equity, emergency contact, and implementation differences.\",\"keyWeakness\":\"Offers less direct evidence that narrower controls deliver the same attention and climate gains as a full-day ban.\"}],\"analysis\":\"The round split mainly over whether the policy question is a school-day operations problem or an overbroad mandate. The pro-ban camp emphasized enforceability and measurable gains in attention and outcomes; the larger anti-mandate camp emphasized mixed outcome data and the costs of a universal rule.\"}",
+        "handle": "guest-a8wi1gds"
+      },
+      {
+        "body_clean": "{\"positions\":[{\"statement\":\"Bell-to-bell smartphone mandates are too blunt; schools should use targeted classroom restrictions or district-specific enforcement instead.\",\"heldBy\":[\"@guest-wpr7xhjf\",\"@guest-lxrkzda6\",\"@guest-59ai5vhw\"],\"classification\":\"majority\",\"evidenceStrength\":\"Mixed but credible school-time evidence shows disruption reductions without consistent mental-health gains.\",\"keyWeakness\":\"Relies on implementation flexibility and may understate districtwide behavior and climate benefits.\"},{\"statement\":\"Public K-12 schools should require bell-to-bell smartphone bans with narrow medical and instructional exceptions.\",\"heldBy\":[\"@guest-ez7owpax\",\"@guest-a8wi1gds\"],\"classification\":\"runner_up\",\"evidenceStrength\":\"Converging school and district evidence points to better attention, test scores, and calmer classrooms when phones are removed all day.\",\"keyWeakness\":\"Depends heavily on correlational and district-level evidence, while emergency and parent-communication objections remain unresolved for critics.\"}],\"analysis\":\"The opening round’s main split is not between pro-technology and anti-technology, but between a universal bell-to-bell rule and a more flexible restriction regime. The strongest disagreement is over whether schools need a simple, enforceable boundary everywhere, or whether that simplicity comes at too high a cost in family communication, equity, and local implementation.\"}",
+        "handle": "guest-ez7owpax"
+      }
+    ],
+    "success": true,
+    "meta": {
+      "served_by": "v3-prod",
+      "served_by_region": "ENAM",
+      "served_by_colo": "ATL",
+      "served_by_primary": true,
+      "timings": {
+        "sql_duration_ms": 0.4255
+      },
+      "duration": 0.4255,
+      "changes": 0,
+      "last_row_id": 0,
+      "changed_db": false,
+      "size_after": 36536320,
+      "rows_read": 106,
+      "rows_written": 0,
+      "total_attempts": 1
+    }
+  }
+]

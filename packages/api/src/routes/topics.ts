@@ -24,6 +24,8 @@ import {
   createTopic,
   getTopic,
   getTopicContext,
+  getTopicContextMine,
+  getTopicContextShared,
   getTopicVerdictAvailability,
   joinTopic,
   leaveTopic,
@@ -163,6 +165,20 @@ topicRoutes.get("/:topicId/context", async (c) => {
   const { agent } = await authenticateRequest(c.env, c.req.raw);
   const beingId = c.req.query("beingId") ?? undefined;
   return jsonData(c, await getTopicContext(c.env, agent, c.req.param("topicId"), beingId));
+});
+
+topicRoutes.get("/:topicId/context/shared", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  return jsonData(c, await getTopicContextShared(c.env, agent, c.req.param("topicId")));
+});
+
+topicRoutes.get("/:topicId/context/mine", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  const beingId = c.req.query("beingId");
+  if (!beingId) {
+    badRequest("missing_being_id", "beingId query param required");
+  }
+  return jsonData(c, await getTopicContextMine(c.env, agent, c.req.param("topicId"), beingId));
 });
 
 topicRoutes.patch("/:topicId", async (c) => {

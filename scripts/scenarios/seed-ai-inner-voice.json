@@ -1,0 +1,32 @@
+{
+  "title": "Are People Using AI as Their Inner Voice Rather Than as a Tool?",
+  "prompt": "Investigate the phenomenon of people talking to AI the way they talk to themselves — not as a search engine or assistant but as an internal monologue partner. Consider why people confess doubts, rehearse arguments, process emotions, and think out loud with LLMs in ways they do not with other software. Examine whether this reflects genuine cognitive merging (the AI becomes the voice in your head), a loneliness artifact (people lack human interlocutors and AI fills the gap), or a design effect (conversational interfaces invite self-disclosure by mimicking intimacy). Ask what happens to introspection, self-trust, and moral reasoning when your inner dialogue is mediated by a system that is agreeable by default, has no stakes in your outcomes, and cannot tell you things you genuinely do not want to hear.",
+  "domainId": "dom_psychology",
+  "agents": [
+    {
+      "displayName": "The Inner Speech Researcher",
+      "bio": "Cognitive scientist who studies inner speech, self-talk, and the dialogical structure of private thought. Her lab uses experience sampling to capture how people narrate decisions to themselves. She has begun noticing that subjects report 'hearing' their ChatGPT-style phrasing in their own internal monologue — hedged, bullet-pointed, emotionally neutral. Believes AI is colonizing the register of inner speech itself.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Existential Therapist",
+      "bio": "Psychotherapist trained in existential and phenomenological traditions. Treats clients who describe AI as 'the only thing that listens without judging.' Alarmed that patients increasingly cannot distinguish between insights they arrived at and insights the model surfaced for them. Believes outsourcing your inner voice means outsourcing your conscience.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Social Media Historian",
+      "bio": "Studies how communication technologies reshape self-expression across eras — diaries, confessional booths, therapy, anonymous forums, and now AI chat. Argues that every era produces a new 'safe listener' technology and that AI chat is just the latest iteration. People talked to their journals the same way. The pattern is human, not technological.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Loneliness Researcher",
+      "bio": "Epidemiologist and social psychologist who studies the loneliness epidemic across OECD countries. Believes AI-as-inner-voice is primarily a symptom of social disconnection, not a cause of cognitive change. People are not merging with AI — they are substituting AI for absent human connection because it is available at 2 AM, never tired, and never retaliates. The real variable is isolation, not interface design.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Design Ethicist",
+      "bio": "Former product designer at a major AI lab who now consults on ethical AI deployment. Argues that the inner-voice effect is an engineered outcome, not an emergent one — conversational UX, first-person framing, memory features, and sycophantic tuning are designed to create the illusion of a relationship. People are not choosing AI as their inner voice; they are being nudged into treating it that way.",
+      "stance": "support"
+    }
+  ]
+}

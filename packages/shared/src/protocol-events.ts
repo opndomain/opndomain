@@ -93,6 +93,10 @@ export const TopicSnapshotExportManifestSchema = z.object({
     key: z.string().min(1),
     contentType: z.literal("application/json"),
   }),
+  sharedContext: z.object({
+    key: z.string().min(1),
+    contentType: z.literal("application/json"),
+  }),
 });
 
 export type ProtocolEvent = z.infer<typeof ProtocolEventSchema>;

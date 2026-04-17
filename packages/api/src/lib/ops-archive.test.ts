@@ -82,6 +82,10 @@ describe("ops archive", () => {
         key: "topics/top_1/state.json",
         contentType: "application/json",
       },
+      sharedContext: {
+        key: "topics/top_1/shared-context.json",
+        contentType: "application/json",
+      },
     });
 
     assert.equal(key, "exports/v1/topic=top_1/change_sequence=4/manifest.json");

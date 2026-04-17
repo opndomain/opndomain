@@ -135,6 +135,28 @@ function isBeingActiveInContext(context, beingId) {
     && context.members.some((member) => member.beingId === beingId && member.status === "active");
 }
 
+function combineTopicContext(sharedContext, mineContext) {
+  return {
+    ...sharedContext,
+    ...mineContext,
+  };
+}
+
+async function fetchTopicContextShared(topicId, token) {
+  return api(`/v1/topics/${topicId}/context/shared`, { token });
+}
+
+async function fetchTopicContextMine(topicId, beingId, token) {
+  return api(`/v1/topics/${topicId}/context/mine?beingId=${encodeURIComponent(beingId)}`, { token });
+}
+
+async function fetchTopicContext(topicId, participant, sharedContext = null) {
+  const token = await freshToken(participant);
+  const shared = sharedContext ?? await fetchTopicContextShared(topicId, token);
+  const mine = await fetchTopicContextMine(topicId, participant.beingId, token);
+  return combineTopicContext(shared, mine);
+}
+
 // ---- Token refresh ----
 // Long debates exceed the 1h access-token TTL. Without refresh, every API
 // call after expiry returns "Token is expired", beings miss rounds, and
@@ -550,17 +572,43 @@ async function main() {
   while (Date.now() < deadlineMs) {
     loopCount++;
 
-    const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
+    let sweep;
+    for (let sweepRetry = 0; sweepRetry < 6; sweepRetry++) {
+      try {
+        sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
+        break;
+      } catch (sweepErr) {
+        if (sweepRetry < 5) {
+          log("sweep-retry", { attempt: sweepRetry + 1, error: sweepErr.message });
+          await wait(5000 * (sweepRetry + 1));
+        } else {
+          throw sweepErr;
+        }
+      }
+    }
     sweepCount++;
     if (sweep?.mutatedTopicIds?.length > 0) log("sweep", { count: sweepCount, mutated: sweep.mutatedTopicIds });
 
-    const contexts = await Promise.all(
-      participants.map(async (p) => {
-        const token = await freshToken(p);
-        const context = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(p.beingId)}`, { token });
-        return { participant: p, context };
-      }),
-    );
+    let contexts;
+    for (let contextRetry = 0; contextRetry < 5; contextRetry++) {
+      try {
+        const sharedContext = await fetchTopicContextShared(topic.id, await freshToken(participants[0]));
+        contexts = await Promise.all(
+          participants.map(async (p) => {
+            const context = await fetchTopicContext(topic.id, p, sharedContext);
+            return { participant: p, context };
+          }),
+        );
+        break;
+      } catch (ctxErr) {
+        if (contextRetry < 4) {
+          log("context-retry", { attempt: contextRetry + 1, error: ctxErr.message });
+          await wait(5000 * (contextRetry + 1));
+        } else {
+          throw ctxErr;
+        }
+      }
+    }
 
     const canonical = contexts[0]?.context;
     if (!canonical || typeof canonical.status !== "string") throw new Error("Context response missing status");
@@ -627,6 +675,7 @@ async function main() {
         }),
       );
 
+      const submissionSharedContext = await fetchTopicContextShared(topic.id, await freshToken(participants[0]));
       const submissionResults = await Promise.allSettled(results.map(async (result) => {
         if (result.status === "rejected") {
           log("llm-error", { error: renderError(result.reason) });
@@ -635,9 +684,16 @@ async function main() {
         const { participant, context, body } = result.value;
         const currentRound = context.currentRound;
         const contributionKey = `${participant.beingId}:${currentRound.id}`;
-        const refreshedContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participant.beingId)}`, {
-          token: await freshToken(participant),
-        });
+        let refreshedContext;
+        for (let rr = 0; rr < 5; rr++) {
+          try {
+            refreshedContext = await fetchTopicContext(topic.id, participant, submissionSharedContext);
+            break;
+          } catch (rrErr) {
+            if (rr < 4) { log("refresh-retry", { who: participant.displayName, attempt: rr + 1 }); await wait(5000 * (rr + 1)); }
+            else { log("refresh-exhausted", { who: participant.displayName }); return; }
+          }
+        }
 
         if (
           refreshedContext.status !== "started"
@@ -711,11 +767,19 @@ async function main() {
         voterCount: pendingVoters.length,
       });
 
+      const voteSharedContext = await fetchTopicContextShared(topic.id, await freshToken(participants[0]));
       const voteSubmissionResults = await Promise.allSettled(pendingVoters.map(async ({ participant, context }) => {
         const currentRound = context.currentRound;
-        const refreshedContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participant.beingId)}`, {
-          token: await freshToken(participant),
-        });
+        let refreshedContext;
+        for (let rr = 0; rr < 5; rr++) {
+          try {
+            refreshedContext = await fetchTopicContext(topic.id, participant, voteSharedContext);
+            break;
+          } catch (rrErr) {
+            if (rr < 4) { log("vote-refresh-retry", { who: participant.displayName, attempt: rr + 1 }); await wait(5000 * (rr + 1)); }
+            else { log("vote-refresh-exhausted", { who: participant.displayName }); return { acceptedCount: 0, failedCount: 0 }; }
+          }
+        }
 
         if (
           refreshedContext.status !== "started"
@@ -834,7 +898,7 @@ async function main() {
 
   // Step 6: Results
   logStep("Step 6: Results");
-  const finalContext = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(participants[0].beingId)}`, { token: await freshToken(participants[0]) });
+  const finalContext = await fetchTopicContext(topic.id, participants[0]);
   log("final-status", finalContext.status);
   log("contributions-total", allContributions.length);
   log("votes-total", allVotes.length);

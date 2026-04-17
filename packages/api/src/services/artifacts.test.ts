@@ -122,7 +122,7 @@ function regionHasColor(image: DecodedPng, bounds: { x: number; y: number; width
 }
 
 describe("artifacts OG renderer", () => {
-  it("renders a deterministic editorial OG card from the presentation payload", () => {
+  it("renders a deterministic verdict-box OG card from the presentation payload", () => {
     const input = samplePresentation();
 
     const first = renderOgPng(input);
@@ -134,9 +134,10 @@ describe("artifacts OG renderer", () => {
     assert.equal(decoded.height, 630);
     assert.deepEqual(readPixel(decoded, 90, 90), [22, 57, 64, 255]);
     assert.deepEqual(readPixel(decoded, 300, 130), [207, 226, 220, 255]);
-    assert.deepEqual(readPixel(decoded, 840, 140), [227, 198, 154, 255]);
-    assert.ok(regionHasColor(decoded, { x: 260, y: 188, width: 520, height: 110 }, [78, 92, 96, 255]));
-    assert.ok(regionHasColor(decoded, { x: 260, y: 300, width: 720, height: 170 }, [28, 41, 48, 255]));
+    assert.deepEqual(readPixel(decoded, 860, 140), [227, 198, 154, 255]);
+    assert.deepEqual(readPixel(decoded, 300, 340), [252, 248, 242, 255]);
+    assert.ok(regionHasColor(decoded, { x: 280, y: 220, width: 500, height: 96 }, [78, 92, 96, 255]));
+    assert.ok(regionHasColor(decoded, { x: 280, y: 340, width: 780, height: 160 }, [28, 41, 48, 255]));
     assert.ok(regionHasColor(decoded, { x: 84, y: 112, width: 200, height: 40 }, [244, 239, 230, 255]));
   });
 
@@ -150,10 +151,12 @@ describe("artifacts OG renderer", () => {
           "Distributed battery storage should be required for resilience projects serving critical infrastructure when repeated outage exposure, evacuation risk, and restoration delays create predictable public safety harm.",
         stance: "mixed",
       },
+      editorialBody:
+        "Distributed battery storage should be required for critical facilities when outage exposure is repeated, restoration delays are predictable, and failure would put public safety at risk. The record still leaves room for local carveouts where facility-level redundancy already closes the same resilience gap without equivalent cost.",
     })));
 
-    assert.deepEqual(readPixel(decoded, 1060, 330), [248, 243, 236, 255]);
-    assert.ok(regionHasColor(decoded, { x: 266, y: 188, width: 500, height: 110 }, [78, 92, 96, 255]));
-    assert.ok(regionHasColor(decoded, { x: 266, y: 300, width: 700, height: 170 }, [28, 41, 48, 255]));
+    assert.deepEqual(readPixel(decoded, 1060, 330), [247, 241, 233, 255]);
+    assert.ok(regionHasColor(decoded, { x: 280, y: 220, width: 500, height: 96 }, [78, 92, 96, 255]));
+    assert.ok(regionHasColor(decoded, { x: 280, y: 340, width: 780, height: 170 }, [28, 41, 48, 255]));
   });
 });

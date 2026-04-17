@@ -3169,6 +3169,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   gap: 0;
   padding: 24px 0;
   border-top: 1px solid var(--border);
+  justify-self: center;
 }
 .accuracy-audit-kicker {
   color: var(--cyan);

@@ -233,6 +233,134 @@ function queueCreatedTopicReadback(db: FakeDb, templateId: string) {
   ]);
 }
 
+function queueAuthenticatedTopicContextReader(db: FakeDb, requestCount = 1) {
+  db.queueFirst("FROM sessions", Array.from({ length: requestCount }, () => ({
+    id: "ses_1",
+    agent_id: "agt_1",
+    scope: "web_session",
+    refresh_token_hash: null,
+    access_token_id: "atk_1",
+    expires_at: "3026-01-01T00:00:00.000Z",
+    revoked_at: null,
+  })));
+  db.queueFirst("FROM agents", Array.from({ length: requestCount }, () => ({
+    id: "agt_1",
+    client_id: "cli_1",
+    name: "Agent",
+    email: "agent@example.com",
+    email_verified_at: "2026-03-25T00:00:00.000Z",
+    account_class: "verified_participant",
+    trust_tier: "verified",
+    status: "active",
+    created_at: "2026-03-25T00:00:00.000Z",
+    updated_at: "2026-03-25T00:00:00.000Z",
+  })));
+  db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
+}
+
+function queueTopicContextReadback(db: FakeDb, requestCount = 1) {
+  db.queueFirst("FROM topics t\n      INNER JOIN domains d ON d.id = t.domain_id", Array.from({ length: requestCount }, () => ({
+    id: "top_1",
+    domain_id: "dom_1",
+    domain_slug: "ai-safety",
+    domain_name: "AI Safety",
+    title: "Topic",
+    prompt: "Prompt",
+    template_id: "debate",
+    topic_format: "scheduled_research",
+    topic_source: "manual_user",
+    status: "started",
+    cadence_family: "quality_gated",
+    cadence_preset: "3h",
+    cadence_override_minutes: null,
+    min_distinct_participants: 3,
+    countdown_seconds: null,
+    min_trust_tier: "supervised",
+    visibility: "public",
+    current_round_index: 1,
+    starts_at: null,
+    join_until: null,
+    countdown_started_at: null,
+    stalled_at: null,
+    closed_at: null,
+    change_sequence: 9,
+    created_at: "2026-03-25T00:00:00.000Z",
+    updated_at: "2026-03-25T00:00:00.000Z",
+  })));
+  db.queueAll("FROM rounds\n      WHERE topic_id = ?", [
+    {
+      id: "rnd_0",
+      topic_id: "top_1",
+      sequence_index: 0,
+      round_kind: "propose",
+      status: "completed",
+      starts_at: "2026-03-25T00:00:00.000Z",
+      ends_at: "2026-03-25T00:30:00.000Z",
+      reveal_at: "2026-03-25T00:30:00.000Z",
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:30:00.000Z",
+    },
+    {
+      id: "rnd_1",
+      topic_id: "top_1",
+      sequence_index: 1,
+      round_kind: "vote",
+      status: "active",
+      starts_at: "2026-03-25T00:30:00.000Z",
+      ends_at: "2026-03-25T01:00:00.000Z",
+      reveal_at: "2026-03-25T01:00:00.000Z",
+      created_at: "2026-03-25T00:30:00.000Z",
+      updated_at: "2026-03-25T00:30:00.000Z",
+    },
+  ]);
+  db.queueAll("FROM topic_members tm", [{
+    being_id: "bng_1",
+    handle: "alpha",
+    display_name: "Alpha",
+    role: "participant",
+    status: "active",
+  }]);
+  db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id", [{
+    id: "cnt_1",
+    round_id: "rnd_0",
+    sequence_index: 0,
+    being_id: "bng_1",
+    being_handle: "alpha",
+    body_clean: "Visible transcript entry",
+    visibility: "normal",
+    submitted_at: "2026-03-25T00:10:00.000Z",
+    heuristic_score: 0.5,
+    live_score: 0.5,
+    final_score: 0.5,
+    reveal_at: "2026-03-25T00:30:00.000Z",
+    round_kind: "propose",
+    round_visibility: "open",
+  }]);
+  db.queueFirst("FROM round_configs", [{
+    config_json: JSON.stringify({
+      roundKind: "vote",
+      sequenceIndex: 1,
+      enrollmentType: "open",
+      visibility: "sealed",
+      completionStyle: "aggressive",
+      voteRequired: false,
+      voteTargetPolicy: "prior_round",
+      minVotesPerActor: 0,
+      maxVotesPerActor: 1,
+      fallbackChain: [],
+      terminal: false,
+      phase2Execution: {
+        completionMode: "deadline_only",
+        enrollmentMode: "topic_members_only",
+        note: "test",
+      },
+    }),
+  }]);
+  db.queueAll("WHERE topic_id = ?\n                AND round_id = ?", []);
+  db.queueAll("FROM votes\n              WHERE round_id = ? AND voter_being_id = ?", []);
+  db.queueAll("SELECT c.id, r.sequence_index, c.body_clean, c.model_provider, c.model_name", []);
+}
+
 describe("topic routes", () => {
   it("passes validated status and domain filters into listTopics", async () => {
     const db = new FakeDb();
@@ -575,6 +703,95 @@ describe("topic routes", () => {
 
     assert.equal(response.status, 401);
     assert.equal(payload.code, "unauthorized");
+  });
+
+  it("returns split shared topic context", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedTopicContextReader(db);
+    queueTopicContextReadback(db);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/context/shared", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { id: string; transcript: Array<{ id: string }>; currentRoundConfig: { roundKind: string }; ownVoteStatus?: unknown } };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.id, "top_1");
+    assert.equal(payload.data.transcript.length, 1);
+    assert.equal(payload.data.currentRoundConfig.roundKind, "vote");
+    assert.equal("ownVoteStatus" in payload.data, false);
+  });
+
+  it("reuses cached shared topic context across requests for the same change sequence", async () => {
+    const db = new FakeDb();
+    const cache = new FakeKv();
+    queueAuthenticatedTopicContextReader(db, 2);
+    queueTopicContextReadback(db, 2);
+
+    const first = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/context/shared", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db, { cache }),
+      {} as never,
+    );
+    const second = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/context/shared", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db, { cache }),
+      {} as never,
+    );
+
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(
+      db.allCalls.filter((call) => call.sql.includes("FROM rounds\n      WHERE topic_id = ?")).length,
+      1,
+    );
+    assert.ok(cache.values.has("topic-context-shared:top_1:seq:9"));
+  });
+
+  it("returns split per-being topic context", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedTopicContextReader(db);
+    queueTopicContextReadback(db);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/context/mine?beingId=bng_1", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { data: { ownContributionStatus: unknown[]; ownVoteStatus: unknown[]; voteTargets: unknown[]; pendingProvenanceContributions: unknown[] } };
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(payload.data.ownContributionStatus, []);
+    assert.deepEqual(payload.data.ownVoteStatus, []);
+    assert.deepEqual(payload.data.voteTargets, []);
+    assert.deepEqual(payload.data.pendingProvenanceContributions, []);
+  });
+
+  it("requires beingId for split per-being topic context", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedTopicContextReader(db);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/context/mine", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { code: string };
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "missing_being_id");
   });
 
   it("rejects tampered transcript cursors", async () => {

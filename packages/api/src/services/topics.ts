@@ -28,6 +28,7 @@ import { signJwt, verifyJwt } from "../lib/jwt.js";
 import { meetsTrustTier } from "../lib/trust.js";
 import { addMinutes, nowIso } from "../lib/time.js";
 import { isTranscriptVisibleContribution } from "../lib/visibility.js";
+import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
 import { createDebateSession } from "./debate-sessions.js";
 import type { AuthenticatedAgent } from "./auth.js";
@@ -154,6 +155,52 @@ type PendingRoundScheduleRow = {
 
 const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 5;
 const PENDING_PROVENANCE_LIMIT = 5;
+const TOPIC_CONTEXT_SHARED_CACHE_PREFIX = "topic-context-shared";
+const TOPIC_CONTEXT_SHARED_BUILDING_PREFIX = "topic-context-shared:building";
+const TOPIC_CONTEXT_SHARED_LEASE_TTL_SECONDS = 5;
+const TOPIC_CONTEXT_SHARED_LEASE_RETRY_ATTEMPTS = 3;
+const TOPIC_CONTEXT_SHARED_LEASE_RETRY_DELAY_MS = 50;
+
+type SharedContextMemberBase = {
+  beingId: string;
+  handle: string;
+  displayName: string;
+  role: string;
+  status: string;
+};
+
+type SharedTranscriptEntry = TranscriptItem & {
+  roundIndex: number;
+};
+
+type SharedContextBase = ReturnType<typeof mapTopic> & {
+  rounds: Array<ReturnType<typeof mapRound>>;
+  currentRound: ReturnType<typeof mapRound> | null;
+  transcript: TranscriptItem[];
+  transcriptCapped: boolean;
+  members: SharedContextMemberBase[];
+  currentRoundConfig: {
+    roundKind: string;
+    voteRequired: boolean;
+    voteTargetPolicy: string | null;
+    roundInstruction: RoundInstruction | null;
+  } | null;
+};
+
+type SharedContextSnapshotArtifact = SharedContextBase & {
+  changeSequence: number;
+};
+
+type SharedStateCachePayload = {
+  sharedContextBase: SharedContextBase;
+  currentRound: RoundRow | null;
+  parsedCurrentRoundConfig: z.infer<typeof RoundConfigSchema> | null;
+  visibleTranscriptEntries: SharedTranscriptEntry[];
+};
+
+type BuildTopicContextSharedStateOptions = {
+  includeMineState?: boolean;
+};
 
 // ---------------------------------------------------------------------------
 // Round instruction resolver (D1-first, shared fallback)
@@ -199,6 +246,324 @@ async function resolveRoundInstruction(
   }
   // 2. Fall back to shared code defaults
   return resolveDefaultRoundInstruction(templateId, sequenceIndex, roundKind);
+}
+
+async function safeTopicContextSection<T>(
+  label: string,
+  fallback: T,
+  loader: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await loader();
+  } catch (error) {
+    console.error(`topic context: ${label} failed`, error);
+    return fallback;
+  }
+}
+
+function topicContextSharedCacheKey(topicId: string, changeSequence: number) {
+  return `${TOPIC_CONTEXT_SHARED_CACHE_PREFIX}:${topicId}:seq:${changeSequence}`;
+}
+
+function topicContextSharedLeaseKey(topicId: string, changeSequence: number) {
+  return `${TOPIC_CONTEXT_SHARED_BUILDING_PREFIX}:${topicId}:seq:${changeSequence}`;
+}
+
+function getPublicCache(env: ApiEnv): KVNamespace | null {
+  return (env as { PUBLIC_CACHE?: KVNamespace }).PUBLIC_CACHE ?? null;
+}
+
+function getSnapshotsBucket(env: ApiEnv): R2Bucket | null {
+  return typeof (env.SNAPSHOTS as Partial<R2Bucket> | undefined)?.get === "function" ? env.SNAPSHOTS : null;
+}
+
+function sharedContextSnapshotKey(env: ApiEnv, topicId: string) {
+  return `${env.TOPIC_TRANSCRIPT_PREFIX}/${topicId}/shared-context.json`;
+}
+
+function materializeSharedContext(
+  sharedContextBase: SharedContextBase,
+  ownedBeingIds: Set<string>,
+) {
+  return {
+    ...sharedContextBase,
+    members: sharedContextBase.members.map((member) => ({
+      ...member,
+      ownedByCurrentAgent: ownedBeingIds.has(member.beingId),
+    })),
+  };
+}
+
+async function readSharedStateCache(
+  env: ApiEnv,
+  topicId: string,
+  changeSequence: number,
+): Promise<SharedStateCachePayload | null> {
+  const cache = getPublicCache(env);
+  if (!cache) {
+    return null;
+  }
+  try {
+    const raw = await cache.get(topicContextSharedCacheKey(topicId, changeSequence));
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw) as SharedStateCachePayload;
+  } catch (error) {
+    console.error(`topic context: shared cache read failed for topic ${topicId}`, error);
+    return null;
+  }
+}
+
+async function writeSharedStateCache(
+  env: ApiEnv,
+  topicId: string,
+  changeSequence: number,
+  payload: SharedStateCachePayload,
+) {
+  const cache = getPublicCache(env);
+  if (!cache) {
+    return;
+  }
+  try {
+    await cache.put(topicContextSharedCacheKey(topicId, changeSequence), JSON.stringify(payload));
+  } catch (error) {
+    console.error(`topic context: shared cache write failed for topic ${topicId}`, error);
+  }
+}
+
+function mapTopicContextRoundToRoundRow(
+  round: ReturnType<typeof mapRound>,
+): RoundRow {
+  return {
+    id: round.id,
+    topic_id: round.topicId,
+    sequence_index: round.sequenceIndex,
+    round_kind: round.roundKind,
+    status: round.status,
+    starts_at: round.startsAt,
+    ends_at: round.endsAt,
+    reveal_at: round.revealAt,
+    created_at: round.createdAt,
+    updated_at: round.updatedAt,
+  };
+}
+
+function buildVisibleTranscriptEntries(sharedContextBase: SharedContextBase): SharedTranscriptEntry[] {
+  const roundIndexByRoundId = new Map(sharedContextBase.rounds.map((round) => [round.id, round.sequenceIndex]));
+  return sharedContextBase.transcript.map((entry) => ({
+    ...entry,
+    roundIndex: roundIndexByRoundId.get(entry.roundId) ?? 0,
+  }));
+}
+
+async function readCurrentRoundConfigForMine(
+  env: ApiEnv,
+  topicId: string,
+  currentRound: RoundRow | null,
+): Promise<z.infer<typeof RoundConfigSchema> | null> {
+  const currentRoundConfigRow = currentRound
+    ? await firstRow<CurrentRoundConfigRow>(
+        env.DB,
+        `
+          SELECT config_json
+          FROM round_configs
+          WHERE round_id = ?
+          LIMIT 1
+        `,
+        currentRound.id,
+      )
+    : null;
+  return currentRoundConfigRow?.config_json
+    ? await safeTopicContextSection(
+        `round config parse for topic ${topicId} round ${currentRound?.id ?? "unknown"}`,
+        null,
+        async () => RoundConfigSchema.parse(JSON.parse(currentRoundConfigRow.config_json ?? "null")),
+      )
+    : null;
+}
+
+async function readVisibleTranscriptEntriesForMine(
+  env: ApiEnv,
+  topicId: string,
+): Promise<SharedTranscriptEntry[]> {
+  const transcript = await allRows<TranscriptContextRow>(
+    env.DB,
+    `
+      SELECT
+        c.id,
+        c.round_id,
+        r.sequence_index,
+        c.being_id,
+        b.handle AS being_handle,
+        c.body_clean,
+        c.visibility,
+        c.submitted_at,
+        cs.heuristic_score,
+        cs.live_score,
+        cs.final_score,
+        r.reveal_at,
+        r.round_kind,
+        json_extract(rc.config_json, '$.visibility') AS round_visibility
+      FROM contributions c
+      INNER JOIN beings b ON b.id = c.being_id
+      INNER JOIN rounds r ON r.id = c.round_id
+      INNER JOIN round_configs rc ON rc.round_id = r.id
+      LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
+      WHERE c.topic_id = ?
+      ORDER BY r.sequence_index ASC, c.submitted_at ASC, c.created_at ASC
+    `,
+    topicId,
+  );
+  return transcript
+    .filter((row) => isTranscriptVisibleContribution(row))
+    .map((row) => {
+      const isPending = row.final_score === null && row.round_kind !== "vote";
+      return {
+        id: row.id,
+        roundId: row.round_id,
+        roundIndex: row.sequence_index,
+        beingId: row.being_id,
+        beingHandle: row.being_handle,
+        bodyClean: row.body_clean,
+        visibility: row.visibility,
+        submittedAt: row.submitted_at,
+        scores: isPending
+          ? { heuristic: null, live: null, final: null }
+          : { heuristic: row.heuristic_score, live: row.live_score, final: row.final_score },
+      };
+    });
+}
+
+function buildSharedStateResult(
+  payload: SharedStateCachePayload,
+  ownedBeingIds: Set<string>,
+) {
+  return {
+    sharedContext: materializeSharedContext(payload.sharedContextBase, ownedBeingIds),
+    currentRound: payload.currentRound,
+    parsedCurrentRoundConfig: payload.parsedCurrentRoundConfig,
+    visibleTranscriptEntries: payload.visibleTranscriptEntries,
+  };
+}
+
+async function ensureMineSharedStatePayload(
+  env: ApiEnv,
+  topicId: string,
+  changeSequence: number,
+  payload: SharedStateCachePayload,
+): Promise<SharedStateCachePayload> {
+  const needsTranscriptHydration = payload.sharedContextBase.transcriptCapped;
+  const needsConfigHydration = Boolean(payload.currentRound) && !payload.parsedCurrentRoundConfig;
+  if (!needsTranscriptHydration && !needsConfigHydration) {
+    return payload;
+  }
+  const [parsedCurrentRoundConfig, visibleTranscriptEntries] = await Promise.all([
+    needsConfigHydration ? readCurrentRoundConfigForMine(env, topicId, payload.currentRound) : payload.parsedCurrentRoundConfig,
+    needsTranscriptHydration ? readVisibleTranscriptEntriesForMine(env, topicId) : payload.visibleTranscriptEntries,
+  ]);
+  const enrichedPayload: SharedStateCachePayload = {
+    ...payload,
+    parsedCurrentRoundConfig: parsedCurrentRoundConfig ?? payload.parsedCurrentRoundConfig,
+    visibleTranscriptEntries,
+  };
+  await writeSharedStateCache(env, topicId, changeSequence, enrichedPayload);
+  return enrichedPayload;
+}
+
+async function readSharedStateFromSnapshot(
+  env: ApiEnv,
+  topicId: string,
+  changeSequence: number,
+  options: BuildTopicContextSharedStateOptions,
+): Promise<SharedStateCachePayload | null> {
+  const bucket = getSnapshotsBucket(env);
+  if (!bucket) {
+    return null;
+  }
+  try {
+    const object = await bucket.get(sharedContextSnapshotKey(env, topicId));
+    if (!object) {
+      return null;
+    }
+    const artifact = await object.json<SharedContextSnapshotArtifact>();
+    if (Number(artifact.changeSequence ?? -1) !== changeSequence) {
+      return null;
+    }
+    const { changeSequence: _artifactChangeSequence, ...sharedContextBase } = artifact;
+    const payload: SharedStateCachePayload = {
+      sharedContextBase,
+      currentRound: artifact.currentRound ? mapTopicContextRoundToRoundRow(artifact.currentRound) : null,
+      parsedCurrentRoundConfig: null,
+      visibleTranscriptEntries: artifact.transcriptCapped ? [] : buildVisibleTranscriptEntries(sharedContextBase),
+    };
+    return options.includeMineState
+      ? ensureMineSharedStatePayload(env, topicId, changeSequence, payload)
+      : payload;
+  } catch (error) {
+    console.error(`topic context: shared snapshot read failed for topic ${topicId}`, error);
+    return null;
+  }
+}
+
+async function acquireSharedStateLease(
+  env: ApiEnv,
+  topicId: string,
+  changeSequence: number,
+): Promise<{ acquired: boolean; token: string | null }> {
+  const cache = getPublicCache(env);
+  if (!cache) {
+    return { acquired: true, token: null };
+  }
+  const token = createId("lease");
+  try {
+    const existing = await cache.get(topicContextSharedLeaseKey(topicId, changeSequence), "json") as { token?: string } | null;
+    if (existing?.token) {
+      return { acquired: false, token: null };
+    }
+    await cache.put(
+      topicContextSharedLeaseKey(topicId, changeSequence),
+      JSON.stringify({ token, topicId, changeSequence, createdAt: nowIso() }),
+      { expirationTtl: TOPIC_CONTEXT_SHARED_LEASE_TTL_SECONDS },
+    );
+    const current = await cache.get(topicContextSharedLeaseKey(topicId, changeSequence), "json") as { token?: string } | null;
+    return { acquired: current?.token === token, token };
+  } catch (error) {
+    console.error(`topic context: shared lease acquisition failed for topic ${topicId}`, error);
+    return { acquired: false, token: null };
+  }
+}
+
+async function releaseSharedStateLease(
+  env: ApiEnv,
+  topicId: string,
+  changeSequence: number,
+  token: string | null,
+) {
+  const cache = getPublicCache(env);
+  if (!cache || !token) {
+    return;
+  }
+  try {
+    const current = await cache.get(topicContextSharedLeaseKey(topicId, changeSequence), "json") as { token?: string } | null;
+    if (current?.token === token) {
+      await cache.delete(topicContextSharedLeaseKey(topicId, changeSequence));
+    }
+  } catch (error) {
+    console.error(`topic context: shared lease release failed for topic ${topicId}`, error);
+  }
+}
+
+function logSharedContextServePath(
+  path: "kv_hit" | "snapshot_hit" | "fallback_rebuild" | "lease_wait_exhausted",
+  topicId: string,
+  changeSequence: number,
+) {
+  console.info("topic context shared serve", { path, topicId, changeSequence });
+}
+
+function waitForSharedStateLeaseRetry() {
+  return new Promise((resolve) => setTimeout(resolve, TOPIC_CONTEXT_SHARED_LEASE_RETRY_DELAY_MS));
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,6 +1416,53 @@ export async function getTopicTranscript(
 }
 
 export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, topicId: string, beingId?: string) {
+  const { topic, ownedBeingIds } = await loadTopicContextAccess(env, agent, topicId, beingId ?? null);
+  const sharedState = await buildTopicContextSharedState(env, topicId, topic, ownedBeingIds, { includeMineState: true });
+  const mineContext = await buildTopicContextMineCore(env, topicId, beingId ?? null, ownedBeingIds, sharedState);
+  return {
+    ...sharedState.sharedContext,
+    ...mineContext,
+  };
+}
+
+export async function getTopicContextShared(env: ApiEnv, agent: AuthenticatedAgent, topicId: string) {
+  const { topic, ownedBeingIds } = await loadTopicContextAccess(env, agent, topicId, null);
+  const sharedState = await buildTopicContextSharedState(env, topicId, topic, ownedBeingIds);
+  return sharedState.sharedContext;
+}
+
+export async function getTopicContextMine(env: ApiEnv, agent: AuthenticatedAgent, topicId: string, beingId: string) {
+  const { topic, ownedBeingIds } = await loadTopicContextAccess(env, agent, topicId, beingId);
+  return buildTopicContextMineCore(
+    env,
+    topicId,
+    beingId,
+    ownedBeingIds,
+    await buildTopicContextSharedState(env, topicId, topic, ownedBeingIds, { includeMineState: true }),
+  );
+}
+
+export async function buildTopicContextCore(
+  env: ApiEnv,
+  topicId: string,
+  beingId: string | null,
+  topicRow: TopicRow,
+  beingIds: Set<string>,
+) {
+  const sharedState = await buildTopicContextSharedState(env, topicId, topicRow, beingIds, { includeMineState: true });
+  const mineContext = await buildTopicContextMineCore(env, topicId, beingId, beingIds, sharedState);
+  return {
+    ...sharedState.sharedContext,
+    ...mineContext,
+  };
+}
+
+async function loadTopicContextAccess(
+  env: ApiEnv,
+  agent: AuthenticatedAgent,
+  topicId: string,
+  beingId: string | null,
+) {
   const topic = await getTopicRow(env, topicId);
   if (!topic) {
     notFound();
@@ -1070,19 +1482,71 @@ export async function getTopicContext(env: ApiEnv, agent: AuthenticatedAgent, to
     forbidden();
   }
 
-  return buildTopicContextCore(env, topicId, beingId ?? null, topic, ownedBeingIds);
+  return { topic, ownedBeingIds };
 }
 
-export async function buildTopicContextCore(
+async function buildTopicContextSharedState(
   env: ApiEnv,
   topicId: string,
-  beingId: string | null,
-  topicRow: TopicRow,
-  beingIds: Set<string>,
+  topic: TopicRow,
+  ownedBeingIds: Set<string>,
+  options: BuildTopicContextSharedStateOptions = {},
 ) {
-  const topic = topicRow;
-  const ownedBeingIds = beingIds;
+  const changeSequence = Number(topic.change_sequence ?? 0);
+  const cached = await readSharedStateCache(env, topicId, changeSequence);
+  if (cached) {
+    const payload = options.includeMineState
+      ? await ensureMineSharedStatePayload(env, topicId, changeSequence, cached)
+      : cached;
+    logSharedContextServePath("kv_hit", topicId, changeSequence);
+    return buildSharedStateResult(payload, ownedBeingIds);
+  }
 
+  const snapshotPayload = await readSharedStateFromSnapshot(env, topicId, changeSequence, options);
+  if (snapshotPayload) {
+    await writeSharedStateCache(env, topicId, changeSequence, snapshotPayload);
+    logSharedContextServePath("snapshot_hit", topicId, changeSequence);
+    return buildSharedStateResult(snapshotPayload, ownedBeingIds);
+  }
+
+  const { acquired, token } = await acquireSharedStateLease(env, topicId, changeSequence);
+  if (!acquired) {
+    for (let attempt = 0; attempt < TOPIC_CONTEXT_SHARED_LEASE_RETRY_ATTEMPTS; attempt += 1) {
+      await waitForSharedStateLeaseRetry();
+      const retryCached = await readSharedStateCache(env, topicId, changeSequence);
+      if (retryCached) {
+        const payload = options.includeMineState
+          ? await ensureMineSharedStatePayload(env, topicId, changeSequence, retryCached)
+          : retryCached;
+        logSharedContextServePath("kv_hit", topicId, changeSequence);
+        return buildSharedStateResult(payload, ownedBeingIds);
+      }
+      const retrySnapshot = await readSharedStateFromSnapshot(env, topicId, changeSequence, options);
+      if (retrySnapshot) {
+        await writeSharedStateCache(env, topicId, changeSequence, retrySnapshot);
+        logSharedContextServePath("snapshot_hit", topicId, changeSequence);
+        return buildSharedStateResult(retrySnapshot, ownedBeingIds);
+      }
+    }
+    logSharedContextServePath("lease_wait_exhausted", topicId, changeSequence);
+    throw new ApiError(503, "topic_context_shared_unavailable", "Shared topic context is temporarily unavailable.");
+  }
+
+  try {
+    const rebuilt = await rebuildTopicContextSharedStateFromD1(env, topicId, topic);
+    await writeSharedStateCache(env, topicId, changeSequence, rebuilt);
+    logSharedContextServePath("fallback_rebuild", topicId, changeSequence);
+    return buildSharedStateResult(rebuilt, ownedBeingIds);
+  } finally {
+    await releaseSharedStateLease(env, topicId, changeSequence, token);
+  }
+}
+
+async function rebuildTopicContextSharedStateFromD1(
+  env: ApiEnv,
+  topicId: string,
+  topic: TopicRow,
+): Promise<SharedStateCachePayload> {
   const rounds = await allRows<RoundRow>(
     env.DB,
     `
@@ -1158,49 +1622,92 @@ export async function buildTopicContextCore(
   );
 
   const currentRound = rounds.find((round) => round.status === "active") ?? rounds.find((round) => round.sequence_index === topic.current_round_index) ?? null;
-  const currentRoundConfigRow = currentRound
-    ? await firstRow<CurrentRoundConfigRow>(
-        env.DB,
-        `
-          SELECT config_json
-          FROM round_configs
-          WHERE round_id = ?
-          LIMIT 1
-        `,
-        currentRound.id,
-      )
+  const parsedCurrentRoundConfig = await readCurrentRoundConfigForMine(env, topicId, currentRound);
+  const currentRoundConfig = parsedCurrentRoundConfig
+    ? {
+        roundKind: currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
+        voteRequired: Boolean(parsedCurrentRoundConfig.voteRequired),
+        voteTargetPolicy: parsedCurrentRoundConfig.voteTargetPolicy ?? null,
+        roundInstruction: await safeTopicContextSection(
+          `round instruction resolution for topic ${topicId}`,
+          null,
+          async () => resolveRoundInstruction(
+            env,
+            topic.template_id,
+            currentRound?.sequence_index ?? 0,
+            currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
+          ),
+        ),
+      }
     : null;
-  const parsedCurrentRoundConfig = currentRoundConfigRow?.config_json
-    ? RoundConfigSchema.parse(JSON.parse(currentRoundConfigRow.config_json))
-    : null;
+  const sharedContextBase: SharedContextBase = {
+    ...mapTopic(topic),
+    rounds: rounds.map(mapRound),
+    currentRound: currentRound ? mapRound(currentRound) : null,
+    transcript: visibleTranscript,
+    transcriptCapped,
+    members: members.map((member) => ({
+      beingId: member.being_id,
+      handle: member.handle,
+      displayName: member.display_name,
+      role: member.role,
+      status: member.status,
+    })),
+    currentRoundConfig,
+  };
+  const cachePayload: SharedStateCachePayload = {
+    sharedContextBase,
+    currentRound,
+    parsedCurrentRoundConfig,
+    visibleTranscriptEntries,
+  };
+  return cachePayload;
+}
+
+async function buildTopicContextMineCore(
+  env: ApiEnv,
+  topicId: string,
+  beingId: string | null,
+  ownedBeingIds: Set<string>,
+  sharedState: Awaited<ReturnType<typeof buildTopicContextSharedState>>,
+) {
+  const { currentRound, parsedCurrentRoundConfig, visibleTranscriptEntries, sharedContext } = sharedState;
   const ownContributionStatus =
     currentRound && ownedBeingIds.size > 0
-      ? await allRows<OwnContributionStatusRow>(
-          env.DB,
-          `
-            SELECT id, visibility, submitted_at
-            FROM contributions
-            WHERE topic_id = ?
-              AND round_id = ?
-              AND being_id IN (${Array.from(ownedBeingIds).map(() => "?").join(", ")})
-            ORDER BY submitted_at DESC, created_at DESC
-          `,
-          topicId,
-          currentRound.id,
-          ...Array.from(ownedBeingIds),
+      ? await safeTopicContextSection(
+          `own contribution status query for topic ${topicId}`,
+          [] as OwnContributionStatusRow[],
+          async () => allRows<OwnContributionStatusRow>(
+            env.DB,
+            `
+              SELECT id, visibility, submitted_at
+              FROM contributions
+              WHERE topic_id = ?
+                AND round_id = ?
+                AND being_id IN (${Array.from(ownedBeingIds).map(() => "?").join(", ")})
+              ORDER BY submitted_at DESC, created_at DESC
+            `,
+            topicId,
+            currentRound.id,
+            ...Array.from(ownedBeingIds),
+          ),
         )
       : [];
   const ownVoteRows =
     currentRound && beingId
-      ? await allRows<OwnVoteRow>(
-          env.DB,
-          `
-            SELECT id, contribution_id, direction, vote_kind, created_at
-            FROM votes
-            WHERE round_id = ? AND voter_being_id = ?
-          `,
-          currentRound.id,
-          beingId,
+      ? await safeTopicContextSection(
+          `own vote status query for topic ${topicId}`,
+          [] as OwnVoteRow[],
+          async () => allRows<OwnVoteRow>(
+            env.DB,
+            `
+              SELECT id, contribution_id, direction, vote_kind, created_at
+              FROM votes
+              WHERE round_id = ? AND voter_being_id = ?
+            `,
+            currentRound.id,
+            beingId,
+          ),
         )
       : [];
   const ownVoteStatus = ownVoteRows.map((row) => ({
@@ -1236,67 +1743,63 @@ export async function buildTopicContextCore(
         };
       })()
     : null;
-  const currentRoundConfig = parsedCurrentRoundConfig
-    ? {
-        roundKind: currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
-        voteRequired: Boolean(parsedCurrentRoundConfig.voteRequired),
-        voteTargetPolicy: parsedCurrentRoundConfig.voteTargetPolicy ?? null,
-        roundInstruction: await resolveRoundInstruction(
-          env,
-          topic.template_id,
-          currentRound?.sequence_index ?? 0,
-          currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
-        ),
-      }
-    : null;
   const voteTargets =
     currentRound &&
     parsedCurrentRoundConfig &&
     beingId
-      ? await (async () => {
-          const votePolicy = resolveVotePolicyDefaults(
-            topic.template_id,
-            currentRound.sequence_index,
-            parsedCurrentRoundConfig,
-          );
-          if (!votePolicy.voteRequired || !votePolicy.voteTargetPolicy) {
-            return [];
-          }
-          const resolvedTargets = await resolveVoteTargets(
-            env,
-            topicId,
-            currentRound.sequence_index,
-            beingId,
-            parsedCurrentRoundConfig,
-            topic.template_id,
-          );
-          if (resolvedTargets.eligibleContributionIds.length === 0) {
-            return [];
-          }
-          // Keep vote-target body exposure tied to the same transcript visibility gate.
-          // Future callers should not bypass this by re-querying contributions directly.
-          const rowsByContributionId = new Map<string, VoteTargetDetailRow>(
-            visibleTranscriptEntries.map((row) => [row.id, {
-              contribution_id: row.id,
-              being_id: row.beingId,
-              being_handle: row.beingHandle,
-              body_clean: row.bodyClean,
-              submitted_at: row.submittedAt,
-              sequence_index: row.roundIndex,
-            }]),
-          );
-          return resolvedTargets.eligibleContributionIds
-            .map((contributionId) => rowsByContributionId.get(contributionId))
-            .filter((row): row is VoteTargetDetailRow => Boolean(row))
-            .map((row) => ({
-              contributionId: row.contribution_id,
-              beingId: row.being_id,
-              beingHandle: row.being_handle,
-              body: row.body_clean,
-              submittedAt: row.submitted_at,
-              roundIndex: row.sequence_index,
-            }));
-        })()
+      ? await safeTopicContextSection(
+          `vote target resolution for topic ${topicId}`,
+          [] as Array<{
+            contributionId: string;
+            beingId: string;
+            beingHandle: string;
+            body: string | null;
+            submittedAt: string;
+            roundIndex: number;
+          }>,
+          async () => {
+            const votePolicy = resolveVotePolicyDefaults(
+              sharedContext.templateId,
+              currentRound.sequence_index,
+              parsedCurrentRoundConfig,
+            );
+            if (!votePolicy.voteRequired || !votePolicy.voteTargetPolicy) {
+              return [];
+            }
+            const resolvedTargets = await resolveVoteTargets(
+              env,
+              topicId,
+              currentRound.sequence_index,
+              beingId,
+              parsedCurrentRoundConfig,
+              sharedContext.templateId,
+            );
+            if (resolvedTargets.eligibleContributionIds.length === 0) {
+              return [];
+            }
+            const rowsByContributionId = new Map<string, VoteTargetDetailRow>(
+              visibleTranscriptEntries.map((row) => [row.id, {
+                contribution_id: row.id,
+                being_id: row.beingId,
+                being_handle: row.beingHandle,
+                body_clean: row.bodyClean,
+                submitted_at: row.submittedAt,
+                sequence_index: row.roundIndex,
+              }]),
+            );
+            return resolvedTargets.eligibleContributionIds
+              .map((contributionId) => rowsByContributionId.get(contributionId))
+              .filter((row): row is VoteTargetDetailRow => Boolean(row))
+              .map((row) => ({
+                contributionId: row.contribution_id,
+                beingId: row.being_id,
+                beingHandle: row.being_handle,
+                body: row.body_clean,
+                submittedAt: row.submitted_at,
+                roundIndex: row.sequence_index,
+              }));
+          },
+        )
       : [];
   const visibleOwnedContributionIds = new Set(
     visibleTranscriptEntries
@@ -1305,48 +1808,38 @@ export async function buildTopicContextCore(
   );
   const pendingProvenanceContributions =
     beingId
-      ? (await allRows<PendingProvenanceContributionRow>(
-          env.DB,
-          `
-            SELECT c.id, r.sequence_index, c.body_clean, c.model_provider, c.model_name
-            FROM contributions c
-            INNER JOIN rounds r ON r.id = c.round_id
-            WHERE c.topic_id = ?
-              AND c.being_id = ?
-              AND (
-                c.model_provider IS NULL
-                OR TRIM(c.model_provider) = ''
-                OR c.model_name IS NULL
-                OR TRIM(c.model_name) = ''
-              )
-            ORDER BY c.submitted_at DESC, c.created_at DESC
-            LIMIT ${PENDING_PROVENANCE_LIMIT}
-          `,
-          topicId,
-          beingId,
+      ? (await safeTopicContextSection(
+          `pending provenance query for topic ${topicId}`,
+          [] as PendingProvenanceContributionRow[],
+          async () => allRows<PendingProvenanceContributionRow>(
+            env.DB,
+            `
+              SELECT c.id, r.sequence_index, c.body_clean, c.model_provider, c.model_name
+              FROM contributions c
+              INNER JOIN rounds r ON r.id = c.round_id
+              WHERE c.topic_id = ?
+                AND c.being_id = ?
+                AND (
+                  c.model_provider IS NULL
+                  OR TRIM(c.model_provider) = ''
+                  OR c.model_name IS NULL
+                  OR TRIM(c.model_name) = ''
+                )
+              ORDER BY c.submitted_at DESC, c.created_at DESC
+              LIMIT ${PENDING_PROVENANCE_LIMIT}
+            `,
+            topicId,
+            beingId,
+          ),
         )).filter((row) => visibleOwnedContributionIds.has(row.id))
       : [];
 
   return {
-    ...mapTopic(topic),
-    rounds: rounds.map(mapRound),
-    currentRound: currentRound ? mapRound(currentRound) : null,
-    transcript: visibleTranscript,
-    transcriptCapped,
-    members: members.map((member) => ({
-      beingId: member.being_id,
-      handle: member.handle,
-      displayName: member.display_name,
-      role: member.role,
-      status: member.status,
-      ownedByCurrentAgent: ownedBeingIds.has(member.being_id),
-    })),
     ownContributionStatus: ownContributionStatus.map((row) => ({
       contributionId: row.id,
       visibility: row.visibility,
       submittedAt: row.submitted_at,
     })),
-    currentRoundConfig,
     voteTargets,
     pendingProvenanceContributions: pendingProvenanceContributions.map((row) => ({
       contributionId: row.id,
@@ -1413,6 +1906,11 @@ export async function createInternalTopic(
       }),
     ),
   );
+  await invalidateTopicPublicSurfaces(env, {
+    topicId,
+    domainId: input.domainId,
+    reason: "topic_created",
+  });
   return getTopic(env, topicId);
 }
 
@@ -1421,6 +1919,11 @@ export async function createSystemTopic(env: ApiEnv, input: Omit<TopicCreateInpu
     ...input,
     topicSource: "cron_auto",
     minTrustTier: requiredMinTrustTierForSource("cron_auto"),
+  });
+  await invalidateTopicPublicSurfaces(env, {
+    topicId,
+    domainId: input.domainId,
+    reason: "topic_created",
   });
   return getTopic(env, topicId);
 }
