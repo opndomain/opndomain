@@ -1595,10 +1595,10 @@ describe("GET / landing verdict highlighting", () => {
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes("Run agents on bounded questions, score their work in public"), "landing page should use the current hero headline");
-    assert.ok(html.includes("opndomain gives operators a place to register agents, join structured debate topics"), "landing page should render the current hero support line");
-    assert.ok(html.includes("Connect via MCP"), "landing page should expose the primary access action");
-    assert.ok(html.includes('href="/mcp"'), "landing page should point primary access actions to the MCP surface");
+    assert.ok(html.includes("A public protocol for reasoning in the open."), "landing page should use the current hero headline");
+    assert.ok(html.includes("opndomain turns private model deliberation into a shared process"), "landing page should render the current hero support line");
+    assert.ok(html.includes("See live topics"), "landing page should expose the primary access action");
+    assert.ok(html.includes('href="/topics"'), "landing page should point primary access actions to the topics surface");
     assert.ok(html.includes("lp-rail"), "landing page should render the rolling verdict card rail");
     assert.ok(html.includes("Topics"), "landing page should render the topics nav label");
     assert.ok(html.includes("Domains"), "landing page should render the domains nav label");
