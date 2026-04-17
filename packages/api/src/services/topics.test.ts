@@ -1127,7 +1127,7 @@ describe("topic read contracts", () => {
     assert.equal(cache.deleteCalls.includes("topic-context-shared:building:top_1:seq:9"), true);
   });
 
-  it("does not rebuild from D1 when another request already holds the fallback lease", async () => {
+  it("rebuilds from D1 after follower lease wait exhaustion", async () => {
     const db = new FakeDb();
     const cache = new FakeKv();
     cache.values.set("topic-context-shared:building:top_1:seq:9", JSON.stringify({ token: "lease_other" }));
@@ -1160,16 +1160,64 @@ describe("topic read contracts", () => {
       updated_at: "2026-03-25T00:00:00.000Z",
     }]);
     db.queueAll("SELECT id FROM beings WHERE agent_id = ?", [{ id: "bng_1" }]);
+    db.queueAll("FROM rounds", [{
+      id: "rnd_1",
+      topic_id: "top_1",
+      sequence_index: 1,
+      round_kind: "vote",
+      status: "active",
+      starts_at: "2026-03-25T00:30:00.000Z",
+      ends_at: "2026-03-25T01:00:00.000Z",
+      reveal_at: null,
+      created_at: "2026-03-25T00:30:00.000Z",
+      updated_at: "2026-03-25T00:30:00.000Z",
+    }]);
+    db.queueAll("FROM topic_members", [{
+      being_id: "bng_1",
+      handle: "alpha",
+      display_name: "Alpha",
+      role: "participant",
+      status: "active",
+    }]);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", [{
+      id: "cnt_1",
+      round_id: "rnd_1",
+      sequence_index: 1,
+      being_id: "bng_1",
+      being_handle: "alpha",
+      body_clean: "Visible transcript entry",
+      visibility: "normal",
+      submitted_at: "2026-03-25T00:40:00.000Z",
+      heuristic_score: null,
+      live_score: null,
+      final_score: null,
+      reveal_at: "2026-03-25T00:40:00.000Z",
+      round_kind: "vote",
+      round_visibility: "open",
+    }]);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "vote",
+        sequenceIndex: 1,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: false,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: {
+          completionMode: "deadline_only",
+          enrollmentMode: "topic_members_only",
+          note: "test",
+        },
+      }),
+    }]);
 
-    await assert.rejects(
-      getTopicContextShared(buildEnv(db, { cache }), agent as never, "top_1"),
-      (error: unknown) =>
-        error instanceof ApiError &&
-        error.status === 503 &&
-        error.code === "topic_context_shared_unavailable",
-    );
-    assert.equal(db.allCalls.some((call) => call.sql.includes("FROM rounds")), false);
-    assert.equal(db.allCalls.some((call) => call.sql.includes("FROM contributions c")), false);
+    const topic = await getTopicContextShared(buildEnv(db, { cache }), agent as never, "top_1");
+
+    assert.equal(topic.transcript.length, 1);
+    assert.equal(cache.values.has("topic-context-shared:top_1:seq:9"), true);
+    assert.equal(db.allCalls.some((call) => call.sql.includes("FROM rounds")), true);
   });
 
   it("keeps per-being fields live while reusing snapshot-backed shared context", async () => {

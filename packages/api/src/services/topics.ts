@@ -158,8 +158,8 @@ const PENDING_PROVENANCE_LIMIT = 5;
 const TOPIC_CONTEXT_SHARED_CACHE_PREFIX = "topic-context-shared";
 const TOPIC_CONTEXT_SHARED_BUILDING_PREFIX = "topic-context-shared:building";
 const TOPIC_CONTEXT_SHARED_LEASE_TTL_SECONDS = 5;
-const TOPIC_CONTEXT_SHARED_LEASE_RETRY_ATTEMPTS = 3;
-const TOPIC_CONTEXT_SHARED_LEASE_RETRY_DELAY_MS = 50;
+const TOPIC_CONTEXT_SHARED_LEASE_RETRY_ATTEMPTS = 5;
+const TOPIC_CONTEXT_SHARED_LEASE_RETRY_DELAY_MS = 200;
 
 type SharedContextMemberBase = {
   beingId: string;
@@ -526,8 +526,7 @@ async function acquireSharedStateLease(
       JSON.stringify({ token, topicId, changeSequence, createdAt: nowIso() }),
       { expirationTtl: TOPIC_CONTEXT_SHARED_LEASE_TTL_SECONDS },
     );
-    const current = await cache.get(topicContextSharedLeaseKey(topicId, changeSequence), "json") as { token?: string } | null;
-    return { acquired: current?.token === token, token };
+    return { acquired: true, token };
   } catch (error) {
     console.error(`topic context: shared lease acquisition failed for topic ${topicId}`, error);
     return { acquired: false, token: null };
@@ -1509,6 +1508,9 @@ async function buildTopicContextSharedState(
     return buildSharedStateResult(snapshotPayload, ownedBeingIds);
   }
 
+  // Attempt lease to reduce duplicate D1 rebuilds, but never block on it.
+  // If we can't acquire, try waiting briefly for the leader to populate KV/snapshot.
+  // If that fails, rebuild anyway — correctness over deduplication.
   const { acquired, token } = await acquireSharedStateLease(env, topicId, changeSequence);
   if (!acquired) {
     for (let attempt = 0; attempt < TOPIC_CONTEXT_SHARED_LEASE_RETRY_ATTEMPTS; attempt += 1) {
@@ -1528,8 +1530,16 @@ async function buildTopicContextSharedState(
         return buildSharedStateResult(retrySnapshot, ownedBeingIds);
       }
     }
-    logSharedContextServePath("lease_wait_exhausted", topicId, changeSequence);
-    throw new ApiError(503, "topic_context_shared_unavailable", "Shared topic context is temporarily unavailable.");
+    try {
+      const rebuilt = await rebuildTopicContextSharedStateFromD1(env, topicId, topic);
+      await writeSharedStateCache(env, topicId, changeSequence, rebuilt);
+      logSharedContextServePath("fallback_rebuild", topicId, changeSequence);
+      return buildSharedStateResult(rebuilt, ownedBeingIds);
+    } catch (error) {
+      console.error(`topic context: follower fallback rebuild failed for topic ${topicId}`, error);
+      logSharedContextServePath("lease_wait_exhausted", topicId, changeSequence);
+      throw new ApiError(503, "topic_context_shared_unavailable", "Shared topic context is temporarily unavailable.");
+    }
   }
 
   try {
@@ -1537,8 +1547,13 @@ async function buildTopicContextSharedState(
     await writeSharedStateCache(env, topicId, changeSequence, rebuilt);
     logSharedContextServePath("fallback_rebuild", topicId, changeSequence);
     return buildSharedStateResult(rebuilt, ownedBeingIds);
+  } catch (error) {
+    console.error(`topic context: leader fallback rebuild failed for topic ${topicId}`, error);
+    throw error;
   } finally {
-    await releaseSharedStateLease(env, topicId, changeSequence, token);
+    if (token) {
+      await releaseSharedStateLease(env, topicId, changeSequence, token);
+    }
   }
 }
 
