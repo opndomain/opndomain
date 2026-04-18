@@ -122,7 +122,7 @@ function regionHasColor(image: DecodedPng, bounds: { x: number; y: number; width
 }
 
 describe("artifacts OG renderer", () => {
-  it("renders a deterministic verdict-box OG card from the presentation payload", () => {
+  it("renders a deterministic topic-card OG image from the presentation payload", () => {
     const input = samplePresentation();
 
     const first = renderOgPng(input);
@@ -132,16 +132,54 @@ describe("artifacts OG renderer", () => {
     const decoded = decodePng(first);
     assert.equal(decoded.width, 1200);
     assert.equal(decoded.height, 630);
-    assert.deepEqual(readPixel(decoded, 90, 90), [22, 57, 64, 255]);
-    assert.deepEqual(readPixel(decoded, 300, 130), [207, 226, 220, 255]);
-    assert.deepEqual(readPixel(decoded, 860, 140), [227, 198, 154, 255]);
-    assert.deepEqual(readPixel(decoded, 300, 340), [252, 248, 242, 255]);
-    assert.ok(regionHasColor(decoded, { x: 280, y: 220, width: 500, height: 96 }, [78, 92, 96, 255]));
-    assert.ok(regionHasColor(decoded, { x: 280, y: 340, width: 780, height: 160 }, [28, 41, 48, 255]));
-    assert.ok(regionHasColor(decoded, { x: 84, y: 112, width: 200, height: 40 }, [244, 239, 230, 255]));
+
+    // Shell visible at top edge (between outer edge and card)
+    assert.ok(regionHasColor(decoded, { x: 500, y: 36, width: 200, height: 18 }, [226, 219, 210, 255]));
+    // Card background visible in empty area
+    assert.ok(regionHasColor(decoded, { x: 400, y: 380, width: 200, height: 60 }, [252, 248, 242, 255]));
+    // Accent stripe (closed = green) at top of card
+    assert.ok(regionHasColor(decoded, { x: 200, y: 54, width: 800, height: 10 }, [84, 138, 110, 255]));
+    // Brand text region has brand color
+    assert.ok(regionHasColor(decoded, { x: 84, y: 86, width: 200, height: 30 }, [22, 57, 64, 255]));
+    // Title region has ink color
+    assert.ok(regionHasColor(decoded, { x: 84, y: 130, width: 800, height: 100 }, [28, 41, 48, 255]));
+    // Prompt region has muted ink
+    assert.ok(regionHasColor(decoded, { x: 84, y: 270, width: 800, height: 60 }, [78, 92, 96, 255]));
+    // Stat chips at bottom have chip background color
+    assert.ok(regionHasColor(decoded, { x: 84, y: 468, width: 340, height: 80 }, [234, 225, 214, 255]));
+    // State chip has accent color (green for closed)
+    assert.ok(regionHasColor(decoded, { x: 756, y: 468, width: 300, height: 80 }, [84, 138, 110, 255]));
   });
 
-  it("keeps long titles and verdict text inside the card layout", () => {
+  it("maps synthesisOutcome to the matching verdict state chip", () => {
+    // Regression guard: a contested verdict must NOT render with the closed/consensus accent.
+    // Previous bug: renderOgPng always passed status:"closed" which the shared renderer
+    // translated to "CONSENSUS" + green regardless of actual outcome.
+    const contested = decodePng(renderOgPng(samplePresentation({ synthesisOutcome: "contested_synthesis" })));
+    const contestedAccent = [179, 108, 73, 255];
+    const consensusAccent = [84, 138, 110, 255];
+    assert.ok(
+      regionHasColor(contested, { x: 54, y: 54, width: 1092, height: 10 }, contestedAccent),
+      "contested_synthesis must render the contested accent on the top stripe",
+    );
+    assert.ok(
+      regionHasColor(contested, { x: 756, y: 468, width: 300, height: 80 }, contestedAccent),
+      "contested_synthesis must render the contested accent in the state chip",
+    );
+    assert.ok(
+      !regionHasColor(contested, { x: 54, y: 54, width: 1092, height: 10 }, consensusAccent),
+      "contested_synthesis must not fall back to the consensus/closed green accent",
+    );
+
+    // Also verify clear_synthesis still uses the consensus accent.
+    const clear = decodePng(renderOgPng(samplePresentation({ synthesisOutcome: "clear_synthesis" })));
+    assert.ok(
+      regionHasColor(clear, { x: 54, y: 54, width: 1092, height: 10 }, consensusAccent),
+      "clear_synthesis must render the consensus accent",
+    );
+  });
+
+  it("keeps long titles and prompt text inside the card layout", () => {
     const decoded = decodePng(renderOgPng(samplePresentation({
       title:
         "Should public utilities require distributed battery storage for hospitals, shelters, water systems, and communications hubs across outage-prone regions with repeated wildfire, storm, and heat risks?",
@@ -155,8 +193,11 @@ describe("artifacts OG renderer", () => {
         "Distributed battery storage should be required for critical facilities when outage exposure is repeated, restoration delays are predictable, and failure would put public safety at risk. The record still leaves room for local carveouts where facility-level redundancy already closes the same resilience gap without equivalent cost.",
     })));
 
-    assert.deepEqual(readPixel(decoded, 1060, 330), [247, 241, 233, 255]);
-    assert.ok(regionHasColor(decoded, { x: 280, y: 220, width: 500, height: 96 }, [78, 92, 96, 255]));
-    assert.ok(regionHasColor(decoded, { x: 280, y: 340, width: 780, height: 170 }, [28, 41, 48, 255]));
+    // Card background still visible at far right (text doesn't bleed off)
+    assert.ok(regionHasColor(decoded, { x: 1080, y: 180, width: 50, height: 40 }, [252, 248, 242, 255]));
+    // Title area has ink
+    assert.ok(regionHasColor(decoded, { x: 84, y: 130, width: 800, height: 100 }, [28, 41, 48, 255]));
+    // Prompt area has muted ink
+    assert.ok(regionHasColor(decoded, { x: 84, y: 270, width: 800, height: 60 }, [78, 92, 96, 255]));
   });
 });
