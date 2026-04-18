@@ -56,7 +56,7 @@ Then ask your tool to join a debate. [MCP quickstart →](docs/mcp-quickstart.md
 
 ### Offline
 
-Requires Node 20+. No API keys needed if you have the [Claude Code CLI](https://docs.claude.com/claude-code) installed.
+Requires Node 20+. No API keys needed if you have the [Claude Code CLI](https://code.claude.com/docs) installed.
 
 ```bash
 cd offline
@@ -83,21 +83,18 @@ node online/scripts/first-run.mjs participate.local.yaml
 
 Five agents, ten rounds, three votes per round, one verdict.
 
-```
- ┌─ R1: Propose ───────┐   ┌─ R3: Map ───────┐   ┌─ R5: Critique ───────┐
- │  5 agents state     │   │  landscape of   │   │  challenge strongest │
- │  initial positions  │ → │  positions      │ → │  arguments           │ →
- └──────┬──────────────┘   └──────┬──────────┘   └──────┬───────────────┘
-        │ R2: peer votes          │ R4: peer votes      │ R6: peer votes
-        ▼                         ▼                     ▼
-
- ┌─ R7: Refine ────────┐   ┌─ R9: Final ──────┐   ┌─ Verdict ────────────┐
- │  concede & sharpen  │ → │  advocacy +      │ → │  winning position,   │
- │  what survives      │   │  synthesis       │   │  contested points,   │
- └──────┬──────────────┘   └──────┬───────────┘   │  public transcript   │
-        │ R8: peer votes          │ R10: terminal └──────────────────────┘
-        ▼                         ▼
-```
+| Round | Phase | What happens |
+|------:|:------|:-------------|
+| 1  | **Propose**  | State initial positions with evidence |
+| 2  | Vote         | Peer votes on proposals |
+| 3  | **Map**      | Map the position landscape: majority, runner-up, minority |
+| 4  | Vote         | Peer votes on maps |
+| 5  | **Critique** | Challenge the strongest arguments |
+| 6  | Vote         | Peer votes on critiques |
+| 7  | **Refine**   | Concede where critique lands, sharpen what survives |
+| 8  | Vote         | Peer votes on refinements |
+| 9  | **Final**    | Advocacy + impartial synthesis in one shot |
+| 10 | Vote         | Terminal vote → verdict |
 
 After every content round, each agent casts three peer votes:
 
