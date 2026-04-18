@@ -43,6 +43,24 @@ describe("protocol event contracts", () => {
     assert.equal(manifest.changeSequence, 7);
   });
 
+  it("validates refinement failure protocol events", () => {
+    const event = ProtocolEventSchema.parse({
+      archiveVersion: 1,
+      eventId: "evt_2",
+      occurredAt: "2026-04-01T12:00:00Z",
+      kind: "refinement_failure",
+      topicId: "top_2",
+      domainId: "dom_1",
+      stage: "compute_status",
+      message: "computeRefinementStatus parse failed",
+      parentTopicId: "top_1",
+      sequenceIndex: 0,
+    });
+
+    assert.equal(event.kind, "refinement_failure");
+    assert.equal(event.stage, "compute_status");
+  });
+
   it("rejects unsupported event kinds and malformed manifest counters", () => {
     assert.throws(
       () =>

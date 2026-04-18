@@ -34,6 +34,7 @@ import { createDebateSession } from "./debate-sessions.js";
 import type { AuthenticatedAgent } from "./auth.js";
 import { findActingBeingForTopicCreation, validateBeingForTopicCreation } from "./beings.js";
 import { ensureSeedDomains, getDomain } from "./domains.js";
+import { overlayRefinementContext } from "./vertical-refinement.js";
 import { resolveVotePolicyDefaults, resolveVoteTargets } from "./votes.js";
 
 export type TopicRow = {
@@ -41,6 +42,7 @@ export type TopicRow = {
   domain_id: string;
   domain_slug?: string | null;
   domain_name?: string | null;
+  parent_topic_id: string | null;
   title: string;
   prompt: string;
   template_id: keyof typeof TOPIC_TEMPLATES;
@@ -60,6 +62,7 @@ export type TopicRow = {
   countdown_started_at: string | null;
   stalled_at: string | null;
   closed_at: string | null;
+  refinement_depth: number;
   change_sequence: number;
   created_at: string;
   updated_at: string;
@@ -219,8 +222,9 @@ async function resolveRoundInstruction(
   templateId: string,
   sequenceIndex: number,
   roundKind: string,
+  topicId: string | null = null,
 ): Promise<RoundInstruction | null> {
-  // 1. Check D1 for runtime override
+  let base: RoundInstruction | null = null;
   try {
     const override = await firstRow<OverrideRow>(
       env.DB,
@@ -231,21 +235,22 @@ async function resolveRoundInstruction(
       sequenceIndex,
     );
     if (override && override.round_kind === roundKind) {
-      const parsed = {
+      base = {
         goal: override.goal,
         guidance: override.guidance,
         priorRoundContext: override.prior_round_context,
         qualityCriteria: JSON.parse(override.quality_criteria_json),
         votingGuidance: (override as Record<string, unknown>).voting_guidance as string | null ?? null,
       };
-      RoundInstructionSchema.parse(parsed);
-      return parsed;
+      RoundInstructionSchema.parse(base);
     }
   } catch {
     // Malformed override row — fall through to shared defaults
   }
-  // 2. Fall back to shared code defaults
-  return resolveDefaultRoundInstruction(templateId, sequenceIndex, roundKind);
+  if (!base) {
+    base = resolveDefaultRoundInstruction(templateId, sequenceIndex, roundKind);
+  }
+  return overlayRefinementContext(env, topicId, sequenceIndex, base);
 }
 
 async function safeTopicContextSection<T>(
@@ -1014,7 +1019,8 @@ export async function getTopicRow(env: ApiEnv, topicId: string) {
       SELECT t.id, t.domain_id, t.title, t.prompt, t.template_id, t.status, t.cadence_family, t.cadence_preset,
              t.topic_format, t.topic_source, t.cadence_override_minutes, t.min_distinct_participants, t.countdown_seconds,
              t.min_trust_tier, t.visibility, t.current_round_index, t.starts_at, t.join_until,
-             t.countdown_started_at, t.stalled_at, t.closed_at, t.change_sequence, t.created_at, t.updated_at,
+             t.countdown_started_at, t.stalled_at, t.closed_at, t.parent_topic_id, t.refinement_depth,
+             t.change_sequence, t.created_at, t.updated_at,
              d.slug AS domain_slug,
              d.name AS domain_name
       FROM topics t
@@ -1651,6 +1657,7 @@ async function rebuildTopicContextSharedStateFromD1(
             topic.template_id,
             currentRound?.sequence_index ?? 0,
             currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
+            topicId,
           ),
         ),
       }

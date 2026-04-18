@@ -78,6 +78,9 @@ type TopicPageMeta = {
   status: string;
   prompt: string;
   template_id: string;
+  parent_topic_id: string | null;
+  parent_topic_title: string | null;
+  refinement_depth: number;
   domain_name: string;
   domain_slug: string;
   parent_domain_name: string | null;
@@ -92,12 +95,12 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v2`;
-const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-cleanup-v3";
-const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
-const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-domain-detail-hide-inactive";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-hide-inactive";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v19";
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-search-nav-v3`;
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
+const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-vertical-refinement-v1";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1319,6 +1322,28 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
       </script>
     ` : ""}
   `;
+}
+
+function renderInvestigationChain(
+  meta: TopicPageMeta,
+  children: Array<{ id: string; title: string; status: string }>,
+) {
+  if (!meta.parent_topic_id && children.length === 0 && Number(meta.refinement_depth ?? 0) === 0) {
+    return "";
+  }
+
+  const parts: string[] = [];
+  if (meta.parent_topic_id && meta.parent_topic_title) {
+    parts.push(`Follow-up from: <a href="/topics/${encodeURIComponent(meta.parent_topic_id)}">${escapeHtml(meta.parent_topic_title)}</a>`);
+  }
+  if (children.length > 0) {
+    parts.push(`Continued in: ${children.map((child) => (
+      `<a href="/topics/${encodeURIComponent(child.id)}">${escapeHtml(child.title)}</a> (${escapeHtml(child.status)})`
+    )).join(", ")}`);
+  }
+  parts.push(`Investigation depth: ${escapeHtml(String(meta.refinement_depth ?? 0))}`);
+
+  return `<div class="topic-header-description">${parts.join(" · ")}</div>`;
 }
 
 function renderVerdictClosure(viewModel: TopicPageViewModel): string {
@@ -2932,7 +2957,7 @@ app.get("/topics/:topicId", async (c) => {
     generationKey: cacheGenerationTopicKey(topicId),
     cacheControl: CACHE_CONTROL_TRANSCRIPT,
   }, async () => {
-    const [state, transcript, meta] = await Promise.all([
+    const [state, transcript, meta, childResult] = await Promise.all([
       bucketJson<any>(await c.env.SNAPSHOTS.get(`topics/${topicId}/state.json`)),
       bucketJson<any>(await c.env.SNAPSHOTS.get(`topics/${topicId}/transcript.json`)),
       c.env.DB.prepare(`
@@ -2942,6 +2967,9 @@ app.get("/topics/:topicId", async (c) => {
           t.status,
           t.prompt,
           t.template_id,
+          t.parent_topic_id,
+          pt.title AS parent_topic_title,
+          t.refinement_depth,
           d.name AS domain_name,
           d.slug AS domain_slug,
           pd.name AS parent_domain_name,
@@ -2956,14 +2984,22 @@ app.get("/topics/:topicId", async (c) => {
         FROM topics t
         INNER JOIN domains d ON d.id = t.domain_id
         LEFT JOIN domains pd ON pd.id = d.parent_domain_id
+        LEFT JOIN topics pt ON pt.id = t.parent_topic_id
         LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
         LEFT JOIN verdicts v ON v.topic_id = t.id
         WHERE t.id = ? AND t.archived_at IS NULL
       `).bind(topicId).first<TopicPageMeta>(),
+      c.env.DB.prepare(`
+        SELECT id, title, status
+        FROM topics
+        WHERE parent_topic_id = ? AND archived_at IS NULL
+        ORDER BY created_at ASC
+      `).bind(topicId).all<{ id: string; title: string; status: string }>(),
     ]);
     if (!meta) {
       return renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier."));
     }
+    const refinementChildren = childResult.results ?? [];
     const voteLogicRows = meta.status === "closed"
       ? (await c.env.DB.prepare(`
           SELECT
@@ -3082,6 +3118,7 @@ app.get("/topics/:topicId", async (c) => {
         `<section class="topic-above-fold">${[
           `<div class="topic-hero-col">
             ${buildTopicHeader(meta, viewModel, shareLinks)}
+            ${renderInvestigationChain(meta, refinementChildren)}
             ${viewModel.convergenceMap ? renderConvergenceMap(viewModel) : ""}
           </div>`,
           renderTopicMetaPanel(viewModel),
@@ -3126,6 +3163,7 @@ app.get("/topics/:topicId", async (c) => {
       `<section class="topic-above-fold">${[
         `<div class="topic-hero-col">
           ${buildTopicHeader(meta, viewModel, shareLinks)}
+          ${renderInvestigationChain(meta, refinementChildren)}
           ${renderRoundProgressTracker(topicId, state as TopicStatusSnapshot | null, meta.status)}
         </div>`,
         renderTopicMetaPanel(viewModel),
@@ -3236,7 +3274,7 @@ app.get("/domains/:slug", async (c) => {
   const isParent = domain.parent_domain_id === null;
 
   if (isParent) {
-    // Parent domain detail: show children grid + aggregated leaderboard
+    // Parent domain detail: full-width layout with domain-index cards + leaderboard table
     return serveCachedHtml(c, {
       pageKey: `${pageHtmlDomainKey(slug)}:${DOMAIN_DETAIL_CACHE_KEY_VERSION}`,
       generationKey: cacheGenerationDomainKey(domain.id),
@@ -3251,9 +3289,13 @@ app.get("/domains/:slug", async (c) => {
           ORDER BY d.slug ASC
         `).bind(domain.id).all<{ slug: string; name: string; description: string | null; topic_count: number }>(),
         c.env.DB.prepare(`
-          SELECT b.handle, b.display_name,
+          SELECT b.handle, b.display_name, b.trust_tier,
             SUM(dr.decayed_score) AS decayed_score,
-            SUM(dr.sample_count) AS sample_count
+            SUM(dr.sample_count) AS sample_count,
+            (SELECT COUNT(*) FROM contributions c2
+             INNER JOIN topics t2 ON t2.id = c2.topic_id
+             INNER JOIN domains d2 ON d2.id = t2.domain_id
+             WHERE c2.being_id = b.id AND d2.parent_domain_id = ?) AS contribution_count
           FROM domain_reputation dr
           INNER JOIN beings b ON b.id = dr.being_id
           INNER JOIN agents a ON a.id = b.agent_id
@@ -3264,81 +3306,101 @@ app.get("/domains/:slug", async (c) => {
           GROUP BY dr.being_id
           ORDER BY decayed_score DESC
           LIMIT 12
-        `).bind(domain.id).all<{ handle: string; display_name: string; decayed_score: number; sample_count: number }>(),
+        `).bind(domain.id, domain.id).all<{
+          handle: string; display_name: string; trust_tier: string;
+          decayed_score: number; sample_count: number; contribution_count: number;
+        }>(),
       ]);
       const childRows = childResult.results ?? [];
       const leaderRows = leaderboard.results ?? [];
       const totalTopics = childRows.reduce((sum, c) => sum + c.topic_count, 0);
-      return renderPage(domain.name, `
-        <section class="domain-detail">
-          <nav class="domain-breadcrumb">
-            <a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}
-          </nav>
-          <section class="domain-detail-section">
-            <div class="domain-detail-section-head">
-              <span class="domain-detail-kicker">Subdomains</span>
-              <h2>${childRows.length} fields of inquiry</h2>
-            </div>
+      const maxScore = leaderRows.length ? Math.max(...leaderRows.map((r) => Number(r.decayed_score ?? 0))) : 0;
+      return renderPage(domain.name, rawHtml(`
+        <section class="editorial-page domain-index-page">
+          <div class="domain-index-shell">
+            <nav class="domain-breadcrumb">
+              <a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}
+            </nav>
+            ${editorialHeader({
+              kicker: "Domain",
+              title: domain.name,
+              lede: domain.description ?? `Parent domain grouping ${childRows.length} subdomains.`,
+              meta: [
+                { label: "Subdomains", value: String(childRows.length) },
+                { label: "Total topics", value: String(totalTopics) },
+              ],
+            })}
+
             <div class="domain-group-grid">
               ${childRows.map((row) => `
-                <a class="lp-og-card" href="/domains/${escapeHtml(row.slug)}">
-                  <div class="lp-og-card-chrome">
-                    <div class="lp-og-card-meta">
-                      <span class="lp-og-card-kicker">Domain</span>
-                      <span class="lp-og-card-date">${escapeHtml(String(row.topic_count))} topics</span>
-                    </div>
-                    <h2><span>${escapeHtml(row.name)}</span></h2>
-                    <p>${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
-                  </div>
-                  <div class="lp-og-card-footer">
-                    <div class="lp-og-card-stats">
-                      <div class="lp-og-card-stat">
-                        <span>Purpose</span>
-                        <strong>Topic registry</strong>
-                      </div>
-                      <div class="lp-og-card-stat">
-                        <span>Access</span>
-                        <strong>Open domain</strong>
-                      </div>
-                    </div>
-                    <div class="lp-og-card-actions">
-                      <span class="lp-og-card-link">Open Domain</span>
-                      <code>${escapeHtml(row.slug)}</code>
-                    </div>
-                  </div>
+                <a class="lp-og-card domain-card-simple" href="/domains/${escapeHtml(row.slug)}">
+                  <h2 class="domain-card-name">${escapeHtml(row.name)}</h2>
+                  <p class="domain-card-desc">${escapeHtml(row.description ?? "A public domain surface inside the protocol.")}</p>
+                  <span class="domain-card-count">${escapeHtml(String(row.topic_count))} topics</span>
                 </a>
               `).join("")}
             </div>
-          </section>
-          <section class="domain-detail-section">
-            <div class="domain-detail-section-head">
-              <span class="domain-detail-kicker">Aggregated leaderboard</span>
-              <h2>Top agents</h2>
-            </div>
-            ${leaderRows.length ? leaderRows.map((row, i) => `
-              <div class="domain-leader-row">
-                <span class="domain-leader-rank">#${i + 1}</span>
-                <span class="domain-leader-name"><a href="/leaderboard/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a></span>
-                <span class="domain-leader-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
-                <span class="domain-leader-samples">${row.sample_count} samples</span>
-              </div>
-            `).join("") : `<p class="domain-detail-empty">No reputation signal yet.</p>`}
-          </section>
+
+            ${leaderRows.length ? `
+              <section class="lb-table-wrap" aria-label="Aggregated rankings">
+                ${editorialHeader({
+                  kicker: "Aggregated leaderboard",
+                  title: "Top agents",
+                  lede: `Agents ranked by aggregate reputation across ${domain.name}.`,
+                })}
+                <table class="lb-table">
+                  <thead>
+                    <tr>
+                      <th class="lb-th-rank">#</th>
+                      <th class="lb-th-agent">Agent</th>
+                      <th class="lb-th-rep">Score</th>
+                      <th class="lb-th-num">Samples</th>
+                      <th class="lb-th-num">Contributions</th>
+                      <th class="lb-th-trust">Trust</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${leaderRows.map((row, i) => {
+                      const score = Number(row.decayed_score ?? 0);
+                      const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
+                      return `
+                        <tr class="lb-row">
+                          <td class="lb-cell-rank">${i + 1}</td>
+                          <td class="lb-cell-agent">
+                            <a href="/leaderboard/${escapeHtml(row.handle)}">
+                              <span class="lb-agent-name">${escapeHtml(row.display_name)}</span>
+                              <span class="lb-agent-handle">@${escapeHtml(row.handle)}</span>
+                            </a>
+                          </td>
+                          <td class="lb-cell-rep">
+                            <div class="lb-rep-inline">
+                              <div class="lb-bar-wrap">
+                                <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+                              </div>
+                              <span class="lb-score-value">${score.toFixed(1)}</span>
+                            </div>
+                          </td>
+                          <td class="lb-cell-num">${row.sample_count}</td>
+                          <td class="lb-cell-num">${row.contribution_count}</td>
+                          <td class="lb-cell-trust"><span class="lb-trust-badge">${escapeHtml(row.trust_tier)}</span></td>
+                        </tr>
+                      `;
+                    }).join("")}
+                  </tbody>
+                </table>
+              </section>
+            ` : ""}
+          </div>
         </section>
-      `, undefined, `${EDITORIAL_PAGE_STYLES}${DOMAIN_INDEX_PAGE_STYLES}${DOMAIN_DETAIL_PAGE_STYLES}`, undefined, sidebarShell("domains", {
-        eyebrow: "Parent domain",
-        title: domain.name,
-        detail: domain.description ?? `Parent domain grouping ${childRows.length} subdomains.`,
-        meta: [
-          { label: "Subdomains", value: String(childRows.length) },
-          { label: "Total topics", value: String(totalTopics) },
-        ],
-        action: { href: "/domains", label: "Back to domains" },
-      }));
+      `).__html, undefined, `${EDITORIAL_PAGE_STYLES}${DOMAIN_INDEX_PAGE_STYLES}${LEADERBOARD_INDEX_PAGE_STYLES}${DOMAIN_DETAIL_PAGE_STYLES}`, undefined, {
+        variant: "top-nav-only" as const,
+        navActiveKey: "domains" as const,
+        mainClassName: "domain-index-main",
+      });
     });
   }
 
-  // Subdomain detail: existing view with breadcrumb
+  // Subdomain detail: full-width layout with topic cards + leaderboard table
   return serveCachedHtml(c, {
     pageKey: `${pageHtmlDomainKey(slug)}:${DOMAIN_DETAIL_CACHE_KEY_VERSION}`,
     generationKey: cacheGenerationDomainKey(domain.id),
@@ -3346,14 +3408,30 @@ app.get("/domains/:slug", async (c) => {
   }, async () => {
     const [topics, leaderboard] = await Promise.all([
       c.env.DB.prepare(`
-        SELECT id, title, status, template_id
-        FROM topics
-        WHERE domain_id = ? AND archived_at IS NULL
-        ORDER BY updated_at DESC
+        SELECT t.id, t.title, t.status, t.template_id, t.prompt,
+          t.created_at, t.updated_at, t.current_round_index,
+          d.slug AS domain_slug, d.name AS domain_name,
+          p.name AS parent_domain_name,
+          (SELECT COUNT(*) FROM topic_members tm WHERE tm.topic_id = t.id) AS member_count,
+          (SELECT COUNT(*) FROM rounds r WHERE r.topic_id = t.id) AS round_count
+        FROM topics t
+        INNER JOIN domains d ON d.id = t.domain_id
+        LEFT JOIN domains p ON p.id = d.parent_domain_id
+        WHERE t.domain_id = ? AND t.archived_at IS NULL
+        ORDER BY t.updated_at DESC
         LIMIT 12
-      `).bind(domain.id).all<{ id: string; title: string; status: string; template_id: string }>(),
+      `).bind(domain.id).all<{
+        id: string; title: string; status: string; template_id: string; prompt: string | null;
+        created_at: string; updated_at: string; current_round_index: number | null;
+        domain_slug: string; domain_name: string; parent_domain_name: string | null;
+        member_count: number; round_count: number;
+      }>(),
       c.env.DB.prepare(`
-        SELECT b.handle, b.display_name, dr.decayed_score, dr.sample_count
+        SELECT b.handle, b.display_name, b.trust_tier,
+          dr.decayed_score, dr.sample_count,
+          (SELECT COUNT(*) FROM contributions c2
+           INNER JOIN topics t2 ON t2.id = c2.topic_id
+           WHERE c2.being_id = b.id AND t2.domain_id = ?) AS contribution_count
         FROM domain_reputation dr
         INNER JOIN beings b ON b.id = dr.being_id
         INNER JOIN agents a ON a.id = b.agent_id
@@ -3362,55 +3440,104 @@ app.get("/domains/:slug", async (c) => {
           AND a.status = 'active'
         ORDER BY dr.decayed_score DESC, dr.sample_count DESC
         LIMIT 12
-      `).bind(domain.id).all<{ handle: string; display_name: string; decayed_score: number; sample_count: number }>(),
+      `).bind(domain.id, domain.id).all<{
+        handle: string; display_name: string; trust_tier: string;
+        decayed_score: number; sample_count: number; contribution_count: number;
+      }>(),
     ]);
     const topicRows = topics.results ?? [];
     const leaderRows = leaderboard.results ?? [];
-    const breadcrumb = domain.parent_slug
-      ? `<nav class="domain-breadcrumb"><a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> <a href="/domains/${escapeHtml(domain.parent_slug)}">${escapeHtml(domain.parent_name!)}</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}</nav>`
-      : `<nav class="domain-breadcrumb"><a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}</nav>`;
-    return renderPage(domain.name, `
-      <section class="domain-detail">
-        ${breadcrumb}
-        <section class="domain-detail-section">
-          <div class="domain-detail-section-head">
-            <span class="domain-detail-kicker">Recent topics</span>
-            <h2>Topic activity</h2>
-          </div>
-          ${topicRows.length ? topicRows.map((topic) => `
-            <div class="domain-topic-row">
-              <h3 class="domain-topic-title"><a href="/topics/${escapeHtml(topic.id)}">${escapeHtml(topic.title)}</a></h3>
-              <div class="domain-topic-badges">${statusPill(topic.status)} ${dataBadge(topic.template_id)}</div>
-            </div>
-          `).join("") : `<p class="domain-detail-empty">No topics yet.</p>`}
-        </section>
-        <section class="domain-detail-section">
-          <div class="domain-detail-section-head">
-            <span class="domain-detail-kicker">Domain leaderboard</span>
-            <h2>Top agents</h2>
-          </div>
-          ${leaderRows.length ? leaderRows.map((row, i) => `
-            <div class="domain-leader-row">
-              <span class="domain-leader-rank">#${i + 1}</span>
-              <span class="domain-leader-name"><a href="/leaderboard/${escapeHtml(row.handle)}">${escapeHtml(row.display_name)}</a></span>
-              <span class="domain-leader-score">${Number(row.decayed_score ?? 0).toFixed(1)}</span>
-              <span class="domain-leader-samples">${row.sample_count} samples</span>
-            </div>
-          `).join("") : `<p class="domain-detail-empty">No reputation signal yet.</p>`}
-        </section>
+    const maxScore = leaderRows.length ? Math.max(...leaderRows.map((r) => Number(r.decayed_score ?? 0))) : 0;
+    const breadcrumbParts = domain.parent_slug
+      ? `<a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> <a href="/domains/${escapeHtml(domain.parent_slug)}">${escapeHtml(domain.parent_name!)}</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}`
+      : `<a href="/domains">Domains</a> <span class="domain-breadcrumb-sep">&rsaquo;</span> ${escapeHtml(domain.name)}`;
+    return renderPage(domain.name, rawHtml(`
+      <section class="editorial-page topics-page">
+        <div class="topics-shell">
+          <nav class="domain-breadcrumb">${breadcrumbParts}</nav>
+          ${editorialHeader({
+            kicker: domain.parent_name ?? "Domain",
+            title: domain.name,
+            lede: domain.description ?? `Public domain surface for ${domain.slug}.`,
+            meta: [
+              { label: "Topics", value: String(domain.topic_count) },
+            ],
+          })}
+
+          <section class="topics-list">
+            ${topicRows.length ? topicRows.map((topic) => topicCard({
+              id: topic.id,
+              title: topic.title,
+              status: topic.status,
+              template_id: topic.template_id,
+              prompt: topic.prompt,
+              created_at: topic.created_at,
+              updated_at: topic.updated_at,
+              current_round_index: topic.current_round_index,
+              domain_slug: topic.domain_slug,
+              domain_name: topic.domain_name,
+              parent_domain_name: topic.parent_domain_name,
+              member_count: topic.member_count,
+              round_count: topic.round_count,
+            })).join("") : `<p class="domain-detail-empty">No topics in this domain yet.</p>`}
+          </section>
+
+          ${leaderRows.length ? `
+            <section class="lb-table-wrap" aria-label="Domain rankings">
+              ${editorialHeader({
+                kicker: "Domain leaderboard",
+                title: "Top agents",
+                lede: `Agents ranked by reputation in ${domain.name}.`,
+              })}
+              <table class="lb-table">
+                <thead>
+                  <tr>
+                    <th class="lb-th-rank">#</th>
+                    <th class="lb-th-agent">Agent</th>
+                    <th class="lb-th-rep">Score</th>
+                    <th class="lb-th-num">Samples</th>
+                    <th class="lb-th-num">Contributions</th>
+                    <th class="lb-th-trust">Trust</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${leaderRows.map((row, i) => {
+                    const score = Number(row.decayed_score ?? 0);
+                    const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
+                    return `
+                      <tr class="lb-row">
+                        <td class="lb-cell-rank">${i + 1}</td>
+                        <td class="lb-cell-agent">
+                          <a href="/leaderboard/${escapeHtml(row.handle)}">
+                            <span class="lb-agent-name">${escapeHtml(row.display_name)}</span>
+                            <span class="lb-agent-handle">@${escapeHtml(row.handle)}</span>
+                          </a>
+                        </td>
+                        <td class="lb-cell-rep">
+                          <div class="lb-rep-inline">
+                            <div class="lb-bar-wrap">
+                              <div class="lb-bar" style="width:${barWidth.toFixed(1)}%"></div>
+                            </div>
+                            <span class="lb-score-value">${score.toFixed(1)}</span>
+                          </div>
+                        </td>
+                        <td class="lb-cell-num">${row.sample_count}</td>
+                        <td class="lb-cell-num">${row.contribution_count}</td>
+                        <td class="lb-cell-trust"><span class="lb-trust-badge">${escapeHtml(row.trust_tier)}</span></td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </section>
+          ` : ""}
+        </div>
       </section>
-    `, undefined, `${EDITORIAL_PAGE_STYLES}${DOMAIN_DETAIL_PAGE_STYLES}`, undefined, sidebarShell("domains", {
-      eyebrow: "Domain",
-      title: domain.name,
-      detail: domain.description ?? `Public domain surface for ${domain.slug}.`,
-      meta: [
-        { label: "Slug", value: domain.slug },
-        { label: "Topics", value: String(domain.topic_count) },
-      ],
-      action: domain.parent_slug
-        ? { href: `/domains/${domain.parent_slug}`, label: `Back to ${domain.parent_name}` }
-        : { href: "/domains", label: "Back to domains" },
-    }));
+    `).__html, undefined, `${EDITORIAL_PAGE_STYLES}${TOPICS_PAGE_STYLES}${LEADERBOARD_INDEX_PAGE_STYLES}${DOMAIN_DETAIL_PAGE_STYLES}`, undefined, {
+      variant: "top-nav-only" as const,
+      navActiveKey: "domains" as const,
+      mainClassName: "topics-main",
+    });
   });
 });
 

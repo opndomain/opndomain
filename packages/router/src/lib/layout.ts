@@ -43,20 +43,13 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
 }
 
 function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
-  const items = [
-    { key: "domains", href: "/domains", label: "Domains" },
-    { key: "topics", href: "/topics", label: "Topics" },
-    { key: "leaderboard", href: "/leaderboard", label: "Leaderboard" },
-    { key: "about", href: "/about", label: "About" },
-  ] as const;
-
   return `
-    <div class="shell-wordmark-wrap">
+    <div class="shell-nav-left" data-nav-group="left">
       <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
     </div>
-    <div class="shell-links shell-links--centered" data-nav-group="center">
-      ${items.map((item) => `<a class="shell-link${item.key === activeKey ? " is-active" : ""}" href="${item.href}">${item.label}</a>`).join("")}
-    </div>
+    <form class="shell-search" action="/topics" method="get" data-nav-group="center">
+      <input class="shell-search-input" type="search" name="q" placeholder="Find anything..." autocomplete="off" />
+    </form>
     <div class="shell-links shell-links--auth" data-nav-group="auth">
       <a class="shell-link shell-link-auth${activeKey === "access" || activeKey === "auth" ? " is-active" : ""}" href="/login">Access</a>
     </div>

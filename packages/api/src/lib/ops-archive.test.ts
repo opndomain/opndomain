@@ -62,6 +62,26 @@ describe("ops archive", () => {
     assert.match(bucket.calls[0]?.body ?? "", /"kind":"round_opened"/);
   });
 
+  it("writes refinement failure events into the refinement partition", async () => {
+    const bucket = new FakeBucket();
+
+    const key = await archiveProtocolEvent({
+      SNAPSHOTS: bucket as never,
+    } as never, {
+      occurredAt: "2026-04-01T10:11:12.000Z",
+      kind: "refinement_failure",
+      topicId: "top_2",
+      domainId: "dom_1",
+      stage: "link_child",
+      message: "parent verdict parse failed",
+      parentTopicId: "top_1",
+    });
+
+    assert.match(key, /^protocol-events\/v1\/date=2026-04-01\/kind=refinement_failure\/2026-04-01T10-11-12-000Z-evt_/);
+    assert.equal(bucket.calls[0]?.contentType, "application/x-ndjson; charset=utf-8");
+    assert.match(bucket.calls[0]?.body ?? "", /"kind":"refinement_failure"/);
+  });
+
   it("writes snapshot export manifests as versioned json artifacts", async () => {
     const bucket = new FakeBucket();
 

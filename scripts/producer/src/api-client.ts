@@ -1,3 +1,4 @@
+import { RefinementEligibleTopicSchema, type RefinementEligibleTopic, type TopicCandidate } from "../../../packages/shared/src/schemas.js";
 import type { CandidateOutput, InventoryItem, ProducerConfig } from "./types.js";
 import type { TopicCandidateDuplicate, TopicIdeaContextRecord } from "./topic-idea-duplicates.js";
 
@@ -94,10 +95,14 @@ export class ApiClient {
     return data.items;
   }
 
-  async upsertCandidates(candidates: CandidateOutput[]): Promise<{ createdCount: number; updatedCount: number; duplicates: TopicCandidateDuplicate[] }> {
-    const items = candidates.map((c) => ({
-      id: `tcand_placeholder_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      ...c,
+  async upsertCandidates(
+    candidates: Array<CandidateOutput | TopicCandidate>,
+  ): Promise<{ createdCount: number; updatedCount: number; duplicates: TopicCandidateDuplicate[] }> {
+    const items = candidates.map((candidate) => ({
+      id: "id" in candidate && typeof candidate.id === "string" && candidate.id.length > 0
+        ? candidate.id
+        : `tcand_placeholder_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      ...candidate,
     }));
 
     const result = (await this.request("POST", "/v1/internal/topic-candidates", { items })) as {
@@ -106,6 +111,13 @@ export class ApiClient {
       duplicates: TopicCandidateDuplicate[];
     };
     return result;
+  }
+
+  async getRefinementEligible(): Promise<RefinementEligibleTopic[]> {
+    const data = (await this.request("GET", "/v1/internal/topics/refinement-eligible")) as {
+      items: unknown[];
+    };
+    return data.items.map((item) => RefinementEligibleTopicSchema.parse(item));
   }
 
   async cleanup(maxAgeDays: number): Promise<{ deleted: number }> {

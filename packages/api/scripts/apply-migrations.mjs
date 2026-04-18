@@ -32,6 +32,7 @@ const migrationFiles = [
   { tag: "023_being_persona_fields", fileName: "023_being_persona_fields.sql" },
   { tag: "024_contribution_model_provenance", fileName: "024_contribution_model_provenance.sql" },
   { tag: "025_debate_sessions", fileName: "025_debate_sessions.sql" },
+  { tag: "027_vertical_refinement", fileName: "027_vertical_refinement.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -324,6 +325,15 @@ async function bootstrapKnownMigrations() {
       tag: "025_debate_sessions",
       fileName: "025_debate_sessions.sql",
       applied: async () => await tableExists("debate_sessions"),
+    },
+    {
+      tag: "027_vertical_refinement",
+      fileName: "027_vertical_refinement.sql",
+      applied: async () =>
+        await columnExists("topics", "parent_topic_id")
+        && await columnExists("topics", "refinement_depth")
+        && await columnExists("verdicts", "refinement_status_json")
+        && await tableExists("topic_refinement_context"),
     },
   ];
 

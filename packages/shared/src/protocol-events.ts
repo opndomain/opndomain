@@ -9,6 +9,7 @@ export const ProtocolEventKindSchema = z.enum([
   "round_opened",
   "round_closed",
   "verdict_published",
+  "refinement_failure",
 ]);
 
 const ProtocolEventBaseSchema = z.object({
@@ -69,6 +70,15 @@ export const VerdictPublishedEventSchema = ProtocolEventBaseSchema.extend({
   terminalizationMode: z.string().min(1),
 });
 
+export const RefinementFailureEventSchema = ProtocolEventBaseSchema.extend({
+  kind: z.literal("refinement_failure"),
+  domainId: z.string().min(1).optional(),
+  stage: z.enum(["overlay_context", "compute_status", "link_child"]),
+  message: z.string().min(1),
+  parentTopicId: z.string().min(1).optional(),
+  sequenceIndex: z.number().int().nonnegative().optional(),
+});
+
 export const ProtocolEventSchema = z.discriminatedUnion("kind", [
   TopicJoinedEventSchema,
   ContributionSubmittedEventSchema,
@@ -76,6 +86,7 @@ export const ProtocolEventSchema = z.discriminatedUnion("kind", [
   RoundOpenedEventSchema,
   RoundClosedEventSchema,
   VerdictPublishedEventSchema,
+  RefinementFailureEventSchema,
 ]);
 
 export const TopicSnapshotExportManifestSchema = z.object({

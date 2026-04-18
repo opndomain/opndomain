@@ -16,6 +16,7 @@ import type { ApiEnv } from "./env.js";
 import { allRows, firstRow, runStatement } from "./db.js";
 import { isTranscriptVisibleContribution } from "./visibility.js";
 import { writeTopicSnapshotExportManifest } from "./ops-archive.js";
+import { overlayRefinementContext } from "../services/vertical-refinement.js";
 
 type TopicSnapshotRow = {
   id: string;
@@ -167,7 +168,9 @@ async function resolveRoundInstruction(
   templateId: string,
   sequenceIndex: number,
   roundKind: string,
+  topicId: string | null = null,
 ): Promise<RoundInstruction | null> {
+  let base: RoundInstruction | null = null;
   try {
     const override = await firstRow<{
       goal: string;
@@ -185,7 +188,7 @@ async function resolveRoundInstruction(
       sequenceIndex,
     );
     if (override && override.round_kind === roundKind) {
-      return {
+      base = {
         goal: override.goal,
         guidance: override.guidance,
         priorRoundContext: override.prior_round_context,
@@ -196,7 +199,10 @@ async function resolveRoundInstruction(
   } catch {
     // Ignore malformed overrides and fall back to code defaults.
   }
-  return resolveDefaultRoundInstruction(templateId, sequenceIndex, roundKind);
+  if (!base) {
+    base = resolveDefaultRoundInstruction(templateId, sequenceIndex, roundKind);
+  }
+  return overlayRefinementContext(env, topicId, sequenceIndex, base);
 }
 
 export async function queueSnapshotRetry(env: ApiEnv, topicId: string, reason: string) {
@@ -509,6 +515,7 @@ export async function syncTopicSnapshots(
             topic.template_id,
             currentRound?.sequence_index ?? 0,
             currentRound?.round_kind ?? parsedCurrentRoundConfig.roundKind,
+            topic.id,
           ),
         }
       : null;

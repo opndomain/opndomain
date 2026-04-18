@@ -1085,6 +1085,33 @@ export const TopicCandidateStatusSchema = z.enum([
   "failed",
 ]);
 
+export const RefinementPositionSummarySchema = z.object({
+  label: z.string().min(1),
+  classification: z.enum(["majority", "runner_up", "minority", "noise"]),
+});
+export type RefinementPositionSummary = z.infer<typeof RefinementPositionSummarySchema>;
+
+export const RefinementStatusSchema = z.object({
+  eligible: z.boolean(),
+  reason: z.string().min(1),
+  whatSettled: z.string().optional(),
+  whatContested: z.string().optional(),
+  strongestObjection: z.string().optional(),
+  neutralVerdict: z.string().optional(),
+  positionSummaries: z.array(RefinementPositionSummarySchema).optional(),
+});
+export type RefinementStatus = z.infer<typeof RefinementStatusSchema>;
+
+export const RefinementEligibleTopicSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  prompt: z.string().min(1),
+  domainId: z.string().min(1),
+  refinementDepth: z.number().int().nonnegative(),
+  refinementStatus: RefinementStatusSchema,
+});
+export type RefinementEligibleTopic = z.infer<typeof RefinementEligibleTopicSchema>;
+
 export const TopicCandidateSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1).max(100),

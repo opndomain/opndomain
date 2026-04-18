@@ -6,6 +6,8 @@ import { createHuggingFaceAdapter } from "./sources/huggingface.js";
 import { backfillDomain } from "./sources/backfill.js";
 import { generateFromSources } from "./generate.js";
 import { DOMAINS } from "./domains.js";
+import { generateJson } from "./llm/client.js";
+import { runRefinementPass } from "./refine.js";
 import type { NoveltyContextByDomain, ProducerMode, SourceAdapter } from "./types.js";
 
 async function loadNoveltyContext(client: ApiClient, domainIds: string[]): Promise<NoveltyContextByDomain> {
@@ -196,6 +198,22 @@ async function commandCleanup(argv: string[]) {
   console.log(`Deleted ${result.deleted} expired candidates.`);
 }
 
+async function commandRefine(argv: string[]) {
+  const { args } = parseArgs(argv);
+  const dryRun = args["dry-run"] === "true";
+  const config = loadConfig({ dryRun });
+  const client = new ApiClient(config);
+
+  if (dryRun) {
+    const eligible = await client.getRefinementEligible();
+    console.log(`Found ${eligible.length} refinement-eligible closed topics.`);
+    return;
+  }
+
+  const result = await runRefinementPass(config, client, { generateJson });
+  console.log(`Refinement pass: ${result.refined} eligible, ${result.createdCount} created, ${result.updatedCount} updated, ${result.duplicates} duplicates`);
+}
+
 function printUsage() {
   console.log(`Usage: tsx src/index.ts <command> [options]
 
@@ -216,6 +234,9 @@ Commands:
 
   cleanup    Delete old consumed/failed candidates
     --max-age-days 7                    Max age for cleanup (default: 7)
+
+  refine     Generate vertical-refinement follow-up candidates from closed topics
+    --dry-run                           Report eligible topics without submitting
 `);
 }
 
@@ -234,6 +255,9 @@ async function main() {
       break;
     case "cleanup":
       await commandCleanup(rest);
+      break;
+    case "refine":
+      await commandRefine(rest);
       break;
     default:
       printUsage();

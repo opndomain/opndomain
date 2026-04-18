@@ -30,6 +30,7 @@ class FakePreparedStatement {
 class FakeDb {
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
   batches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
+  throwOnFirstMatch: RegExp | null = null;
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -51,6 +52,9 @@ class FakeDb {
   }
 
   consumeFirst<T>(sql: string): T | null {
+    if (this.throwOnFirstMatch?.test(sql)) {
+      throw new Error(`forced first() failure for ${sql}`);
+    }
     const entry = Array.from(this.firstQueue.entries())
       .filter(([fragment]) => sql.includes(fragment))
       .sort((left, right) => right[0].length - left[0].length)[0];
@@ -98,10 +102,25 @@ class FakeCache {
   }
 }
 
-function buildEnv(db: FakeDb) {
+class FakeBucket {
+  writes: Array<{ key: string; body: string }> = [];
+
+  async put(key: string, body: string) {
+    this.writes.push({ key, body });
+  }
+}
+
+function refinementFailureEvents(bucket: FakeBucket) {
+  return bucket.writes
+    .filter((write) => write.key.includes("protocol-events/v1/") && write.key.includes("kind=refinement_failure"))
+    .map((write) => JSON.parse(write.body.trim()) as { kind: string; stage: string; topicId: string; parentTopicId?: string });
+}
+
+function buildEnv(db: FakeDb, snapshots?: FakeBucket) {
   return {
     DB: db as never,
     PUBLIC_CACHE: new FakeCache() as never,
+    SNAPSHOTS: snapshots as never,
     ENABLE_ELASTIC_ROUNDS: false,
   } as never;
 }
@@ -331,5 +350,227 @@ describe("topic candidates", () => {
     assert.deepEqual(result.mutatedTopicIds, []);
     assert.ok(db.runs.some((entry) => entry.sql.includes("SET status = 'failed'")));
     assert.equal(db.batches.length, 0);
+  });
+
+  it("skips dedupe against ancestor topics and ancestor refinement candidates", async () => {
+    const db = new FakeDb();
+    db.queueFirst("SELECT parent_topic_id FROM topics WHERE id = ?", [
+      { parent_topic_id: "top_parent" },
+      { parent_topic_id: null },
+    ]);
+    db.queueAll("FROM topics\n        WHERE domain_id = ?", [{
+      id: "top_parent",
+      domain_id: "dom_1",
+      status: "closed",
+      title: "Parent topic",
+      prompt: "Parent prompt",
+    }, {
+      id: "top_other",
+      domain_id: "dom_1",
+      status: "closed",
+      title: "Other topic",
+      prompt: "Other prompt",
+    }]);
+    db.queueAll("FROM topic_candidates\n        WHERE domain_id = ?", [{
+      id: "tcand_parent",
+      domain_id: "dom_1",
+      status: "approved",
+      title: "Parent refinement candidate",
+      prompt: "Parent prompt",
+      source: "vertical_refinement",
+      source_id: "top_parent",
+    }]);
+
+    const result = await batchUpsertTopicCandidates(buildEnv(db), [{
+      id: "ignored",
+      source: "vertical_refinement",
+      sourceId: "top_child",
+      domainId: "dom_1",
+      title: "Parent topic",
+      prompt: "Parent prompt",
+      templateId: "debate",
+      topicFormat: "scheduled_research",
+      cadenceFamily: "scheduled",
+      cadenceOverrideMinutes: 2,
+      minTrustTier: "unverified",
+      priorityScore: 90,
+      publishedAt: null,
+    }]);
+
+    assert.equal(result.createdCount, 1);
+    assert.deepEqual(result.duplicates, []);
+  });
+
+  it("links refinement children after promotion without failing the promoted topic", async () => {
+    const db = new FakeDb();
+    db.queueAll("SELECT d.id", [{ id: "dom_1" }]);
+    db.queueFirst("FROM topic_candidates", [{
+      id: "tcand_1",
+      source: "vertical_refinement",
+      source_id: "top_parent",
+      source_url: null,
+      domain_id: "dom_1",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      cadence_family: "scheduled",
+      cadence_override_minutes: 2,
+      min_trust_tier: "unverified",
+      status: "approved",
+      priority_score: 10,
+      published_at: null,
+      promoted_topic_id: null,
+      promotion_error: null,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM domains", [{
+      id: "dom_1",
+      slug: "biology",
+      name: "Biology",
+      description: null,
+      status: "active",
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM topics t\n      INNER JOIN domains d ON d.id = t.domain_id", [{
+      id: "top_child",
+      domain_id: "dom_1",
+      domain_slug: "biology",
+      domain_name: "Biology",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      topic_source: "cron_auto",
+      status: "open",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: 2,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "unverified",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: "2026-03-31T00:30:00.000Z",
+      join_until: "2026-03-31T00:15:00.000Z",
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      parent_topic_id: null,
+      refinement_depth: 0,
+      change_sequence: 0,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", []);
+    db.queueFirst("SELECT refinement_depth, title FROM topics WHERE id = ?", [{
+      refinement_depth: 1,
+      title: "Parent topic",
+    }]);
+    db.queueFirst("SELECT refinement_status_json FROM verdicts WHERE topic_id = ?", [{
+      refinement_status_json: JSON.stringify({
+        eligible: true,
+        reason: "contested",
+        whatSettled: "Settled",
+        whatContested: "Contested",
+        neutralVerdict: "Neutral verdict",
+      }),
+    }]);
+
+    const result = await promoteTopicCandidates(buildEnv(db), { cron: "*/1 * * * *", now: new Date("2026-03-31T00:00:00.000Z") });
+
+    assert.deepEqual(result.mutatedTopicIds, ["top_child"]);
+    assert.ok(db.runs.some((entry) => entry.sql.includes("SET parent_topic_id = ?, refinement_depth = ?")));
+    assert.ok(db.runs.some((entry) => entry.sql.includes("INSERT OR IGNORE INTO topic_refinement_context")));
+  });
+
+  it("keeps the promoted child when refinement linkage throws and archives the failure", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    db.queueAll("SELECT d.id", [{ id: "dom_1" }]);
+    db.queueFirst("FROM topic_candidates", [{
+      id: "tcand_1",
+      source: "vertical_refinement",
+      source_id: "top_parent",
+      source_url: null,
+      domain_id: "dom_1",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      cadence_family: "scheduled",
+      cadence_override_minutes: 2,
+      min_trust_tier: "unverified",
+      status: "approved",
+      priority_score: 10,
+      published_at: null,
+      promoted_topic_id: null,
+      promotion_error: null,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM domains", [{
+      id: "dom_1",
+      slug: "biology",
+      name: "Biology",
+      description: null,
+      status: "active",
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM topics t\n      INNER JOIN domains d ON d.id = t.domain_id", [{
+      id: "top_child",
+      domain_id: "dom_1",
+      domain_slug: "biology",
+      domain_name: "Biology",
+      title: "Candidate",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      topic_source: "cron_auto",
+      status: "open",
+      cadence_family: "scheduled",
+      cadence_preset: null,
+      cadence_override_minutes: 2,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "unverified",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: "2026-03-31T00:30:00.000Z",
+      join_until: "2026-03-31T00:15:00.000Z",
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      parent_topic_id: null,
+      refinement_depth: 0,
+      change_sequence: 0,
+      created_at: "2026-03-31T00:00:00.000Z",
+      updated_at: "2026-03-31T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds\n      WHERE topic_id = ?", []);
+    db.queueFirst("SELECT refinement_depth, title FROM topics WHERE id = ?", [{
+      refinement_depth: 1,
+      title: "Parent topic",
+    }]);
+    db.queueFirst("SELECT refinement_status_json FROM verdicts WHERE topic_id = ?", [{
+      refinement_status_json: "{invalid-json",
+    }]);
+
+    const result = await promoteTopicCandidates(
+      buildEnv(db, snapshots),
+      { cron: "*/1 * * * *", now: new Date("2026-03-31T00:00:00.000Z") },
+    );
+
+    assert.deepEqual(result.mutatedTopicIds, ["top_child"]);
+    assert.ok(db.runs.some((entry) => entry.sql.includes("SET status = 'consumed'")));
+    const events = refinementFailureEvents(snapshots);
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.kind, "refinement_failure");
+    assert.equal(events[0]?.stage, "link_child");
+    assert.equal(events[0]?.topicId, "top_child");
+    assert.equal(events[0]?.parentTopicId, "top_parent");
   });
 });

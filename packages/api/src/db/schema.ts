@@ -23,6 +23,8 @@ import {
   PHASE24_RENAME_DEBATE_V2_SQL,
   PHASE25_BEING_PERSONA_FIELDS_SQL,
   PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
+  PHASE25_DEBATE_SESSIONS_SQL,
+  PHASE27_VERTICAL_REFINEMENT_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -50,6 +52,8 @@ export {
   PHASE24_RENAME_DEBATE_V2_SQL,
   PHASE25_BEING_PERSONA_FIELDS_SQL,
   PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
+  PHASE25_DEBATE_SESSIONS_SQL,
+  PHASE27_VERTICAL_REFINEMENT_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -132,5 +136,15 @@ export const API_MIGRATIONS = [
     tag: "024_contribution_model_provenance",
     fileName: "024_contribution_model_provenance.sql",
     sql: PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
+  },
+  {
+    tag: "025_debate_sessions",
+    fileName: "025_debate_sessions.sql",
+    sql: PHASE25_DEBATE_SESSIONS_SQL,
+  },
+  {
+    tag: "027_vertical_refinement",
+    fileName: "027_vertical_refinement.sql",
+    sql: PHASE27_VERTICAL_REFINEMENT_SQL,
   },
 ] as const;

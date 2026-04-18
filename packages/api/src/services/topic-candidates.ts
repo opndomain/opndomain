@@ -1,4 +1,6 @@
 import {
+  MAX_REFINEMENT_DEPTH,
+  REFINEMENT_CANDIDATE_SOURCE,
   TOPIC_TEMPLATES,
   type BatchUpsertTopicCandidatesResponse,
   type TopicCandidate,
@@ -21,6 +23,12 @@ import { nowIso } from "../lib/time.js";
 import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { recordLifecycleMutation } from "./lifecycle.js";
 import { createSystemTopic } from "./topics.js";
+import { archiveRefinementFailure, linkRefinementChild } from "./vertical-refinement.js";
+
+type IdeaRecordExclusions = {
+  ancestorTopicIds?: Set<string>;
+  ancestorCandidateSourceIds?: Set<string>;
+};
 
 type TopicCandidateRow = {
   id: string;
@@ -148,7 +156,11 @@ function toIdeaDuplicateRecord(match: NonNullable<ReturnType<typeof findTopicIde
   };
 }
 
-async function listDomainIdeaRecords(env: ApiEnv, domainId: string): Promise<TopicIdeaComparableRecord[]> {
+async function listDomainIdeaRecords(
+  env: ApiEnv,
+  domainId: string,
+  exclusions: IdeaRecordExclusions = {},
+): Promise<TopicIdeaComparableRecord[]> {
   const [topicRows, candidateRows] = await Promise.all([
     allRows<{ id: string; domain_id: string; status: string; title: string; prompt: string }>(
       env.DB,
@@ -159,10 +171,10 @@ async function listDomainIdeaRecords(env: ApiEnv, domainId: string): Promise<Top
       `,
       domainId,
     ),
-    allRows<{ id: string; domain_id: string; status: string; title: string; prompt: string }>(
+    allRows<{ id: string; domain_id: string; status: string; title: string; prompt: string; source: string; source_id: string | null }>(
       env.DB,
       `
-        SELECT id, domain_id, status, title, prompt
+        SELECT id, domain_id, status, title, prompt, source, source_id
         FROM topic_candidates
         WHERE domain_id = ?
           AND status IN ('approved', 'consumed')
@@ -170,6 +182,9 @@ async function listDomainIdeaRecords(env: ApiEnv, domainId: string): Promise<Top
       domainId,
     ),
   ]);
+
+  const ancestorTopicIds = exclusions.ancestorTopicIds ?? new Set<string>();
+  const ancestorCandidateSourceIds = exclusions.ancestorCandidateSourceIds ?? new Set<string>();
 
   return [
     ...topicRows.map((row) => ({
@@ -179,16 +194,41 @@ async function listDomainIdeaRecords(env: ApiEnv, domainId: string): Promise<Top
       status: row.status,
       title: row.title,
       prompt: row.prompt,
-    })),
-    ...candidateRows.map((row) => ({
-      recordKind: "candidate" as const,
-      id: row.id,
-      domainId: row.domain_id,
-      status: row.status,
-      title: row.title,
-      prompt: row.prompt,
-    })),
+    })).filter((row) => !ancestorTopicIds.has(row.id)),
+    ...candidateRows
+      .filter((row) => row.source !== REFINEMENT_CANDIDATE_SOURCE || !row.source_id || !ancestorCandidateSourceIds.has(row.source_id))
+      .map((row) => ({
+        recordKind: "candidate" as const,
+        id: row.id,
+        domainId: row.domain_id,
+        status: row.status,
+        title: row.title,
+        prompt: row.prompt,
+      })),
   ];
+}
+
+async function buildRefinementAncestorExclusions(env: ApiEnv, candidate: TopicCandidate): Promise<IdeaRecordExclusions> {
+  const ancestorTopicIds = new Set<string>();
+  const ancestorCandidateSourceIds = new Set<string>();
+
+  if (candidate.source !== REFINEMENT_CANDIDATE_SOURCE || !candidate.sourceId) {
+    return { ancestorTopicIds, ancestorCandidateSourceIds };
+  }
+
+  let cursor: string | null = candidate.sourceId;
+  while (cursor && ancestorTopicIds.size < MAX_REFINEMENT_DEPTH + 1) {
+    ancestorTopicIds.add(cursor);
+    ancestorCandidateSourceIds.add(cursor);
+    const parent: { parent_topic_id: string | null } | null = await firstRow<{ parent_topic_id: string | null }>(
+      env.DB,
+      "SELECT parent_topic_id FROM topics WHERE id = ?",
+      cursor,
+    );
+    cursor = parent?.parent_topic_id ?? null;
+  }
+
+  return { ancestorTopicIds, ancestorCandidateSourceIds };
 }
 
 async function findIdeaDuplicate(
@@ -196,7 +236,8 @@ async function findIdeaDuplicate(
   candidate: TopicCandidate,
   options?: { excludeCandidateId?: string },
 ) {
-  const records = await listDomainIdeaRecords(env, candidate.domainId);
+  const exclusions = await buildRefinementAncestorExclusions(env, candidate);
+  const records = await listDomainIdeaRecords(env, candidate.domainId, exclusions);
   return findTopicIdeaDuplicate(candidate, records, { excludeRecordId: options?.excludeCandidateId });
 }
 
@@ -444,6 +485,20 @@ export async function promoteTopicCandidates(env: ApiEnv, options?: { cron?: str
     try {
       const topic = await createSystemTopic(env, validatePromotableCandidate(candidate));
       await consumeTopicCandidate(env, candidate.id, topic.id);
+      if (candidate.source === REFINEMENT_CANDIDATE_SOURCE && candidate.source_id) {
+        try {
+          await linkRefinementChild(env, candidate.source_id, topic.id);
+        } catch (linkError) {
+          await archiveRefinementFailure(env, {
+            topicId: topic.id,
+            domainId: topic.domainId,
+            stage: "link_child",
+            message: linkError instanceof Error ? linkError.message : String(linkError),
+            parentTopicId: candidate.source_id,
+          });
+          console.error("refinement linkage failed", { parentId: candidate.source_id, childId: topic.id, error: linkError });
+        }
+      }
       await invalidateTopicPublicSurfaces(env, {
         topicId: topic.id,
         domainId: topic.domainId,

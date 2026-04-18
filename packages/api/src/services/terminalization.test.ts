@@ -29,7 +29,7 @@ class FakePreparedStatement {
   }
 
   async run() {
-    if (this.db.throwOnRunMatch?.test(this.sql)) {
+    if (this.db.shouldThrowOnRun(this.sql)) {
       throw new Error(`simulated run failure for ${this.sql}`);
     }
     this.db.runs.push({ sql: this.sql, bindings: this.bindings });
@@ -41,6 +41,7 @@ class FakeDb {
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
   queries: string[] = [];
   throwOnRunMatch: RegExp | null = null;
+  throwOnRunCounts = new Map<string, number>();
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -57,7 +58,7 @@ class FakeDb {
   }
 
   async batch(statements: FakePreparedStatement[]) {
-    const failingStatement = statements.find((statement) => this.throwOnRunMatch?.test(statement.sql));
+    const failingStatement = statements.find((statement) => this.shouldThrowOnRun(statement.sql));
     if (failingStatement) {
       throw new Error(`simulated run failure for ${failingStatement.sql}`);
     }
@@ -86,6 +87,19 @@ class FakeDb {
       .sort((left, right) => right[0].length - left[0].length)[0];
     return (entry?.[1] as T[]) ?? [];
   }
+
+  shouldThrowOnRun(sql: string) {
+    if (this.throwOnRunMatch?.test(sql)) {
+      return true;
+    }
+    for (const [fragment, remaining] of this.throwOnRunCounts.entries()) {
+      if (remaining > 0 && sql.includes(fragment)) {
+        this.throwOnRunCounts.set(fragment, remaining - 1);
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 class FakeBucket {
@@ -99,6 +113,12 @@ class FakeBucket {
   async delete(key: string) {
     this.deletes.push(key);
   }
+}
+
+function refinementFailureEvents(bucket: FakeBucket) {
+  return bucket.writes
+    .filter((write) => write.key.includes("protocol-events/v1/") && write.key.includes("kind=refinement_failure"))
+    .map((write) => JSON.parse(String(write.body).trim()) as { kind: string; stage: string; topicId: string });
 }
 
 class FakeCache {
@@ -593,6 +613,7 @@ describe("terminalization service", () => {
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"editorialBody":"This topic closed after 2 completed rounds/);
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"narrative":\[/);
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"highlights":\[/);
+    assert.ok(db.runs.some((run) => run.sql.includes("UPDATE verdicts SET refinement_status_json")));
     assert.ok(publicArtifacts.writes.some((write) => write.options?.httpMetadata?.contentType === "text/html; charset=utf-8"));
     const jsonWrite = publicArtifacts.writes.find((write) => write.key.endsWith("/verdict-presentation.json"));
     assert.ok(jsonWrite);
@@ -934,6 +955,7 @@ describe("terminalization service", () => {
         (run) => run.sql.includes("INSERT INTO verdicts") && run.sql.includes("ON CONFLICT(topic_id) DO UPDATE SET"),
       ),
     );
+    assert.ok(db.runs.some((run) => run.sql.includes("UPDATE verdicts SET refinement_status_json")));
     assert.ok(db.runs.some((run) => run.sql.includes("INSERT INTO domain_reputation")));
   });
 
@@ -1239,6 +1261,49 @@ describe("terminalization service", () => {
     const verdictInsert = db.runs.find((run) => run.sql.includes("INSERT INTO verdicts"));
     assert.ok(verdictInsert);
     assert.match(String(verdictInsert?.bindings[5] ?? ""), /"epistemic":\{"status":"unavailable"\}/);
+  });
+
+  it("writes a compute_error sentinel and archives refinement failures when the first status update fails", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeBucket();
+    const publicArtifacts = new FakeBucket();
+    const cache = new FakeCache();
+    db.throwOnRunCounts.set("UPDATE verdicts SET refinement_status_json = ?", 1);
+    queueTerminalizationSuccessPath(db, {
+      summary: "Neutral verdict",
+      editorialBody:
+        "PART A - MY POSITION\n\nMY THESIS: Thesis.\n\nWHY I HOLD IT: Reasons.\n\nSTRONGEST OBJECTION I CAN'T FULLY ANSWER: Objection.\n\nPART B - IMPARTIAL SYNTHESIS\n\nWHAT THIS DEBATE SETTLED: Settled point.\n\nWHAT REMAINS CONTESTED: Contested issue that is definitely longer than fifty characters for eligibility.\n\nNEUTRAL VERDICT: Neutral verdict.",
+    });
+
+    const result = await runTerminalizationSequence(
+      {
+        DB: db as never,
+        SNAPSHOTS: snapshots as never,
+        PUBLIC_ARTIFACTS: publicArtifacts as never,
+        PUBLIC_CACHE: cache as never,
+        TOPIC_STATE_DO: {
+          idFromName: (name: string) => name,
+          get: () => ({
+            fetch: async () => Response.json({ flushed: true, remaining: 0 }),
+          }),
+        },
+        TOPIC_TRANSCRIPT_PREFIX: "topics",
+        CURATED_OPEN_KEY: "curated/open.json",
+        ENABLE_EPISTEMIC_SCORING: false,
+      } as never,
+      "top_1",
+    );
+
+    assert.equal(result.terminalized, true);
+    const sentinelUpdate = db.runs.find((run) =>
+      run.sql.includes("UPDATE verdicts SET refinement_status_json = ? WHERE topic_id = ?")
+      && run.bindings[0] === JSON.stringify({ eligible: false, reason: "compute_error" }));
+    assert.ok(sentinelUpdate);
+    const events = refinementFailureEvents(snapshots);
+    assert.equal(events.length, 1);
+    assert.equal(events[0]?.kind, "refinement_failure");
+    assert.equal(events[0]?.stage, "compute_status");
+    assert.equal(events[0]?.topicId, "top_1");
   });
 
 });

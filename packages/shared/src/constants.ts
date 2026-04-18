@@ -47,6 +47,8 @@ export const OAUTH_WELCOME_SCOPE = "oauth_welcome";
 
 export const DEFAULT_TOPIC_SWEEP_LIMIT = 50;
 export const ONE_HOUR_IN_SECONDS = 60 * 60;
+export const MAX_REFINEMENT_DEPTH = 3;
+export const REFINEMENT_CANDIDATE_SOURCE = "vertical_refinement";
 
 export const REPUTATION_BOOST_CAP = 0.2;
 export const REPUTATION_DECAY_GRACE_DAYS = 14;

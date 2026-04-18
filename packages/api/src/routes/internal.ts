@@ -13,6 +13,8 @@ import {
   CreateAdminRestrictionSchema,
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
+  RefinementEligibleTopicSchema,
+  RefinementStatusSchema,
   ReterminalizeTopicRequestSchema,
   RoundInstructionOverrideRequestSchema,
   SetAdminTopicCadenceSchema,
@@ -373,6 +375,48 @@ internalRoutes.get("/topic-candidates/idea-context", async (c) => {
   return withAdminReadAccess(c, async () => {
     const query = parseTopicIdeaContextQuery(c.req.raw);
     return jsonData(c, { items: await getTopicIdeaContext(c.env, query.domainId) });
+  });
+});
+
+internalRoutes.get("/topics/refinement-eligible", async (c) => {
+  return withAdminReadAccess(c, async () => {
+    const rows = await allRows<{
+      id: string;
+      title: string;
+      prompt: string;
+      domain_id: string;
+      refinement_depth: number;
+      refinement_status_json: string;
+    }>(
+      c.env.DB,
+      `
+        SELECT t.id, t.title, t.prompt, t.domain_id, t.refinement_depth, v.refinement_status_json
+        FROM topics t
+        INNER JOIN verdicts v ON v.topic_id = t.id
+        WHERE t.status = 'closed'
+          AND t.archived_at IS NULL
+          AND v.refinement_status_json IS NOT NULL
+          AND json_extract(v.refinement_status_json, '$.eligible') = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM topic_candidates tc
+            WHERE tc.source = 'vertical_refinement'
+              AND tc.source_id = t.id
+              AND tc.status IN ('approved', 'consumed')
+          )
+        ORDER BY t.closed_at DESC
+        LIMIT 20
+      `,
+    );
+
+    const items = rows.map((row) => RefinementEligibleTopicSchema.parse({
+      id: row.id,
+      title: row.title,
+      prompt: row.prompt,
+      domainId: row.domain_id,
+      refinementDepth: Number(row.refinement_depth ?? 0),
+      refinementStatus: RefinementStatusSchema.parse(JSON.parse(row.refinement_status_json)),
+    }));
+    return jsonData(c, { items });
   });
 });
 

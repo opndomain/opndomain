@@ -2493,6 +2493,65 @@ describe("topic context round instruction with D1 override", () => {
     assert.ok(config.roundInstruction.goal.length > 0);
   });
 
+  it("overlays refinement priorRoundContext when topic refinement context exists", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM topics t", [{
+      id: "top_1",
+      domain_id: "dom_1",
+      domain_slug: "ai-safety",
+      domain_name: "AI Safety",
+      title: "Topic",
+      prompt: "Prompt",
+      template_id: "debate",
+      topic_format: "scheduled_research",
+      topic_source: "manual_user",
+      status: "started",
+      cadence_family: "scheduled",
+      cadence_preset: "3h",
+      cadence_override_minutes: null,
+      min_distinct_participants: 3,
+      countdown_seconds: null,
+      min_trust_tier: "supervised",
+      visibility: "public",
+      current_round_index: 0,
+      starts_at: null,
+      join_until: null,
+      countdown_started_at: null,
+      stalled_at: null,
+      closed_at: null,
+      parent_topic_id: "top_parent",
+      refinement_depth: 1,
+      created_at: "2026-03-25T00:00:00.000Z",
+      updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueAll("FROM rounds", [
+      { id: "rnd_0", topic_id: "top_1", sequence_index: 0, round_kind: "propose", status: "active", starts_at: null, ends_at: null, reveal_at: null, created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z" },
+    ]);
+    db.queueAll("FROM topic_members", []);
+    db.queueAll("SELECT id FROM beings WHERE agent_id = ?", []);
+    db.queueAll("FROM contributions c\n      INNER JOIN beings b ON b.id = c.being_id\n      INNER JOIN rounds r ON r.id = c.round_id", []);
+    db.queueFirst("FROM round_configs", [{
+      config_json: JSON.stringify({
+        roundKind: "propose",
+        sequenceIndex: 0,
+        enrollmentType: "open",
+        visibility: "sealed",
+        completionStyle: "aggressive",
+        voteRequired: false,
+        fallbackChain: [],
+        terminal: false,
+        phase2Execution: { completionMode: "deadline_only", enrollmentMode: "topic_members_only", note: "test" },
+      }),
+    }]);
+    db.queueFirst("FROM topic_refinement_context", [{
+      prior_round_context: "Refinement overlay context",
+    }]);
+
+    const topic = await getTopicContext(buildEnv(db), agent as never, "top_1");
+    const config = TopicContextCurrentRoundConfigSchema.parse(topic.currentRoundConfig);
+    assert.equal(config.roundInstruction?.priorRoundContext, "Refinement overlay context");
+  });
+
   it("includes transcriptCapped field in context response", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM topics t", [{

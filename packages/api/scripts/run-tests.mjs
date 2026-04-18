@@ -33,6 +33,8 @@ function testSchemaContracts() {
   const phase24Sql = readFileSync(new URL("../src/db/022_rename_debate_v2.sql", import.meta.url), "utf8");
   const phase25Sql = readFileSync(new URL("../src/db/023_being_persona_fields.sql", import.meta.url), "utf8");
   const phase26Sql = readFileSync(new URL("../src/db/024_contribution_model_provenance.sql", import.meta.url), "utf8");
+  const debateSessionsSql = readFileSync(new URL("../src/db/025_debate_sessions.sql", import.meta.url), "utf8");
+  const phase27Sql = readFileSync(new URL("../src/db/027_vertical_refinement.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -60,6 +62,8 @@ function testSchemaContracts() {
       "022_rename_debate_v2",
       "023_being_persona_fields",
       "024_contribution_model_provenance",
+      "025_debate_sessions",
+      "027_vertical_refinement",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -133,6 +137,11 @@ function testSchemaContracts() {
   assert.match(phase26Sql, /ALTER TABLE contributions ADD COLUMN model_provider TEXT/);
   assert.match(phase26Sql, /ALTER TABLE contributions ADD COLUMN model_name TEXT/);
   assert.match(phase26Sql, /ALTER TABLE contributions ADD COLUMN model_recorded_at TEXT/);
+  assert.match(debateSessionsSql, /CREATE TABLE IF NOT EXISTS debate_sessions/);
+  assert.match(debateSessionsSql, /CREATE INDEX IF NOT EXISTS idx_debate_sessions_topic/);
+  assert.match(phase27Sql, /ALTER TABLE topics ADD COLUMN parent_topic_id TEXT/);
+  assert.match(phase27Sql, /ALTER TABLE verdicts ADD COLUMN refinement_status_json TEXT/);
+  assert.match(phase27Sql, /CREATE TABLE IF NOT EXISTS topic_refinement_context/);
 }
 
 function testBaseEnvParsing() {
@@ -365,6 +374,14 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/024_contribution_model_provenance.sql", import.meta.url)),
     join(targetDir, "024_contribution_model_provenance.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/025_debate_sessions.sql", import.meta.url)),
+    join(targetDir, "025_debate_sessions.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/027_vertical_refinement.sql", import.meta.url)),
+    join(targetDir, "027_vertical_refinement.sql"),
   );
 }
 

@@ -1746,7 +1746,7 @@ describe("GET / landing verdict highlighting", () => {
     assert.ok(html.includes("Summary 1"), "landing page should render the opening verdict response in the card");
     assert.ok(html.includes('href="/topics/topic_1"'), "landing page cards should link to the individual topic page");
     assert.ok(html.includes('class="shell-topbar shell-topbar--landing"'), "landing page should render the shared top nav shell");
-    assert.ok(html.includes('class="shell-link"'), "landing page should render the shared top nav links");
+    assert.ok(html.includes('class="shell-search"'), "landing page should render the global search bar");
     assert.ok(html.includes('class="lp-terminal lp-reveal"'), "landing page should render the terminal component");
     assert.ok(html.includes("data-term-output"), "landing page should include the typewriter output hook");
   });
@@ -1781,14 +1781,14 @@ describe("SSR shell coverage for redesigned routes", () => {
 
   it("renders the parent domain detail page with children grid", async () => {
     const db = new FakeDb();
-    db.queueResult("LEFT JOIN domains p ON p.id = d.parent_domain_id", [
+    db.queueResult("WHERE d.slug = ?", [
       { id: "dom_ai-machine-intelligence", slug: "ai-machine-intelligence", name: "AI & Machine Intelligence", description: "AI research.", parent_domain_id: null, topic_count: 0, parent_slug: null, parent_name: null },
     ]);
     db.queueResult("FROM domains d\n          WHERE d.parent_domain_id", [
       { slug: "ai-safety", name: "AI Safety", description: "Model evaluations.", topic_count: 3 },
     ]);
     db.queueResult("SUM(dr.decayed_score)", [
-      { handle: "agent-alpha", display_name: "Agent Alpha", decayed_score: 82.4, sample_count: 11 },
+      { handle: "agent-alpha", display_name: "Agent Alpha", trust_tier: "unverified", decayed_score: 82.4, sample_count: 11, contribution_count: 5 },
     ]);
 
     const response = await app.fetch(
@@ -1799,11 +1799,12 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assertSidebarShell(html);
+    assertTopNavShell(html);
     assert.ok(html.includes("AI Safety"), "parent detail should show child subdomain");
     assert.ok(html.includes("Agent Alpha"), "parent detail should show aggregated leaderboard");
-    assert.ok(html.includes("Subdomains"), "parent detail should have subdomains section");
+    assert.ok(html.includes("domain-card-simple"), "parent detail should use domain-card-simple cards");
     assert.ok(html.includes("domain-breadcrumb"), "parent detail should have breadcrumb");
+    assert.ok(html.includes("lb-table"), "parent detail should use leaderboard table");
     const parentLeaderSql = db.sqlMatching("SUM(dr.decayed_score)");
     assert.ok(parentLeaderSql, "expected aggregated leaderboard SQL to be prepared");
     assert.ok(parentLeaderSql!.includes("b.status = 'active'"), "parent leaderboard must filter inactive beings");
@@ -1812,14 +1813,14 @@ describe("SSR shell coverage for redesigned routes", () => {
 
   it("renders the subdomain detail page with breadcrumb", async () => {
     const db = new FakeDb();
-    db.queueResult("LEFT JOIN domains p ON p.id = d.parent_domain_id", [
+    db.queueResult("WHERE d.slug = ?", [
       { id: "dom_1", slug: "ai-safety", name: "AI Safety", description: "Model evaluations and safeguards.", parent_domain_id: "dom_ai-machine-intelligence", topic_count: 3, parent_slug: "ai-machine-intelligence", parent_name: "AI & Machine Intelligence" },
     ]);
-    db.queueResult("FROM topics", [
-      { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate" },
+    db.queueResult("FROM topics t", [
+      { id: "topic_1", title: "Should audits be mandatory?", status: "open", template_id: "debate", prompt: "Evaluate whether mandatory audits improve safety.", created_at: "2025-01-01T00:00:00Z", updated_at: "2025-01-02T00:00:00Z", current_round_index: 0, domain_slug: "ai-safety", domain_name: "AI Safety", parent_domain_name: "AI & Machine Intelligence", member_count: 5, round_count: 2 },
     ]);
     db.queueResult("FROM domain_reputation dr", [
-      { handle: "agent-alpha", display_name: "Agent Alpha", decayed_score: 82.4, sample_count: 11 },
+      { handle: "agent-alpha", display_name: "Agent Alpha", trust_tier: "unverified", decayed_score: 82.4, sample_count: 11, contribution_count: 3 },
     ]);
 
     const response = await app.fetch(
@@ -1830,11 +1831,13 @@ describe("SSR shell coverage for redesigned routes", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assertSidebarShell(html);
+    assertTopNavShell(html);
     assert.ok(html.includes("Should audits be mandatory?"));
     assert.ok(html.includes("Agent Alpha"));
     assert.ok(html.includes("domain-breadcrumb"), "subdomain detail should have breadcrumb");
     assert.ok(html.includes("ai-machine-intelligence"), "breadcrumb should link to parent");
+    assert.ok(html.includes("topics-card"), "subdomain detail should use topic cards");
+    assert.ok(html.includes("lb-table"), "subdomain detail should use leaderboard table");
     const subLeaderSql = db.sqlMatching("FROM domain_reputation dr\n        INNER JOIN beings b");
     assert.ok(subLeaderSql, "expected subdomain leaderboard SQL to be prepared");
     assert.ok(subLeaderSql!.includes("b.status = 'active'"), "subdomain leaderboard must filter inactive beings");

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   API_MIGRATIONS,
@@ -20,7 +22,9 @@ import {
   PHASE20_VOTE_CATEGORIES_SQL,
   PHASE23_DOMAIN_GROUPS_SQL,
   PHASE25_BEING_PERSONA_FIELDS_SQL,
+  PHASE25_DEBATE_SESSIONS_SQL,
   PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
+  PHASE27_VERTICAL_REFINEMENT_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -50,7 +54,25 @@ describe("schema migrations", () => {
       "022_rename_debate_v2",
       "023_being_persona_fields",
       "024_contribution_model_provenance",
+      "025_debate_sessions",
+      "027_vertical_refinement",
     ]);
+  });
+
+  it("keeps both migration manifests aligned with the SQL files on disk", () => {
+    const sqlFiles = readdirSync(join(process.cwd(), "src", "db"))
+      .filter((fileName) => /^\d+_.+\.sql$/.test(fileName))
+      .sort();
+    assert.deepEqual(API_MIGRATIONS.map((migration) => migration.fileName), sqlFiles);
+
+    const applyMigrationsSource = readFileSync(join(process.cwd(), "scripts", "apply-migrations.mjs"), "utf8");
+    const migrationFilesBlock = applyMigrationsSource.match(/const migrationFiles = \[(?<body>[\s\S]*?)\n\];/);
+    assert.ok(migrationFilesBlock?.groups?.body, "apply-migrations.mjs migrationFiles block should exist");
+    const applyManifestFiles = Array.from(
+      migrationFilesBlock!.groups!.body.matchAll(/fileName: "([^"]+)"/g),
+      (match) => match[1],
+    );
+    assert.deepEqual(applyManifestFiles, sqlFiles);
   });
 
   it("keeps foreign keys and lifecycle columns in the canonical core schema", () => {
@@ -202,6 +224,19 @@ describe("schema migrations", () => {
     assert.match(PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL, /ALTER TABLE contributions ADD COLUMN model_provider TEXT;/);
     assert.match(PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL, /ALTER TABLE contributions ADD COLUMN model_name TEXT;/);
     assert.match(PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL, /ALTER TABLE contributions ADD COLUMN model_recorded_at TEXT;/);
+  });
+
+  it("adds debate session storage in phase 25 debate sessions", () => {
+    assert.match(PHASE25_DEBATE_SESSIONS_SQL, /CREATE TABLE IF NOT EXISTS debate_sessions/);
+    assert.match(PHASE25_DEBATE_SESSIONS_SQL, /CREATE INDEX IF NOT EXISTS idx_debate_sessions_topic/);
+  });
+
+  it("adds vertical refinement lineage and context storage in phase 27", () => {
+    assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /ALTER TABLE topics ADD COLUMN parent_topic_id TEXT/);
+    assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /ALTER TABLE topics ADD COLUMN refinement_depth INTEGER NOT NULL DEFAULT 0/);
+    assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /CREATE INDEX IF NOT EXISTS idx_topics_parent_topic_id/);
+    assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /ALTER TABLE verdicts ADD COLUMN refinement_status_json TEXT/);
+    assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /CREATE TABLE IF NOT EXISTS topic_refinement_context/);
   });
 
   it("adds persisted account classes and topic sources in phase 16", () => {

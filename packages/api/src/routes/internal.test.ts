@@ -30,6 +30,7 @@ class FakePreparedStatement {
 class FakeDb {
   batches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
   executedRuns: Array<{ sql: string; bindings: unknown[] }> = [];
+  allCalls: string[] = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -64,6 +65,7 @@ class FakeDb {
   }
 
   consumeAll<T>(sql: string): T[] {
+    this.allCalls.push(sql);
     const entry = Array.from(this.allQueue.entries())
       .filter(([fragment]) => sql.includes(fragment))
       .sort((a, b) => b[0].length - a[0].length)[0];
@@ -622,6 +624,90 @@ describe("internal routes", () => {
       createdAt: "2026-03-31T00:00:00.000Z",
       updatedAt: "2026-03-31T00:00:00.000Z",
     });
+  });
+
+  it("returns refinement-eligible topics with parsed refinement status", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    db.queueAll("FROM topics t\n        INNER JOIN verdicts v ON v.topic_id = t.id", [{
+      id: "top_1",
+      title: "Closed topic",
+      prompt: "Closed prompt",
+      domain_id: "dom_1",
+      refinement_depth: 1,
+      refinement_status_json: JSON.stringify({
+        eligible: true,
+        reason: "contested",
+        whatContested: "A contested issue remains.",
+      }),
+    }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/topics/refinement-eligible", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as {
+      data: {
+        items: Array<{
+          id: string;
+          title: string;
+          prompt: string;
+          domainId: string;
+          refinementDepth: number;
+          refinementStatus: { eligible: boolean; reason: string; whatContested?: string };
+        }>;
+      };
+    };
+    assert.deepEqual(payload.data.items, [{
+      id: "top_1",
+      title: "Closed topic",
+      prompt: "Closed prompt",
+      domainId: "dom_1",
+      refinementDepth: 1,
+      refinementStatus: {
+        eligible: true,
+        reason: "contested",
+        whatContested: "A contested issue remains.",
+      },
+    }]);
+  });
+
+  it("still returns refinement-eligible topics when only failed refinement candidates exist", async () => {
+    const db = new FakeDb();
+    queueAuthenticatedAgent(db);
+    db.queueAll("FROM topics t\n        INNER JOIN verdicts v ON v.topic_id = t.id", [{
+      id: "top_1",
+      title: "Closed topic",
+      prompt: "Closed prompt",
+      domain_id: "dom_1",
+      refinement_depth: 1,
+      refinement_status_json: JSON.stringify({
+        eligible: true,
+        reason: "contested",
+      }),
+    }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/internal/topics/refinement-eligible", {
+        headers: { cookie: "opn_session=ses_1" },
+      }),
+      buildEnv(db),
+      { waitUntil() {} } as never,
+    );
+
+    assert.equal(response.status, 200);
+    assert.ok(db.allCalls.some((sql) => sql.includes("tc.status IN ('approved', 'consumed')")));
+    const payload = await response.json() as {
+      data: {
+        items: Array<{ id: string }>;
+      };
+    };
+    assert.deepEqual(payload.data.items, [{ id: "top_1", title: "Closed topic", prompt: "Closed prompt", domainId: "dom_1", refinementDepth: 1, refinementStatus: { eligible: true, reason: "contested" } }]);
   });
 
   it("allows admins to create internal topics with non-debate templates", async () => {

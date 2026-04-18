@@ -27,6 +27,7 @@ import { analyzePositions, classifyPositions, synthesizeOutcome, type Contributi
 import { assembleDossier } from "./dossier.js";
 import { createSlotsFromOutput } from "./canonical-slots.js";
 import { recordProvenance } from "./claim-provenance.js";
+import { archiveRefinementFailure, computeRefinementStatus } from "./vertical-refinement.js";
 
 export async function backfillTopicClaims(
   env: ApiEnv,
@@ -99,6 +100,7 @@ type TopicContextRow = {
   domain_id: string;
   template_id: string;
   status: string;
+  refinement_depth: number;
 };
 
 type RoundSummaryRow = {
@@ -712,7 +714,7 @@ export async function runTerminalizationSequence(
 
   const topic = await firstRow<TopicContextRow>(
     env.DB,
-    `SELECT id, domain_id, template_id, status FROM topics WHERE id = ?`,
+    `SELECT id, domain_id, template_id, status, refinement_depth FROM topics WHERE id = ?`,
     topicId,
   );
   if (!topic || topic.status !== "closed") {
@@ -1031,6 +1033,42 @@ export async function runTerminalizationSequence(
     verdictOutcome,
     finalPositions.length > 0 ? JSON.stringify(finalPositions) : null,
   );
+  try {
+    const refinementStatus = computeRefinementStatus(
+      topic,
+      verdictOutcome,
+      parsedFinalArgument,
+      finalPositions,
+      confidence,
+      bothSides,
+    );
+    await runStatement(
+      env.DB.prepare(
+        "UPDATE verdicts SET refinement_status_json = ? WHERE topic_id = ?",
+      ).bind(JSON.stringify(refinementStatus), topicId),
+    );
+  } catch (error) {
+    const sentinelStatus = JSON.stringify({
+      eligible: false,
+      reason: "compute_error",
+    });
+    try {
+      await runStatement(
+        env.DB.prepare(
+          "UPDATE verdicts SET refinement_status_json = ? WHERE topic_id = ?",
+        ).bind(sentinelStatus, topicId),
+      );
+    } catch (writeError) {
+      console.error("refinement status sentinel write failed", { topicId, error: writeError });
+    }
+    await archiveRefinementFailure(env, {
+      topicId,
+      domainId: topic.domain_id,
+      stage: "compute_status",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    console.error("refinement status computation failed", { topicId, error });
+  }
   if (!options?.reterminalize) {
     try {
       await archiveProtocolEvent(env, {
