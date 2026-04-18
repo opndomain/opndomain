@@ -184,13 +184,13 @@ async function freshToken(holder) {
   return holder.accessToken;
 }
 
-// ---- LLM via claude CLI ----
+// ---- LLM via claude / codex CLI ----
 
-async function callClaudeOnce(systemPrompt, userPrompt, cleanCwd) {
+async function callClaudeOnce(systemPrompt, userPrompt, cleanCwd, model) {
   const systemPromptFile = path.join(cleanCwd, "system-prompt.txt");
   fs.writeFileSync(systemPromptFile, systemPrompt);
 
-  const shellCmd = `claude -p --model ${LLM_MODEL} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
+  const shellCmd = `claude -p --model ${model} --system-prompt "$(cat ${JSON.stringify(systemPromptFile).replace(/\\/g, "/")})" --tools "" --no-session-persistence`;
 
   return new Promise((resolve, reject) => {
     const proc = spawn("bash", ["-c", shellCmd], {
@@ -213,15 +213,63 @@ async function callClaudeOnce(systemPrompt, userPrompt, cleanCwd) {
   });
 }
 
-async function callClaude(systemPrompt, userPrompt) {
-  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), "debate-agent-"));
+async function callCodexOnce(systemPrompt, userPrompt, cleanCwd, model) {
+  const outputFile = path.join(cleanCwd, "codex-output.txt");
+  const combinedPrompt = `SYSTEM INSTRUCTIONS:\n${systemPrompt}\n\nUSER PROMPT:\n${userPrompt}`;
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn("codex", [
+      "exec",
+      "-m", model,
+      "--ephemeral",
+      "-o", outputFile,
+      "-",
+    ], {
+      timeout: 180_000,
+      cwd: cleanCwd,
+      env: { ...process.env },
+    });
+
+    let stderr = "";
+    proc.stderr.on("data", (chunk) => { stderr += chunk; });
+    proc.stdin.write(combinedPrompt);
+    proc.stdin.end();
+    proc.on("close", (code) => {
+      if (code !== 0) reject(new Error(`codex CLI exited ${code}: ${stderr.slice(0, 200)}`));
+      else {
+        try {
+          const output = fs.readFileSync(outputFile, "utf-8").trim();
+          resolve(output);
+        } catch (readErr) {
+          reject(new Error(`codex output file missing: ${readErr.message}`));
+        }
+      }
+    });
+    proc.on("error", reject);
+  });
+}
+
+function resolveAgentProvider(agent) {
+  return agent.provider ?? "claude";
+}
+
+function resolveAgentModel(agent) {
+  if (agent.model) return agent.model;
+  return resolveAgentProvider(agent) === "codex" ? "o3" : LLM_MODEL;
+}
+
+async function callLLM(systemPrompt, userPrompt, agent) {
+  const provider = resolveAgentProvider(agent);
+  const model = resolveAgentModel(agent);
+  const cleanCwd = fs.mkdtempSync(path.join(os.tmpdir(), `debate-agent-${provider}-`));
+  const callOnce = provider === "codex" ? callCodexOnce : callClaudeOnce;
   try {
-    return await callClaudeOnce(systemPrompt, userPrompt, cleanCwd);
+    return await callOnce(systemPrompt, userPrompt, cleanCwd, model);
   } catch (firstError) {
-    log("llm-retry", { error: firstError.message?.slice(0, 120) });
+    log("llm-retry", { provider, model, error: firstError.message?.slice(0, 120) });
     await wait(3_000);
     try {
-      return await callClaudeOnce(systemPrompt, userPrompt, cleanCwd);
+      return await callOnce(systemPrompt, userPrompt, cleanCwd, model);
     } finally {
       try { fs.rmSync(cleanCwd, { recursive: true }); } catch {}
     }
@@ -265,8 +313,8 @@ Where CONTRIBUTION_ID is the exact ID from the list below. Nothing else â€”
     `\nRespond with exactly 3 lines â€” one per vote kind â€” using the exact contribution IDs above:`,
   ].filter(Boolean).join("\n");
 
-  log("vote-llm-call", { who: agent.displayName, targets: targetTexts.length });
-  const raw = await callClaude(systemPrompt, userPrompt);
+  log("vote-llm-call", { who: agent.displayName, provider: resolveAgentProvider(agent), model: resolveAgentModel(agent), targets: targetTexts.length });
+  const raw = await callLLM(systemPrompt, userPrompt, agent);
   log("vote-llm-done", { who: agent.displayName, raw: raw.slice(0, 200) });
 
   // Parse the 3 lines
@@ -432,8 +480,8 @@ Write 2-3 paragraphs, 150-350 words (structured rounds may be longer to accommod
     userPrompt.push(`\nREMINDER: Write your response as plain prose paragraphs. Do not use any markdown formatting whatsoever â€” no headers, no bold, no italic, no bullet points, no numbered lists, no horizontal rules. Begin your contribution now:`);
   }
 
-  const content = await callClaude(systemPrompt, userPrompt.join("\n"));
-  if (!content) throw new Error("claude CLI returned empty output");
+  const content = await callLLM(systemPrompt, userPrompt.join("\n"), agent);
+  if (!content) throw new Error(`${resolveAgentProvider(agent)} CLI returned empty output`);
 
   // Strip markdown fences and skip truncation for JSON rounds
   if (isJsonRound) {
@@ -663,12 +711,13 @@ async function main() {
 
     if (pendingContributions.length > 0) {
       const roundKind = pendingContributions[0].context.currentRound.roundKind;
-      log("llm-batch", { round: roundKind, agents: pendingContributions.length, model: LLM_MODEL });
+      const providers = [...new Set(pendingContributions.map(({ participant }) => resolveAgentProvider(participant)))];
+      log("llm-batch", { round: roundKind, agents: pendingContributions.length, providers });
 
       const results = await Promise.allSettled(
         pendingContributions.map(async ({ participant, context }) => {
           const currentRound = context.currentRound;
-          log("llm-call", { who: participant.displayName, round: currentRound.roundKind, model: LLM_MODEL });
+          log("llm-call", { who: participant.displayName, round: currentRound.roundKind, provider: resolveAgentProvider(participant), model: resolveAgentModel(participant) });
           const body = await generateContribution(participant, context);
           log("llm-done", { who: participant.displayName, round: currentRound.roundKind, length: body.length, preview: body.slice(0, 120) });
           return { participant, context, body };

@@ -330,6 +330,61 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     };
   }
 
+  it("returns snapshot-derived public topic status JSON with no-store caching", async () => {
+    const db = new FakeDb();
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_status/state.json", JSON.stringify({
+      topicId: "topic_status",
+      status: "started",
+      changeSequence: 42,
+      currentRoundIndex: 3,
+      generatedAt: "2026-04-18T14:00:00.000Z",
+      rounds: [
+        { sequenceIndex: 0, roundKind: "propose", status: "completed", endsAt: "2026-04-18T13:00:00.000Z" },
+        { sequenceIndex: 1, roundKind: "map", status: "active", endsAt: "2026-04-18T15:00:00.000Z" },
+      ],
+    }));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_status/status.json"),
+      buildEnv(db, undefined, snapshots),
+      ctx(),
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      topicId: "topic_status",
+      status: "started",
+      changeSequence: 42,
+      currentRoundIndex: 3,
+      generatedAt: "2026-04-18T14:00:00.000Z",
+      activeRoundEndsAt: "2026-04-18T15:00:00.000Z",
+    });
+  });
+
+  it("returns a retryable 404 when the topic status snapshot is missing", async () => {
+    const db = new FakeDb();
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_missing/status.json"),
+      buildEnv(db),
+      ctx(),
+    );
+
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.match(response.headers.get("content-type") ?? "", /application\/json/);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      topicId: "topic_missing",
+      retryable: true,
+      error: "snapshot_missing",
+    });
+  });
+
   it("emits og:image and twitter:card meta tags on closed topic with published artifact", async () => {
     const db = new FakeDb();
     db.queueResult("topics t", [topicMeta()]);
@@ -380,7 +435,8 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('class="topic-above-fold"'), "closed topic should render the above-the-fold layout");
     assert.ok(html.includes('class="topic-confidence-widget topic-confidence-widget--verdict"'), "closed topic should render the confidence widget");
     assert.ok(html.includes("Share on X"), "closed topic should have share panel");
-    assert.ok(html.includes("Test prompt"), "closed topic should lead with the topic prompt");
+    assert.ok(html.includes("Test prompt"), "closed topic should render the topic prompt in the header");
+    assert.ok(!html.includes('class="topic-header-topic"'), "closed topic should not render the extra kicker sentence above the prompt");
     assert.ok(!html.includes("Structured oversight should be required for frontier labs."), "verdict headline should be suppressed (redundant with convergence map)");
     assert.ok(!html.includes("Frontier labs should not ship without mandatory oversight review."), "verdict lede should be suppressed (redundant with convergence map)");
     assert.ok(html.includes("Mandatory oversight is a release condition."), "verdict kicker chip should still appear in the header");
@@ -471,6 +527,11 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     db.queueResult("topics t", [topicMeta({ id: "topic_open", status: "started", artifact_status: null, verdict_html_key: null, og_image_key: null })]);
     const snapshots = new FakeR2();
     snapshots.set("topics/topic_open/state.json", JSON.stringify({
+      topicId: "topic_open",
+      status: "started",
+      changeSequence: 7,
+      currentRoundIndex: 2,
+      generatedAt: "2026-04-09T12:05:00.000Z",
       memberCount: 3,
       contributionCount: 10,
       transcriptVersion: 1,
@@ -508,8 +569,81 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes("Transcript</span>"), "open topic should keep transcript in the page flow");
     assert.ok(html.includes("https://api.opndomain.com/v1/topics/topic_open/views"), "open public topic page should still include the topic view beacon endpoint");
     assert.ok(html.includes("Debate progress"), "open topic should render the debate progress tracker");
-    assert.ok(html.includes("window.location.reload()"), "round tracker should auto-refresh when the countdown expires");
-    assert.ok(html.includes("opndomain:round-tracker-reload"), "round tracker should persist bounded retry state");
+    assert.ok(html.includes('data-status-endpoint="/topics/topic_open/status.json"'), "round tracker should embed the status endpoint");
+    assert.ok(html.includes('data-initial-change-sequence="7"'), "round tracker should embed the initial change sequence");
+    assert.ok(html.includes('data-active-round-ends-at="2026-04-09T12:10:00.000Z"'), "round tracker should embed the active round deadline");
+    assert.ok(html.includes("fetch(statusEndpoint"), "round tracker should poll the status endpoint after expiry");
+    assert.ok(!html.includes("opndomain:round-tracker-reload"), "round tracker should not use the retired reload retry marker");
+    assert.ok(html.includes("observedChangeSequence > initialChangeSequence"), "round tracker should gate reloads on changeSequence increase only");
+    assert.ok(html.includes("sessionStorage.setItem(reloadGuardKey"), "round tracker should persist the reload suppression guard before reloading");
+    assert.ok(html.includes("initialChangeSequence > reloadGuard.reloadedFor"), "boot should clear the reload guard when fresh HTML advances");
+    assert.ok(html.includes("Date.now() - reloadGuard.at <= reloadSuppressionMs"), "boot should suppress another auto-reload when stale HTML lands");
+    assert.ok(html.includes("window.setTimeout(clearReloadGuard, reloadSuppressionMs - (Date.now() - reloadGuard.at))"), "stale-html suppression should clear the guard after the remaining suppression window");
+    assert.ok(html.includes("Waiting for next round to open. Refresh to check for updates."), "round tracker should show the bounded waiting/manual-refresh state");
+    assert.ok(html.includes("Math.min(pollIntervalMs, remainingWindowMs)"), "non-ok and fetch errors should stay on the same bounded 5s cadence");
+    assert.ok(html.includes("typeof payload?.changeSequence === 'number'"), "round tracker should ignore malformed polled changeSequence values");
+  });
+
+  it("does not include the transition polling script when there is no active round", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_no_active", status: "started", artifact_status: null, verdict_html_key: null, og_image_key: null })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_no_active/state.json", JSON.stringify({
+      topicId: "topic_no_active",
+      status: "started",
+      changeSequence: 9,
+      currentRoundIndex: 2,
+      generatedAt: "2026-04-09T12:10:00.000Z",
+      memberCount: 3,
+      contributionCount: 10,
+      transcriptVersion: 1,
+      rounds: [
+        { sequenceIndex: 0, roundKind: "propose", status: "completed", endsAt: "2026-04-09T12:00:00.000Z" },
+        { sequenceIndex: 1, roundKind: "critique", status: "completed", endsAt: "2026-04-09T12:10:00.000Z" },
+      ],
+    }));
+    snapshots.set("topics/topic_no_active/transcript.json", JSON.stringify({ rounds: [] }));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_no_active"),
+      buildEnv(db, undefined, snapshots),
+      ctx(),
+    );
+
+    const html = await response.text();
+    assert.ok(!html.includes("fetch(statusEndpoint"), "pages without an active round should not start transition polling");
+    assert.ok(!html.includes('data-status-endpoint="/topics/topic_no_active/status.json"'), "pages without an active round should not embed the status endpoint");
+  });
+
+  it("does not include the transition polling script on stalled topics", async () => {
+    const db = new FakeDb();
+    db.queueResult("topics t", [topicMeta({ id: "topic_stalled", status: "stalled", artifact_status: null, verdict_html_key: null, og_image_key: null })]);
+    const snapshots = new FakeR2();
+    snapshots.set("topics/topic_stalled/state.json", JSON.stringify({
+      topicId: "topic_stalled",
+      status: "stalled",
+      changeSequence: 10,
+      currentRoundIndex: 2,
+      generatedAt: "2026-04-09T12:10:00.000Z",
+      memberCount: 3,
+      contributionCount: 10,
+      transcriptVersion: 1,
+      rounds: [
+        { sequenceIndex: 0, roundKind: "propose", status: "completed", endsAt: "2026-04-09T12:00:00.000Z" },
+        { sequenceIndex: 1, roundKind: "critique", status: "active", endsAt: "2026-04-09T12:10:00.000Z" },
+      ],
+    }));
+    snapshots.set("topics/topic_stalled/transcript.json", JSON.stringify({ rounds: [] }));
+
+    const response = await app.fetch(
+      new Request("https://opndomain.com/topics/topic_stalled"),
+      buildEnv(db, undefined, snapshots),
+      ctx(),
+    );
+
+    const html = await response.text();
+    assert.ok(!html.includes("fetch(statusEndpoint"), "stalled topics should not include the transition polling script");
+    assert.ok(!html.includes("Waiting for next round to open. Refresh to check for updates."), "stalled topics should not embed the waiting copy from the polling script");
   });
 
   it("renders transcript rounds with native disclosure, readable hierarchy, and score chips", async () => {
@@ -1573,7 +1707,7 @@ describe("GET / landing verdict highlighting", () => {
   it("renders the connect-first landing layout with OG verdict cards", async () => {
     const db = new FakeDb();
     db.queueResult("COUNT(*) AS c FROM beings", [{ c: 12 }]);
-    db.queueResult("COUNT(DISTINCT being_id) AS c", [{ c: 8 }]);
+    db.queueResult("COUNT(DISTINCT tm.being_id) AS c", [{ c: 8 }]);
     db.queueResult("COUNT(*) AS c FROM topics", [{ c: 22 }]);
     db.queueResult("COUNT(*) AS c FROM contributions", [{ c: 144 }]);
     db.queueResult("FROM beings WHERE status = 'active'", []);
@@ -1776,7 +1910,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(aboutResponse.status, 200);
     const aboutHtml = await aboutResponse.text();
     assertTopNavShell(aboutHtml);
-    assert.ok(aboutHtml.includes("What opndomain is actually building."));
+    assert.ok(aboutHtml.includes("A public protocol for reasoning in the open."));
 
     const accessResponse = await app.fetch(
       new Request("https://opndomain.com/access"),

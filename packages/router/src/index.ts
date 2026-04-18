@@ -96,7 +96,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-cleanup-v3";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v18";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v19";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1251,8 +1251,6 @@ function buildTopicPageViewModel(
 }
 
 function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, shareLinks: { x: string; reddit: string }) {
-  const promptText = meta.prompt?.trim();
-  const showPrompt = promptText && promptText !== meta.title;
   const shareTitle = `${meta.title} | opndomain`;
   const showShareControls = meta.status === "closed";
   const showVerdictHeader = meta.status === "closed" && viewModel.verdictHeadlineText;
@@ -1269,13 +1267,11 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
       ${showVerdictHeader
         ? `
           <div class="topic-verdict-kicker">${escapeHtml(viewModel.verdictKicker ?? "Verdict")}</div>
-          <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
+          <h1 class="topic-header-prompt">${escapeHtml(meta.prompt)}</h1>
           ${"" /* verdictHeadlineText and verdictLede suppressed — redundant with convergence map + winning argument */}
-          ${showPrompt ? `<p class="topic-header-topic">${escapeHtml(promptText)}</p>` : ""}
         `
         : `
-          <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
-          ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
+          <h1 class="topic-header-prompt">${escapeHtml(meta.prompt)}</h1>
         `}
       <div class="topic-header-actions">
         <a class="topic-header-pill" href="#transcript">Full transcript</a>
@@ -1350,7 +1346,31 @@ type StateSnapshotRound = {
   endsAt?: string | null;
 };
 
-function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefined, topicStatus: string): string {
+type TopicStatusSnapshot = {
+  topicId?: string;
+  status?: string;
+  changeSequence?: number;
+  currentRoundIndex?: number | null;
+  generatedAt?: string;
+  rounds?: StateSnapshotRound[];
+};
+
+function buildTopicStatusPayload(topicId: string, state: TopicStatusSnapshot) {
+  const activeRound = Array.isArray(state.rounds)
+    ? state.rounds.find((round) => round?.status === "active")
+    : null;
+  return {
+    topicId,
+    status: typeof state.status === "string" ? state.status : "unknown",
+    changeSequence: Number.isFinite(state.changeSequence) ? state.changeSequence : null,
+    currentRoundIndex: typeof state.currentRoundIndex === "number" ? state.currentRoundIndex : null,
+    generatedAt: typeof state.generatedAt === "string" ? state.generatedAt : null,
+    activeRoundEndsAt: typeof activeRound?.endsAt === "string" ? activeRound.endsAt : null,
+  };
+}
+
+function renderRoundProgressTracker(topicId: string, state: TopicStatusSnapshot | null, topicStatus: string): string {
+  const stateRounds = state?.rounds;
   if (!Array.isArray(stateRounds) || stateRounds.length === 0) return "";
   if (topicStatus !== "started" && topicStatus !== "open" && topicStatus !== "countdown") return "";
 
@@ -1361,9 +1381,15 @@ function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefine
 
   const activeRound = stateRounds.find((r) => r.status === "active");
   const activeEndsAt = activeRound?.endsAt ?? null;
+  const initialChangeSequence = Number.isFinite(state?.changeSequence) ? state!.changeSequence : null;
+  const statusEndpoint = `/topics/${encodeURIComponent(topicId)}/status.json`;
+  const shouldRenderPollingScript = !!activeEndsAt && initialChangeSequence !== null;
 
   return `
-    <section class="round-tracker" ${activeEndsAt ? `data-ends-at="${escapeHtml(activeEndsAt)}"` : ""}>
+    <section class="round-tracker"
+      ${activeEndsAt ? `data-active-round-ends-at="${escapeHtml(activeEndsAt)}"` : ""}
+      ${initialChangeSequence !== null ? `data-initial-change-sequence="${escapeHtml(String(initialChangeSequence))}"` : ""}
+      ${shouldRenderPollingScript ? `data-status-endpoint="${escapeHtml(statusEndpoint)}"` : ""}>
       <div class="round-tracker-kicker">Debate progress</div>
       <ol class="round-tracker-list">
         ${contentRounds.map((round, i) => {
@@ -1382,41 +1408,86 @@ function renderRoundProgressTracker(stateRounds: StateSnapshotRound[] | undefine
       </ol>
       ${activeEndsAt ? `<div class="round-tracker-countdown" data-countdown-target>Calculating…</div>` : ""}
     </section>
-    ${activeEndsAt ? `
+    ${shouldRenderPollingScript ? `
     <script>
       (() => {
-        const tracker = document.currentScript.previousElementSibling;
+        const tracker = document.currentScript?.previousElementSibling;
         const target = tracker?.querySelector('[data-countdown-target]');
-        const endsAt = tracker?.dataset.endsAt;
-        if (!target || !endsAt) return;
-        const reloadMarkerKey = 'opndomain:round-tracker-reload';
-        const end = new Date(endsAt).getTime();
+        const statusEndpoint = tracker?.dataset.statusEndpoint;
+        const activeRoundEndsAt = tracker?.dataset.activeRoundEndsAt;
+        const initialChangeSequence = Number(tracker?.dataset.initialChangeSequence ?? '');
+        if (!target || !statusEndpoint || !activeRoundEndsAt || !Number.isFinite(initialChangeSequence)) return;
+        const reloadGuardKey = 'opndomain:topic-status-reload';
+        const pollIntervalMs = 5000;
+        const pollWindowMs = 60000;
+        const reloadSuppressionMs = 30000;
+        const waitingMessage = 'Waiting for next round to open. Refresh to check for updates.';
+        const end = new Date(activeRoundEndsAt).getTime();
         let intervalId = 0;
-        let reloadTimeoutId = 0;
-        function scheduleRefresh() {
-          if (reloadTimeoutId) return;
-          target.textContent = 'Round closing...';
-          let delayMs = 1500;
+        let pollTimeoutId = 0;
+        if (!Number.isFinite(end)) return;
+        function showWaitingState() {
+          target.textContent = waitingMessage;
+        }
+        function clearReloadGuard() {
           try {
-            const marker = JSON.parse(sessionStorage.getItem(reloadMarkerKey) ?? 'null');
-            if (marker?.key === endsAt) {
-              if ((marker.count ?? 0) >= 6) {
-                target.textContent = 'Refresh to check for the next round.';
-                return;
-              }
-              delayMs = 5000;
-              sessionStorage.setItem(reloadMarkerKey, JSON.stringify({ key: endsAt, count: (marker.count ?? 0) + 1 }));
-            } else {
-              sessionStorage.setItem(reloadMarkerKey, JSON.stringify({ key: endsAt, count: 1 }));
+            sessionStorage.removeItem(reloadGuardKey);
+          } catch {}
+        }
+        function readReloadGuard() {
+          try {
+            const parsed = JSON.parse(sessionStorage.getItem(reloadGuardKey) ?? 'null');
+            if (parsed && Number.isFinite(parsed.reloadedFor) && Number.isFinite(parsed.at)) {
+              return { reloadedFor: Number(parsed.reloadedFor), at: Number(parsed.at) };
             }
           } catch {}
-          reloadTimeoutId = window.setTimeout(() => window.location.reload(), delayMs);
+          return null;
+        }
+        const reloadGuard = readReloadGuard();
+        if (reloadGuard) {
+          if (initialChangeSequence > reloadGuard.reloadedFor) {
+            clearReloadGuard();
+          } else if (Date.now() - reloadGuard.at <= reloadSuppressionMs) {
+            showWaitingState();
+            window.setTimeout(clearReloadGuard, reloadSuppressionMs - (Date.now() - reloadGuard.at));
+            return;
+          } else {
+            clearReloadGuard();
+          }
+        }
+        async function pollStatus(deadlineAt) {
+          try {
+            const response = await fetch(statusEndpoint, { cache: 'no-store', headers: { accept: 'application/json' } });
+            if (response.ok) {
+              const payload = await response.json();
+              const observedChangeSequence = typeof payload?.changeSequence === 'number'
+                ? payload.changeSequence
+                : Number.NaN;
+              if (Number.isFinite(observedChangeSequence) && observedChangeSequence > initialChangeSequence) {
+                try {
+                  sessionStorage.setItem(reloadGuardKey, JSON.stringify({ reloadedFor: observedChangeSequence, at: Date.now() }));
+                } catch {}
+                window.location.reload();
+                return;
+              }
+            }
+          } catch {}
+          const remainingWindowMs = deadlineAt - Date.now();
+          if (remainingWindowMs <= 0) {
+            showWaitingState();
+            return;
+          }
+          pollTimeoutId = window.setTimeout(() => {
+            void pollStatus(deadlineAt);
+          }, Math.min(pollIntervalMs, remainingWindowMs));
         }
         function tick() {
           const remaining = Math.max(0, end - Date.now());
           if (remaining === 0) {
             if (intervalId) window.clearInterval(intervalId);
-            scheduleRefresh();
+            if (pollTimeoutId) window.clearTimeout(pollTimeoutId);
+            target.textContent = 'Checking for the next round...';
+            void pollStatus(Date.now() + pollWindowMs);
             return;
           }
           const m = Math.floor(remaining / 60000);
@@ -2826,6 +2897,30 @@ app.get("/landing/background.png", (c) => {
   return binaryResponse(bytes, LANDING_HERO_BG_CONTENT_TYPE);
 });
 
+app.get("/topics/:topicId/status.json", async (c) => {
+  const topicId = c.req.param("topicId");
+  const state = await bucketJson<TopicStatusSnapshot>(await c.env.SNAPSHOTS.get(`topics/${topicId}/state.json`));
+
+  if (!state) {
+    return Response.json({
+      topicId,
+      retryable: true,
+      error: "snapshot_missing",
+    }, {
+      status: 404,
+      headers: {
+        "cache-control": CACHE_CONTROL_NO_STORE,
+      },
+    });
+  }
+
+  return Response.json(buildTopicStatusPayload(topicId, state), {
+    headers: {
+      "cache-control": CACHE_CONTROL_NO_STORE,
+    },
+  });
+});
+
 app.get("/topics/:topicId", async (c) => {
   const topicId = c.req.param("topicId");
   return serveCachedHtml(c, {
@@ -2972,6 +3067,12 @@ app.get("/topics/:topicId", async (c) => {
         })
       : "";
     if (meta.status === "closed") {
+      const highlightExcludeContributionIds = new Set<string>([
+        viewModel.featuredAnswer?.id ?? "",
+        viewModel.openingSynthesisContributionId ?? "",
+        viewModel.winningArgument?.contributionId ?? "",
+        viewModel.strongestCounter?.contributionId ?? "",
+      ].filter((value) => value.length > 0));
       const pageBody = [
         // TIER 1 — Above fold
         `<section class="topic-above-fold">${[
@@ -2984,6 +3085,9 @@ app.get("/topics/:topicId", async (c) => {
 
         // TIER 2 — The Story (always visible)
         renderOpeningSynthesis(viewModel),
+        viewModel.verdictHighlights
+          ? renderTopicHighlightsSection(viewModel.verdictHighlights, highlightExcludeContributionIds, agentHandleResolver)
+          : "",
         renderWinningArgument(viewModel, agentHandleResolver),
         renderBothSidesSummary(viewModel, agentHandleResolver),
         renderDissentingViews(viewModel, agentHandleResolver),
@@ -3018,7 +3122,7 @@ app.get("/topics/:topicId", async (c) => {
       `<section class="topic-above-fold">${[
         `<div class="topic-hero-col">
           ${buildTopicHeader(meta, viewModel, shareLinks)}
-          ${renderRoundProgressTracker(state?.rounds as StateSnapshotRound[] | undefined, meta.status)}
+          ${renderRoundProgressTracker(topicId, state as TopicStatusSnapshot | null, meta.status)}
         </div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
