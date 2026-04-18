@@ -78,11 +78,16 @@ class FakeApiService {
 
 class FakeDb {
   private results: Record<string, unknown[]> = {};
+  readonly preparedSql: string[] = [];
   queueResult(pattern: string, rows: unknown[]) {
     this.results[pattern] = rows;
   }
+  sqlMatching(substring: string): string | undefined {
+    return this.preparedSql.find((sql) => sql.includes(substring));
+  }
   prepare(sql: string) {
     const self = this;
+    self.preparedSql.push(sql);
     return {
       bind(..._args: unknown[]) { return this; },
       async first<T>(): Promise<T | null> {
@@ -435,11 +440,10 @@ describe("GET /topics/:topicId (meta tags and share panel)", () => {
     assert.ok(html.includes('class="topic-above-fold"'), "closed topic should render the above-the-fold layout");
     assert.ok(html.includes('class="topic-confidence-widget topic-confidence-widget--verdict"'), "closed topic should render the confidence widget");
     assert.ok(html.includes("Share on X"), "closed topic should have share panel");
-    assert.ok(html.includes("Test prompt"), "closed topic should render the topic prompt in the header");
-    assert.ok(!html.includes('class="topic-header-topic"'), "closed topic should not render the extra kicker sentence above the prompt");
+    assert.ok(html.includes("Test prompt"), "closed topic should keep the topic prompt under the title");
     assert.ok(!html.includes("Structured oversight should be required for frontier labs."), "verdict headline should be suppressed (redundant with convergence map)");
     assert.ok(!html.includes("Frontier labs should not ship without mandatory oversight review."), "verdict lede should be suppressed (redundant with convergence map)");
-    assert.ok(html.includes("Mandatory oversight is a release condition."), "verdict kicker chip should still appear in the header");
+    assert.ok(!html.includes('class="topic-verdict-kicker"'), "closed topic should not render the verdict kicker sentence above the title");
     assert.ok(html.includes('class="topic-editorial"'), "closed topic should render the editorial body section");
     assert.ok(html.includes("Mandatory oversight should be treated as a release condition for frontier labs."), "closed topic should render the editorial copy from the artifact");
     assert.ok(html.includes('class="topic-score-story"'), "closed topic should render the score storytelling section");
@@ -1800,6 +1804,10 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(html.includes("Agent Alpha"), "parent detail should show aggregated leaderboard");
     assert.ok(html.includes("Subdomains"), "parent detail should have subdomains section");
     assert.ok(html.includes("domain-breadcrumb"), "parent detail should have breadcrumb");
+    const parentLeaderSql = db.sqlMatching("SUM(dr.decayed_score)");
+    assert.ok(parentLeaderSql, "expected aggregated leaderboard SQL to be prepared");
+    assert.ok(parentLeaderSql!.includes("b.status = 'active'"), "parent leaderboard must filter inactive beings");
+    assert.ok(parentLeaderSql!.includes("a.status = 'active'"), "parent leaderboard must filter inactive owner agents");
   });
 
   it("renders the subdomain detail page with breadcrumb", async () => {
@@ -1827,6 +1835,10 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(html.includes("Agent Alpha"));
     assert.ok(html.includes("domain-breadcrumb"), "subdomain detail should have breadcrumb");
     assert.ok(html.includes("ai-machine-intelligence"), "breadcrumb should link to parent");
+    const subLeaderSql = db.sqlMatching("FROM domain_reputation dr\n        INNER JOIN beings b");
+    assert.ok(subLeaderSql, "expected subdomain leaderboard SQL to be prepared");
+    assert.ok(subLeaderSql!.includes("b.status = 'active'"), "subdomain leaderboard must filter inactive beings");
+    assert.ok(subLeaderSql!.includes("a.status = 'active'"), "subdomain leaderboard must filter inactive owner agents");
   });
 
   it("redirects legacy beings and agents routes and renders leaderboard index/detail inside the sidebar shell", async () => {
@@ -1861,9 +1873,13 @@ describe("SSR shell coverage for redesigned routes", () => {
     const indexHtml = await indexResponse.text();
     assertTopNavShell(indexHtml);
     assert.ok(indexHtml.includes("Leaderboard"));
+    const indexSql = indexDb.sqlMatching("LEFT JOIN domain_reputation dr ON dr.being_id = b.id");
+    assert.ok(indexSql, "expected leaderboard index SQL to be prepared");
+    assert.ok(indexSql!.includes("b.status = 'active'"), "leaderboard index must filter inactive beings");
+    assert.ok(indexSql!.includes("a.status = 'active'"), "leaderboard index must filter inactive owner agents");
 
     const detailDb = new FakeDb();
-    detailDb.queueResult("WHERE handle = ?", [
+    detailDb.queueResult("WHERE b.handle = ?", [
       { id: "being_1", handle: "agent-alpha", display_name: "Agent Alpha", bio: "Specialist in model evaluations.", trust_tier: "verified" },
     ]);
     detailDb.queueResult("FROM domain_reputation dr", [
@@ -1899,6 +1915,18 @@ describe("SSR shell coverage for redesigned routes", () => {
     const detailHtml = await detailResponse.text();
     assertTopNavShell(detailHtml);
     assert.ok(detailHtml.includes("Contributions"));
+    const detailLookupSql = detailDb.sqlMatching("WHERE b.handle = ?");
+    assert.ok(detailLookupSql, "expected being lookup SQL to be prepared");
+    assert.ok(detailLookupSql!.includes("b.status = 'active'"), "being lookup must filter inactive beings");
+    assert.ok(detailLookupSql!.includes("a.status = 'active'"), "being lookup must filter inactive owner agents");
+
+    const missingDb = new FakeDb();
+    const missingResponse = await app.fetch(
+      new Request("https://opndomain.com/leaderboard/retired-agent"),
+      buildEnv(missingDb),
+      ctx(),
+    );
+    assert.equal(missingResponse.status, 404, "inactive or unknown being should 404");
   });
 
   it("renders about, access, and legacy access redirects correctly", async () => {

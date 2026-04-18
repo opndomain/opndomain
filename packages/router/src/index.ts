@@ -95,7 +95,8 @@ const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-landing-split-v2`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-topics-cleanup-v3";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-domain-groups";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-table-redesign";
+const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-domain-detail-hide-inactive";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-leaderboard-hide-inactive";
 const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-topic-verdict-rework-v19";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
@@ -1251,6 +1252,8 @@ function buildTopicPageViewModel(
 }
 
 function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, shareLinks: { x: string; reddit: string }) {
+  const promptText = meta.prompt?.trim();
+  const showPrompt = promptText && promptText !== meta.title;
   const shareTitle = `${meta.title} | opndomain`;
   const showShareControls = meta.status === "closed";
   const showVerdictHeader = meta.status === "closed" && viewModel.verdictHeadlineText;
@@ -1266,12 +1269,13 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
       </div>
       ${showVerdictHeader
         ? `
-          <div class="topic-verdict-kicker">${escapeHtml(viewModel.verdictKicker ?? "Verdict")}</div>
-          <h1 class="topic-header-prompt">${escapeHtml(meta.prompt)}</h1>
+          <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
+          ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
           ${"" /* verdictHeadlineText and verdictLede suppressed — redundant with convergence map + winning argument */}
         `
         : `
-          <h1 class="topic-header-prompt">${escapeHtml(meta.prompt)}</h1>
+          <h1 class="topic-header-prompt">${escapeHtml(meta.title)}</h1>
+          ${showPrompt ? `<p class="topic-header-description">${escapeHtml(promptText)}</p>` : ""}
         `}
       <div class="topic-header-actions">
         <a class="topic-header-pill" href="#transcript">Full transcript</a>
@@ -3234,7 +3238,7 @@ app.get("/domains/:slug", async (c) => {
   if (isParent) {
     // Parent domain detail: show children grid + aggregated leaderboard
     return serveCachedHtml(c, {
-      pageKey: `${pageHtmlDomainKey(slug)}:2026-04-domain-groups`,
+      pageKey: `${pageHtmlDomainKey(slug)}:${DOMAIN_DETAIL_CACHE_KEY_VERSION}`,
       generationKey: cacheGenerationDomainKey(domain.id),
       cacheControl: CACHE_CONTROL_DIRECTORY,
     }, async () => {
@@ -3252,8 +3256,11 @@ app.get("/domains/:slug", async (c) => {
             SUM(dr.sample_count) AS sample_count
           FROM domain_reputation dr
           INNER JOIN beings b ON b.id = dr.being_id
+          INNER JOIN agents a ON a.id = b.agent_id
           INNER JOIN domains d ON d.id = dr.domain_id
           WHERE d.parent_domain_id = ?
+            AND b.status = 'active'
+            AND a.status = 'active'
           GROUP BY dr.being_id
           ORDER BY decayed_score DESC
           LIMIT 12
@@ -3333,7 +3340,7 @@ app.get("/domains/:slug", async (c) => {
 
   // Subdomain detail: existing view with breadcrumb
   return serveCachedHtml(c, {
-    pageKey: `${pageHtmlDomainKey(slug)}:2026-04-domain-groups`,
+    pageKey: `${pageHtmlDomainKey(slug)}:${DOMAIN_DETAIL_CACHE_KEY_VERSION}`,
     generationKey: cacheGenerationDomainKey(domain.id),
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
@@ -3349,7 +3356,10 @@ app.get("/domains/:slug", async (c) => {
         SELECT b.handle, b.display_name, dr.decayed_score, dr.sample_count
         FROM domain_reputation dr
         INNER JOIN beings b ON b.id = dr.being_id
+        INNER JOIN agents a ON a.id = b.agent_id
         WHERE dr.domain_id = ?
+          AND b.status = 'active'
+          AND a.status = 'active'
         ORDER BY dr.decayed_score DESC, dr.sample_count DESC
         LIMIT 12
       `).bind(domain.id).all<{ handle: string; display_name: string; decayed_score: number; sample_count: number }>(),
@@ -3425,8 +3435,10 @@ app.get("/leaderboard", async (c) =>
         COALESCE(SUM(dr.decayed_score), 0) AS aggregate_score,
         COALESCE(SUM(dr.sample_count), 0) AS aggregate_samples
       FROM beings b
+      INNER JOIN agents a ON a.id = b.agent_id
       LEFT JOIN contributions c ON c.being_id = b.id
       LEFT JOIN domain_reputation dr ON dr.being_id = b.id
+      WHERE b.status = 'active' AND a.status = 'active'
       GROUP BY b.id
       HAVING aggregate_samples > 0
       ORDER BY (CAST(aggregate_score AS REAL) / aggregate_samples) DESC, contribution_count DESC, b.handle ASC
@@ -3519,9 +3531,10 @@ app.get("/leaderboard", async (c) =>
 app.get("/leaderboard/:handle", async (c) => {
   const handle = c.req.param("handle");
   const being = await c.env.DB.prepare(`
-    SELECT id, handle, display_name, bio, trust_tier
-    FROM beings
-    WHERE handle = ?
+    SELECT b.id, b.handle, b.display_name, b.bio, b.trust_tier
+    FROM beings b
+    INNER JOIN agents a ON a.id = b.agent_id
+    WHERE b.handle = ? AND b.status = 'active' AND a.status = 'active'
   `).bind(handle).first<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>();
   if (!being) {
     return htmlResponse(renderPage("Agent Not Found", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
