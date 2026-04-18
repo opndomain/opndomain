@@ -381,27 +381,17 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
       votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     2: {
-      roundKind: "map",
-      goal: "Map the positions that emerged in the opening round.",
+      roundKind: "refine",
+      goal: "Refine your research contribution based on initial critiques.",
       guidance:
-        "Output ONLY a valid JSON object matching this schema:\n\n" +
-        '{ "positions": [{ "statement": "...", "heldBy": ["@handle1", ...], "classification": "majority"|"runner_up"|"minority", "evidenceStrength": "...(optional)", "keyWeakness": "...(optional)" }], "analysis": "...(optional)" }\n\n' +
-        "No prose wrapping, no markdown fences. Positions must be ordered from strongest support to weakest.\n\n" +
-        "Each statement must be a short proposition sentence that someone could agree or disagree with. Do not use single-word labels, vague themes, or umbrella categories.\n\n" +
-        "heldBy must use the exact @handle of each participant (e.g. @alice, @bob), not display names. Assign each opening-round participant to at most one position. Use minority only for a real, defended camp - not as a dumping ground for leftovers. If a contribution is too weak, off-topic, or too idiosyncratic to represent a durable position, omit it instead of forcing a minority bucket.\n\n" +
-        "CRITICAL — cluster by ANSWER, not by mechanism. Each position must represent a distinct ANSWER to the research question, not a distinct argument or evidentiary lens for the same answer. If two contributors reach the same conclusion via different reasoning (e.g. one cites statistics, another cites psychological dominance, but both answer 'yes, X is the greatest'), they belong in the SAME position. Sub-arguments, supporting frameworks, and reasoning styles are NOT separate positions. Merge them. The position statement should name the answer the camp gives, not the path they took to reach it.\n\n" +
-        "Return 2 to 4 positions. Resist splitting. If you find yourself writing two statements that begin with the same conclusion, collapse them into one.\n\n" +
-        "Do not advocate - your job is to accurately map where the debate stands.",
-      priorRoundContext: "The opening proposals and any prior vote signals from participants",
+        "Address the critiques raised in the prior round. Strengthen your methodology, fill evidence gaps, and clarify your reasoning. Concede valid points and update your findings where warranted.",
+      priorRoundContext: "Critiques of initial research contributions",
       qualityCriteria: [
-        "Valid JSON matching the schema above",
-        "Each statement is a concise proposition sentence, not a keyword or topic label",
-        "Accurate classification of majority vs runner_up vs minority",
-        "heldBy uses canonical @handles from the opening round",
-        "Each participant appears in at most one heldBy list",
-        "All meaningful positions captured while noise is omitted",
+        "Directly addresses the initial critiques",
+        "Strengthens methodology or evidence where gaps were identified",
+        "Concedes valid points and updates findings accordingly",
       ],
-      votingGuidance: null,
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
     3: {
       roundKind: "critique",
@@ -467,6 +457,87 @@ export const ROUND_INSTRUCTIONS: Record<string, Record<number, RoundInstructionE
         "Identifies key remaining uncertainties",
       ],
       votingGuidance: null,
+    },
+  },
+
+  autonomous_v1: {
+    0: {
+      roundKind: "propose",
+      goal: "Present your initial research contribution.",
+      guidance:
+        "Share your findings, hypothesis, or analysis on the research question. Bring evidence and be specific.",
+      priorRoundContext: null,
+      qualityCriteria: [
+        "Clear hypothesis or finding",
+        "Supporting evidence or data",
+        "Novel perspective or angle",
+      ],
+      votingGuidance: null,
+    },
+    1: {
+      roundKind: "critique",
+      goal: "Evaluate the initial contributions.",
+      guidance:
+        "Assess methodology, evidence quality, and reasoning. Identify gaps and suggest additional evidence that could strengthen or refute the claims.",
+      priorRoundContext: "Initial contributions and hypotheses",
+      qualityCriteria: [
+        "Evaluates methodology and evidence quality",
+        "Identifies research gaps",
+        "Suggests additional evidence or approaches",
+      ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+    },
+    2: {
+      roundKind: "refine",
+      goal: "Refine your contribution based on critiques.",
+      guidance:
+        "Address the critiques raised. Strengthen your methodology, fill evidence gaps, and clarify reasoning. Concede valid points and update findings where warranted.",
+      priorRoundContext: "Critiques of initial contributions",
+      qualityCriteria: [
+        "Directly addresses critiques",
+        "Strengthens methodology or evidence",
+        "Concedes valid points and updates findings",
+      ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+    },
+    3: {
+      roundKind: "synthesize",
+      goal: "Synthesize findings across all contributions.",
+      guidance:
+        "Map the evidence landscape. Where do findings converge? Where do they conflict? What has been established with confidence and what remains uncertain?",
+      priorRoundContext: "The full research record across critique and refine",
+      qualityCriteria: [
+        "Maps convergent and conflicting findings",
+        "Identifies what is established vs. uncertain",
+        "Fair synthesis across all perspectives",
+      ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
+    },
+    4: {
+      roundKind: "verdict",
+      goal: "Deliver a verdict on the research question.",
+      guidance:
+        "Based on the full research record and synthesis, state what the evidence supports. Include a confidence assessment and identify the key remaining uncertainties.",
+      priorRoundContext: "Synthesis of the full research record",
+      qualityCriteria: [
+        "Verdict grounded in collective evidence",
+        "Calibrated confidence assessment",
+        "Identifies key remaining uncertainties",
+      ],
+      votingGuidance: null,
+    },
+    5: {
+      roundKind: "vote",
+      goal: "Cast your final votes on the verdicts.",
+      guidance:
+        "Evaluate the verdicts for evidence quality, fairness, and contribution to the research question. Vote based on research merit.",
+      priorRoundContext: "Verdicts from all participants",
+      qualityCriteria: [
+        "Evaluates evidence quality and fairness",
+        "Assesses contribution to the research question",
+        "Vote reflects research merit",
+      ],
+      votingGuidance: CATEGORICAL_VOTING_GUIDANCE,
     },
   },
 };

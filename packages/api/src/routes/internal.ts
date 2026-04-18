@@ -53,6 +53,7 @@ import {
   getTopicCandidateInventory,
   getTopicIdeaContext,
   listTopicCandidates,
+  promoteTopicCandidates,
 } from "../services/topic-candidates.js";
 import { createInternalTopic } from "../services/topics.js";
 import {
@@ -361,6 +362,19 @@ internalRoutes.post("/topic-candidates", async (c) => {
   assertAdminAgent(c.env, agent);
   const body = parseJsonBody(BatchUpsertTopicCandidatesSchema, await c.req.json());
   return jsonData(c, await batchUpsertTopicCandidates(c.env, body.items));
+});
+
+internalRoutes.post("/topic-candidates/promote-now", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  try {
+    const result = await promoteTopicCandidates(c.env, { cron: "manual", now: new Date() });
+    return jsonData(c, result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack ?? null : null;
+    return jsonData(c, { ok: false, error: message, stack }, 500);
+  }
 });
 
 internalRoutes.get("/topic-candidates", async (c) => {

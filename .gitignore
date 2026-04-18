@@ -10,6 +10,7 @@ packages/mcp/test-dist
 packages/shared/test-dist
 scripts/sim-agents*.json
 logs/
+scripts/producer/tick.log
 plan-body.json
 .agents/
 .dual-agent/

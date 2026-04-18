@@ -457,6 +457,7 @@ export async function promoteTopicCandidates(env: ApiEnv, options?: { cron?: str
         SELECT 1
         FROM topics t
         WHERE t.domain_id = d.id
+          AND t.archived_at IS NULL
           AND t.topic_format IN ('scheduled_research', 'rolling_research')
           AND t.status IN ('open', 'countdown', 'started')
       )

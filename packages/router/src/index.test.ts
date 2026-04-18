@@ -205,32 +205,46 @@ describe("GET /topics/:topicId/og.png", () => {
     assert.equal(response.status, 404);
   });
 
-  it("returns 404 when artifact is not published", async () => {
+  it("generates a fallback card when artifact is not published", async () => {
     const db = new FakeDb();
-    db.queueResult("topic_artifacts", [{ id: "t1", artifact_status: "pending", og_image_key: null }]);
+    db.queueResult("topic_artifacts", [{
+      id: "t1", title: "Test Topic", status: "open", prompt: null,
+      domain_name: "energy", parent_domain_name: null,
+      artifact_status: "pending", og_image_key: null, member_count: 3,
+    }]);
     const response = await app.fetch(
       new Request("https://opndomain.com/topics/t1/og.png"),
       buildEnv(db),
       ctx(),
     );
-    assert.equal(response.status, 404);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/png");
   });
 
-  it("returns 404 when R2 object is missing", async () => {
+  it("generates a fallback card when R2 object is missing", async () => {
     const db = new FakeDb();
-    db.queueResult("topic_artifacts", [{ id: "t1", artifact_status: "published", og_image_key: "og/t1.png" }]);
-    const artifacts = new FakeR2(); // empty â€” no object stored
+    db.queueResult("topic_artifacts", [{
+      id: "t1", title: "Test Topic", status: "closed", prompt: null,
+      domain_name: "energy", parent_domain_name: null,
+      artifact_status: "published", og_image_key: "og/t1.png", member_count: 5,
+    }]);
+    const artifacts = new FakeR2(); // empty -- no object stored
     const response = await app.fetch(
       new Request("https://opndomain.com/topics/t1/og.png"),
       buildEnv(db, artifacts),
       ctx(),
     );
-    assert.equal(response.status, 404);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("content-type"), "image/png");
   });
 
   it("returns 200 image/png when published verdict card exists", async () => {
     const db = new FakeDb();
-    db.queueResult("topic_artifacts", [{ id: "t1", artifact_status: "published", og_image_key: "og/t1.png" }]);
+    db.queueResult("topic_artifacts", [{
+      id: "t1", title: "Test Topic", status: "closed", prompt: null,
+      domain_name: "energy", parent_domain_name: null,
+      artifact_status: "published", og_image_key: "og/t1.png", member_count: 12,
+    }]);
     const artifacts = new FakeR2();
     artifacts.set("og/t1.png", "PNG_BYTES");
     const response = await app.fetch(
@@ -1734,7 +1748,7 @@ describe("GET / landing verdict highlighting", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.ok(html.includes("A public protocol for reasoning in the open."), "landing page should use the current hero headline");
-    assert.ok(html.includes("opndomain turns private model deliberation into a shared process"), "landing page should render the current hero support line");
+    assert.ok(html.includes("opndomain turns private model deliberation into a shared research process"), "landing page should render the current hero support line");
     assert.ok(html.includes("See live topics"), "landing page should expose the primary access action");
     assert.ok(html.includes('href="/topics"'), "landing page should point primary access actions to the topics surface");
     assert.ok(html.includes("lp-rail"), "landing page should render the rolling verdict card rail");
@@ -2001,7 +2015,8 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.equal(privacyResponse.status, 200);
     const privacyHtml = await privacyResponse.text();
     assertTopNavShell(privacyHtml);
-    assert.ok(privacyHtml.includes("Launch privacy"));
+    assert.ok(privacyHtml.includes("Privacy notice for opndomain."));
+    assert.ok(privacyHtml.includes("Public protocol data is shared publicly by design."));
   });
 
   it("renders auth success and error states inside the top-nav-only shell", async () => {

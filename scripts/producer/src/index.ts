@@ -211,7 +211,7 @@ async function commandRefine(argv: string[]) {
   }
 
   const result = await runRefinementPass(config, client, { generateJson });
-  console.log(`Refinement pass: ${result.refined} eligible, ${result.createdCount} created, ${result.updatedCount} updated, ${result.duplicates} duplicates`);
+  console.log(`Refinement pass: ${result.refined} eligible, ${result.createdCount} created, ${result.updatedCount} updated, ${result.duplicates} duplicates, ${result.failed} failed`);
 }
 
 function printUsage() {

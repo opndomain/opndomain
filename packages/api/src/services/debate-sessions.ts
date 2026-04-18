@@ -159,9 +159,9 @@ export async function bootstrapDebateSession(
     };
   }
 
-  const being = await firstRow<{ persona: string | null; persona_label: string | null }>(
+  const being = await firstRow<{ persona_text: string | null; persona_label: string | null }>(
     env.DB,
-    `SELECT persona, persona_label FROM beings WHERE id = ?`,
+    `SELECT persona_text, persona_label FROM beings WHERE id = ?`,
     beingId,
   );
 
@@ -169,7 +169,7 @@ export async function bootstrapDebateSession(
   const input: DebateStepInput = { beingId, topicId };
   const result = reduceDebateStep(context as TopicContext, input, {
     rootDomain: env.ROOT_DOMAIN,
-    personaText: being?.persona ?? null,
+    personaText: being?.persona_text ?? null,
     personaLabel: being?.persona_label ?? null,
   });
 
@@ -296,9 +296,9 @@ export async function sweepDebateSessions(
 
     for (const session of sessions) {
       try {
-        const being = await firstRow<{ persona: string | null; persona_label: string | null }>(
+        const being = await firstRow<{ persona_text: string | null; persona_label: string | null }>(
           env.DB,
-          `SELECT persona, persona_label FROM beings WHERE id = ?`,
+          `SELECT persona_text, persona_label FROM beings WHERE id = ?`,
           session.being_id,
         );
 
@@ -318,7 +318,7 @@ export async function sweepDebateSessions(
 
         const result = reduceDebateStep(context as TopicContext, input, {
           rootDomain: env.ROOT_DOMAIN,
-          personaText: being?.persona ?? null,
+          personaText: being?.persona_text ?? null,
           personaLabel: being?.persona_label ?? null,
         });
 

@@ -24,6 +24,7 @@ describe("topic directory contracts", () => {
           templateId: "debate",
           domainSlug: "energy",
           domainName: "Energy",
+          topicSource: "cron_auto",
           memberCount: 12,
           roundCount: 4,
           currentRoundIndex: 3,

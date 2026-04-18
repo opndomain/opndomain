@@ -20,6 +20,7 @@ import {
   topicVerdictPresentationArtifactKey,
   tryParseMapRoundBody,
   VerdictPresentationSchema,
+  renderTopicCardOgPng,
 } from "@opndomain/shared";
 import type { MapRoundBody } from "@opndomain/shared";
 import type { AnalyticsOverviewResponse, AnalyticsTopicResponse, AnalyticsVoteReliabilityResponse } from "@opndomain/shared";
@@ -31,7 +32,7 @@ import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
-import { loadLandingSnapshot, renderLandingPage, renderAboutPage, renderConnectPage } from "./landing.js";
+import { loadLandingSnapshot, renderLandingPage, renderAboutPage, renderConnectPage, renderPrivacyPage, renderTermsPage } from "./landing.js";
 import { adminRoutes } from "./admin/index.js";
 
 type RouterEnv = {
@@ -2455,7 +2456,7 @@ async function readVerdictPresentation(c: any, topicId: string) {
 
 function buildTopicHeadMetadata(env: RouterEnv["Bindings"], meta: TopicPageMeta, description: string): PageHeadMetadata {
   const canonicalUrl = topicPageUrl(env, meta.id);
-  const hasOgImage = meta.status === "closed" && meta.artifact_status === "published" && Boolean(meta.og_image_key);
+  const ogImageUrl = topicPageUrl(env, meta.id, "/og.png");
 
   return {
     canonicalUrl,
@@ -2463,13 +2464,13 @@ function buildTopicHeadMetadata(env: RouterEnv["Bindings"], meta: TopicPageMeta,
     ogUrl: canonicalUrl,
     ogTitle: `${meta.title} | opndomain`,
     ogDescription: description,
-    ogImageUrl: hasOgImage ? topicPageUrl(env, meta.id, "/og.png") : undefined,
-    ogImageAlt: hasOgImage ? `Verdict card for ${meta.title}` : undefined,
-    twitterCard: hasOgImage ? "summary_large_image" : "summary",
+    ogImageUrl,
+    ogImageAlt: `Topic card for ${meta.title}`,
+    twitterCard: "summary_large_image",
     twitterTitle: `${meta.title} | opndomain`,
     twitterDescription: description,
-    twitterImageUrl: hasOgImage ? topicPageUrl(env, meta.id, "/og.png") : undefined,
-    twitterImageAlt: hasOgImage ? `Verdict card for ${meta.title}` : undefined,
+    twitterImageUrl: ogImageUrl,
+    twitterImageAlt: `Topic card for ${meta.title}`,
   };
 }
 
@@ -2902,23 +2903,57 @@ app.get("/topics", async (c) => {
 
 app.get("/topics/:topicId/og.png", async (c) => {
   const topicId = c.req.param("topicId");
-  const artifact = await c.env.DB.prepare(`
-    SELECT t.id, ta.artifact_status, ta.og_image_key
+  const row = await c.env.DB.prepare(`
+    SELECT
+      t.id,
+      t.title,
+      t.status,
+      t.prompt,
+      d.name AS domain_name,
+      pd.name AS parent_domain_name,
+      ta.artifact_status,
+      ta.og_image_key,
+      (SELECT COUNT(*) FROM topic_members tm WHERE tm.topic_id = t.id AND tm.status = 'active') AS member_count
     FROM topics t
+    INNER JOIN domains d ON d.id = t.domain_id
+    LEFT JOIN domains pd ON pd.id = d.parent_domain_id
     LEFT JOIN topic_artifacts ta ON ta.topic_id = t.id
     WHERE t.id = ? AND t.archived_at IS NULL
-  `).bind(topicId).first<{ id: string; artifact_status: string | null; og_image_key: string | null }>();
+  `).bind(topicId).first<{
+    id: string;
+    title: string;
+    status: string;
+    prompt: string | null;
+    domain_name: string;
+    parent_domain_name: string | null;
+    artifact_status: string | null;
+    og_image_key: string | null;
+    member_count: number;
+  }>();
 
-  if (!artifact || artifact.artifact_status !== "published" || !artifact.og_image_key) {
+  if (!row) {
     return pngNotFoundResponse();
   }
 
-  const object = await c.env.PUBLIC_ARTIFACTS.get(artifact.og_image_key);
-  if (!object) {
-    return pngNotFoundResponse();
+  // Serve pre-published artifact for closed topics when available
+  if (row.artifact_status === "published" && row.og_image_key) {
+    const object = await c.env.PUBLIC_ARTIFACTS.get(row.og_image_key);
+    if (object) {
+      return pngResponse(object.body);
+    }
   }
 
-  return pngResponse(object.body);
+  // Generate topic-card PNG on the fly for open/stalled topics (or missing artifacts)
+  const png = renderTopicCardOgPng({
+    title: row.title,
+    prompt: row.prompt,
+    domainName: row.domain_name,
+    parentDomainName: row.parent_domain_name,
+    memberCount: row.member_count,
+    status: row.status,
+  });
+
+  return pngResponse(png);
 });
 
 app.get("/landing/background.png", (c) => {
@@ -3093,15 +3128,12 @@ app.get("/topics/:topicId", async (c) => {
     const head = buildTopicHeadMetadata(c.env, meta, description);
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
-    const hasPublishedOgCard = meta.status === "closed" && meta.artifact_status === "published" && Boolean(meta.og_image_key);
     const sharePanel = meta.status === "closed"
       ? topicSharePanel({
           url: canonicalUrl,
           title: meta.title,
           lede: "Push the outcome first: send readers straight to the verdict, transcript highlights, and social preview card.",
-          note: hasPublishedOgCard
-            ? "Large-image preview is ready for X and Reddit shares."
-            : "No published verdict card is available, so shares will fall back to summary metadata.",
+          note: "Large-image preview is ready for X and Reddit shares.",
           xLink: { href: shareLinks.x, label: "Share on X" },
           redditLink: { href: shareLinks.reddit, label: "Share on Reddit" },
         })
@@ -3667,7 +3699,7 @@ app.get("/leaderboard/:handle", async (c) => {
     return htmlResponse(renderPage("Agent Not Found", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
-    pageKey: `${pageHtmlBeingKey(handle)}:2026-04-frontend-unify`,
+    pageKey: `${pageHtmlBeingKey(handle)}:2026-04-topic-cards-v5`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
@@ -3680,20 +3712,40 @@ app.get("/leaderboard/:handle", async (c) => {
         ORDER BY dr.decayed_score DESC
       `).bind(being.id).all<{ slug: string; name: string; decayed_score: number; sample_count: number }>(),
       c.env.DB.prepare(`
-        SELECT t.id AS topic_id, t.title, r.round_kind, c.submitted_at
+        SELECT t.id AS topic_id, t.title, t.prompt, t.status AS topic_status,
+               d.name AS domain_name, pd.name AS parent_domain_name,
+               r.round_kind, r.sequence_index,
+               c.body, c.submitted_at,
+               cs.substance_score
         FROM contributions c
         INNER JOIN topics t ON t.id = c.topic_id
         INNER JOIN rounds r ON r.id = c.round_id
+        LEFT JOIN domains d ON d.id = t.domain_id
+        LEFT JOIN domains pd ON pd.id = d.parent_domain_id
+        LEFT JOIN contribution_scores cs ON cs.contribution_id = c.id
         WHERE c.being_id = ?
         ORDER BY c.submitted_at DESC
-        LIMIT 20
-      `).bind(being.id).all<{ topic_id: string; title: string; round_kind: string; submitted_at: string }>(),
+        LIMIT 50
+      `).bind(being.id).all<{ topic_id: string; title: string; prompt: string | null; topic_status: string; domain_name: string | null; parent_domain_name: string | null; round_kind: string; sequence_index: number; body: string; submitted_at: string; substance_score: number | null }>(),
     ]);
     const repRows = (reputation.results ?? []).map((r) => ({
       ...r,
       avg_score: Number(r.decayed_score ?? 0) / Math.max(1, Number(r.sample_count ?? 0)),
     }));
     const histRows = history.results ?? [];
+    // Group contributions by topic
+    type ContribEntry = { round_kind: string; sequence_index: number; body: string; substance_score: number | null; submitted_at: string };
+    const topicGroups: { topic_id: string; title: string; prompt: string | null; topic_status: string; domain_name: string | null; parent_domain_name: string | null; contributions: ContribEntry[] }[] = [];
+    const topicIndex = new Map<string, number>();
+    for (const row of histRows) {
+      let idx = topicIndex.get(row.topic_id);
+      if (idx === undefined) {
+        idx = topicGroups.length;
+        topicIndex.set(row.topic_id, idx);
+        topicGroups.push({ topic_id: row.topic_id, title: row.title, prompt: row.prompt, topic_status: row.topic_status, domain_name: row.domain_name, parent_domain_name: row.parent_domain_name, contributions: [] });
+      }
+      topicGroups[idx].contributions.push({ round_kind: row.round_kind, sequence_index: row.sequence_index, body: row.body, substance_score: row.substance_score, submitted_at: row.submitted_at });
+    }
     const initial = (being.display_name || being.handle || "?")[0].toUpperCase();
     const totalScore = repRows.reduce((sum, r) => sum + Number(r.decayed_score ?? 0), 0);
     const totalSamples = repRows.reduce((sum, r) => sum + Number(r.sample_count ?? 0), 0);
@@ -3720,10 +3772,46 @@ app.get("/leaderboard/:handle", async (c) => {
             </div>
           ` : ""}
 
-          ${histRows.length ? `
+          ${topicGroups.length ? `
             <div class="leaderboard-profile-section leaderboard-profile-section--contrib">
               <div class="leaderboard-profile-section-label">Contributions</div>
-              ${histRows.map((row) => `<div class="leaderboard-profile-row"><a href="/topics/${escapeHtml(row.topic_id)}">${escapeHtml(row.title)}</a><span class="leaderboard-profile-mono">${escapeHtml(row.round_kind)}</span></div>`).join("")}
+              ${topicGroups.map((group) => {
+                const domainLabel = group.parent_domain_name
+                  ? `${escapeHtml(group.parent_domain_name)} / ${escapeHtml(group.domain_name ?? "")}`
+                  : escapeHtml(group.domain_name ?? "");
+                const stateLabel = group.topic_status === "closed" ? "Consensus" : "Contested";
+                return `
+                <details class="profile-topic-group">
+                  <summary class="profile-topic-summary" onclick="if(event.target.closest('a'))event.preventDefault()">
+                    <article class="topics-card profile-topics-card">
+                      <div class="topics-card-link">
+                        <div class="topics-card-copy">
+                          <h2><a href="/topics/${escapeHtml(group.topic_id)}">${escapeHtml(group.title)}</a></h2>
+                          ${group.prompt ? `<p class="topics-card-preview">${escapeHtml(group.prompt)}</p>` : ""}
+                        </div>
+                        <div class="topics-card-meta">
+                          <div class="topics-card-stat"><span>Domain</span><span>${domainLabel}</span></div>
+                          <div class="topics-card-stat"><span>Rounds</span><span>${group.contributions.length}</span></div>
+                          <div class="topics-card-stat"><span>State</span><span>${stateLabel}</span></div>
+                        </div>
+                      </div>
+                    </article>
+                    <span class="profile-topic-toggle"></span>
+                  </summary>
+                  <div class="profile-topic-rounds">
+                    ${group.contributions.map((c) => {
+                      const scoreLabel = c.substance_score != null ? c.substance_score.toFixed(1) : "";
+                      return `<details class="profile-round-entry">
+                        <summary class="profile-round-header">
+                          <span class="profile-round-kind">R${c.sequence_index + 1} · ${escapeHtml(c.round_kind)}</span>
+                          ${scoreLabel ? `<span class="profile-round-score">${scoreLabel}</span>` : ""}
+                        </summary>
+                        <p class="profile-round-body">${escapeHtml(c.body)}</p>
+                      </details>`;
+                    }).join("")}
+                  </div>
+                </details>
+              `; }).join("")}
             </div>
           ` : ""}
 
@@ -3751,8 +3839,8 @@ app.get("/register", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
 app.get("/verify-email", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
 app.get("/access", (c) => renderAccessPage(c, { activePanel: (c.req.query("panel") as "signin" | "register" | "verify" | null) ?? "signin" }));
 app.get("/mcp", () => htmlResponse(renderConnectPage(), CACHE_CONTROL_STATIC));
-app.get("/terms", () => htmlResponse(renderPage("Terms", hero("Terms", "Launch terms", "Protocol launch terms placeholder for Phase 6."), undefined, undefined, undefined, authShell("Terms", "Launch terms")), CACHE_CONTROL_STATIC));
-app.get("/privacy", () => htmlResponse(renderPage("Privacy", hero("Privacy", "Launch privacy", "Protocol launch privacy placeholder for Phase 6."), undefined, undefined, undefined, authShell("Privacy", "Protocol privacy")), CACHE_CONTROL_STATIC));
+app.get("/terms", () => htmlResponse(renderTermsPage(), CACHE_CONTROL_STATIC));
+app.get("/privacy", () => htmlResponse(renderPrivacyPage(), CACHE_CONTROL_STATIC));
 app.get("/welcome", () => htmlResponse(renderPage("Welcome", hero("Welcome", "Registration next steps", "Register an agent, verify email, then mint a session through magic link or client credentials."), undefined, undefined, undefined, authShell("Welcome", "Registration next steps"))));
 
 app.post("/register", async (c) => {

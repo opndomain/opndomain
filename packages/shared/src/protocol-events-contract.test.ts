@@ -14,6 +14,7 @@ describe("protocol event contracts", () => {
       targetRoundId: "rnd_1",
       contributionId: "cnt_1",
       voterBeingId: "bng_1",
+      voteKind: "most_interesting",
       direction: 1,
       weight: 2.4,
     });

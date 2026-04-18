@@ -30,6 +30,8 @@ class FakePreparedStatement {
 class FakeDb {
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
   batches: Array<Array<{ sql: string; bindings: unknown[] }>> = [];
+  firstCalls: string[] = [];
+  allCalls: string[] = [];
   throwOnFirstMatch: RegExp | null = null;
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
@@ -52,6 +54,7 @@ class FakeDb {
   }
 
   consumeFirst<T>(sql: string): T | null {
+    this.firstCalls.push(sql);
     if (this.throwOnFirstMatch?.test(sql)) {
       throw new Error(`forced first() failure for ${sql}`);
     }
@@ -68,6 +71,7 @@ class FakeDb {
   }
 
   consumeAll<T>(sql: string): T[] {
+    this.allCalls.push(sql);
     const entry = Array.from(this.allQueue.entries())
       .filter(([fragment]) => sql.includes(fragment))
       .sort((left, right) => right[0].length - left[0].length)[0];
@@ -318,6 +322,22 @@ describe("topic candidates", () => {
     assert.ok(db.batches.some((batch) => batch.some((statement) => statement.sql.includes("INSERT INTO topics"))));
     assert.ok(db.batches.every((batch) => batch.every((statement) => !statement.sql.includes("INSERT INTO topic_members"))));
     assert.ok(db.runs.some((entry) => entry.sql.includes("SET status = 'consumed'")));
+  });
+
+  it("restricts the promotion gap query to non-archived blocking topics", async () => {
+    const db = new FakeDb();
+    db.queueAll("SELECT d.id", []);
+    await promoteTopicCandidates(buildEnv(db), { cron: "*/1 * * * *", now: new Date("2026-03-31T00:00:00.000Z") });
+    const gapSql = db.allCalls.find((sql) => sql.includes("SELECT d.id") && sql.includes("FROM domains"));
+    assert.ok(gapSql, "expected a domain-gap query");
+    assert.ok(
+      gapSql!.includes("t.archived_at IS NULL"),
+      "promotion gap query must exclude archived topics so archived-but-open rows don't block their domain",
+    );
+    assert.ok(
+      gapSql!.includes("t.status IN ('open', 'countdown', 'started')"),
+      "promotion gap query must still guard against currently active lifecycle states",
+    );
   });
 
   it("marks invalid candidates failed instead of promoting them", async () => {

@@ -36,6 +36,8 @@ class FakePreparedStatement {
 
 class FakeDb {
   readonly runs: Array<{ sql: string; bindings: unknown[] }> = [];
+  readonly firstCalls: string[] = [];
+  readonly allCalls: string[] = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -59,6 +61,7 @@ class FakeDb {
   }
 
   consumeFirst<T>(sql: string, _bindings: unknown[] = []): T | null {
+    this.firstCalls.push(sql);
     const entry = Array.from(this.firstQueue.entries()).find(([fragment]) => sql.includes(fragment));
     if (!entry) return null;
     const [, rows] = entry;
@@ -68,6 +71,7 @@ class FakeDb {
   }
 
   consumeAll<T>(sql: string, _bindings: unknown[] = []): T[] {
+    this.allCalls.push(sql);
     const entry = Array.from(this.allQueue.entries()).find(([fragment]) => sql.includes(fragment));
     if (!entry) return [];
     this.allQueue.delete(entry[0]);
@@ -208,7 +212,7 @@ describe("debate session bootstrap reactivates stale rows", () => {
     // 1. UPDATE ... SET status = 'active' WHERE ... AND status = 'stale'  (reactivate)
     // 2. INSERT OR IGNORE (createDebateSession — no-op if row exists after reactivate)
     // 3. getTopicRow  — queue topic row
-    // 4. SELECT persona, persona_label FROM beings
+    // 4. SELECT persona_text, persona_label FROM beings
     // 5. buildTopicContextCore queries — rounds, members, transcript, etc.
 
     // Topic row for getTopicRow (two reads — getTopicRow + buildTopicContextCore uses it passed in)
@@ -240,8 +244,8 @@ describe("debate session bootstrap reactivates stale rows", () => {
     };
     // getTopicRow queried via "FROM topics"
     db.queueFirst("FROM topics", [topicRow]);
-    // Being persona
-    db.queueFirst("FROM beings WHERE id", [{ persona: null, persona_label: null }]);
+    // Being persona — must use persona_text (not persona) to match the column shipped in migration 023.
+    db.queueFirst("FROM beings WHERE id", [{ persona_text: "Steady empirical critic", persona_label: "empirical" }]);
     // buildTopicContextCore queries — return empty results for simplicity
     // The topic status is "open" with no active round, so reducer returns awaiting_round_start
 
@@ -256,6 +260,18 @@ describe("debate session bootstrap reactivates stale rows", () => {
       run.sql.includes("status = 'active'") && run.sql.includes("status = 'stale'"),
     );
     assert.ok(reactivateRun, "should issue UPDATE to reactivate stale row");
+
+    // Regression guard: the SELECT must reference persona_text, not the pre-migration `persona` column.
+    const personaSelect = db.firstCalls.find((sql) => sql.includes("FROM beings WHERE id"));
+    assert.ok(personaSelect, "expected a SELECT against beings by id");
+    assert.ok(
+      personaSelect!.includes("persona_text") && personaSelect!.includes("persona_label"),
+      "persona fetch must select persona_text and persona_label (migration 023)",
+    );
+    assert.ok(
+      !/\bpersona\b[^_]/i.test(personaSelect!),
+      "persona fetch must not reference the pre-migration `persona` column",
+    );
 
     // Verify KV flag was written
     assert.ok(kv.store.has("debate-flag:bng_1:top_1"), "should write KV flag for reactivated session");

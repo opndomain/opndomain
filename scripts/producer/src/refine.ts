@@ -69,37 +69,43 @@ export async function runRefinementPass(
 ) {
   const eligible = await apiClient.getRefinementEligible();
   if (eligible.length === 0) {
-    return { refined: 0, createdCount: 0, updatedCount: 0, duplicates: 0 };
+    return { refined: 0, createdCount: 0, updatedCount: 0, duplicates: 0, failed: 0 };
   }
 
   const candidates: TopicCandidate[] = [];
+  let failed = 0;
   for (const topic of eligible) {
     const prompt = buildRefinementLLMPrompt(topic);
-    const results = await llm.generateJson(config, REFINEMENT_SYSTEM_PROMPT, prompt);
-    const generated = results[0];
-    if (!isValidGeneratedRefinement(generated)) {
-      continue;
-    }
+    try {
+      const results = await llm.generateJson(config, REFINEMENT_SYSTEM_PROMPT, prompt);
+      const generated = results[0];
+      if (!isValidGeneratedRefinement(generated)) {
+        continue;
+      }
 
-    candidates.push({
-      id: `refinement_${topic.id}`,
-      source: REFINEMENT_CANDIDATE_SOURCE,
-      sourceId: topic.id,
-      domainId: topic.domainId,
-      title: generated.title.trim(),
-      prompt: generated.prompt.trim(),
-      templateId: "debate",
-      topicFormat: "scheduled_research",
-      cadenceFamily: "scheduled",
-      cadenceOverrideMinutes: 2,
-      minTrustTier: "unverified",
-      priorityScore: 90,
-      publishedAt: null,
-    });
+      candidates.push({
+        id: `refinement_${topic.id}`,
+        source: REFINEMENT_CANDIDATE_SOURCE,
+        sourceId: topic.id,
+        domainId: topic.domainId,
+        title: generated.title.trim(),
+        prompt: generated.prompt.trim(),
+        templateId: "debate",
+        topicFormat: "scheduled_research",
+        cadenceFamily: "scheduled",
+        cadenceOverrideMinutes: 2,
+        minTrustTier: "unverified",
+        priorityScore: 90,
+        publishedAt: null,
+      });
+    } catch (error) {
+      failed += 1;
+      console.error(`refinement generate failed for topic ${topic.id}:`, error instanceof Error ? error.message : error);
+    }
   }
 
   if (candidates.length === 0) {
-    return { refined: eligible.length, createdCount: 0, updatedCount: 0, duplicates: 0 };
+    return { refined: eligible.length, createdCount: 0, updatedCount: 0, duplicates: 0, failed };
   }
 
   const result = await apiClient.upsertCandidates(candidates);
@@ -108,5 +114,6 @@ export async function runRefinementPass(
     createdCount: result.createdCount,
     updatedCount: result.updatedCount,
     duplicates: result.duplicates.length,
+    failed,
   };
 }
