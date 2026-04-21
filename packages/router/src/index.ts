@@ -16,11 +16,11 @@ import {
   pageHtmlTopicKey,
   pageHtmlTopicsKey,
   parseBaseEnv,
-  TOPIC_TEMPLATES,
   topicVerdictPresentationArtifactKey,
   tryParseMapRoundBody,
   VerdictPresentationSchema,
   renderTopicCardOgPng,
+  renderContributionCardOgPng,
 } from "@opndomain/shared";
 import type { MapRoundBody } from "@opndomain/shared";
 import type { AnalyticsOverviewResponse, AnalyticsTopicResponse, AnalyticsVoteReliabilityResponse } from "@opndomain/shared";
@@ -43,6 +43,8 @@ type RouterEnv = {
     PUBLIC_CACHE: KVNamespace;
     PUBLIC_ARTIFACTS: R2Bucket;
     SNAPSHOTS: R2Bucket;
+    VECTORIZE_TOPICS?: VectorizeIndex;
+    VECTORIZE_CLAIMS?: VectorizeIndex;
   } & ReturnType<typeof parseBaseEnv>;
 };
 
@@ -101,7 +103,7 @@ const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-vertical-refinement-v1";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-refinement-chain-v1";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -1325,26 +1327,77 @@ function buildTopicHeader(meta: TopicPageMeta, viewModel: TopicPageViewModel, sh
   `;
 }
 
-function renderInvestigationChain(
+type RefinementChildRow = {
+  id: string;
+  title: string;
+  status: string;
+  verdict_outcome: string | null;
+};
+
+type RefinementAncestorRow = {
+  id: string;
+  title: string;
+  depth: number;
+};
+
+// #4: compact breadcrumb showing ancestry back to the root debate. Only renders
+// when refinement_depth > 1 — a simple "Follow-up from [parent]" is already
+// shown by renderFollowupInvestigations on the parent, so direct children
+// don't need a breadcrumb on their own page.
+function renderRefinementBreadcrumb(
   meta: TopicPageMeta,
-  children: Array<{ id: string; title: string; status: string }>,
+  ancestors: RefinementAncestorRow[],
 ) {
-  if (!meta.parent_topic_id && children.length === 0 && Number(meta.refinement_depth ?? 0) === 0) {
+  if (Number(meta.refinement_depth ?? 0) < 2 || ancestors.length === 0) {
     return "";
   }
+  // Ancestors come back root-first (highest depth = closest-to-root). We render
+  // that order so the left-to-right flow reads root → this topic.
+  const crumbs = ancestors.map((ancestor) => (
+    `<a class="refinement-crumb-link" href="/topics/${encodeURIComponent(ancestor.id)}">${escapeHtml(ancestor.title)}</a>`
+  ));
+  crumbs.push(`<span class="refinement-crumb-current" aria-current="page">${escapeHtml(meta.title)}</span>`);
+  return `
+    <nav class="refinement-breadcrumb" aria-label="Investigation ancestry">
+      <span class="refinement-breadcrumb-kicker">Investigation chain · depth ${escapeHtml(String(meta.refinement_depth ?? 0))}</span>
+      <ol class="refinement-breadcrumb-list">
+        ${crumbs.map((crumb) => `<li>${crumb}</li>`).join(`<li class="refinement-crumb-sep" aria-hidden="true">&rsaquo;</li>`)}
+      </ol>
+    </nav>
+  `;
+}
 
-  const parts: string[] = [];
-  if (meta.parent_topic_id && meta.parent_topic_title) {
-    parts.push(`Follow-up from: <a href="/topics/${encodeURIComponent(meta.parent_topic_id)}">${escapeHtml(meta.parent_topic_title)}</a>`);
+// #2: full "Follow-up investigations" section below the verdict. For each
+// spawned child, show title, lifecycle status, and verdict outcome if closed.
+// Renders only on topics that have at least one child.
+function renderFollowupInvestigations(children: RefinementChildRow[]) {
+  if (children.length === 0) {
+    return "";
   }
-  if (children.length > 0) {
-    parts.push(`Continued in: ${children.map((child) => (
-      `<a href="/topics/${encodeURIComponent(child.id)}">${escapeHtml(child.title)}</a> (${escapeHtml(child.status)})`
-    )).join(", ")}`);
-  }
-  parts.push(`Investigation depth: ${escapeHtml(String(meta.refinement_depth ?? 0))}`);
-
-  return `<div class="topic-header-description">${parts.join(" · ")}</div>`;
+  const outcomeLabel = (outcome: string | null): string => {
+    if (!outcome) return "";
+    return outcome.replace(/_/g, " ");
+  };
+  return `
+    <section class="followup-investigations">
+      <div class="followup-investigations-kicker">Follow-up investigations</div>
+      <p class="followup-investigations-lede">
+        ${children.length === 1 ? "One narrower investigation" : `${children.length} narrower investigations`}
+        spawned from this verdict to target claims that did not fully resolve.
+      </p>
+      <ul class="followup-investigations-list">
+        ${children.map((child) => `
+          <li class="followup-investigation-item">
+            <a class="followup-investigation-link" href="/topics/${encodeURIComponent(child.id)}">${escapeHtml(child.title)}</a>
+            <div class="followup-investigation-meta">
+              <span class="followup-investigation-status followup-investigation-status--${escapeHtml(child.status)}">${escapeHtml(child.status)}</span>
+              ${child.verdict_outcome ? `<span class="followup-investigation-outcome">${escapeHtml(outcomeLabel(child.verdict_outcome))}</span>` : ""}
+            </div>
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+  `;
 }
 
 function renderVerdictClosure(viewModel: TopicPageViewModel): string {
@@ -1665,7 +1718,7 @@ function renderContributionBody(contribution: RankedContributionViewModel) {
   `;
 }
 
-function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
+function renderTopicTranscript(rounds: TopicRoundViewModel[], topicId: string) {
   if (!rounds.length) {
     return "<p class=\"topic-transcript-empty\">No transcript-visible contributions yet.</p>";
   }
@@ -1687,18 +1740,21 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
       <div class="topic-round-body">
         ${round.contributions.length
           ? round.contributions.map((contribution) => `
-            <article class="topic-contribution-card">
+            <article class="topic-contribution-card" id="c-${escapeHtml(contribution.id)}">
               <div class="topic-contribution-meta">
                 <div class="topic-contribution-meta-left">
                   <div class="topic-contribution-rank">#${escapeHtml(String(contribution.rank))} &middot; ${escapeHtml(contribution.roleLabel)}</div>
                   <div class="topic-contribution-handle">${contribution.displayName ? escapeHtml(contribution.displayName) : `@${escapeHtml(contribution.handle)}`}</div>
                 </div>
-                <div class="topic-score-chip">
-                  <div class="topic-score-num">${escapeHtml(contribution.finalScoreLabel)}</div>
-                  <div class="topic-score-bar-track">
-                    <span class="topic-score-bar-fill" style="width: ${escapeHtml(String(contribution.finalScorePercent))}%;"></span>
+                <div class="topic-contribution-meta-right">
+                  <button class="topic-contribution-share" data-share-url="/topics/${escapeHtml(topicId)}/contributions/${escapeHtml(contribution.id)}" title="Copy share link">Share</button>
+                  <div class="topic-score-chip">
+                    <div class="topic-score-num">${escapeHtml(contribution.finalScoreLabel)}</div>
+                    <div class="topic-score-bar-track">
+                      <span class="topic-score-bar-fill" style="width: ${escapeHtml(String(contribution.finalScorePercent))}%;"></span>
+                    </div>
+                    <div class="topic-score-label">Final score</div>
                   </div>
-                  <div class="topic-score-label">Final score</div>
                 </div>
               </div>
               <div class="topic-contribution-body">${renderContributionBody(contribution)}</div>
@@ -1710,7 +1766,7 @@ function renderTopicTranscript(rounds: TopicRoundViewModel[]) {
   `).join("");
 }
 
-function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
+function renderTopicTranscriptSection(viewModel: TopicPageViewModel, topicId: string) {
   return `
     <section class="topic-transcript-section" id="transcript">
       <div class="topic-transcript-head">
@@ -1721,7 +1777,7 @@ function renderTopicTranscriptSection(viewModel: TopicPageViewModel) {
         <div class="topic-transcript-meta">${escapeHtml(String(viewModel.rounds.length))} round${viewModel.rounds.length === 1 ? "" : "s"}</div>
       </div>
       <div class="topic-transcript">
-        ${renderTopicTranscript(viewModel.rounds)}
+        ${renderTopicTranscript(viewModel.rounds, topicId)}
       </div>
     </section>
   `;
@@ -2489,6 +2545,25 @@ function topicShareLinks(meta: TopicPageMeta, canonicalUrl: string) {
   };
 }
 
+function renderContributionShareScript(env: RouterEnv["Bindings"]) {
+  const origin = env.ROUTER_ORIGIN;
+  return `
+    <script>
+      (() => {
+        document.addEventListener('click', (e) => {
+          const btn = e.target.closest('.topic-contribution-share');
+          if (!btn) return;
+          const url = ${JSON.stringify(origin)} + btn.dataset.shareUrl;
+          navigator.clipboard.writeText(url).then(() => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+          });
+        });
+      })();
+    </script>
+  `;
+}
+
 function renderTopicViewBeacon(env: RouterEnv["Bindings"], topicId: string) {
   const endpoint = new URL(`/v1/topics/${encodeURIComponent(topicId)}/views`, env.API_ORIGIN).toString();
   return `
@@ -2781,7 +2856,6 @@ app.get("/topics", async (c) => {
   const q = c.req.query("q") ?? "";
   const status = c.req.query("status") ?? "";
   const domain = c.req.query("domain") ?? "";
-  const template = c.req.query("template") ?? "";
   const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "all");
   return serveCachedHtml(c, {
     pageKey: `${pageHtmlTopicsKey(filterKey)}:${TOPICS_INDEX_CACHE_KEY_VERSION}`,
@@ -2798,10 +2872,6 @@ app.get("/topics", async (c) => {
     if (domain) {
       topicsPath.searchParams.set("domain", domain);
     }
-    if (template) {
-      topicsPath.searchParams.set("templateId", template);
-    }
-
     const [{ data: topics }, { data: domains }] = await Promise.all([
       apiJson<Array<{
         id: string;
@@ -2859,15 +2929,10 @@ app.get("/topics", async (c) => {
       member_count: topic.memberCount,
       round_count: topic.roundCount,
     }));
-    const templateOptions = Object.values(TOPIC_TEMPLATES)
-      .map((definition) => ({ value: definition.templateId, label: definition.templateId }))
-      .sort((left, right) => left.label.localeCompare(right.label));
-
     const activeFilters = [
       topicCards.length !== undefined ? { label: "Results", value: String(topicCards.length) } : null,
       status ? { label: "Status", value: status } : null,
       domain ? { label: "Domain", value: domain } : null,
-      template ? { label: "Template", value: template } : null,
       q ? { label: "Query", value: q } : null,
     ].filter((item): item is { label: string; value: string } => item !== null);
 
@@ -2877,16 +2942,14 @@ app.get("/topics", async (c) => {
           ${editorialHeader({
             kicker: "",
             title: "Topics index",
-            lede: "Search public topics by keyword, then refine by domain, template, and status.",
+            lede: "Search public topics by keyword, then refine by domain and status.",
             meta: activeFilters.length ? activeFilters : [{ label: "Scope", value: "all topics" }],
           })}
           ${topicsFilterBar({
             q,
             status,
             domain,
-            template,
             domainOptions: groupedDomainOptions,
-            templateOptions,
           })}
           <section class="topics-list">
             ${topicCards.length ? topicCards.map((row) => topicCard(row)).join("") : topicsEmpty()}
@@ -2898,6 +2961,161 @@ app.get("/topics", async (c) => {
       navActiveKey: "topics" as const,
       mainClassName: "topics-main",
     });
+  });
+});
+
+// Knowledge-graph snapshot for a topic: ancestors (recursive CTE), direct
+// children, refinement_claims, topic_links both directions, and similar
+// topics via Vectorize k-NN. Public endpoint — respects the same
+// topic-visibility filter as the HTML page. The UI consumes this shape to
+// render the claims panel + tree view.
+app.get("/topics/:topicId/graph.json", async (c) => {
+  const topicId = c.req.param("topicId");
+
+  const meta = await c.env.DB.prepare(`
+    SELECT id, title, status, refinement_depth, domain_id
+    FROM topics
+    WHERE id = ? AND archived_at IS NULL
+  `).bind(topicId).first<{ id: string; title: string; status: string; refinement_depth: number; domain_id: string }>();
+
+  if (!meta) {
+    return Response.json({ error: "topic_not_found" }, { status: 404 });
+  }
+
+  // Ancestors: walk parent_topic_id upward. Reuse the pattern from the topic
+  // page handler below. Depth 0 = self (excluded); greater depth = closer
+  // to root.
+  const ancestorsResult = await c.env.DB.prepare(`
+    WITH RECURSIVE ancestry(id, title, status, refinement_depth, domain_id, parent_topic_id, depth) AS (
+      SELECT id, title, status, refinement_depth, domain_id, parent_topic_id, 0
+      FROM topics
+      WHERE id = ? AND archived_at IS NULL
+      UNION ALL
+      SELECT anc.id, anc.title, anc.status, anc.refinement_depth, anc.domain_id, anc.parent_topic_id, a.depth + 1
+      FROM topics anc
+      INNER JOIN ancestry a ON anc.id = a.parent_topic_id
+      WHERE anc.archived_at IS NULL
+    )
+    SELECT id, title, status, refinement_depth, domain_id
+    FROM ancestry WHERE depth > 0
+    ORDER BY depth DESC
+  `).bind(topicId).all<{ id: string; title: string; status: string; refinement_depth: number; domain_id: string }>();
+
+  const descendantsResult = await c.env.DB.prepare(`
+    SELECT id, title, status, refinement_depth, domain_id
+    FROM topics
+    WHERE parent_topic_id = ? AND archived_at IS NULL
+    ORDER BY created_at ASC
+  `).bind(topicId).all<{ id: string; title: string; status: string; refinement_depth: number; domain_id: string }>();
+
+  const claimsResult = await c.env.DB.prepare(`
+    SELECT id, topic_id, claim_text, classification, source_quote, promoted_topic_id, created_at
+    FROM refinement_claims
+    WHERE topic_id = ?
+    ORDER BY created_at ASC
+  `).bind(topicId).all<{
+    id: string; topic_id: string; claim_text: string; classification: string | null;
+    source_quote: string | null; promoted_topic_id: string | null; created_at: string;
+  }>();
+
+  const outgoingResult = await c.env.DB.prepare(`
+    SELECT id, from_topic_id, to_topic_id, link_type, confidence, evidence, created_at
+    FROM topic_links WHERE from_topic_id = ?
+    ORDER BY link_type, created_at
+  `).bind(topicId).all<{
+    id: string; from_topic_id: string; to_topic_id: string; link_type: string;
+    confidence: number | null; evidence: string | null; created_at: string;
+  }>();
+
+  const incomingResult = await c.env.DB.prepare(`
+    SELECT id, from_topic_id, to_topic_id, link_type, confidence, evidence, created_at
+    FROM topic_links WHERE to_topic_id = ?
+    ORDER BY link_type, created_at
+  `).bind(topicId).all<{
+    id: string; from_topic_id: string; to_topic_id: string; link_type: string;
+    confidence: number | null; evidence: string | null; created_at: string;
+  }>();
+
+  // Similar topics via Vectorize. Falls back to [] when the binding is
+  // absent or the topic hasn't been indexed yet.
+  let similar: Array<{ topicId: string; title: string; domainId: string; status: string; score: number }> = [];
+  if (c.env.VECTORIZE_TOPICS) {
+    try {
+      const stored = await c.env.VECTORIZE_TOPICS.getByIds([topicId]);
+      const vector = stored?.[0]?.values;
+      if (vector) {
+        const queryResult = await c.env.VECTORIZE_TOPICS.query(Array.from(vector), {
+          topK: 15,
+          returnMetadata: "all",
+        });
+        const excludeIds = new Set<string>([topicId]);
+        for (const ancestor of ancestorsResult.results ?? []) excludeIds.add(ancestor.id);
+        for (const descendant of descendantsResult.results ?? []) excludeIds.add(descendant.id);
+        const candidateIds = queryResult.matches
+          .filter((match) => !excludeIds.has(match.id) && match.score >= 0.65)
+          .slice(0, 10)
+          .map((match) => ({ id: match.id, score: match.score }));
+        if (candidateIds.length > 0) {
+          // Hydrate title/domain/status from D1 for the UI.
+          const placeholders = candidateIds.map(() => "?").join(",");
+          const hydrated = await c.env.DB.prepare(`
+            SELECT id, title, status, domain_id FROM topics WHERE id IN (${placeholders}) AND archived_at IS NULL
+          `).bind(...candidateIds.map((m) => m.id)).all<{ id: string; title: string; status: string; domain_id: string }>();
+          const byId = new Map((hydrated.results ?? []).map((row) => [row.id, row]));
+          similar = candidateIds
+            .map((m) => {
+              const row = byId.get(m.id);
+              if (!row) return null;
+              return {
+                topicId: row.id,
+                title: row.title,
+                status: row.status,
+                domainId: row.domain_id,
+                score: m.score,
+              };
+            })
+            .filter((x): x is NonNullable<typeof x> => Boolean(x));
+        }
+      }
+    } catch (err) {
+      console.error("graph similar query failed", { topicId, err: err instanceof Error ? err.message : err });
+    }
+  }
+
+  const toNode = (row: { id: string; title: string; status: string; refinement_depth: number; domain_id: string }) => ({
+    id: row.id, title: row.title, status: row.status,
+    refinementDepth: Number(row.refinement_depth ?? 0),
+    domainId: row.domain_id,
+  });
+  const toClaim = (row: {
+    id: string; topic_id: string; claim_text: string; classification: string | null;
+    source_quote: string | null; promoted_topic_id: string | null; created_at: string;
+  }) => ({
+    id: row.id, topicId: row.topic_id, claimText: row.claim_text,
+    classification: row.classification, sourceQuote: row.source_quote,
+    promotedTopicId: row.promoted_topic_id, createdAt: row.created_at,
+  });
+  const toLink = (row: {
+    id: string; from_topic_id: string; to_topic_id: string; link_type: string;
+    confidence: number | null; evidence: string | null; created_at: string;
+  }) => ({
+    id: row.id, fromTopicId: row.from_topic_id, toTopicId: row.to_topic_id,
+    linkType: row.link_type, confidence: row.confidence, evidence: row.evidence,
+    createdAt: row.created_at,
+  });
+
+  return Response.json({
+    topic: toNode(meta),
+    ancestors: (ancestorsResult.results ?? []).map(toNode),
+    descendants: (descendantsResult.results ?? []).map(toNode),
+    refinementClaims: (claimsResult.results ?? []).map(toClaim),
+    links: {
+      outgoing: (outgoingResult.results ?? []).map(toLink),
+      incoming: (incomingResult.results ?? []).map(toLink),
+    },
+    similar,
+  }, {
+    headers: { "cache-control": "public, s-maxage=0, max-age=30" },
   });
 });
 
@@ -2954,6 +3172,128 @@ app.get("/topics/:topicId/og.png", async (c) => {
   });
 
   return pngResponse(png);
+});
+
+type TranscriptRound = {
+  sequenceIndex?: number;
+  roundKind?: string;
+  contributions?: Array<{
+    id?: string;
+    beingHandle?: string;
+    displayName?: string | null;
+    bodyClean?: string | null;
+    scores?: { final?: number | null };
+  }>;
+};
+
+function findContributionInTranscript(
+  rounds: TranscriptRound[] | null | undefined,
+  contributionId: string,
+): { contribution: NonNullable<NonNullable<TranscriptRound["contributions"]>[number]>; round: TranscriptRound } | null {
+  if (!rounds) return null;
+  for (const round of rounds) {
+    for (const contribution of round.contributions ?? []) {
+      if (contribution.id === contributionId) {
+        return { contribution, round };
+      }
+    }
+  }
+  return null;
+}
+
+app.get("/topics/:topicId/contributions/:contributionId/og.png", async (c) => {
+  const topicId = c.req.param("topicId");
+  const contributionId = c.req.param("contributionId");
+
+  const [transcript, meta] = await Promise.all([
+    bucketJson<{ rounds?: TranscriptRound[] }>(await c.env.SNAPSHOTS.get(`topics/${topicId}/transcript.json`)),
+    c.env.DB.prepare(`
+      SELECT t.id, t.title, t.status, d.name AS domain_name
+      FROM topics t
+      INNER JOIN domains d ON d.id = t.domain_id
+      WHERE t.id = ? AND t.archived_at IS NULL
+    `).bind(topicId).first<{ id: string; title: string; status: string; domain_name: string }>(),
+  ]);
+
+  if (!meta) {
+    return pngNotFoundResponse();
+  }
+
+  const match = findContributionInTranscript(transcript?.rounds, contributionId);
+  if (!match) {
+    return pngNotFoundResponse();
+  }
+
+  const { contribution, round } = match;
+  const roundIndex = (round.sequenceIndex ?? 0) + 1;
+  const roundKind = round.roundKind ?? "unknown";
+  const roundLabel = `Round ${roundIndex} ${roundKind}`;
+
+  const png = renderContributionCardOgPng({
+    topicTitle: meta.title,
+    bodyExcerpt: contribution.bodyClean ?? "",
+    authorHandle: contribution.beingHandle ?? "unknown",
+    authorDisplayName: contribution.displayName ?? null,
+    finalScore: contribution.scores?.final ?? null,
+    roundLabel,
+    topicStatus: meta.status,
+  });
+
+  return pngResponse(png);
+});
+
+app.get("/topics/:topicId/contributions/:contributionId", async (c) => {
+  const topicId = c.req.param("topicId");
+  const contributionId = c.req.param("contributionId");
+
+  const [transcript, meta] = await Promise.all([
+    bucketJson<{ rounds?: TranscriptRound[] }>(await c.env.SNAPSHOTS.get(`topics/${topicId}/transcript.json`)),
+    c.env.DB.prepare(`
+      SELECT t.id, t.title, t.status, d.name AS domain_name
+      FROM topics t
+      INNER JOIN domains d ON d.id = t.domain_id
+      WHERE t.id = ? AND t.archived_at IS NULL
+    `).bind(topicId).first<{ id: string; title: string; status: string; domain_name: string }>(),
+  ]);
+
+  if (!meta) {
+    return c.text("Not found.", 404);
+  }
+
+  const match = findContributionInTranscript(transcript?.rounds, contributionId);
+  const authorLabel = match
+    ? (match.contribution.displayName ?? `@${match.contribution.beingHandle ?? "unknown"}`)
+    : "Contribution";
+  const bodyExcerpt = match?.contribution.bodyClean?.slice(0, 200) ?? "";
+  const ogTitle = `${authorLabel} on ${meta.title} | opndomain`;
+  const ogDescription = bodyExcerpt || `Contribution in ${meta.domain_name} topic on opndomain`;
+  const ogImageUrl = topicPageUrl(c.env, topicId, `/contributions/${encodeURIComponent(contributionId)}/og.png`);
+  const canonicalUrl = topicPageUrl(c.env, topicId, `/contributions/${encodeURIComponent(contributionId)}`);
+  const topicUrl = topicPageUrl(c.env, topicId, `#c-${encodeURIComponent(contributionId)}`);
+
+  return c.html(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>${escapeHtml(ogTitle)}</title>
+    <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+    <meta http-equiv="refresh" content="0;url=${escapeHtml(topicUrl)}">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+    <meta property="og:title" content="${escapeHtml(ogTitle)}">
+    <meta property="og:description" content="${escapeHtml(ogDescription)}">
+    <meta property="og:image" content="${escapeHtml(ogImageUrl)}">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:site_name" content="opndomain">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${escapeHtml(ogTitle)}">
+    <meta name="twitter:description" content="${escapeHtml(ogDescription)}">
+    <meta name="twitter:image" content="${escapeHtml(ogImageUrl)}">
+  </head>
+  <body>
+    <p>Redirecting to <a href="${escapeHtml(topicUrl)}">${escapeHtml(meta.title)}</a>...</p>
+  </body>
+</html>`);
 });
 
 app.get("/landing/background.png", (c) => {
@@ -3025,16 +3365,38 @@ app.get("/topics/:topicId", async (c) => {
         WHERE t.id = ? AND t.archived_at IS NULL
       `).bind(topicId).first<TopicPageMeta>(),
       c.env.DB.prepare(`
-        SELECT id, title, status
-        FROM topics
-        WHERE parent_topic_id = ? AND archived_at IS NULL
-        ORDER BY created_at ASC
-      `).bind(topicId).all<{ id: string; title: string; status: string }>(),
+        SELECT child.id, child.title, child.status, v.verdict_outcome
+        FROM topics child
+        LEFT JOIN verdicts v ON v.topic_id = child.id
+        WHERE child.parent_topic_id = ? AND child.archived_at IS NULL
+        ORDER BY child.created_at ASC
+      `).bind(topicId).all<RefinementChildRow>(),
     ]);
     if (!meta) {
       return renderPage("Missing Topic", hero("Missing", "Topic not found.", "No topic matched that identifier."));
     }
     const refinementChildren = childResult.results ?? [];
+    // Fetch ancestry only when depth > 1 — for depth=1 topics, the immediate
+    // parent is already known via meta.parent_topic_title, and the #2 follow-
+    // up section on that parent's page covers the child-direction linkage.
+    const refinementAncestors = Number(meta.refinement_depth ?? 0) > 1
+      ? (await c.env.DB.prepare(`
+          WITH RECURSIVE ancestry(id, title, parent_topic_id, depth) AS (
+            SELECT id, title, parent_topic_id, 0
+            FROM topics
+            WHERE id = ? AND archived_at IS NULL
+            UNION ALL
+            SELECT anc.id, anc.title, anc.parent_topic_id, a.depth + 1
+            FROM topics anc
+            INNER JOIN ancestry a ON anc.id = a.parent_topic_id
+            WHERE anc.archived_at IS NULL
+          )
+          SELECT id, title, depth
+          FROM ancestry
+          WHERE depth > 0
+          ORDER BY depth DESC
+        `).bind(topicId).all<RefinementAncestorRow>()).results ?? []
+      : [];
     const voteLogicRows = meta.status === "closed"
       ? (await c.env.DB.prepare(`
           SELECT
@@ -3146,15 +3508,21 @@ app.get("/topics/:topicId", async (c) => {
         viewModel.strongestCounter?.contributionId ?? "",
       ].filter((value) => value.length > 0));
       const pageBody = [
+        // Depth > 1 ancestry breadcrumb (hidden on root and direct children).
+        renderRefinementBreadcrumb(meta, refinementAncestors),
+
         // TIER 1 — Above fold
         `<section class="topic-above-fold">${[
           `<div class="topic-hero-col">
             ${buildTopicHeader(meta, viewModel, shareLinks)}
-            ${renderInvestigationChain(meta, refinementChildren)}
             ${viewModel.convergenceMap ? renderConvergenceMap(viewModel) : ""}
           </div>`,
           renderTopicMetaPanel(viewModel),
         ].join("")}</section>`,
+
+        // Follow-up investigations spawned by this verdict. Renders only when
+        // this topic has at least one promoted child.
+        renderFollowupInvestigations(refinementChildren),
 
         // TIER 2 — The Story (always visible)
         renderOpeningSynthesis(viewModel),
@@ -3178,8 +3546,9 @@ app.get("/topics/:topicId", async (c) => {
         // TIER 4 — Deep Dives (always collapsed)
         renderTopicScoreStorySection(viewModel),
         renderVoteLogicSection(voteLogicRows, agentHandleResolver),
-        `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
+        `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel, topicId)}</details>`,
         sharePanel,
+        renderContributionShareScript(c.env),
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
 
@@ -3191,21 +3560,26 @@ app.get("/topics/:topicId", async (c) => {
     }
 
     const pageBody = [
+      // Depth > 1 ancestry breadcrumb (hidden on root and direct children).
+      renderRefinementBreadcrumb(meta, refinementAncestors),
+
       // TIER 1 — Above fold (mirrors closed-topic layout)
       `<section class="topic-above-fold">${[
         `<div class="topic-hero-col">
           ${buildTopicHeader(meta, viewModel, shareLinks)}
-          ${renderInvestigationChain(meta, refinementChildren)}
           ${renderRoundProgressTracker(topicId, state as TopicStatusSnapshot | null, meta.status)}
         </div>`,
         renderTopicMetaPanel(viewModel),
       ].join("")}</section>`,
 
+      // Follow-up investigations — unlikely on in-flight topics but shown if present.
+      renderFollowupInvestigations(refinementChildren),
+
       // TIER 2 — Featured contribution while the debate runs
       buildFeaturedAnswerMarkup(viewModel.featuredAnswer),
 
       // TIER 4 — Deep dive (collapsed to match post-debate presentation)
-      `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel)}</details>`,
+      `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel, topicId)}</details>`,
       sharePanel,
       renderTopicViewBeacon(c.env, topicId),
     ].join("");

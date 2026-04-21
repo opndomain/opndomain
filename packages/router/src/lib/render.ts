@@ -303,10 +303,8 @@ type TopicsFilterOption = {
 type TopicsFilterBarOptions = {
   status: string;
   domain: string;
-  template: string;
   q: string;
   domainOptions: TopicsFilterOption[];
-  templateOptions: TopicsFilterOption[];
 };
 
 type TopicCardData = {
@@ -329,7 +327,7 @@ function topicsFilterOption(value: string, label: string, selected: string) {
   return `<option value="${esc(value)}"${value === selected ? " selected" : ""}>${esc(label)}</option>`;
 }
 
-function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "domain" | "template" | "q">, nextStatus: string) {
+function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "domain" | "q">, nextStatus: string) {
   const params = new URLSearchParams();
   const status = nextStatus.trim();
   if (status) {
@@ -340,9 +338,6 @@ function topicsFilterHref(options: Pick<TopicsFilterBarOptions, "status" | "doma
   }
   if (options.domain) {
     params.set("domain", options.domain);
-  }
-  if (options.template) {
-    params.set("template", options.template);
   }
   const query = params.toString();
   return query ? `/topics?${query}` : "/topics";
@@ -439,7 +434,7 @@ export function publicSidebar(options: PublicSidebarOptions) {
 }
 
 export function topicsFilterBar(options: TopicsFilterBarOptions) {
-  const hasActiveFilters = Boolean(options.status || options.domain || options.template || options.q);
+  const hasActiveFilters = Boolean(options.status || options.domain || options.q);
   return `
     <section class="topics-filterbar">
       <form class="topics-filter-row" method="get" action="/topics">
@@ -466,12 +461,9 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
             return parts.join("");
           })()}
         </select>
-        <select class="topics-filter-select" name="template" onchange="this.form.requestSubmit()">
-          ${topicsFilterOption("", "All templates", options.template)}
-          ${options.templateOptions.map((o) => topicsFilterOption(o.value, o.label, options.template)).join("")}
-        </select>
         <div class="topics-status-pills" aria-label="Filter topics by status">
           <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
+          <a class="topics-status-pill${options.status === "started" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "started"))}">Active</a>
           <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
           <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
         </div>

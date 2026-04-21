@@ -34,7 +34,7 @@ export const TOPICS_PAGE_STYLES = `
 }
 .topics-filter-row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(180px, 0.8fr) auto auto;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 0.8fr) auto;
   align-items: center;
   gap: 12px;
 }
@@ -2020,8 +2020,33 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   min-width: 2.5rem;
 }
 .topic-contribution-meta {
+  grid-template-columns: 1fr auto;
+  align-items: start;
   gap: 2px;
   color: var(--text-muted);
+}
+.topic-contribution-meta-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.topic-contribution-share {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.topic-contribution-card:hover .topic-contribution-share,
+.topic-contribution-share:focus-visible {
+  opacity: 1;
 }
 .topic-contribution-meta strong {
   color: var(--text);
@@ -2597,6 +2622,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   .topic-featured-answer,
   .topic-highlights,
   .accuracy-audit,
+  .followup-investigations,
   .dissenting-views,
   .dossier-secondary-section {
     min-width: 0;
@@ -3028,6 +3054,7 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .topic-featured-answer,
 .topic-highlights,
 .accuracy-audit,
+.followup-investigations,
 .dissenting-views,
 .dossier-secondary-section {
   width: min(100%, 720px);
@@ -3042,9 +3069,11 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   .topic-opening-synthesis,
   .topic-featured-answer,
   .topic-highlights,
+  .accuracy-audit,
+  .followup-investigations,
   .dissenting-views,
   .dossier-secondary-section {
-    margin-left: calc(100% - 720px - 320px - 12px);
+    margin-left: max(0px, calc(100% - 720px - 320px - 12px));
   }
 }
 
@@ -3257,7 +3286,6 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   gap: 0;
   padding: 24px 0;
   border-top: 1px solid var(--border);
-  justify-self: center;
 }
 .accuracy-audit-kicker {
   color: var(--cyan);
@@ -3329,6 +3357,115 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   font-size: 0.72rem;
   color: var(--text-muted);
   margin-top: 6px;
+}
+
+/* ---- refinement breadcrumb (depth > 1 ancestry) ---- */
+.refinement-breadcrumb {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.refinement-breadcrumb-kicker {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.refinement-breadcrumb-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.refinement-crumb-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--border) 70%, transparent);
+  text-underline-offset: 3px;
+}
+.refinement-crumb-link:hover {
+  text-decoration-color: var(--cyan);
+}
+.refinement-crumb-current {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.refinement-crumb-sep {
+  color: var(--text-muted);
+  list-style: none;
+}
+
+/* ---- follow-up investigations (children spawned by this verdict) ---- */
+.followup-investigations {
+  display: grid;
+  gap: 0;
+  padding: 24px 0;
+  border-top: 1px solid var(--border);
+}
+.followup-investigations-kicker {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.followup-investigations-lede {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text);
+  margin: 0 0 14px;
+}
+.followup-investigations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.followup-investigation-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+}
+.followup-investigation-link {
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.98rem;
+  line-height: 1.4;
+}
+.followup-investigation-link:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--cyan);
+  text-underline-offset: 3px;
+}
+.followup-investigation-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.followup-investigation-status {
+  color: var(--text-muted);
+}
+.followup-investigation-outcome {
+  color: var(--cyan);
 }
 
 /* ---- dissenting views (matches both-sides spacing) ---- */
