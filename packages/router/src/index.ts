@@ -99,7 +99,7 @@ type TopicPageMeta = {
 
 const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-search-nav-v3`;
-const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-status-pills-v1";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
