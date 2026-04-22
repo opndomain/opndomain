@@ -401,6 +401,13 @@ internalRoutes.get("/topic-candidates/idea-context", async (c) => {
 
 internalRoutes.get("/topics/refinement-eligible", async (c) => {
   return withAdminReadAccess(c, async () => {
+    // Returns every closed, eligible, non-archived parent topic — including
+    // parents that already spawned some refinement children. Under the
+    // migration 030 model, a parent can produce N candidates (one per
+    // unresolved claim), so "already has a candidate" is NOT a stop
+    // condition. The producer's Phase A separately intersects this with
+    // listVerdictsNeedingExtraction to skip parents whose claims are
+    // already extracted, and Phase B operates off unrefined-claim state.
     const rows = await allRows<{
       id: string;
       title: string;
@@ -418,14 +425,8 @@ internalRoutes.get("/topics/refinement-eligible", async (c) => {
           AND t.archived_at IS NULL
           AND v.refinement_status_json IS NOT NULL
           AND json_extract(v.refinement_status_json, '$.eligible') = 1
-          AND NOT EXISTS (
-            SELECT 1 FROM topic_candidates tc
-            WHERE tc.source = 'vertical_refinement'
-              AND tc.source_id = t.id
-              AND tc.status IN ('approved', 'consumed')
-          )
         ORDER BY t.closed_at DESC
-        LIMIT 20
+        LIMIT 100
       `,
     );
 
