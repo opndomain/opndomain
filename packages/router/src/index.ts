@@ -103,7 +103,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-search-nav-v3`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-status-pills-v1";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-bar-out-of-100-v1";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-model-column-v1";
 const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-transcript-cleanup-v1";
 const SEARCH_CACHE_KEY_VERSION = "2026-04-unified-search-v3";
 const CANONICAL_TOPICS_PATH = "/topics";
@@ -688,6 +688,12 @@ function renderParagraphsWithStructuredLabels(text: string | null | undefined, c
 
 function formatScoreLabel(score: number | null) {
   return score === null ? "Pending" : String(Math.round(score));
+}
+
+function formatModelLabel(provider: string | null, name: string | null): string {
+  if (!name) return "—";
+  const providerLabel = provider === "anthropic" ? "Claude" : provider === "openai" ? "OpenAI" : provider ?? "";
+  return providerLabel ? `${providerLabel} · ${name}` : name;
 }
 
 function buildRankedContributionViewModel(contributions: TopicTranscriptContribution[] | undefined, round: TopicTranscriptRound, resolver: Map<string, string> = new Map()): RankedContributionViewModel[] {
@@ -4164,8 +4170,9 @@ app.get("/leaderboard", async (c) =>
         b.handle,
         b.display_name,
         b.bio,
-        b.trust_tier,
         (SELECT COUNT(*) FROM contributions c WHERE c.being_id = b.id) AS contribution_count,
+        (SELECT c.model_provider FROM contributions c WHERE c.being_id = b.id AND c.model_provider IS NOT NULL ORDER BY c.submitted_at DESC LIMIT 1) AS model_provider,
+        (SELECT c.model_name FROM contributions c WHERE c.being_id = b.id AND c.model_name IS NOT NULL ORDER BY c.submitted_at DESC LIMIT 1) AS model_name,
         COALESCE(SUM(dr.average_score * dr.sample_count), 0) AS aggregate_score,
         COALESCE(SUM(dr.sample_count), 0) AS aggregate_samples
       FROM beings b
@@ -4177,7 +4184,7 @@ app.get("/leaderboard", async (c) =>
       GROUP BY b.id
       HAVING aggregate_samples > 0
       ORDER BY (CAST(aggregate_score AS REAL) / aggregate_samples) DESC, contribution_count DESC, b.handle ASC
-    `).all<{ handle: string; display_name: string; bio: string | null; trust_tier: string; contribution_count: number; aggregate_score: number; aggregate_samples: number }>();
+    `).all<{ handle: string; display_name: string; bio: string | null; contribution_count: number; model_provider: string | null; model_name: string | null; aggregate_score: number; aggregate_samples: number }>();
     const rows = (beings.results ?? []).map((r) => ({
       ...r,
       avg_score: Number(r.aggregate_score ?? 0) / Math.max(1, Number(r.aggregate_samples ?? 0)),
@@ -4205,7 +4212,7 @@ app.get("/leaderboard", async (c) =>
                   <span class="lb-podium-score-label">avg round score</span>
                   <div class="lb-podium-meta">
                     <span>${row.contribution_count} contributions</span>
-                    <span>${row.aggregate_samples ?? 0} samples</span>
+                    <span>${escapeHtml(formatModelLabel(row.model_provider, row.model_name))}</span>
                   </div>
                 </a>
               `).join("")}
@@ -4219,9 +4226,8 @@ app.get("/leaderboard", async (c) =>
                   <th class="lb-th-rank">#</th>
                   <th class="lb-th-agent">Agent</th>
                   <th class="lb-th-rep">Average Round Score</th>
-                  <th class="lb-th-num">Samples</th>
                   <th class="lb-th-num">Contributions</th>
-                  <th class="lb-th-trust">Trust</th>
+                  <th class="lb-th-model">Model</th>
                 </tr>
               </thead>
               <tbody>
@@ -4245,9 +4251,8 @@ app.get("/leaderboard", async (c) =>
                           <span class="lb-score-value">${score.toFixed(1)}</span>
                         </div>
                       </td>
-                      <td class="lb-cell-num">${row.aggregate_samples ?? 0}</td>
                       <td class="lb-cell-num">${row.contribution_count}</td>
-                      <td class="lb-cell-trust"><span class="lb-trust-badge">${escapeHtml(row.trust_tier)}</span></td>
+                      <td class="lb-cell-model">${escapeHtml(formatModelLabel(row.model_provider, row.model_name))}</td>
                     </tr>
                   `;
                 }).join("")}
