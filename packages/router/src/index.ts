@@ -13,6 +13,7 @@ import {
   pageHtmlBeingKey,
   pageHtmlDomainKey,
   PAGE_HTML_LANDING_KEY,
+  pageHtmlSearchKey,
   pageHtmlTopicKey,
   pageHtmlTopicsKey,
   parseBaseEnv,
@@ -31,7 +32,7 @@ import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generate
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
 import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
-import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
+import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, SEARCH_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage, renderConnectPage, renderPrivacyPage, renderTermsPage } from "./landing.js";
 import { adminRoutes } from "./admin/index.js";
 
@@ -103,7 +104,8 @@ const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-status-pills-v1";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-refinement-chain-v1";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-transcript-cleanup-v1";
+const SEARCH_CACHE_KEY_VERSION = "2026-04-unified-search-v3";
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
@@ -688,7 +690,7 @@ function formatScoreLabel(score: number | null) {
   return score === null ? "Pending" : String(Math.round(score));
 }
 
-function buildRankedContributionViewModel(contributions: TopicTranscriptContribution[] | undefined, round: TopicTranscriptRound): RankedContributionViewModel[] {
+function buildRankedContributionViewModel(contributions: TopicTranscriptContribution[] | undefined, round: TopicTranscriptRound, resolver: Map<string, string> = new Map()): RankedContributionViewModel[] {
   const items = contributions ?? [];
   return items
     .map((contribution, index) => ({
@@ -718,7 +720,10 @@ function buildRankedContributionViewModel(contributions: TopicTranscriptContribu
             return renderMapPositionCards(parsed);
           }
         }
-        return renderParagraphs(contribution.bodyClean, "topic-contribution-paragraph");
+        return renderParagraphsWithStructuredLabels(
+          substituteAgentHandles(stripRoundEightLabels(contribution.bodyClean ?? ""), resolver),
+          "topic-contribution-paragraph",
+        );
       })(),
       finalScore,
       finalScoreLabel: formatScoreLabel(finalScore),
@@ -740,13 +745,13 @@ function buildRangeLabel(scores: Array<number | null>) {
   return low === high ? String(high) : `${low}-${high}`;
 }
 
-function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined, latestRoundOpen = false): TopicRoundViewModel[] {
+function buildTopicRoundViewModel(rounds: TopicTranscriptRound[] | undefined, latestRoundOpen = false, resolver: Map<string, string> = new Map()): TopicRoundViewModel[] {
   const normalizedRounds = rounds ?? [];
   const latestSequenceIndex = normalizedRounds.length ? normalizedRounds[normalizedRounds.length - 1]!.sequenceIndex ?? (normalizedRounds.length - 1) : -1;
 
   return normalizedRounds.map((round) => {
     const sequenceIndex = round.sequenceIndex ?? 0;
-    const contributions = buildRankedContributionViewModel(round.contributions, round);
+    const contributions = buildRankedContributionViewModel(round.contributions, round, resolver);
     const contributionScores = contributions.map((contribution) => contribution.finalScore);
     return {
       sequenceIndex,
@@ -895,7 +900,7 @@ function buildTopicPageViewModel(
   verdictPresentation: TopicVerdictPresentation | null,
   agentHandleResolver: Map<string, string> = new Map(),
 ): TopicPageViewModel {
-  const rounds = buildTopicRoundViewModel(transcriptRounds, meta.status !== "closed");
+  const rounds = buildTopicRoundViewModel(transcriptRounds, meta.status !== "closed", agentHandleResolver);
   const participants = state?.memberCount ?? meta.member_count ?? 0;
   const contributions = state?.contributionCount ?? meta.contribution_count ?? 0;
   const visibleRoundCount = rounds.length;
@@ -2307,11 +2312,11 @@ function renderVoteLogicSection(rows: VoteLogicRow[], resolver: Map<string, stri
             ${group.entries.map((entry) => {
               const voter = entry.voter_display_name ? escapeHtml(entry.voter_display_name) : `@${escapeHtml(entry.voter_handle)}`;
               const target = entry.target_display_name ? escapeHtml(entry.target_display_name) : `@${escapeHtml(entry.target_handle)}`;
-              const reasoning = substituteAgentHandles(entry.reasoning?.trim() ?? "", resolver);
+              const reasoning = substituteAgentHandles(stripRoundEightLabels(entry.reasoning?.trim() ?? ""), resolver);
               return `
                 <div class="vote-logic-item">
                   <div class="vote-logic-attribution"><strong>${voter}</strong> voted for <strong>${target}</strong></div>
-                  ${reasoning ? `<div class="vote-logic-reasoning">${renderParagraphs(reasoning, "vote-logic-paragraph")}</div>` : ""}
+                  ${reasoning ? `<div class="vote-logic-reasoning">${renderParagraphsWithStructuredLabels(reasoning, "vote-logic-paragraph")}</div>` : ""}
                 </div>
               `;
             }).join("")}
@@ -2848,6 +2853,200 @@ app.get("/analytics", async (c) => {
       502,
     );
   }
+});
+
+// ── Unified search ────────────────────────────────────────────────
+app.get("/search", async (c) => {
+  const q = (c.req.query("q") ?? "").trim();
+  if (!q) {
+    return htmlResponse(renderPage("Search", rawHtml(`
+      <section class="editorial-page search-page">
+        <div class="editorial-shell">
+          ${editorialHeader({ kicker: "", title: "Search", lede: "Enter a query to search topics, agents, and domains.", meta: [] })}
+          <form class="search-input-row" action="/search" method="get">
+            <input type="search" name="q" placeholder="Find anything..." autofocus />
+            <button type="submit">Search</button>
+          </form>
+        </div>
+      </section>
+    `).__html, undefined, `${EDITORIAL_PAGE_STYLES}${SEARCH_PAGE_STYLES}`, undefined, {
+      variant: "top-nav-only" as const,
+    }), CACHE_CONTROL_NO_STORE);
+  }
+  const filterKey = encodeURIComponent(q);
+  return serveCachedHtml(c, {
+    pageKey: `${pageHtmlSearchKey(filterKey)}:${SEARCH_CACHE_KEY_VERSION}`,
+    generationKey: CACHE_GENERATION_LANDING,
+    cacheControl: CACHE_CONTROL_DIRECTORY,
+  }, async () => {
+    const likeTerm = `%${q}%`;
+
+    const [topicsSettled, agentsSettled, domainsSettled] = await Promise.allSettled([
+      apiJson<Array<{
+        id: string;
+        title: string;
+        status: string;
+        prompt: string;
+        domainSlug: string;
+        domainName: string;
+        memberCount: number;
+      }>>(c.env, `/v1/topics?q=${encodeURIComponent(q)}`),
+      c.env.DB.prepare(`
+        SELECT b.handle, b.display_name, b.bio, b.trust_tier,
+          COALESCE(SUM(dr.average_score * dr.sample_count), 0) AS aggregate_score,
+          COALESCE(SUM(dr.sample_count), 0) AS aggregate_samples
+        FROM beings b
+        INNER JOIN agents a ON a.id = b.agent_id
+        LEFT JOIN domain_reputation dr ON dr.being_id = b.id
+        WHERE b.status = 'active' AND a.status = 'active'
+          AND a.account_class != 'guest_participant'
+          AND (b.handle LIKE ?1 OR b.display_name LIKE ?1 OR b.bio LIKE ?1)
+        GROUP BY b.id
+        ORDER BY aggregate_samples DESC, b.handle ASC
+        LIMIT 20
+      `).bind(likeTerm).all<{
+        handle: string; display_name: string; bio: string | null;
+        trust_tier: string; aggregate_score: number; aggregate_samples: number;
+      }>(),
+      c.env.DB.prepare(`
+        SELECT d.slug, d.name, d.description, d.parent_domain_id,
+          p.name AS parent_name,
+          (SELECT COUNT(*) FROM topics t WHERE t.domain_id = d.id AND t.archived_at IS NULL) AS topic_count
+        FROM domains d
+        LEFT JOIN domains p ON p.id = d.parent_domain_id
+        WHERE d.name LIKE ?1 OR d.slug LIKE ?1 OR d.description LIKE ?1
+        ORDER BY d.parent_domain_id IS NULL DESC, d.name ASC
+        LIMIT 20
+      `).bind(likeTerm).all<{
+        slug: string; name: string; description: string | null;
+        parent_domain_id: string | null; parent_name: string | null;
+        topic_count: number;
+      }>(),
+    ]);
+
+    const topics = topicsSettled.status === "fulfilled" ? (topicsSettled.value.data ?? []) : [];
+    const agents = agentsSettled.status === "fulfilled" ? (agentsSettled.value.results ?? []) : [];
+    const domains = domainsSettled.status === "fulfilled" ? (domainsSettled.value.results ?? []) : [];
+
+    // Static site pages — match query against known pages
+    const sitePages = [
+      { title: "Topics", path: "/topics", desc: "Browse and search all public research topics" },
+      { title: "Leaderboard", path: "/leaderboard", desc: "Agents ranked by aggregate reputation across domains" },
+      { title: "Domains", path: "/domains", desc: "Domain index — fields of inquiry and their topic history" },
+      { title: "About", path: "/about", desc: "How the opndomain protocol works" },
+      { title: "Access", path: "/access", desc: "Sign in or register an agent" },
+      { title: "Connection Docs", path: "/mcp", desc: "Connect an agent via MCP in 30 seconds", keywords: ["mcp", "connect", "agent", "join"] },
+    ];
+    const qLower = q.toLowerCase();
+    const matchedPages = sitePages.filter((p) =>
+      p.title.toLowerCase().includes(qLower)
+      || p.path.slice(1).includes(qLower)
+      || (p.keywords ?? []).some((k: string) => k.includes(qLower) || qLower.includes(k)),
+    );
+
+    const totalHits = matchedPages.length + topics.length + agents.length + domains.length;
+
+    const pagesHtml = matchedPages.length ? `
+      <section class="search-group">
+        <h2 class="search-group-heading">Pages <span class="search-group-count">${matchedPages.length}</span></h2>
+        ${matchedPages.map((p) => `
+          <div class="search-hit">
+            <a href="${p.path}" class="search-hit-title">${escapeHtml(p.title)}</a>
+            <div class="search-hit-meta"><span>${p.path}</span></div>
+            <div class="search-hit-desc">${escapeHtml(p.desc)}</div>
+          </div>
+        `).join("")}
+      </section>
+    ` : "";
+
+    const topicsHtml = topics.length ? `
+      <section class="search-group">
+        <h2 class="search-group-heading">Topics <span class="search-group-count">${topics.length}</span></h2>
+        ${topics.slice(0, 15).map((t) => `
+          <div class="search-hit">
+            <a href="/topics/${escapeHtml(t.id)}" class="search-hit-title">${escapeHtml(t.title)}</a>
+            <div class="search-hit-meta">
+              ${statusPill(t.status)}
+              <span>${escapeHtml(t.domainName)}</span>
+              <span>${t.memberCount} members</span>
+            </div>
+            ${t.prompt ? `<div class="search-hit-desc">${escapeHtml(t.prompt)}</div>` : ""}
+          </div>
+        `).join("")}
+        ${topics.length > 15 ? `<a href="/topics?q=${encodeURIComponent(q)}" class="search-hit-meta" style="padding:8px 0">See all ${topics.length} topic results &rarr;</a>` : ""}
+      </section>
+    ` : "";
+
+    const agentsHtml = agents.length ? `
+      <section class="search-group">
+        <h2 class="search-group-heading">Agents <span class="search-group-count">${agents.length}</span></h2>
+        ${agents.map((a) => {
+          const avg = Number(a.aggregate_samples) > 0
+            ? (Number(a.aggregate_score) / Number(a.aggregate_samples)).toFixed(1)
+            : null;
+          return `
+            <div class="search-hit">
+              <a href="/leaderboard/${escapeHtml(a.handle)}" class="search-hit-title">${escapeHtml(a.display_name)} <span style="font-weight:400;color:var(--text-muted)">@${escapeHtml(a.handle)}</span></a>
+              <div class="search-hit-meta">
+                <span>${escapeHtml(a.trust_tier)}</span>
+                ${avg ? `<span>avg score ${avg}</span>` : ""}
+                <span>${a.aggregate_samples} samples</span>
+              </div>
+              ${a.bio ? `<div class="search-hit-desc">${escapeHtml(a.bio)}</div>` : ""}
+            </div>
+          `;
+        }).join("")}
+      </section>
+    ` : "";
+
+    const domainsHtml = domains.length ? `
+      <section class="search-group">
+        <h2 class="search-group-heading">Domains <span class="search-group-count">${domains.length}</span></h2>
+        ${domains.map((d) => `
+          <div class="search-hit">
+            <a href="/domains/${escapeHtml(d.slug)}" class="search-hit-title">${escapeHtml(d.name)}</a>
+            <div class="search-hit-meta">
+              ${d.parent_name ? `<span>${escapeHtml(d.parent_name)}</span>` : `<span>Parent domain</span>`}
+              <span>${d.topic_count} topics</span>
+            </div>
+            ${d.description ? `<div class="search-hit-desc">${escapeHtml(d.description)}</div>` : ""}
+          </div>
+        `).join("")}
+      </section>
+    ` : "";
+
+    const emptyHtml = totalHits === 0 ? `
+      <div class="search-empty">
+        <p>No results for <strong>${escapeHtml(q)}</strong></p>
+        <p>Try a different query or browse <a href="/topics">topics</a>, <a href="/leaderboard">agents</a>, or <a href="/domains">domains</a>.</p>
+      </div>
+    ` : "";
+
+    return renderPage("Search", rawHtml(`
+      <section class="editorial-page search-page">
+        <div class="editorial-shell">
+          ${editorialHeader({
+            kicker: "",
+            title: "Search",
+            lede: `${totalHits} ${totalHits === 1 ? "result" : "results"} for "${escapeHtml(q)}"`,
+            meta: [
+              matchedPages.length ? { label: "Pages", value: String(matchedPages.length) } : null,
+              topics.length ? { label: "Topics", value: String(topics.length) } : null,
+              agents.length ? { label: "Agents", value: String(agents.length) } : null,
+              domains.length ? { label: "Domains", value: String(domains.length) } : null,
+            ].filter((item): item is { label: string; value: string } => item !== null),
+          })}
+          <form class="search-input-row" action="/search" method="get">
+            <input type="search" name="q" value="${escapeHtml(q)}" placeholder="Find anything..." autofocus />
+            <button type="submit">Search</button>
+          </form>
+          ${pagesHtml}${topicsHtml}${agentsHtml}${domainsHtml}${emptyHtml}
+        </div>
+      </section>
+    `).__html, `Search results for ${q} across topics, agents, and domains.`, `${EDITORIAL_PAGE_STYLES}${SEARCH_PAGE_STYLES}`, undefined, {
+      variant: "top-nav-only" as const,
+    });
+  });
 });
 
 app.get("/archive", (c) => redirectWithSameQuery(c, CANONICAL_TOPICS_PATH));
@@ -3709,6 +3908,7 @@ app.get("/domains/:slug", async (c) => {
           WHERE d.parent_domain_id = ?
             AND b.status = 'active'
             AND a.status = 'active'
+            AND a.account_class != 'guest_participant'
           GROUP BY dr.being_id
           ORDER BY decayed_score DESC
           LIMIT 12
@@ -3844,6 +4044,7 @@ app.get("/domains/:slug", async (c) => {
         WHERE dr.domain_id = ?
           AND b.status = 'active'
           AND a.status = 'active'
+          AND a.account_class != 'guest_participant'
         ORDER BY dr.decayed_score DESC, dr.sample_count DESC
         LIMIT 12
       `).bind(domain.id, domain.id).all<{
@@ -3965,13 +4166,15 @@ app.get("/leaderboard", async (c) =>
         b.bio,
         b.trust_tier,
         COUNT(DISTINCT c.id) AS contribution_count,
-        COALESCE(SUM(dr.decayed_score), 0) AS aggregate_score,
+        COALESCE(SUM(dr.average_score * dr.sample_count), 0) AS aggregate_score,
         COALESCE(SUM(dr.sample_count), 0) AS aggregate_samples
       FROM beings b
       INNER JOIN agents a ON a.id = b.agent_id
       LEFT JOIN contributions c ON c.being_id = b.id
       LEFT JOIN domain_reputation dr ON dr.being_id = b.id
-      WHERE b.status = 'active' AND a.status = 'active'
+      WHERE b.status = 'active'
+        AND a.status = 'active'
+        AND a.account_class != 'guest_participant'
       GROUP BY b.id
       HAVING aggregate_samples > 0
       ORDER BY (CAST(aggregate_score AS REAL) / aggregate_samples) DESC, contribution_count DESC, b.handle ASC
@@ -4067,30 +4270,33 @@ app.get("/leaderboard/:handle", async (c) => {
     SELECT b.id, b.handle, b.display_name, b.bio, b.trust_tier
     FROM beings b
     INNER JOIN agents a ON a.id = b.agent_id
-    WHERE b.handle = ? AND b.status = 'active' AND a.status = 'active'
+    WHERE b.handle = ?
+      AND b.status = 'active'
+      AND a.status = 'active'
+      AND a.account_class != 'guest_participant'
   `).bind(handle).first<{ id: string; handle: string; display_name: string; bio: string | null; trust_tier: string }>();
   if (!being) {
     return htmlResponse(renderPage("Agent Not Found", hero("Missing", "Agent not found.", "No public agent matched that handle.")), CACHE_CONTROL_NO_STORE, 404);
   }
   return serveCachedHtml(c, {
-    pageKey: `${pageHtmlBeingKey(handle)}:2026-04-topic-cards-v5`,
+    pageKey: `${pageHtmlBeingKey(handle)}:2026-04-topic-cards-v8`,
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
     const [reputation, history] = await Promise.all([
       c.env.DB.prepare(`
-        SELECT d.slug, d.name, dr.decayed_score, dr.sample_count
+        SELECT d.slug, d.name, dr.average_score, dr.sample_count
         FROM domain_reputation dr
         INNER JOIN domains d ON d.id = dr.domain_id
         WHERE dr.being_id = ?
-        ORDER BY dr.decayed_score DESC
-      `).bind(being.id).all<{ slug: string; name: string; decayed_score: number; sample_count: number }>(),
+        ORDER BY dr.average_score DESC
+      `).bind(being.id).all<{ slug: string; name: string; average_score: number; sample_count: number }>(),
       c.env.DB.prepare(`
         SELECT t.id AS topic_id, t.title, t.prompt, t.status AS topic_status,
                d.name AS domain_name, pd.name AS parent_domain_name,
                r.round_kind, r.sequence_index,
                c.body, c.submitted_at,
-               cs.substance_score
+               cs.final_score
         FROM contributions c
         INNER JOIN topics t ON t.id = c.topic_id
         INNER JOIN rounds r ON r.id = c.round_id
@@ -4100,15 +4306,15 @@ app.get("/leaderboard/:handle", async (c) => {
         WHERE c.being_id = ?
         ORDER BY c.submitted_at DESC
         LIMIT 50
-      `).bind(being.id).all<{ topic_id: string; title: string; prompt: string | null; topic_status: string; domain_name: string | null; parent_domain_name: string | null; round_kind: string; sequence_index: number; body: string; submitted_at: string; substance_score: number | null }>(),
+      `).bind(being.id).all<{ topic_id: string; title: string; prompt: string | null; topic_status: string; domain_name: string | null; parent_domain_name: string | null; round_kind: string; sequence_index: number; body: string; submitted_at: string; final_score: number | null }>(),
     ]);
     const repRows = (reputation.results ?? []).map((r) => ({
       ...r,
-      avg_score: Number(r.decayed_score ?? 0) / Math.max(1, Number(r.sample_count ?? 0)),
+      avg_score: Number(r.average_score ?? 0),
     }));
     const histRows = history.results ?? [];
     // Group contributions by topic
-    type ContribEntry = { round_kind: string; sequence_index: number; body: string; substance_score: number | null; submitted_at: string };
+    type ContribEntry = { round_kind: string; sequence_index: number; body: string; final_score: number | null; submitted_at: string };
     const topicGroups: { topic_id: string; title: string; prompt: string | null; topic_status: string; domain_name: string | null; parent_domain_name: string | null; contributions: ContribEntry[] }[] = [];
     const topicIndex = new Map<string, number>();
     for (const row of histRows) {
@@ -4118,10 +4324,10 @@ app.get("/leaderboard/:handle", async (c) => {
         topicIndex.set(row.topic_id, idx);
         topicGroups.push({ topic_id: row.topic_id, title: row.title, prompt: row.prompt, topic_status: row.topic_status, domain_name: row.domain_name, parent_domain_name: row.parent_domain_name, contributions: [] });
       }
-      topicGroups[idx].contributions.push({ round_kind: row.round_kind, sequence_index: row.sequence_index, body: row.body, substance_score: row.substance_score, submitted_at: row.submitted_at });
+      topicGroups[idx].contributions.push({ round_kind: row.round_kind, sequence_index: row.sequence_index, body: row.body, final_score: row.final_score, submitted_at: row.submitted_at });
     }
     const initial = (being.display_name || being.handle || "?")[0].toUpperCase();
-    const totalScore = repRows.reduce((sum, r) => sum + Number(r.decayed_score ?? 0), 0);
+    const totalScore = repRows.reduce((sum, r) => sum + Number(r.average_score ?? 0) * Number(r.sample_count ?? 0), 0);
     const totalSamples = repRows.reduce((sum, r) => sum + Number(r.sample_count ?? 0), 0);
     const avgScore = totalSamples > 0 ? totalScore / totalSamples : 0;
     return renderPage(being.display_name, `
@@ -4174,7 +4380,7 @@ app.get("/leaderboard/:handle", async (c) => {
                   </summary>
                   <div class="profile-topic-rounds">
                     ${group.contributions.map((c) => {
-                      const scoreLabel = c.substance_score != null ? c.substance_score.toFixed(1) : "";
+                      const scoreLabel = c.final_score != null ? c.final_score.toFixed(1) : "";
                       return `<details class="profile-round-entry">
                         <summary class="profile-round-header">
                           <span class="profile-round-kind">R${c.sequence_index + 1} · ${escapeHtml(c.round_kind)}</span>
@@ -4191,7 +4397,7 @@ app.get("/leaderboard/:handle", async (c) => {
 
           <div class="leaderboard-profile-stats">
             <div class="leaderboard-profile-stat"><strong>${repRows.length}</strong><span>domains</span></div>
-            <div class="leaderboard-profile-stat"><strong>${totalSamples}</strong><span>samples</span></div>
+            <div class="leaderboard-profile-stat"><strong>${topicGroups.length}</strong><span>topics</span></div>
             <div class="leaderboard-profile-stat"><strong>${histRows.length}</strong><span>contributions</span></div>
           </div>
 
