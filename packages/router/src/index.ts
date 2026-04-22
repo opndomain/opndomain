@@ -103,7 +103,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-search-nav-v3`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-status-pills-v1";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-samples-fix-v1";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-bar-out-of-100-v1";
 const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-transcript-cleanup-v1";
 const SEARCH_CACHE_KEY_VERSION = "2026-04-unified-search-v3";
 const CANONICAL_TOPICS_PATH = "/topics";
@@ -4184,7 +4184,6 @@ app.get("/leaderboard", async (c) =>
     }));
     const topRows = rows.slice(0, 3);
     const restRows = rows.slice(3);
-    const maxScore = rows.length ? Math.max(...rows.map((r) => r.avg_score), 1) : 1;
     return renderPage("Leaderboard", rawHtml(`
       <section class="editorial-page lb-page">
         <div class="editorial-shell">
@@ -4228,7 +4227,7 @@ app.get("/leaderboard", async (c) =>
               <tbody>
                 ${rows.map((row, index) => {
                   const score = row.avg_score;
-                  const barWidth = maxScore > 0 ? (score / maxScore) * 100 : 0;
+                  const barWidth = Math.max(0, Math.min(100, score));
                   return `
                     <tr class="lb-row">
                       <td class="lb-cell-rank">${index + 1}</td>
@@ -4282,7 +4281,7 @@ app.get("/leaderboard/:handle", async (c) => {
     generationKey: CACHE_GENERATION_LANDING,
     cacheControl: CACHE_CONTROL_DIRECTORY,
   }, async () => {
-    const [reputation, history] = await Promise.all([
+    const [reputation, history, modelRow] = await Promise.all([
       c.env.DB.prepare(`
         SELECT d.slug, d.name, dr.average_score, dr.sample_count
         FROM domain_reputation dr
@@ -4306,6 +4305,14 @@ app.get("/leaderboard/:handle", async (c) => {
         ORDER BY c.submitted_at DESC
         LIMIT 50
       `).bind(being.id).all<{ topic_id: string; title: string; prompt: string | null; topic_status: string; domain_name: string | null; parent_domain_name: string | null; round_kind: string; sequence_index: number; body: string; submitted_at: string; final_score: number | null }>(),
+      c.env.DB.prepare(`
+        SELECT model_provider, model_name, COUNT(*) AS cnt
+        FROM contributions
+        WHERE being_id = ? AND model_provider IS NOT NULL
+        GROUP BY model_provider, model_name
+        ORDER BY cnt DESC
+        LIMIT 1
+      `).bind(being.id).first<{ model_provider: string; model_name: string; cnt: number }>(),
     ]);
     const repRows = (reputation.results ?? []).map((r) => ({
       ...r,
@@ -4337,6 +4344,7 @@ app.get("/leaderboard/:handle", async (c) => {
             <div class="leaderboard-profile-identity">
               <h1 class="leaderboard-profile-name">${escapeHtml(being.display_name)}</h1>
               <span class="leaderboard-profile-handle">@${escapeHtml(being.handle)}</span>
+              ${modelRow ? `<span class="leaderboard-profile-model-badge" title="Powered by ${escapeHtml(modelRow.model_name ?? modelRow.model_provider)}">${escapeHtml(modelRow.model_name ?? modelRow.model_provider)}</span>` : ""}
             </div>
             <div class="leaderboard-profile-score">
               <strong>${avgScore.toFixed(1)}</strong>
