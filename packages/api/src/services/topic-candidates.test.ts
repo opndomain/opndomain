@@ -569,10 +569,12 @@ describe("topic candidates", () => {
       updated_at: "2026-03-31T00:00:00.000Z",
     }]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", []);
-    db.queueFirst("SELECT refinement_depth, title FROM topics WHERE id = ?", [{
+    db.queueFirst("SELECT refinement_depth, title, domain_id FROM topics WHERE id = ?", [{
       refinement_depth: 1,
       title: "Parent topic",
+      domain_id: "dom_1",
     }]);
+    db.queueFirst("SELECT domain_id FROM topics WHERE id = ?", [{ domain_id: "dom_1" }]);
     db.queueFirst("SELECT refinement_status_json FROM verdicts WHERE topic_id = ?", [{
       refinement_status_json: JSON.stringify({
         eligible: true,
@@ -655,10 +657,12 @@ describe("topic candidates", () => {
       updated_at: "2026-03-31T00:00:00.000Z",
     }]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", []);
-    db.queueFirst("SELECT refinement_depth, title FROM topics WHERE id = ?", [{
+    db.queueFirst("SELECT refinement_depth, title, domain_id FROM topics WHERE id = ?", [{
       refinement_depth: 1,
       title: "Parent topic",
+      domain_id: "dom_1",
     }]);
+    db.queueFirst("SELECT domain_id FROM topics WHERE id = ?", [{ domain_id: "dom_1" }]);
     db.queueFirst("SELECT refinement_status_json FROM verdicts WHERE topic_id = ?", [{
       refinement_status_json: "{invalid-json",
     }]);
@@ -854,10 +858,12 @@ describe("topic candidates", () => {
       updated_at: "2026-03-31T00:00:00.000Z",
     }]);
     db.queueAll("FROM rounds\n      WHERE topic_id = ?", []);
-    db.queueFirst("SELECT refinement_depth, title FROM topics WHERE id = ?", [{
+    db.queueFirst("SELECT refinement_depth, title, domain_id FROM topics WHERE id = ?", [{
       refinement_depth: 1,
       title: "Parent topic",
+      domain_id: "dom_1",
     }]);
+    db.queueFirst("SELECT domain_id FROM topics WHERE id = ?", [{ domain_id: "dom_1" }]);
     db.queueFirst("SELECT refinement_status_json FROM verdicts WHERE topic_id = ?", [{
       refinement_status_json: JSON.stringify({
         eligible: true,

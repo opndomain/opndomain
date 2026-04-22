@@ -12,6 +12,7 @@ import {
 import type { ApiEnv } from "../lib/env.js";
 import { firstRow, runStatement } from "../lib/db.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
+import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 
 type ParsedFinalArgumentLike = {
   whatSettled?: string | null;
@@ -223,9 +224,9 @@ export async function linkRefinementChild(
   parentTopicId: string,
   childTopicId: string,
 ) {
-  const parent = await firstRow<{ refinement_depth: number | null; title: string }>(
+  const parent = await firstRow<{ refinement_depth: number | null; title: string; domain_id: string }>(
     env.DB,
-    "SELECT refinement_depth, title FROM topics WHERE id = ?",
+    "SELECT refinement_depth, title, domain_id FROM topics WHERE id = ?",
     parentTopicId,
   );
   if (!parent) {
@@ -241,6 +242,28 @@ export async function linkRefinementChild(
       `,
     ).bind(parentTopicId, Math.min((parent.refinement_depth ?? 0) + 1, MAX_REFINEMENT_DEPTH), childTopicId),
   );
+
+  // Bump parent + child page caches so the newly linked follow-up investigation
+  // renders on the parent's page and the child's ancestry breadcrumb renders on
+  // the child's page. Every other lifecycle write calls this; linking was the
+  // one gap.
+  const child = await firstRow<{ domain_id: string }>(
+    env.DB,
+    "SELECT domain_id FROM topics WHERE id = ?",
+    childTopicId,
+  );
+  await invalidateTopicPublicSurfaces(env, {
+    topicId: parentTopicId,
+    domainId: parent.domain_id,
+    reason: "refinement_child_linked",
+  });
+  if (child) {
+    await invalidateTopicPublicSurfaces(env, {
+      topicId: childTopicId,
+      domainId: child.domain_id,
+      reason: "refinement_child_linked",
+    });
+  }
 
   const verdict = await firstRow<{ refinement_status_json: string | null }>(
     env.DB,
