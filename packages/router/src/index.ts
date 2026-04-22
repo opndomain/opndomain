@@ -2303,7 +2303,7 @@ type VoteLogicRow = {
   round_kind: string;
 };
 
-function renderVoteLogicSection(rows: VoteLogicRow[], resolver: Map<string, string>): string {
+function renderVoteLogicSection(rows: VoteLogicRow[], resolver: Map<string, string>, shareLinks?: { x: string; reddit: string }): string {
   if (!rows.length) return "";
   // Group by round
   const byRound = new Map<number, { kind: string; entries: VoteLogicRow[] }>();
@@ -2316,8 +2316,45 @@ function renderVoteLogicSection(rows: VoteLogicRow[], resolver: Map<string, stri
     }
   }
   const sortedRounds = [...byRound.entries()].sort((a, b) => a[0] - b[0]);
+  const shareMarkup = shareLinks ? `
+    <div class="vote-logic-share-wrap">
+      <button class="topic-header-pill topic-header-pill--share" data-share-x="${escapeHtml(shareLinks.x)}" data-share-reddit="${escapeHtml(shareLinks.reddit)}">Share</button>
+      <div class="topic-share-menu" hidden>
+        <a class="topic-share-option" href="${escapeHtml(shareLinks.x)}" target="_blank" rel="noopener">Share on X</a>
+        <a class="topic-share-option" href="${escapeHtml(shareLinks.reddit)}" target="_blank" rel="noopener">Share on Reddit</a>
+        <button class="topic-share-option" data-copy-link>Copy link</button>
+      </div>
+    </div>
+    <script>
+      (() => {
+        const wrap = document.querySelector('.vote-logic-share-wrap');
+        const btn = wrap?.querySelector('.topic-header-pill--share');
+        const menu = wrap?.querySelector('.topic-share-menu');
+        if (!btn || !menu) return;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (navigator.share) {
+            navigator.share({ title: document.title, url: location.href }).catch(() => {});
+            return;
+          }
+          menu.hidden = !menu.hidden;
+        });
+        menu.querySelector('[data-copy-link]')?.addEventListener('click', () => {
+          navigator.clipboard.writeText(location.href).then(() => {
+            btn.textContent = 'Copied!';
+            menu.hidden = true;
+            setTimeout(() => { btn.textContent = 'Share'; }, 1500);
+          });
+        });
+        document.addEventListener('click', (e) => {
+          if (!wrap?.contains(e.target)) menu.hidden = true;
+        });
+      })();
+    </script>
+  ` : "";
   return `
     <details class="dossier-secondary-section"><summary>Vote logic</summary>
+    ${shareMarkup}
     <section class="vote-logic">
       ${sortedRounds.map(([roundIdx, group], i) => `
         <details class="vote-logic-round-details">
@@ -3748,7 +3785,7 @@ app.get("/topics/:topicId", async (c) => {
 
         // TIER 4 — Deep Dives (always collapsed)
         renderTopicScoreStorySection(viewModel),
-        renderVoteLogicSection(voteLogicRows, agentHandleResolver),
+        renderVoteLogicSection(voteLogicRows, agentHandleResolver, shareLinks),
         `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel, topicId)}</details>`,
         renderContributionShareScript(c.env),
         renderTopicViewBeacon(c.env, topicId),

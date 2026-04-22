@@ -3145,6 +3145,12 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 }
 
 /* ---- vote logic ---- */
+.vote-logic-share-wrap {
+  display: flex;
+  justify-content: flex-end;
+  position: relative;
+  padding: 8px 0 0;
+}
 .vote-logic {
   display: grid;
   gap: 0;
