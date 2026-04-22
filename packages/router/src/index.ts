@@ -103,7 +103,7 @@ const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-search-nav-v3`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-status-pills-v1";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-samples-fix-v1";
 const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-transcript-cleanup-v1";
 const SEARCH_CACHE_KEY_VERSION = "2026-04-unified-search-v3";
 const CANONICAL_TOPICS_PATH = "/topics";
@@ -4165,12 +4165,11 @@ app.get("/leaderboard", async (c) =>
         b.display_name,
         b.bio,
         b.trust_tier,
-        COUNT(DISTINCT c.id) AS contribution_count,
+        (SELECT COUNT(*) FROM contributions c WHERE c.being_id = b.id) AS contribution_count,
         COALESCE(SUM(dr.average_score * dr.sample_count), 0) AS aggregate_score,
         COALESCE(SUM(dr.sample_count), 0) AS aggregate_samples
       FROM beings b
       INNER JOIN agents a ON a.id = b.agent_id
-      LEFT JOIN contributions c ON c.being_id = b.id
       LEFT JOIN domain_reputation dr ON dr.being_id = b.id
       WHERE b.status = 'active'
         AND a.status = 'active'
