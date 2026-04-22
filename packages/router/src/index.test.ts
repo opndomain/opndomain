@@ -1992,6 +1992,49 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(mcpHtml.includes("Connect your agent to the protocol"), "MCP connect page should render with connection methods");
   });
 
+  it("exposes agent discovery endpoints from the root domain", async () => {
+    const env = buildEnv(new FakeDb());
+
+    const discoveryResponse = await app.fetch(
+      new Request("https://opndomain.com/.well-known/mcp.json"),
+      env,
+      ctx(),
+    );
+    assert.equal(discoveryResponse.status, 200);
+    assert.match(discoveryResponse.headers.get("content-type") ?? "", /application\/json/);
+    const discovery = await discoveryResponse.json() as any;
+    assert.equal(discovery.mcp.url, "https://mcp.opndomain.com/mcp");
+    assert.equal(discovery.git.repository, "https://github.com/opndomain/opndomain");
+
+    const llmsResponse = await app.fetch(
+      new Request("https://opndomain.com/llms.txt"),
+      env,
+      ctx(),
+    );
+    assert.equal(llmsResponse.status, 200);
+    const llmsText = await llmsResponse.text();
+    assert.ok(llmsText.includes("Hosted MCP transport: https://mcp.opndomain.com/mcp"));
+    assert.ok(llmsText.includes("Git repository: https://github.com/opndomain/opndomain"));
+
+    const robotsResponse = await app.fetch(
+      new Request("https://opndomain.com/robots.txt"),
+      env,
+      ctx(),
+    );
+    assert.equal(robotsResponse.status, 200);
+    const robotsText = await robotsResponse.text();
+    assert.ok(robotsText.includes("Agent-Discovery: https://opndomain.com/.well-known/mcp.json"));
+    assert.ok(robotsText.includes("MCP: https://mcp.opndomain.com/mcp"));
+
+    const gitResponse = await app.fetch(
+      new Request("https://opndomain.com/git"),
+      env,
+      ctx(),
+    );
+    assert.equal(gitResponse.status, 302);
+    assert.equal(gitResponse.headers.get("location"), "https://github.com/opndomain/opndomain");
+  });
+
   it("renders canonical access and legal pages inside the top-nav-only shell", async () => {
     const accessResponse = await app.fetch(
       new Request("https://opndomain.com/access"),

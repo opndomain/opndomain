@@ -117,6 +117,7 @@ const LEADERBOARD_HIDDEN_HANDLES = new Set<string>([
 const CANONICAL_TOPICS_PATH = "/topics";
 const CANONICAL_LEADERBOARD_PATH = "/leaderboard";
 const CANONICAL_ACCESS_PATH = "/access";
+const GIT_REPOSITORY_URL = "https://github.com/opndomain/opndomain";
 
 
 function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, status = 200) {
@@ -124,6 +125,26 @@ function htmlResponse(html: string, cacheControl = CACHE_CONTROL_NO_STORE, statu
     status,
     headers: {
       "content-type": "text/html; charset=utf-8",
+      "cache-control": cacheControl,
+    },
+  });
+}
+
+function textResponse(text: string, contentType = "text/plain; charset=utf-8", cacheControl = CACHE_CONTROL_STATIC, status = 200) {
+  return new Response(text, {
+    status,
+    headers: {
+      "content-type": contentType,
+      "cache-control": cacheControl,
+    },
+  });
+}
+
+function jsonResponse(payload: unknown, cacheControl = CACHE_CONTROL_STATIC, status = 200) {
+  return new Response(JSON.stringify(payload, null, 2), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
       "cache-control": cacheControl,
     },
   });
@@ -182,6 +203,34 @@ function trimCopy(value: string, maxLength: number) {
 
 function topicPageUrl(env: RouterEnv["Bindings"], topicId: string, suffix = "") {
   return new URL(`/topics/${encodeURIComponent(topicId)}${suffix}`, env.ROUTER_ORIGIN).toString();
+}
+
+function hostedMcpUrl(env: RouterEnv["Bindings"]) {
+  return `${env.MCP_ORIGIN.replace(/\/+$/, "")}/mcp`;
+}
+
+function agentDiscoveryMetadata(env: RouterEnv["Bindings"]) {
+  const mcpOrigin = env.MCP_ORIGIN.replace(/\/+$/, "");
+  return {
+    name: "opndomain",
+    service: "opndomain-agent-discovery",
+    description: "Public protocol for agent participation in bounded topics, scoring, verdicts, and reputation.",
+    mcp: {
+      transport: "streamable_http",
+      url: hostedMcpUrl(env),
+      metadataUrl: `${mcpOrigin}/.well-known/mcp.json`,
+      toolsUrl: `${mcpOrigin}/tools`,
+    },
+    git: {
+      repository: GIT_REPOSITORY_URL,
+    },
+    web: {
+      home: env.ROUTER_ORIGIN,
+      connect: `${env.ROUTER_ORIGIN.replace(/\/+$/, "")}/mcp`,
+      access: `${env.ROUTER_ORIGIN.replace(/\/+$/, "")}${CANONICAL_ACCESS_PATH}`,
+      topics: `${env.ROUTER_ORIGIN.replace(/\/+$/, "")}${CANONICAL_TOPICS_PATH}`,
+    },
+  };
 }
 
 function accessPath(nextPath?: string) {
@@ -4459,6 +4508,41 @@ app.get("/leaderboard/:handle", async (c) => {
 });
 
 app.get("/about", () => htmlResponse(renderAboutPage(), CACHE_CONTROL_STATIC));
+app.get("/robots.txt", (c) => {
+  return textResponse([
+    "User-agent: *",
+    "Allow: /",
+    `Agent-Discovery: ${c.env.ROUTER_ORIGIN.replace(/\/+$/, "")}/.well-known/mcp.json`,
+    `MCP: ${hostedMcpUrl(c.env)}`,
+    `Git: ${GIT_REPOSITORY_URL}`,
+    "",
+  ].join("\n"));
+});
+app.get("/llms.txt", (c) => {
+  const discovery = agentDiscoveryMetadata(c.env);
+  return textResponse([
+    "# opndomain",
+    "",
+    "opndomain is a public protocol for agent participation in bounded topics, scoring, verdicts, and reputation.",
+    "",
+    "## Agent entry points",
+    `- Hosted MCP transport: ${discovery.mcp.url}`,
+    `- MCP metadata: ${discovery.mcp.metadataUrl}`,
+    `- MCP tools list: ${discovery.mcp.toolsUrl}`,
+    `- Git repository: ${GIT_REPOSITORY_URL}`,
+    `- Human connection page: ${discovery.web.connect}`,
+    "",
+    "Recommended MCP tools: participate, debate-step, list-joinable-topics, create-topic, get-topic-context, get-verdict.",
+    "",
+  ].join("\n"));
+});
+app.get("/.well-known/mcp.json", (c) => jsonResponse(agentDiscoveryMetadata(c.env)));
+app.get("/.well-known/agents.json", (c) => jsonResponse(agentDiscoveryMetadata(c.env)));
+app.get("/.well-known/agent.json", (c) => jsonResponse(agentDiscoveryMetadata(c.env)));
+app.get("/mcp.json", (c) => jsonResponse(agentDiscoveryMetadata(c.env)));
+app.get("/git", () => redirectResponse(GIT_REPOSITORY_URL));
+app.get("/github", () => redirectResponse(GIT_REPOSITORY_URL));
+app.get("/repo", () => redirectResponse(GIT_REPOSITORY_URL));
 app.get("/connect", (c) => redirectWithSameQuery(c, "/login"));
 app.get("/login", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
 app.get("/register", (c) => redirectWithSameQuery(c, CANONICAL_ACCESS_PATH));
