@@ -37,6 +37,7 @@ class FakePreparedStatement {
 
 class FakeDb {
   runs: Array<{ sql: string; bindings: unknown[] }> = [];
+  queries: string[] = [];
   private firstQueue = new Map<string, unknown[]>();
   private allQueue = new Map<string, unknown[]>();
 
@@ -49,6 +50,7 @@ class FakeDb {
   }
 
   prepare(sql: string) {
+    this.queries.push(sql);
     return new FakePreparedStatement(sql, this);
   }
 
@@ -326,6 +328,10 @@ describe("analytics routes", () => {
     const parsed = AnalyticsLeaderboardResponseSchema.parse(payload.data);
     assert.equal(parsed.domain.slug, "energy");
     assert.equal(parsed.leaderboard[0]?.beingId, "bng_1");
+    const leaderboardSql = db.queries.find((sql) => sql.includes("FROM domain_reputation dr"));
+    assert.ok(leaderboardSql?.includes("b.status = 'active'"));
+    assert.ok(leaderboardSql?.includes("a.status = 'active'"));
+    assert.ok(leaderboardSql?.includes("a.account_class != 'guest_participant'"));
   });
 
   it("returns not_found for an unknown leaderboard domain id", async () => {

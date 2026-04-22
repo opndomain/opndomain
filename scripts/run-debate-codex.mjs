@@ -43,6 +43,7 @@ Options:
   --model MODEL         Codex model (default: gpt-5.4-mini)
   --claude-model MODEL  Claude model (default: sonnet)
   --codex-agents N      Number of agents using Codex (default: 3, rest use Claude)
+  --roster PATH         Path to roster.json for persistent beings (default: none, uses guests)
 `);
   process.exit(1);
 }
@@ -55,8 +56,11 @@ const TEMPLATE_ID = scenario.templateId ?? "debate";
 const CADENCE_MINUTES = Number(readFlag("--cadence", scenario.cadenceMinutes ?? 2));
 const CODEX_MODEL = readFlag("--model", "gpt-5.4-mini");
 const CLAUDE_MODEL = readFlag("--claude-model", "sonnet");
+const GROK_MODEL = readFlag("--grok-model", "grok-4-1-fast-reasoning");
+const GROK_API_KEY = process.env.XAI_API_KEY ?? readFlag("--grok-api-key", "");
 const CODEX_AGENT_COUNT = Number(readFlag("--codex-agents", 3));
 const EXISTING_TOPIC_ID = readFlag("--existing-topic", null);
+const ROSTER_PATH = readFlag("--roster", null);
 
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_DIR = path.resolve("logs");
@@ -125,15 +129,30 @@ function attachTokenState(holder, authData) {
 }
 
 async function freshToken(holder) {
-  if (!holder.refreshToken) return holder.accessToken;
   if (Date.now() < (holder.tokenExpiresAt ?? 0) - TOKEN_REFRESH_SKEW_MS) return holder.accessToken;
-  const refreshed = await api("/v1/auth/token", {
-    method: "POST",
-    body: { grantType: "refresh_token", refreshToken: holder.refreshToken },
-    logRequest: true,
-    logLabel: `token-refresh:${holder.displayName ?? holder.label ?? "admin"}`,
-  });
-  attachTokenState(holder, refreshed);
+
+  // Try refresh token first
+  if (holder.refreshToken) {
+    try {
+      const refreshed = await api("/v1/auth/token", {
+        method: "POST",
+        body: { grantType: "refresh_token", refreshToken: holder.refreshToken },
+      });
+      attachTokenState(holder, refreshed);
+      return holder.accessToken;
+    } catch {}
+  }
+
+  // Fall back to client credentials re-auth
+  if (holder._clientId && holder._clientSecret) {
+    const reauthed = await api("/v1/auth/token", {
+      method: "POST",
+      body: { grantType: "client_credentials", clientId: holder._clientId, clientSecret: holder._clientSecret },
+    });
+    attachTokenState(holder, reauthed);
+    return holder.accessToken;
+  }
+
   return holder.accessToken;
 }
 
@@ -224,10 +243,52 @@ async function callClaude(systemPrompt, userPrompt) {
   }
 }
 
+// ---- LLM via Grok (xAI) API ----
+
+async function callGrok(systemPrompt, userPrompt) {
+  if (!GROK_API_KEY) throw new Error("XAI_API_KEY not set. Export it or pass --grok-api-key.");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch("https://api.x.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${GROK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: GROK_MODEL,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 4096,
+          temperature: 0.7,
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Grok API ${response.status}: ${text.slice(0, 200)}`);
+      }
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content?.trim();
+      if (!content) throw new Error("Grok API returned empty content");
+      return content;
+    } catch (err) {
+      if (attempt === 0) {
+        log("llm-retry", { runner: "grok", error: err.message?.slice(0, 120) });
+        await wait(3_000);
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 // ---- Unified LLM dispatcher ----
 
 async function callLLM(runner, systemPrompt, userPrompt) {
   if (runner === "claude") return callClaude(systemPrompt, userPrompt);
+  if (runner === "grok") return callGrok(systemPrompt, userPrompt);
   return callCodex(systemPrompt, userPrompt);
 }
 
@@ -468,6 +529,7 @@ async function main() {
     codexAgents: CODEX_AGENT_COUNT,
     claudeAgents: Math.max(0, scenario.agents.length - CODEX_AGENT_COUNT),
     runner: "mixed",
+    rosterMode: Boolean(ROSTER_PATH),
   });
 
   logStep("Step 1: Authenticate admin");
@@ -476,41 +538,83 @@ async function main() {
     body: { grantType: "client_credentials", clientId: ADMIN_CLIENT_ID, clientSecret: ADMIN_CLIENT_SECRET },
     logRequest: true, logLabel: "admin-auth",
   });
-  const adminAuth = attachTokenState({ label: "admin" }, adminTokenData);
+  const adminAuth = attachTokenState({ label: "admin", _clientId: ADMIN_CLIENT_ID, _clientSecret: ADMIN_CLIENT_SECRET }, adminTokenData);
   log("admin", { agentId: adminTokenData.agent.id });
 
-  logStep(`Step 2: Create ${scenario.agents.length} guest agents`);
   const participants = [];
-  for (let i = 0; i < scenario.agents.length; i++) {
-    const agentDef = scenario.agents[i];
-    const guest = await api("/v1/auth/guest", { method: "POST", expectedStatus: 201 });
-    try {
-      await api(`/v1/beings/${guest.being.id}`, {
-        method: "PATCH",
-        token: guest.accessToken,
-        body: { displayName: agentDef.displayName, bio: agentDef.bio },
-      });
-    } catch (err) {
-      log("being-profile-update-failed", {
+
+  if (ROSTER_PATH) {
+    // Persistent beings from roster file — all owned by admin agent
+    const roster = JSON.parse(fs.readFileSync(path.resolve(ROSTER_PATH), "utf-8"));
+    logStep(`Step 2: Authenticate ${scenario.agents.length} roster beings`);
+
+    // All roster beings share the admin agent's credentials
+    const rosterTokenData = await api("/v1/auth/token", {
+      method: "POST",
+      body: { grantType: "client_credentials", clientId: roster.adminClientId, clientSecret: roster.adminClientSecret },
+      logRequest: true, logLabel: "roster-auth",
+    });
+    const rosterAuth = attachTokenState({ label: "roster-admin", _clientId: roster.adminClientId, _clientSecret: roster.adminClientSecret }, rosterTokenData);
+
+    for (let i = 0; i < scenario.agents.length; i++) {
+      const agentDef = scenario.agents[i];
+      const rosterEntry = agentDef.handle
+        ? roster.agents.find((r) => r.handle === agentDef.handle)
+        : roster.agents[i];
+      if (!rosterEntry) {
+        throw new Error(`No roster entry for agent ${i} (handle: ${agentDef.handle ?? "none"}). Roster has ${roster.agents.length} entries.`);
+      }
+
+      const runner = rosterEntry.runner ?? (i < CODEX_AGENT_COUNT ? "codex" : "claude");
+      const participant = attachTokenState({
+        index: i,
+        agentId: roster.adminAgentId,
+        beingId: rosterEntry.beingId,
+        handle: rosterEntry.handle,
+        displayName: rosterEntry.displayName,
+        stance: agentDef.stance,
+        bio: rosterEntry.bio,
+        runner,
+        _clientId: roster.adminClientId,
+        _clientSecret: roster.adminClientSecret,
+      }, rosterTokenData);
+      participants.push(participant);
+      log(`agent-${i + 1}`, { displayName: rosterEntry.displayName, handle: rosterEntry.handle, beingId: rosterEntry.beingId, stance: agentDef.stance, runner, mode: "roster" });
+    }
+  } else {
+    // Ephemeral guest agents (original behavior)
+    logStep(`Step 2: Create ${scenario.agents.length} guest agents`);
+    for (let i = 0; i < scenario.agents.length; i++) {
+      const agentDef = scenario.agents[i];
+      const guest = await api("/v1/auth/guest", { method: "POST", expectedStatus: 201 });
+      try {
+        await api(`/v1/beings/${guest.being.id}`, {
+          method: "PATCH",
+          token: guest.accessToken,
+          body: { displayName: agentDef.displayName, bio: agentDef.bio },
+        });
+      } catch (err) {
+        log("being-profile-update-failed", {
+          beingId: guest.being.id,
+          handle: guest.being.handle,
+          displayName: agentDef.displayName,
+          error: renderError(err),
+        });
+      }
+      const runner = i < CODEX_AGENT_COUNT ? "codex" : "claude";
+      const participant = attachTokenState({
+        index: i,
+        agentId: guest.agent.id,
         beingId: guest.being.id,
         handle: guest.being.handle,
         displayName: agentDef.displayName,
-        error: renderError(err),
-      });
+        stance: agentDef.stance,
+        bio: agentDef.bio,
+        runner,
+      }, guest);
+      participants.push(participant);
+      log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance, runner, mode: "guest" });
     }
-    const runner = i < CODEX_AGENT_COUNT ? "codex" : "claude";
-    const participant = attachTokenState({
-      index: i,
-      agentId: guest.agent.id,
-      beingId: guest.being.id,
-      handle: guest.being.handle,
-      displayName: agentDef.displayName,
-      stance: agentDef.stance,
-      bio: agentDef.bio,
-      runner,
-    }, guest);
-    participants.push(participant);
-    log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance, runner });
   }
 
   let topic;
@@ -572,7 +676,12 @@ async function main() {
   while (Date.now() < deadlineMs) {
     loopCount++;
 
-    const sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
+    let sweep;
+    try {
+      sweep = await api("/v1/internal/topics/sweep", { method: "POST", token: await freshToken(adminAuth), body: {} });
+    } catch (sweepErr) {
+      if (loopCount % 20 === 1) log("sweep-error", sweepErr.message?.slice(0, 120));
+    }
     sweepCount++;
     if (sweep?.mutatedTopicIds?.length > 0) log("sweep", { count: sweepCount, mutated: sweep.mutatedTopicIds });
 
@@ -690,7 +799,7 @@ async function main() {
         }
 
         try {
-          await api(`/v1/topics/${topic.id}/contributions`, {
+          const contribResult = await api(`/v1/topics/${topic.id}/contributions`, {
             method: "POST", token: await freshToken(participant), expectedStatus: [200, 201],
             body: {
               beingId: participant.beingId,
@@ -702,6 +811,20 @@ async function main() {
           contributionKeys.add(contributionKey);
           allContributions.push({ roundKind: currentRound.roundKind, roundIndex: currentRound.sequenceIndex, displayName: participant.displayName, stance: participant.stance });
           log("contribution", { who: participant.displayName, round: currentRound.roundKind, stance: participant.stance });
+
+          // Record model provenance
+          if (contribResult?.id) {
+            const model = participant.runner === "grok" ? "grok-4.1" : participant.runner === "claude" ? "sonnet-4.6" : CODEX_MODEL;
+            const provider = participant.runner === "grok" ? "xai" : participant.runner === "claude" ? "anthropic" : "openai";
+            try {
+              await api(`/v1/topics/${topic.id}/contributions/${contribResult.id}/provenance`, {
+                method: "POST", token: await freshToken(participant), expectedStatus: [200],
+                body: { beingId: participant.beingId, contributionId: contribResult.id, provider, model },
+              });
+            } catch (provErr) {
+              log("provenance-failed", { who: participant.displayName, error: provErr.message?.slice(0, 120) });
+            }
+          }
         } catch (err) {
           log("contribution-failed", { who: participant.displayName, round: currentRound.roundKind, error: renderError(err) });
         }
@@ -889,7 +1012,8 @@ SUMMARY:
   Codex Model:    ${CODEX_MODEL}
   Claude Model:   ${CLAUDE_MODEL}
   Runner:         mixed (${CODEX_AGENT_COUNT} codex, ${Math.max(0, participants.length - CODEX_AGENT_COUNT)} claude)
-  Agents:         ${participants.map((p) => `${p.displayName} [${p.runner}]`).join(", ")}
+  Beings:         ${ROSTER_PATH ? "persistent (roster)" : "ephemeral (guest)"}
+  Agents:         ${participants.map((p) => `@${p.handle} ${p.displayName} [${p.runner}]`).join(", ")}
   Contributions:  ${allContributions.length}
   Votes:          ${allVotes.length}
   Final Status:   ${finalContext.status}

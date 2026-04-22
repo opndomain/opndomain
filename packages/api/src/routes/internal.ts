@@ -13,6 +13,7 @@ import {
   CreateAdminRestrictionSchema,
   QuarantineContributionRequestSchema,
   ReconcilePresentationRequestSchema,
+  ExtractRefinementClaimsRequestSchema,
   RefinementEligibleTopicSchema,
   RefinementStatusSchema,
   ReterminalizeTopicRequestSchema,
@@ -93,6 +94,12 @@ import { unaliasSlot } from "../services/canonical-slots.js";
 import { getFinalizationProgress } from "../services/instance-finalization.js";
 import { getLatestMergeRevision, executeMerge } from "../services/merge-engine.js";
 import { sweepAutonomousTopics } from "../services/autonomous-lifecycle.js";
+import {
+  insertExtractedClaims,
+  listUnrefinedClaims,
+  listVerdictsNeedingExtraction,
+  listClaimsForTopic,
+} from "../services/refinement-claims.js";
 
 export const internalRoutes = new Hono<{ Bindings: ApiEnv }>();
 
@@ -436,6 +443,89 @@ internalRoutes.get("/topics/refinement-eligible", async (c) => {
 
 internalRoutes.get("/topic-candidates/:candidateId", async (c) => {
   return withAdminReadAccess(c, async () => jsonData(c, await getTopicCandidate(c.env, c.req.param("candidateId"))));
+});
+
+// Producer lists closed-and-eligible verdicts that have no refinement_claims
+// rows yet. It then LLM-extracts claims and posts them via
+// POST /v1/internal/refinement-claims below.
+internalRoutes.get("/refinement-claims/needing-extraction", async (c) => {
+  return withAdminReadAccess(c, async () => {
+    const items = await listVerdictsNeedingExtraction(c.env);
+    return jsonData(c, { items });
+  });
+});
+
+// Producer lists all claims without a promoted_topic_id — claims awaiting
+// refinement. Each item bundles parent-topic context so the producer can
+// build a narrower prompt in a single pass.
+internalRoutes.get("/refinement-claims/unrefined", async (c) => {
+  return withAdminReadAccess(c, async () => {
+    const items = await listUnrefinedClaims(c.env);
+    return jsonData(c, { items });
+  });
+});
+
+// Read-only: list claims for a specific topic — used by UI to render the
+// "Unresolved claims" panel on closed-topic pages.
+internalRoutes.get("/refinement-claims/topic/:topicId", async (c) => {
+  return withAdminReadAccess(c, async () => {
+    const items = await listClaimsForTopic(c.env, c.req.param("topicId"));
+    return jsonData(c, { items });
+  });
+});
+
+// Producer posts extracted claims in bulk after an LLM extraction pass.
+// Idempotent per-topic: if claims already exist for this topic, returns 400
+// instead of inserting duplicates. Caller is expected to check needing-
+// extraction first.
+internalRoutes.post("/refinement-claims", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const body = parseJsonBody(ExtractRefinementClaimsRequestSchema, await c.req.json());
+  const records = await insertExtractedClaims(c.env, body.topicId, body.claims);
+  return jsonData(c, { items: records }, 201);
+});
+
+// Admin-only knowledge-graph backfill endpoints. Safe to call repeatedly —
+// the underlying services skip rows whose hash/model/version already match.
+internalRoutes.post("/embeddings/backfill", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const { backfillTopicEmbeddings, backfillClaimEmbeddings } = await import("../services/embeddings.js");
+  const topics = await backfillTopicEmbeddings(c.env, { limit: 50 });
+  const claims = await backfillClaimEmbeddings(c.env, { limit: 50 });
+  return jsonData(c, { topics, claims });
+});
+
+// Walks contributions bodies and extracts /topics/top_<hex32> references
+// into 'cites' edges. Bounded batch; call repeatedly until `processed` is 0.
+internalRoutes.post("/topic-links/backfill-citations", async (c) => {
+  const { agent } = await authenticateRequest(c.env, c.req.raw);
+  assertAdminAgent(c.env, agent);
+  const { extractCitationLinks, insertLink } = await import("../services/topic-links.js");
+  const rows = await allRows<{ id: string; topic_id: string; body: string | null }>(
+    c.env.DB,
+    `SELECT id, topic_id, body FROM contributions
+     WHERE body IS NOT NULL AND length(body) > 0
+     ORDER BY created_at ASC
+     LIMIT 500`,
+  );
+  let processed = 0;
+  let inserted = 0;
+  for (const row of rows) {
+    const edges = extractCitationLinks(row.topic_id, row.body ?? "");
+    for (const edge of edges) {
+      const ok = await insertLink(c.env, {
+        fromTopicId: row.topic_id,
+        toTopicId: edge.toTopicId,
+        linkType: "cites",
+        evidence: edge.evidence,
+      });
+      if (ok) inserted += 1;
+    }
+    processed += 1;
+  }
+  return jsonData(c, { processed, inserted });
 });
 
 internalRoutes.post("/topic-candidates/cleanup", async (c) => {

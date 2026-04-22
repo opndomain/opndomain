@@ -156,7 +156,7 @@ type PendingRoundScheduleRow = {
   config_json: string;
 };
 
-const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 5;
+const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 3;
 const PENDING_PROVENANCE_LIMIT = 5;
 const TOPIC_CONTEXT_SHARED_CACHE_PREFIX = "topic-context-shared";
 const TOPIC_CONTEXT_SHARED_BUILDING_PREFIX = "topic-context-shared:building";
@@ -843,12 +843,17 @@ function resolveFormatDefaults(input: {
     badRequest("invalid_topic_format_config", "Scheduled Research topics cannot set rolling quorum controls.");
   }
 
-  const startsAt = input.startsAt ?? nowIso(addMinutes(new Date(), 30));
+  // Default to null timing for scheduled_research — topics stay joinable
+  // indefinitely until quorum is reached, at which point the lifecycle sweep
+  // initializes starts_at/join_until and begins countdown (mirrors the
+  // rolling_research quorum-transition at lifecycle.ts). Admin callers who
+  // want a specific scheduled start still pass startsAt/joinUntil explicitly
+  // and get the same explicit-timing path as before.
   return {
     minDistinctParticipants: DEFAULT_TOPIC_MIN_DISTINCT_PARTICIPANTS,
     countdownSeconds: null,
-    startsAt,
-    joinUntil: input.joinUntil ?? nowIso(addMinutes(new Date(startsAt), -5)),
+    startsAt: input.startsAt ?? null,
+    joinUntil: input.joinUntil ?? null,
   };
 }
 

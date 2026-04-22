@@ -395,6 +395,39 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
       continue;
     }
 
+    // Scheduled_research topics with indefinite timing (starts_at/join_until
+    // are NULL) wait for quorum before beginning countdown. This mirrors the
+    // rolling_research branch above at lines 268-287: once min participants
+    // join, initialize starts_at and join_until at the next minute boundary
+    // and transition to countdown. Auto-promoted refinement children and
+    // producer candidates default to NULL timing via resolveFormatDefaults;
+    // admin topics with explicit startsAt skip this branch and follow the
+    // existing explicit-timing path below.
+    if (
+      topic.topic_format === "scheduled_research" &&
+      topic.status === "open" &&
+      !startsAt &&
+      hasMinimumParticipants
+    ) {
+      const countdownStartsAt = nextMinuteBoundary(now).toISOString();
+      const changed = await runCas(
+        env.DB.prepare(
+          `UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'open' AND starts_at IS NULL`,
+        ).bind(nowIso(now), countdownStartsAt, countdownStartsAt, topic.id),
+      );
+      if (changed) {
+        await rewritePendingRoundSchedules(env, topic.id, countdownStartsAt);
+        await invalidateTopicPublicSurfaces(env, {
+          topicId: topic.id,
+          domainId: topic.domain_id,
+          reason: "scheduled_countdown_started",
+          occurredAt: nowIso(now),
+        });
+        mutatedTopicIds.add(topic.id);
+      }
+      continue;
+    }
+
     if (
       topic.cadence_family === "scheduled" &&
       topic.status === "open" &&

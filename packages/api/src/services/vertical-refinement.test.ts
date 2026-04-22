@@ -79,7 +79,7 @@ describe("vertical refinement", () => {
 
   it("falls back to both-sides summary and blocks max-depth topics", () => {
     const result = computeRefinementStatus(
-      { refinement_depth: 3 },
+      { refinement_depth: 10 },
       "clear_synthesis",
       null,
       [

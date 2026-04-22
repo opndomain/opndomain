@@ -15,6 +15,16 @@ export type TopicCardOgData = {
   accent?: readonly [number, number, number, number];
 };
 
+export type ContributionCardOgData = {
+  topicTitle: string;
+  bodyExcerpt: string;
+  authorHandle: string;
+  authorDisplayName?: string | null;
+  finalScore: number | null;
+  roundLabel: string;
+  topicStatus: string;
+};
+
 type Rgba = readonly [red: number, green: number, blue: number, alpha?: number];
 
 /* ------------------------------------------------------------------ */
@@ -385,6 +395,57 @@ export function renderTopicCardOgPng(data: TopicCardOgData): Uint8Array {
   const stateLabel = data.stateLabel
     ?? (data.status === "closed" ? "CLOSED" : data.status === "stalled" ? "STALLED" : "OPEN");
   drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 772, chipY + 40, valueScale, 3, 0, [stateLabel], PALETTE.lightText);
+
+  return encodePng(OG_WIDTH, OG_HEIGHT, pixels);
+}
+
+export function renderContributionCardOgPng(data: ContributionCardOgData): Uint8Array {
+  const pixels = createPixelBuffer(OG_WIDTH, OG_HEIGHT, PALETTE.background);
+  const accent = STATUS_ACCENT[data.topicStatus] ?? DEFAULT_ACCENT;
+
+  // Shell + card
+  fillRoundedRect(pixels, OG_WIDTH, OG_HEIGHT, 36, 36, 1128, 558, 34, PALETTE.shell);
+  fillRoundedRect(pixels, OG_WIDTH, OG_HEIGHT, 54, 54, 1092, 522, 28, PALETTE.card);
+
+  // Accent stripe at top of card
+  fillRoundedRect(pixels, OG_WIDTH, OG_HEIGHT, 54, 54, 1092, 10, 5, accent);
+
+  // Brand
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 84, 86, 3, 3, 8, ["OPNDOMAIN"], PALETTE.brand);
+
+  // Topic title (small, muted — context line)
+  const topicLines = wrapText(sanitizeText(data.topicTitle, OG_IMAGE_TITLE_MAX_LENGTH), 3, 3, 1020, 1);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 84, 120, 3, 3, 0, topicLines, PALETTE.muted);
+
+  // Contribution body (large, main content)
+  const bodyLines = wrapText(sanitizeText(data.bodyExcerpt, 400), 4, 4, 1020, 5);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 84, 168, 4, 4, 12, bodyLines, PALETTE.ink);
+
+  // Stat chips at bottom
+  const chipY = 468;
+  const chipH = 80;
+  const chipR = 14;
+  const labelScale = 2;
+  const valueScale = 3;
+
+  // Author chip
+  fillRoundedRect(pixels, OG_WIDTH, OG_HEIGHT, 84, chipY, 400, chipH, chipR, PALETTE.chip);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 100, chipY + 14, labelScale, 2, 0, ["AUTHOR"], PALETTE.muted);
+  const authorLabel = data.authorDisplayName ?? `@${data.authorHandle}`;
+  const authorLines = wrapText(sanitizeText(authorLabel, 30), valueScale, 3, 370, 1);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 100, chipY + 40, valueScale, 3, 0, authorLines, PALETTE.ink);
+
+  // Score chip
+  const scoreLabel = data.finalScore !== null ? String(Math.round(data.finalScore)) : "PENDING";
+  fillRoundedRect(pixels, OG_WIDTH, OG_HEIGHT, 500, chipY, 220, chipH, chipR, accent);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 516, chipY + 14, labelScale, 2, 0, ["SCORE"], PALETTE.lightText);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 516, chipY + 40, valueScale, 3, 0, [scoreLabel], PALETTE.lightText);
+
+  // Round chip
+  fillRoundedRect(pixels, OG_WIDTH, OG_HEIGHT, 736, chipY, 320, chipH, chipR, PALETTE.chip);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 752, chipY + 14, labelScale, 2, 0, ["ROUND"], PALETTE.muted);
+  const roundLines = wrapText(sanitizeText(data.roundLabel, 24), valueScale, 3, 290, 1);
+  drawTextBlock(pixels, OG_WIDTH, OG_HEIGHT, 752, chipY + 40, valueScale, 3, 0, roundLines, PALETTE.ink);
 
   return encodePng(OG_WIDTH, OG_HEIGHT, pixels);
 }

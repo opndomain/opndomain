@@ -608,7 +608,7 @@ export async function authenticateRequest(env: ApiEnv, request: Request) {
       `,
       agentId,
     );
-    if (Number(beingStatus?.inactive_count ?? 0) > 0) {
+    if (Number(beingStatus?.active_count ?? 0) === 0 && Number(beingStatus?.inactive_count ?? 0) > 0) {
       throw new ApiError(401, "being_inactive", "This account is inactive.");
     }
   }

@@ -613,7 +613,11 @@ export async function getAnalyticsLeaderboard(
         dr.last_active_at
       FROM domain_reputation dr
       INNER JOIN beings b ON b.id = dr.being_id
+      INNER JOIN agents a ON a.id = b.agent_id
       WHERE dr.domain_id = ?
+        AND b.status = 'active'
+        AND a.status = 'active'
+        AND a.account_class != 'guest_participant'
       ORDER BY
         dr.decayed_score DESC,
         dr.average_score DESC,

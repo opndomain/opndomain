@@ -61,6 +61,7 @@ Options:
   --domain-id ID        Domain ID (default: dom_game-theory)
   --cadence MINUTES     Round duration in minutes (default: 2)
   --model MODEL         Claude model: haiku, sonnet, opus (default: sonnet)
+  --roster PATH         Path to roster.json for persistent beings (default: none, uses guests)
 `);
   process.exit(1);
 }
@@ -73,6 +74,7 @@ const TEMPLATE_ID = scenario.templateId ?? "debate";
 const CADENCE_MINUTES = Number(readFlag("--cadence", scenario.cadenceMinutes ?? 2));
 const LLM_MODEL = readFlag("--model", "sonnet"); // sonnet follows formatting rules; haiku ignores no-markdown
 const EXISTING_TOPIC_ID = readFlag("--existing-topic", null);
+const ROSTER_PATH = readFlag("--roster", null);
 
 const RUN_ID = new Date().toISOString().replace(/[:.]/g, "-");
 const LOG_DIR = path.resolve("logs");
@@ -534,28 +536,62 @@ async function main() {
   const adminAuth = attachTokenState({ label: "admin" }, adminTokenData);
   log("admin", { agentId: adminTokenData.agent.id });
 
-  // Step 2: Create guest agents
-  logStep(`Step 2: Create ${scenario.agents.length} guest agents`);
+  // Step 2: Create or authenticate agents
   const participants = [];
-  for (let i = 0; i < scenario.agents.length; i++) {
-    const agentDef = scenario.agents[i];
-    const guest = await api("/v1/auth/guest", { method: "POST", expectedStatus: 201 });
-    await api(`/v1/beings/${guest.being.id}`, {
-      method: "PATCH",
-      token: guest.accessToken,
-      body: { displayName: agentDef.displayName, bio: agentDef.bio },
+
+  if (ROSTER_PATH) {
+    const roster = JSON.parse(fs.readFileSync(path.resolve(ROSTER_PATH), "utf-8"));
+    logStep(`Step 2: Authenticate ${scenario.agents.length} roster beings`);
+
+    const rosterTokenData = await api("/v1/auth/token", {
+      method: "POST",
+      body: { grantType: "client_credentials", clientId: roster.adminClientId, clientSecret: roster.adminClientSecret },
+      logRequest: true, logLabel: "roster-auth",
     });
-    const participant = attachTokenState({
-      index: i,
-      agentId: guest.agent.id,
-      beingId: guest.being.id,
-      handle: guest.being.handle,
-      displayName: agentDef.displayName,
-      stance: agentDef.stance,
-      bio: agentDef.bio,
-    }, guest);
-    participants.push(participant);
-    log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance });
+
+    for (let i = 0; i < scenario.agents.length; i++) {
+      const agentDef = scenario.agents[i];
+      const rosterEntry = agentDef.handle
+        ? roster.agents.find((r) => r.handle === agentDef.handle)
+        : roster.agents[i];
+      if (!rosterEntry) {
+        throw new Error(`No roster entry for agent ${i} (handle: ${agentDef.handle ?? "none"}). Roster has ${roster.agents.length} entries.`);
+      }
+
+      const participant = attachTokenState({
+        index: i,
+        agentId: roster.adminAgentId,
+        beingId: rosterEntry.beingId,
+        handle: rosterEntry.handle,
+        displayName: rosterEntry.displayName,
+        stance: agentDef.stance,
+        bio: rosterEntry.bio,
+      }, rosterTokenData);
+      participants.push(participant);
+      log(`agent-${i + 1}`, { displayName: rosterEntry.displayName, handle: rosterEntry.handle, beingId: rosterEntry.beingId, stance: agentDef.stance, mode: "roster" });
+    }
+  } else {
+    logStep(`Step 2: Create ${scenario.agents.length} guest agents`);
+    for (let i = 0; i < scenario.agents.length; i++) {
+      const agentDef = scenario.agents[i];
+      const guest = await api("/v1/auth/guest", { method: "POST", expectedStatus: 201 });
+      await api(`/v1/beings/${guest.being.id}`, {
+        method: "PATCH",
+        token: guest.accessToken,
+        body: { displayName: agentDef.displayName, bio: agentDef.bio },
+      });
+      const participant = attachTokenState({
+        index: i,
+        agentId: guest.agent.id,
+        beingId: guest.being.id,
+        handle: guest.being.handle,
+        displayName: agentDef.displayName,
+        stance: agentDef.stance,
+        bio: agentDef.bio,
+      }, guest);
+      participants.push(participant);
+      log(`agent-${i + 1}`, { displayName: agentDef.displayName, beingId: guest.being.id, stance: agentDef.stance, mode: "guest" });
+    }
   }
 
   // Step 3: Create topic OR fetch existing
@@ -969,7 +1005,8 @@ SUMMARY:
   Template:       ${TEMPLATE_ID}
   Domain:         ${DOMAIN_ID}
   Model:          ${LLM_MODEL}
-  Agents:         ${participants.map((p) => p.displayName).join(", ")}
+  Beings:         ${ROSTER_PATH ? "persistent (roster)" : "ephemeral (guest)"}
+  Agents:         ${participants.map((p) => `@${p.handle} ${p.displayName}`).join(", ")}
   Contributions:  ${allContributions.length}
   Votes:          ${allVotes.length}
   Final Status:   ${finalContext.status}

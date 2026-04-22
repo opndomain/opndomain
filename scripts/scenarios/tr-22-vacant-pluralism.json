@@ -1,0 +1,32 @@
+{
+  "title": "Is Contemporary Pluralism Hollow Because It Refuses to Define What People Are Joining?",
+  "prompt": "Evaluate the claim that Western societies have practiced hollow pluralism by refusing to define national cultures in the name of inclusivity — 'inclusion into what?' Consider what 'defining a national culture' would operationally mean, whether thin political values (civic nationalism) are a real answer, the relationship between integration and cultural content, and the risks of both hollow and thick pluralism.",
+  "domainId": "dom_philosophy",
+  "agents": [
+    {
+      "displayName": "The Communitarian",
+      "bio": "Hollow pluralism is the correct diagnosis; without cultural content, integration has nothing to integrate into.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Liberal Pluralist",
+      "bio": "Thin civic nationalism — rule of law, constitutional values, economic opportunity — is not hollow; it is the substantive culture Karp claims is missing.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Integration Scholar",
+      "bio": "Empirical integration outcomes depend more on labor markets and residential patterns than on cultural-definition projects.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Immigrant Cultural Scholar",
+      "bio": "Most contemporary Western pluralism has substantial cultural content; the claim that there is nothing to integrate into is overblown.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Conservative Theorist",
+      "bio": "The Karp claim is understated; political communities that refuse to name what they are eventually dissolve, and Western societies are in that process.",
+      "stance": "support"
+    }
+  ]
+}

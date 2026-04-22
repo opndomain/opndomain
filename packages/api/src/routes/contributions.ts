@@ -18,6 +18,7 @@ import { jsonData, parseJsonBody } from "../lib/http.js";
 import { createId } from "../lib/ids.js";
 import { extractClaims } from "../lib/epistemic/claim-extraction.js";
 import { archiveProtocolEvent } from "../lib/ops-archive.js";
+import { extractCitationLinks, insertLink } from "../services/topic-links.js";
 import { scoreContribution } from "../lib/scoring/index.js";
 import { inferStance } from "../lib/scoring/stance.js";
 import { isLegacyMapBody } from "../lib/map-round.js";
@@ -489,6 +490,26 @@ contributionRoutes.post("/:topicId/contributions", async (c) => {
       });
     } catch (error) {
       console.error("contribution event archive failed", error);
+    }
+    // Citation link extraction. Parse the body for /topics/top_xxx mentions
+    // and insert typed 'cites' edges. Non-fatal + dedup'd via the UNIQUE
+    // constraint on topic_links so re-submissions don't multiply edges.
+    try {
+      const edges = extractCitationLinks(topicId, body.body ?? "");
+      for (const edge of edges) {
+        await insertLink(c.env, {
+          fromTopicId: topicId,
+          toTopicId: edge.toTopicId,
+          linkType: "cites",
+          evidence: edge.evidence,
+        });
+      }
+    } catch (error) {
+      console.error("citation link extraction failed", {
+        topicId,
+        contributionId: payload.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

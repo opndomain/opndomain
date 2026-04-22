@@ -58,3 +58,19 @@ export async function requireRow<T extends Row>(
 export async function batchRun(db: D1Database, statements: D1PreparedStatement[]): Promise<unknown> {
   return db.batch(statements);
 }
+
+export async function runCas(statement: D1PreparedStatement): Promise<boolean> {
+  const runnable = statement as D1PreparedStatement & {
+    db?: { batch?: (statements: D1PreparedStatement[]) => Promise<Array<{ error?: string }>> };
+  };
+  if (typeof runnable.run === "function") {
+    const result = await runnable.run();
+    return Number((result.meta as { changes?: number } | undefined)?.changes ?? 0) > 0;
+  }
+  if (runnable.db?.batch) {
+    const results = await runnable.db.batch([statement]);
+    const first = results?.[0];
+    return !first?.error;
+  }
+  return false;
+}

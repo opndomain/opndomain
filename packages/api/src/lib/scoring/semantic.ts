@@ -48,7 +48,7 @@ function vectorNorm(vector: number[]): number {
   return Math.sqrt(sum);
 }
 
-function cosineSimilarity(left: number[], right: number[]): number {
+export function cosineSimilarity(left: number[], right: number[]): number {
   const leftNorm = vectorNorm(left);
   const rightNorm = vectorNorm(right);
   if (leftNorm <= 0 || rightNorm <= 0) {

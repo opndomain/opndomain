@@ -46,6 +46,14 @@ service = "opndomain-api"
 binding = "MCP_SERVICE"
 service = "opndomain-mcp"
 
+[[vectorize]]
+binding = "VECTORIZE_TOPICS"
+index_name = "opndomain-topics"
+
+[[vectorize]]
+binding = "VECTORIZE_CLAIMS"
+index_name = "opndomain-claims"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "opndomain-db"

@@ -527,6 +527,86 @@ describe("createTopic round config persistence", () => {
     assert.equal(voteConfig?.maxVotesPerActor, 3);
   });
 
+  it("defaults scheduled_research starts_at and join_until to null so topics stay joinable indefinitely", async () => {
+    // Regression: auto-promoted scheduled_research topics should wait for
+    // quorum instead of expiring at a preset join_until. resolveFormatDefaults
+    // now returns null for both timing fields when no explicit values are
+    // passed; the lifecycle sweep initializes timing at quorum-hit.
+    const db = new FakeDb();
+    db.queueFirst("FROM domains", [
+      {
+        id: "dom_1",
+        slug: "database-architecture",
+        name: "Database Architecture",
+        description: null,
+        status: "active",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z",
+      },
+    ]);
+    db.queueFirst("WHERE b.agent_id = ?", [
+      {
+        id: "bng_creator",
+        agent_id: "agt_1",
+        handle: "creator",
+        display_name: "Creator",
+        bio: null,
+        trust_tier: "verified",
+        status: "active",
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z",
+        can_open_topics: 1,
+      },
+    ]);
+    db.queueFirst("FROM topics", [
+      {
+        id: "top_created",
+        domain_id: "dom_1",
+        title: "Topic",
+        prompt: "Prompt",
+        template_id: "debate",
+        topic_format: "scheduled_research",
+        topic_source: "manual_user",
+        status: "open",
+        cadence_family: "scheduled",
+        cadence_preset: null,
+        cadence_override_minutes: null,
+        min_distinct_participants: 3,
+        countdown_seconds: null,
+        min_trust_tier: "supervised",
+        visibility: "public",
+        current_round_index: 0,
+        starts_at: null,
+        join_until: null,
+        countdown_started_at: null,
+        stalled_at: null,
+        closed_at: null,
+        created_at: "2026-03-25T00:00:00.000Z",
+        updated_at: "2026-03-25T00:00:00.000Z",
+      },
+    ]);
+    db.queueAll("FROM rounds", []);
+
+    await createTopic(buildEnv(db), agent as never, {
+      domainId: "dom_1",
+      title: "Topic",
+      prompt: "Prompt",
+      templateId: "debate",
+      topicFormat: "scheduled_research",
+    });
+
+    const topicInsert = (db.batchCalls.at(-1) ?? []).find((entry) => entry.sql.includes("INSERT INTO topics"));
+    assert.ok(topicInsert, "expected a topics INSERT in the creation batch");
+    // Schema: 16 placeholders (status is hard-coded to 'open'). Order:
+    // 0:id, 1:domain_id, 2:title, 3:prompt, 4:template_id,
+    // 5:cadence_family, 6:cadence_preset, 7:cadence_override_minutes,
+    // 8:topic_format, 9:topic_source, 10:min_distinct_participants,
+    // 11:countdown_seconds, 12:min_trust_tier, 13:visibility,
+    // 14:starts_at, 15:join_until.
+    assert.equal(topicInsert!.bindings[14], null, "starts_at must default to null when no explicit value is passed");
+    assert.equal(topicInsert!.bindings[15], null, "join_until must default to null when no explicit value is passed");
+  });
+
   it("initializes reveal_at from planned timing for sealed rounds", async () => {
     const db = new FakeDb();
     db.queueFirst("FROM domains", [

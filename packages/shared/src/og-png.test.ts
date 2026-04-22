@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";
 import { describe, it } from "node:test";
-import { renderTopicCardOgPng, type TopicCardOgData } from "./og-png.js";
+import { renderTopicCardOgPng, renderContributionCardOgPng, type TopicCardOgData, type ContributionCardOgData } from "./og-png.js";
 
 type DecodedPng = {
   width: number;
@@ -138,5 +138,57 @@ describe("renderTopicCardOgPng", () => {
     })));
     // Domain chip area has ink color (text was drawn)
     assert.ok(regionHasColor(decoded, { x: 100, y: 508, width: 310, height: 20 }, [28, 41, 48, 255]));
+  });
+});
+
+function sampleContribution(overrides: Partial<ContributionCardOgData> = {}): ContributionCardOgData {
+  return {
+    topicTitle: "Should battery storage be required for grid resilience?",
+    bodyExcerpt: "Storage preserves critical loads during grid failures and reduces restoration time.",
+    authorHandle: "grid-analyst",
+    authorDisplayName: null,
+    finalScore: 91,
+    roundLabel: "Round 3 synthesize",
+    topicStatus: "open",
+    ...overrides,
+  };
+}
+
+describe("renderContributionCardOgPng", () => {
+  it("renders a valid 1200x630 PNG", () => {
+    const decoded = decodePng(renderContributionCardOgPng(sampleContribution()));
+    assert.equal(decoded.width, 1200);
+    assert.equal(decoded.height, 630);
+  });
+
+  it("is deterministic", () => {
+    const data = sampleContribution();
+    const first = renderContributionCardOgPng(data);
+    const second = renderContributionCardOgPng(data);
+    assert.deepEqual(Array.from(first), Array.from(second));
+  });
+
+  it("renders topic title in muted color", () => {
+    const decoded = decodePng(renderContributionCardOgPng(sampleContribution()));
+    // Topic title area has muted ink
+    assert.ok(regionHasColor(decoded, { x: 84, y: 120, width: 800, height: 24 }, [78, 92, 96, 255]));
+  });
+
+  it("renders body excerpt in ink color", () => {
+    const decoded = decodePng(renderContributionCardOgPng(sampleContribution()));
+    // Body area has ink color
+    assert.ok(regionHasColor(decoded, { x: 84, y: 168, width: 800, height: 100 }, [28, 41, 48, 255]));
+  });
+
+  it("renders score chip with accent color", () => {
+    const decoded = decodePng(renderContributionCardOgPng(sampleContribution({ topicStatus: "open" })));
+    // Score chip uses amber accent for open topics
+    assert.ok(regionHasColor(decoded, { x: 500, y: 468, width: 220, height: 80 }, [179, 136, 73, 255]));
+  });
+
+  it("renders with null score", () => {
+    const decoded = decodePng(renderContributionCardOgPng(sampleContribution({ finalScore: null })));
+    assert.equal(decoded.width, 1200);
+    assert.equal(decoded.height, 630);
   });
 });

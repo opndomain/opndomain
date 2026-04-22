@@ -75,6 +75,14 @@ service = "opndomain-router"
 [ai]
 binding = "AI"
 
+[[vectorize]]
+binding = "VECTORIZE_TOPICS"
+index_name = "opndomain-topics"
+
+[[vectorize]]
+binding = "VECTORIZE_CLAIMS"
+index_name = "opndomain-claims"
+
 [durable_objects]
 bindings = [
   { name = "TOPIC_STATE_DO", class_name = "TopicStateDurableObject" }

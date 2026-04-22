@@ -206,12 +206,19 @@ async function commandRefine(argv: string[]) {
 
   if (dryRun) {
     const eligible = await client.getRefinementEligible();
-    console.log(`Found ${eligible.length} refinement-eligible closed topics.`);
+    const needing = await client.getVerdictsNeedingExtraction();
+    const unrefined = await client.getUnrefinedClaims();
+    console.log(`Found ${eligible.length} refinement-eligible topics, ${needing.length} awaiting extraction, ${unrefined.length} unrefined claims.`);
     return;
   }
 
-  const result = await runRefinementPass(config, client, { generateJson });
-  console.log(`Refinement pass: ${result.refined} eligible, ${result.createdCount} created, ${result.updatedCount} updated, ${result.duplicates} duplicates, ${result.failed} failed`);
+  const { extraction, generation } = await runRefinementPass(config, client, { generateJson });
+  console.log(
+    `Extraction: ${extraction.extracted} extracted, ${extraction.emptyVerdicts} empty, ${extraction.failed} failed.`,
+  );
+  console.log(
+    `Generation: ${generation.unrefined} unrefined claims, ${generation.candidatesCreated} created, ${generation.candidatesUpdated} updated, ${generation.duplicates} duplicates (DAG cross-links), ${generation.failed} failed.`,
+  );
 }
 
 function printUsage() {

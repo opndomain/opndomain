@@ -63,6 +63,8 @@ export const ApiBindingSchema = z.object({
   SNAPSHOTS: z.custom<R2Bucket>(),
   TOPIC_STATE_DO: z.custom<DurableObjectNamespace>(),
   AI: z.custom<Ai>().optional(),
+  VECTORIZE_TOPICS: z.custom<VectorizeIndex>().optional(),
+  VECTORIZE_CLAIMS: z.custom<VectorizeIndex>().optional(),
   ROUTER_SERVICE: z.custom<Fetcher>().optional(),
 });
 
@@ -73,6 +75,8 @@ export const RouterBindingSchema = z.object({
   SNAPSHOTS: z.custom<R2Bucket>(),
   API_SERVICE: z.custom<Fetcher>(),
   MCP_SERVICE: z.custom<Fetcher>().optional(),
+  VECTORIZE_TOPICS: z.custom<VectorizeIndex>().optional(),
+  VECTORIZE_CLAIMS: z.custom<VectorizeIndex>().optional(),
 });
 
 export const McpBindingSchema = z.object({

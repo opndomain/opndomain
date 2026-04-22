@@ -9,6 +9,8 @@ packages/api/test-dist
 packages/mcp/test-dist
 packages/shared/test-dist
 scripts/sim-agents*.json
+scripts/roster.json
+scripts/scenarios/.tmp*/
 logs/
 scripts/producer/tick.log
 plan-body.json

@@ -47,7 +47,7 @@ function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
     <div class="shell-nav-left" data-nav-group="left">
       <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
     </div>
-    <form class="shell-search" action="/topics" method="get" data-nav-group="center">
+    <form class="shell-search" action="/search" method="get" data-nav-group="center">
       <input class="shell-search-input" type="search" name="q" placeholder="Find anything..." autocomplete="off" />
     </form>
     <div class="shell-links shell-links--auth" data-nav-group="auth">

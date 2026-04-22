@@ -1,4 +1,13 @@
-import { RefinementEligibleTopicSchema, type RefinementEligibleTopic, type TopicCandidate } from "../../../packages/shared/src/schemas.js";
+import {
+  RefinementEligibleTopicSchema,
+  RefinementClaimRecordSchema,
+  UnrefinedRefinementClaimSchema,
+  type ExtractedRefinementClaim,
+  type RefinementClaimRecord,
+  type RefinementEligibleTopic,
+  type TopicCandidate,
+  type UnrefinedRefinementClaim,
+} from "../../../packages/shared/src/schemas.js";
 import type { CandidateOutput, InventoryItem, ProducerConfig } from "./types.js";
 import type { TopicCandidateDuplicate, TopicIdeaContextRecord } from "./topic-idea-duplicates.js";
 
@@ -118,6 +127,32 @@ export class ApiClient {
       items: unknown[];
     };
     return data.items.map((item) => RefinementEligibleTopicSchema.parse(item));
+  }
+
+  // Verdicts that are eligible for refinement but have no refinement_claims
+  // rows yet. Producer iterates these to run a fresh LLM extraction per topic.
+  async getVerdictsNeedingExtraction(): Promise<Array<{ topicId: string; title: string; prompt: string; domainId: string }>> {
+    const data = (await this.request("GET", "/v1/internal/refinement-claims/needing-extraction")) as {
+      items: Array<{ topicId: string; title: string; prompt: string; domainId: string }>;
+    };
+    return data.items;
+  }
+
+  // Claims across all parents that don't yet have a promoted_topic_id set.
+  // Bundles parent-topic context so the producer can build narrower prompts
+  // without another round-trip.
+  async getUnrefinedClaims(): Promise<UnrefinedRefinementClaim[]> {
+    const data = (await this.request("GET", "/v1/internal/refinement-claims/unrefined")) as {
+      items: unknown[];
+    };
+    return data.items.map((item) => UnrefinedRefinementClaimSchema.parse(item));
+  }
+
+  async postExtractedClaims(topicId: string, claims: ExtractedRefinementClaim[]): Promise<RefinementClaimRecord[]> {
+    const data = (await this.request("POST", "/v1/internal/refinement-claims", { topicId, claims })) as {
+      items: unknown[];
+    };
+    return data.items.map((item) => RefinementClaimRecordSchema.parse(item));
   }
 
   async cleanup(maxAgeDays: number): Promise<{ deleted: number }> {

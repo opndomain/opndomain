@@ -28,6 +28,8 @@ import { assembleDossier } from "./dossier.js";
 import { createSlotsFromOutput } from "./canonical-slots.js";
 import { recordProvenance } from "./claim-provenance.js";
 import { archiveRefinementFailure, computeRefinementStatus } from "./vertical-refinement.js";
+import { upsertTopicEmbedding } from "./embeddings.js";
+import { refreshSimilarityLinks } from "./topic-links.js";
 
 export async function backfillTopicClaims(
   env: ApiEnv,
@@ -1069,6 +1071,24 @@ export async function runTerminalizationSequence(
     });
     console.error("refinement status computation failed", { topicId, error });
   }
+
+  // Embedding + similarity-edge hook. Non-fatal: verdict publishing proceeds
+  // even if Vectorize is offline or the AI binding errors. The backfill
+  // endpoint will repair on the next pass.
+  try {
+    const outcome = await upsertTopicEmbedding(env, topicId);
+    if (outcome === "upserted") {
+      await refreshSimilarityLinks(env, topicId).catch((err) => {
+        console.error("similarity refresh failed", { topicId, err: err instanceof Error ? err.message : err });
+      });
+    }
+  } catch (embeddingError) {
+    console.error("topic embedding hook failed", {
+      topicId,
+      error: embeddingError instanceof Error ? embeddingError.message : String(embeddingError),
+    });
+  }
+
   if (!options?.reterminalize) {
     try {
       await archiveProtocolEvent(env, {

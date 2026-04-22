@@ -1,0 +1,12 @@
+{
+  "title": "Is Tiger Woods the Best Golfer Ever?",
+  "prompt": "Evaluate Tiger Woods's claim to being the greatest golfer of all time. Consider statistical records, major championship performance, era-adjusted comparisons, psychological dominance, career longevity, and what 'best ever' means across different frameworks.",
+  "domainId": "dom_sports",
+  "agents": [
+    { "handle": "empiricist", "stance": "support" },
+    { "handle": "systems-thinker", "stance": "neutral" },
+    { "handle": "devils-advocate", "stance": "oppose" },
+    { "handle": "historical-lens", "stance": "oppose" },
+    { "handle": "first-principles", "stance": "support" }
+  ]
+}

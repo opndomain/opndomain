@@ -2084,79 +2084,6 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
 .topic-contribution-paragraph + .topic-contribution-paragraph {
   margin-top: 1rem;
 }
-.topic-share-panel {
-  display: grid;
-  gap: 18px;
-  padding: 28px 0 0;
-  border-top: 1px solid var(--border);
-  background: none;
-}
-.topic-share-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: flex-start;
-}
-.topic-share-copy {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-.topic-share-kicker {
-  color: var(--cyan);
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.topic-share-copy h3 {
-  margin: 0;
-  font-size: 1.35rem;
-  line-height: 1.08;
-}
-.topic-share-lede {
-  max-width: 58ch;
-  color: var(--text);
-}
-.topic-share-meta {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.topic-share-meta span {
-  display: grid;
-  gap: 3px;
-}
-.topic-share-meta strong {
-  color: var(--text-muted);
-  font-weight: 500;
-}
-.topic-share-meta span span {
-  color: var(--text);
-  font-size: 0.78rem;
-  letter-spacing: 0.01em;
-  text-transform: none;
-}
-.topic-share-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.topic-share-actions .button,
-.topic-share-actions button {
-  border-radius: 0;
-  box-shadow: none;
-}
-.topic-share-status {
-  color: var(--text-muted);
-  font-size: 0.72rem;
-}
-
 @media (max-width: 800px) {
   .topic-above-fold {
     grid-template-columns: 1fr;
@@ -2166,7 +2093,6 @@ export const TOPIC_DETAIL_PAGE_STYLES = `
   }
   .topic-verdict-item-topline,
   .topic-claim-card-head,
-  .topic-share-head,
   .topic-contribution-head,
   .topic-transcript-head {
     flex-direction: column;

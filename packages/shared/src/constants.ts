@@ -47,7 +47,11 @@ export const OAUTH_WELCOME_SCOPE = "oauth_welcome";
 
 export const DEFAULT_TOPIC_SWEEP_LIMIT = 50;
 export const ONE_HOUR_IN_SECONDS = 60 * 60;
-export const MAX_REFINEMENT_DEPTH = 3;
+// Safety cap — branches terminate primarily via claim-extraction returning
+// zero contested claims. This is a last-resort stop so a pathological chain
+// can't loop forever. 10 is generous; natural convergence usually halts
+// far earlier.
+export const MAX_REFINEMENT_DEPTH = 10;
 export const REFINEMENT_CANDIDATE_SOURCE = "vertical_refinement";
 
 export const REPUTATION_BOOST_CAP = 0.2;
@@ -122,6 +126,19 @@ export const ADAPTIVE_SCORING_SHADOW_SEMANTIC_WEIGHT_BY_TIER = {
 export const SEMANTIC_COMPARISON_WINDOW_SIZE = 20;
 export const SEMANTIC_TOPIC_EMBEDDING_SOURCE = "topic_prompt_only";
 export const SEMANTIC_EMBEDDING_MODEL = "@cf/baai/bge-small-en-v1.5";
+// Bump when the text-composition logic for topic/claim embeddings changes.
+// Stored alongside the embedding so backfill can detect rows indexed under
+// an old text layout and re-embed them.
+export const EMBEDDING_RECORD_VERSION = 1;
+// Cosine threshold above which a refinement claim is considered "addressed"
+// by an existing topic from another root subtree. Higher = more conservative
+// cross-linking; lower = more DAG edges.
+export const SEMANTIC_CROSSLINK_THRESHOLD = 0.85;
+// Cosine threshold for the cached top-K semantic_similarity edges rendered
+// on topic pages.
+export const SEMANTIC_SIMILARITY_THRESHOLD = 0.65;
+// Top-K for cached semantic_similarity edges per topic.
+export const SEMANTIC_SIMILARITY_EDGE_LIMIT = 5;
 export const SEMANTIC_NOVELTY_CONFIDENCE_EMPTY = 0.35;
 export const SEMANTIC_NOVELTY_CONFIDENCE_SINGLE = 0.72;
 export const SEMANTIC_NOVELTY_CONFIDENCE_MULTI = 1;
@@ -222,6 +239,7 @@ export const PAGE_HTML_TOPICS_PREFIX = `${PAGE_HTML_CACHE_PREFIX}topics:`;
 export const PAGE_HTML_TOPIC_PREFIX = `${PAGE_HTML_CACHE_PREFIX}topic:`;
 export const PAGE_HTML_DOMAIN_PREFIX = `${PAGE_HTML_CACHE_PREFIX}domain:`;
 export const PAGE_HTML_BEING_PREFIX = `${PAGE_HTML_CACHE_PREFIX}being:`;
+export const PAGE_HTML_SEARCH_PREFIX = `${PAGE_HTML_CACHE_PREFIX}search:`;
 export const VERDICT_JSON_CACHE_PREFIX = "verdict-json:";
 
 export const MCP_SESSION_PREFIX = "mcp-session:";
@@ -266,6 +284,10 @@ export function pageHtmlDomainKey(domainSlug: string): string {
 
 export function pageHtmlBeingKey(beingHandle: string): string {
   return `${PAGE_HTML_BEING_PREFIX}${beingHandle}`;
+}
+
+export function pageHtmlSearchKey(queryHash: string): string {
+  return `${PAGE_HTML_SEARCH_PREFIX}${queryHash}`;
 }
 
 export function verdictJsonCacheKey(topicId: string): string {

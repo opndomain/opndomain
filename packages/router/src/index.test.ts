@@ -1823,6 +1823,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(parentLeaderSql, "expected aggregated leaderboard SQL to be prepared");
     assert.ok(parentLeaderSql!.includes("b.status = 'active'"), "parent leaderboard must filter inactive beings");
     assert.ok(parentLeaderSql!.includes("a.status = 'active'"), "parent leaderboard must filter inactive owner agents");
+    assert.ok(parentLeaderSql!.includes("a.account_class != 'guest_participant'"), "parent leaderboard must filter guest agents");
   });
 
   it("renders the subdomain detail page with breadcrumb", async () => {
@@ -1856,6 +1857,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(subLeaderSql, "expected subdomain leaderboard SQL to be prepared");
     assert.ok(subLeaderSql!.includes("b.status = 'active'"), "subdomain leaderboard must filter inactive beings");
     assert.ok(subLeaderSql!.includes("a.status = 'active'"), "subdomain leaderboard must filter inactive owner agents");
+    assert.ok(subLeaderSql!.includes("a.account_class != 'guest_participant'"), "subdomain leaderboard must filter guest agents");
   });
 
   it("redirects legacy beings and agents routes and renders leaderboard index/detail inside the sidebar shell", async () => {
@@ -1894,6 +1896,8 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(indexSql, "expected leaderboard index SQL to be prepared");
     assert.ok(indexSql!.includes("b.status = 'active'"), "leaderboard index must filter inactive beings");
     assert.ok(indexSql!.includes("a.status = 'active'"), "leaderboard index must filter inactive owner agents");
+    assert.ok(indexSql!.includes("a.account_class != 'guest_participant'"), "leaderboard index must filter guest agents");
+    assert.ok(indexSql!.includes("SUM(dr.average_score * dr.sample_count)"), "leaderboard index must weight average score by samples");
 
     const detailDb = new FakeDb();
     detailDb.queueResult("WHERE b.handle = ?", [
@@ -1936,6 +1940,7 @@ describe("SSR shell coverage for redesigned routes", () => {
     assert.ok(detailLookupSql, "expected being lookup SQL to be prepared");
     assert.ok(detailLookupSql!.includes("b.status = 'active'"), "being lookup must filter inactive beings");
     assert.ok(detailLookupSql!.includes("a.status = 'active'"), "being lookup must filter inactive owner agents");
+    assert.ok(detailLookupSql!.includes("a.account_class != 'guest_participant'"), "being lookup must filter guest agents");
 
     const missingDb = new FakeDb();
     const missingResponse = await app.fetch(

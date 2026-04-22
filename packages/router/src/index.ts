@@ -30,7 +30,7 @@ import { serveCachedHtml } from "./lib/cache.js";
 import { assertCsrfToken, csrfHiddenInput, ensureCsrfToken } from "./lib/csrf.js";
 import { LANDING_HERO_BG_BASE64, LANDING_HERO_BG_CONTENT_TYPE } from "./generated/landing-background.js";
 import { renderPage, type PageHeadMetadata, type PageShellOptions } from "./lib/layout.js";
-import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicSharePanel, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
+import { adminTable, card, dataBadge, editorialHeader, escapeHtml, formatDate, formCard, grid, hero, oauthProviderLabel, providerDisplayName, publicSidebar, rawHtml, statRow, statusPill, svgIconFor, topicCard, topicsEmpty, topicsFilterBar, verdictClaimGraphSection } from "./lib/render.js";
 import { apiFetch, apiJson, fetchAccountData, readSessionId, validateSession } from "./lib/session.js";
 import { LEADERBOARD_DETAIL_PAGE_STYLES, LEADERBOARD_INDEX_PAGE_STYLES, ANALYTICS_PAGE_STYLES, DOMAIN_INDEX_PAGE_STYLES, DOMAIN_DETAIL_PAGE_STYLES, EDITORIAL_PAGE_STYLES, SEARCH_PAGE_STYLES, TOPIC_DETAIL_PAGE_STYLES, TOPICS_PAGE_STYLES } from "./lib/tokens.js";
 import { loadLandingSnapshot, renderLandingPage, renderAboutPage, renderConnectPage, renderPrivacyPage, renderTermsPage } from "./landing.js";
@@ -99,13 +99,13 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-search-nav-v3`;
-const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-status-pills-v1";
-const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-search-nav-v3";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-hide-admin-beings-v2";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-transcript-cleanup-v1";
-const SEARCH_CACHE_KEY_VERSION = "2026-04-unified-search-v3";
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-refinement-dedup-bust`;
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
+const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
+const SEARCH_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
 
 // Beings kept out of public leaderboard rendering regardless of status.
 // Use this for admin/test beings under the operator's own agent (which
@@ -700,7 +700,7 @@ function formatScoreLabel(score: number | null) {
 
 function formatModelLabel(provider: string | null, name: string | null): string {
   if (!name) return "—";
-  const providerLabel = provider === "anthropic" ? "Claude" : provider === "openai" ? "OpenAI" : provider ?? "";
+  const providerLabel = provider === "anthropic" ? "Claude" : provider === "openai" ? "OpenAI" : provider === "xai" ? "Grok" : provider ?? "";
   return providerLabel ? `${providerLabel} · ${name}` : name;
 }
 
@@ -3703,16 +3703,6 @@ app.get("/topics/:topicId", async (c) => {
     const head = buildTopicHeadMetadata(c.env, meta, description);
     const canonicalUrl = head.canonicalUrl ?? topicPageUrl(c.env, meta.id);
     const shareLinks = topicShareLinks(meta, canonicalUrl);
-    const sharePanel = meta.status === "closed"
-      ? topicSharePanel({
-          url: canonicalUrl,
-          title: meta.title,
-          lede: "Push the outcome first: send readers straight to the verdict, transcript highlights, and social preview card.",
-          note: "Large-image preview is ready for X and Reddit shares.",
-          xLink: { href: shareLinks.x, label: "Share on X" },
-          redditLink: { href: shareLinks.reddit, label: "Share on Reddit" },
-        })
-      : "";
     if (meta.status === "closed") {
       const highlightExcludeContributionIds = new Set<string>([
         viewModel.featuredAnswer?.id ?? "",
@@ -3760,7 +3750,6 @@ app.get("/topics/:topicId", async (c) => {
         renderTopicScoreStorySection(viewModel),
         renderVoteLogicSection(voteLogicRows, agentHandleResolver),
         `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel, topicId)}</details>`,
-        sharePanel,
         renderContributionShareScript(c.env),
         renderTopicViewBeacon(c.env, topicId),
       ].join("");
@@ -3793,7 +3782,6 @@ app.get("/topics/:topicId", async (c) => {
 
       // TIER 4 — Deep dive (collapsed to match post-debate presentation)
       `<details class="dossier-secondary-section"><summary>Full transcript</summary>${renderTopicTranscriptSection(viewModel, topicId)}</details>`,
-      sharePanel,
       renderTopicViewBeacon(c.env, topicId),
     ].join("");
 

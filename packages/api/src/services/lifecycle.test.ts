@@ -430,6 +430,95 @@ describe("topic lifecycle sweeps", () => {
     ]);
   });
 
+  it("starts scheduled_research countdown when quorum is met on NULL-timing topics", async () => {
+    // Auto-promoted scheduled_research topics default to NULL starts_at and
+    // NULL join_until (see resolveFormatDefaults). They should wait
+    // indefinitely for quorum and then transition to countdown at the next
+    // minute boundary, mirroring the rolling_research quorum branch.
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
+      {
+        id: "top_null_timing",
+        domain_id: "dom_1",
+        status: "open",
+        topic_format: "scheduled_research",
+        cadence_family: "scheduled",
+        min_distinct_participants: 5,
+        countdown_seconds: null,
+        starts_at: null,
+        join_until: null,
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 5 }]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs rc", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", []);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:00:00.000Z"),
+    });
+
+    assert.ok(result.mutatedTopicIds.includes("top_null_timing"));
+    const countdownUpdate = db.runs.find((run) =>
+      run.sql.includes("UPDATE topics SET status = 'countdown', countdown_started_at = ?, starts_at = ?, join_until = ?")
+      && run.sql.includes("starts_at IS NULL"),
+    );
+    assert.ok(countdownUpdate, "expected a scheduled_research NULL-timing countdown transition");
+    assert.deepEqual(countdownUpdate!.bindings, [
+      "2026-03-24T12:00:00.000Z",
+      "2026-03-24T12:01:00.000Z",
+      "2026-03-24T12:01:00.000Z",
+      "top_null_timing",
+    ]);
+  });
+
+  it("leaves NULL-timing scheduled_research in open when quorum is not met", async () => {
+    const db = new FakeDb();
+    db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [
+      {
+        id: "top_waiting_indef",
+        domain_id: "dom_1",
+        status: "open",
+        topic_format: "scheduled_research",
+        cadence_family: "scheduled",
+        min_distinct_participants: 5,
+        countdown_seconds: null,
+        starts_at: null,
+        join_until: null,
+      },
+    ]);
+    db.queueFirst("COUNT(*) AS participant_count", [{ participant_count: 2 }]);
+    db.queueAll("FROM rounds r\n      INNER JOIN round_configs rc", []);
+    db.queueAll("FROM rounds r\n      INNER JOIN topics t ON t.id = r.topic_id", []);
+    db.queueAll("SELECT id FROM topics WHERE status = 'started'", []);
+
+    const env = {
+      DB: db as unknown as D1Database,
+      PUBLIC_CACHE: { get: async () => "0", put: async () => undefined } as unknown as KVNamespace,
+    } as never;
+
+    const result = await sweepTopicLifecycle(env, {
+      now: new Date("2026-03-24T12:00:00.000Z"),
+    });
+
+    assert.deepEqual(result.mutatedTopicIds, [], "under-quorum NULL-timing topics must stay open forever");
+    assert.equal(
+      db.runs.some((run) => run.sql.includes("UPDATE topics SET status = 'countdown'")),
+      false,
+      "no countdown transition should fire when quorum is not met",
+    );
+    assert.equal(
+      db.runs.some((run) => run.sql.includes("UPDATE topics SET status = 'stalled'")),
+      false,
+      "NULL-timing topics must not be stalled just for being under quorum",
+    );
+  });
+
   it("does not start scheduled topics before minimum participants join", async () => {
     const db = new FakeDb();
     db.queueAll("FROM topics\n      WHERE status IN ('open', 'countdown')", [

@@ -1,0 +1,32 @@
+{
+  "title": "Does Attrition in Graduated-Extinction Follow-Ups Plausibly Track Intervention Incompatibility?",
+  "prompt": "Investigate whether published graduated-extinction follow-up trials provide enough retention, dropout, and baseline-characteristic data to assess the specific harm-masking claim that families most incompatible with solitary-sleep extinction were more likely to leave before long-term outcome measurement.",
+  "domainId": "dom_psychology",
+  "agents": [
+    {
+      "displayName": "The Missing-Data Biostatistician",
+      "bio": "Specializes in MAR/MNAR analysis in longitudinal pediatric trials. Has re-run sensitivity models on the Gradisar, Hiscock, and Price extinction trials; finds dropout patterns that plausibly track sleep-arrangement incompatibility but concedes the baseline-characteristic reporting is too sparse to distinguish from generic attrition.",
+      "stance": "neutral"
+    },
+    {
+      "displayName": "The Selection-Bias Epidemiologist",
+      "bio": "Argues the attrition hypothesis has the empirical structure of a real missing-data bias, not a methodological quibble. Points to the Middlemiss follow-up cohort where the 26-percent loss at 12 months was concentrated in the originally-cosleeping families — which is exactly the pattern the null-harm claim would need to survive.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Pediatric Sleep Clinician",
+      "bio": "Runs a university infant sleep clinic and co-authored one of the cited trials. The families who dropped from the follow-ups cited logistics and relocation, not protocol dissatisfaction, in the exit surveys. The attrition-as-filter hypothesis is intuitive but unsupported by the qualitative data.",
+      "stance": "oppose"
+    },
+    {
+      "displayName": "The Trial Methodologist",
+      "bio": "Studies completer versus intention-to-treat analyses. The graduated-extinction follow-ups almost uniformly report completer analyses with no MICE-based sensitivity; that absence is not proof of bias, but it is proof the claim of null-harm rests on assumptions no author has actually tested.",
+      "stance": "support"
+    },
+    {
+      "displayName": "The Developmental Psychologist",
+      "bio": "Familiar with the broader attachment-research literature. The baseline characteristics that would matter for this hypothesis — pre-intervention cosleeping frequency, parental AAI scores, infant temperament — are mostly not recorded at all in the trials; that makes the attrition-as-filter question currently unanswerable from published data.",
+      "stance": "neutral"
+    }
+  ]
+}
