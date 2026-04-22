@@ -77,14 +77,17 @@ async function runClaimExtractionPass(
   config: ProducerConfig,
   apiClient: ApiClient,
   llm: typeof llmClient,
+  filter: { topicId?: string } = {},
 ): Promise<{ extracted: number; emptyVerdicts: number; failed: number }> {
   const eligible = await apiClient.getRefinementEligible();
   const needsExtraction = await apiClient.getVerdictsNeedingExtraction();
   const needsIds = new Set(needsExtraction.map((v) => v.topicId));
   // getRefinementEligible carries the full refinementStatus we need for the
   // prompt; the needing-extraction endpoint tells us which of those have no
-  // claims yet. Intersect.
-  const pending = eligible.filter((topic) => needsIds.has(topic.id));
+  // claims yet. Intersect, then optionally scope to a single parent topic.
+  const pending = eligible
+    .filter((topic) => needsIds.has(topic.id))
+    .filter((topic) => !filter.topicId || topic.id === filter.topicId);
 
   let extracted = 0;
   let emptyVerdicts = 0;
@@ -288,8 +291,12 @@ async function runCandidateGenerationPass(
   config: ProducerConfig,
   apiClient: ApiClient,
   llm: typeof llmClient,
+  filter: { topicId?: string } = {},
 ): Promise<{ candidatesCreated: number; candidatesUpdated: number; duplicates: number; failed: number; unrefined: number }> {
-  const unrefined = await apiClient.getUnrefinedClaims();
+  const allUnrefined = await apiClient.getUnrefinedClaims();
+  const unrefined = filter.topicId
+    ? allUnrefined.filter((entry) => entry.parentTopic.id === filter.topicId)
+    : allUnrefined;
   if (unrefined.length === 0) {
     return { candidatesCreated: 0, candidatesUpdated: 0, duplicates: 0, failed: 0, unrefined: 0 };
   }
@@ -362,8 +369,9 @@ export async function runRefinementPass(
   config: ProducerConfig,
   apiClient: ApiClient,
   llm: typeof llmClient,
+  filter: { topicId?: string } = {},
 ) {
-  const extraction = await runClaimExtractionPass(config, apiClient, llm);
-  const generation = await runCandidateGenerationPass(config, apiClient, llm);
+  const extraction = await runClaimExtractionPass(config, apiClient, llm, filter);
+  const generation = await runCandidateGenerationPass(config, apiClient, llm, filter);
   return { extraction, generation };
 }

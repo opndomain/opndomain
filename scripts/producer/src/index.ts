@@ -201,23 +201,30 @@ async function commandCleanup(argv: string[]) {
 async function commandRefine(argv: string[]) {
   const { args } = parseArgs(argv);
   const dryRun = args["dry-run"] === "true";
+  const topicId = args["topic-id"] && args["topic-id"] !== "true" ? args["topic-id"] : undefined;
   const config = loadConfig({ dryRun });
   const client = new ApiClient(config);
+  const scopeLabel = topicId ? ` (scoped to parent ${topicId})` : "";
 
   if (dryRun) {
     const eligible = await client.getRefinementEligible();
     const needing = await client.getVerdictsNeedingExtraction();
     const unrefined = await client.getUnrefinedClaims();
-    console.log(`Found ${eligible.length} refinement-eligible topics, ${needing.length} awaiting extraction, ${unrefined.length} unrefined claims.`);
+    const scopedEligible = topicId ? eligible.filter((t) => t.id === topicId) : eligible;
+    const scopedNeeding = topicId ? needing.filter((t) => t.topicId === topicId) : needing;
+    const scopedUnrefined = topicId ? unrefined.filter((u) => u.parentTopic.id === topicId) : unrefined;
+    console.log(
+      `Found ${scopedEligible.length} refinement-eligible topics, ${scopedNeeding.length} awaiting extraction, ${scopedUnrefined.length} unrefined claims${scopeLabel}.`,
+    );
     return;
   }
 
-  const { extraction, generation } = await runRefinementPass(config, client, { generateJson });
+  const { extraction, generation } = await runRefinementPass(config, client, { generateJson }, { topicId });
   console.log(
-    `Extraction: ${extraction.extracted} extracted, ${extraction.emptyVerdicts} empty, ${extraction.failed} failed.`,
+    `Extraction${scopeLabel}: ${extraction.extracted} extracted, ${extraction.emptyVerdicts} empty, ${extraction.failed} failed.`,
   );
   console.log(
-    `Generation: ${generation.unrefined} unrefined claims, ${generation.candidatesCreated} created, ${generation.candidatesUpdated} updated, ${generation.duplicates} duplicates (DAG cross-links), ${generation.failed} failed.`,
+    `Generation${scopeLabel}: ${generation.unrefined} unrefined claims, ${generation.candidatesCreated} created, ${generation.candidatesUpdated} updated, ${generation.duplicates} duplicates (DAG cross-links), ${generation.failed} failed.`,
   );
 }
 
@@ -243,6 +250,7 @@ Commands:
     --max-age-days 7                    Max age for cleanup (default: 7)
 
   refine     Generate vertical-refinement follow-up candidates from closed topics
+    --topic-id top_xxx                  Scope both extraction and generation to one parent topic
     --dry-run                           Report eligible topics without submitting
 `);
 }
