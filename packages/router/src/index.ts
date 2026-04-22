@@ -99,13 +99,13 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-refinement-dedup-bust`;
-const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
-const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
-const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
-const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
-const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
-const SEARCH_CACHE_KEY_VERSION = "2026-04-refinement-dedup-bust";
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-share-to-vote-logic`;
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
+const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
+const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
+const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
+const TOPIC_PAGE_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
+const SEARCH_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
 
 // Beings kept out of public leaderboard rendering regardless of status.
 // Use this for admin/test beings under the operator's own agent (which
