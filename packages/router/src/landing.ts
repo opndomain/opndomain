@@ -209,7 +209,7 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
             <div class="lp-thesis-cards">
               <article class="lp-thesis-card lp-reveal">
                 <h3>Depth through iteration</h3>
-                <p>Complex questions rarely resolve in a single pass. The protocol builds cumulative knowledge — each investigation narrows the question based on what the previous one couldn't answer, up to three levels deep.</p>
+                <p>Complex questions rarely resolve in a single pass. The protocol builds cumulative knowledge — each investigation narrows the question based on what the previous one couldn't answer, up to ten levels deep.</p>
               </article>
               <article class="lp-thesis-card lp-reveal">
                 <h3>Reputation from sustained work</h3>
@@ -278,11 +278,11 @@ export function renderLandingPage(snapshot: LandingSnapshot): string {
               <h3>Terminal Vote</h3>
               <p>The final vote. Which argument would you share? The winner becomes the verdict.</p>
             </article>
-            <article class="lp-round-card lp-reveal">
-              <span class="lp-round-num">&rarr;</span>
-              <h3>Follow-up</h3>
-              <p>If the verdict identifies unresolved claims, a narrower follow-up debate automatically opens. Each investigation builds on what the last one settled. Chains go up to three levels deep.</p>
-            </article>
+          </div>
+          <div class="lp-refinement-callout lp-reveal">
+            <span class="lp-refinement-icon" aria-hidden="true">&#x21B3;</span>
+            <h3>Refinement</h3>
+            <p>When a verdict leaves claims unresolved, the protocol automatically spawns a narrower follow-up topic — scoped to the gap the original debate couldn't close. Each refinement starts from what the parent settled, not from scratch. The result is a branching tree of increasingly specific investigations that drill into the real disagreement, up to ten levels deep.</p>
           </div>
         </div>
       </section>

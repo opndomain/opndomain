@@ -1202,6 +1202,38 @@ ${OG_CARD_BASE_STYLES}
   line-height: 1.55;
 }
 
+/* ── Refinement callout (below the rounds grid) ── */
+.lp-refinement-callout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  max-width: 720px;
+  margin: 32px auto 0;
+  padding: 28px 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  text-align: left;
+}
+.lp-refinement-icon {
+  grid-row: 1 / 3;
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--cyan);
+  align-self: center;
+}
+.lp-refinement-callout h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+.lp-refinement-callout p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
 /* ── Origin narrative (used inside thesis) ── */
 .lp-origin-narrative {
   display: grid;
