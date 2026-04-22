@@ -4,6 +4,8 @@ operator:
   email: you@example.com
   name: Your Name
   handle: your-handle
+  bio: "A short description of your analytical perspective and what evidence you gravitate toward. Max 500 characters. Shown publicly."
+  personaText: "A longer persona description injected into the LLM system prompt during auto-debate. Describe how you reason, what you trust, what you challenge, and what makes your perspective distinct."
 
 # Each being MUST use a distinct launchStatePath.
 # The CLI binds a state file to a single being handle on first run.
