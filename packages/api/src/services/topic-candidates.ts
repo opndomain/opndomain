@@ -16,7 +16,7 @@ import {
   findTopicIdeaDuplicate,
 } from "@opndomain/shared";
 import type { ApiEnv } from "../lib/env.js";
-import { allRows, firstRow, runStatement } from "../lib/db.js";
+import { allRows, firstRow, runCas, runStatement } from "../lib/db.js";
 import { badRequest, conflict, notFound } from "../lib/errors.js";
 import { createId } from "../lib/ids.js";
 import { nowIso } from "../lib/time.js";
@@ -24,6 +24,7 @@ import { invalidateTopicPublicSurfaces } from "./invalidation.js";
 import { recordLifecycleMutation } from "./lifecycle.js";
 import { createSystemTopic } from "./topics.js";
 import { archiveRefinementFailure, linkRefinementChild } from "./vertical-refinement.js";
+import { linkClaimToPromotedTopic } from "./refinement-claims.js";
 
 type IdeaRecordExclusions = {
   ancestorTopicIds?: Set<string>;
@@ -35,6 +36,8 @@ type TopicCandidateRow = {
   source: string;
   source_id: string | null;
   source_url: string | null;
+  source_claim_id: string | null;
+  merged_claim_ids_json: string | null;
   domain_id: string;
   title: string;
   prompt: string;
@@ -52,6 +55,33 @@ type TopicCandidateRow = {
   updated_at: string;
 };
 
+// Parse a merged_claim_ids_json value defensively. NULL, malformed JSON,
+// non-array shapes, and non-string/empty entries all normalize to []. Used
+// by the row mappers (output contract: mergedClaimIds is always an array)
+// and by promoteOneCandidate (which then falls back to source_claim_id
+// when the parsed list is empty). Never throws.
+function parseMergedClaimIds(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of parsed) {
+    if (typeof entry !== "string") continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 type DomainInventoryGapRow = {
   id: string;
 };
@@ -68,6 +98,11 @@ function mapCandidateSummary(row: TopicCandidateRow): TopicCandidateSummary {
     source: row.source,
     sourceId: row.source_id,
     sourceUrl: row.source_url,
+    // ?? null so the output contract survives undefined coming in from older
+    // test fixtures or DB bindings that omit the column — the Zod summary
+    // schema expects string | null, not undefined.
+    sourceClaimId: row.source_claim_id ?? null,
+    mergedClaimIds: parseMergedClaimIds(row.merged_claim_ids_json),
     domainId: row.domain_id,
     title: row.title,
     topicFormat: row.topic_format,
@@ -93,6 +128,29 @@ function mapCandidateDetail(row: TopicCandidateRow): TopicCandidateDetail {
 }
 
 async function findDuplicateCandidate(env: ApiEnv, candidate: TopicCandidate) {
+  // Refinement candidates share source_id across siblings from the same
+  // parent topic, so identity is (source, source_id, source_claim_id). The
+  // DB partial unique index `idx_topic_candidates_refinement` enforces this.
+  if (candidate.source === REFINEMENT_CANDIDATE_SOURCE) {
+    if (!candidate.sourceId || !candidate.sourceClaimId) {
+      return null;
+    }
+    return firstRow<TopicCandidateRow>(
+      env.DB,
+      `
+        SELECT *
+        FROM topic_candidates
+        WHERE source = ? AND source_id = ? AND source_claim_id = ?
+        LIMIT 1
+      `,
+      candidate.source,
+      candidate.sourceId,
+      candidate.sourceClaimId,
+    );
+  }
+
+  // Non-refinement sources use the original (source, source_id) identity
+  // when a sourceId is present.
   if (candidate.sourceId) {
     return firstRow<TopicCandidateRow>(
       env.DB,
@@ -107,6 +165,9 @@ async function findDuplicateCandidate(env: ApiEnv, candidate: TopicCandidate) {
     );
   }
 
+  // Non-refinement sources without a sourceId fall back to (source, source_url)
+  // matching. Don't collapse this into the earlier branches — dropping it
+  // would silently break URL-sourced candidate dedup.
   return firstRow<TopicCandidateRow>(
     env.DB,
     `
@@ -275,14 +336,23 @@ function formatPromotionError(error: unknown) {
   return `${code}: ${message}`.slice(0, 500);
 }
 
-async function consumeTopicCandidate(env: ApiEnv, candidateId: string, topicId: string) {
+// Atomic claim: move an approved candidate to 'consumed' only if it is still
+// 'approved'. Returns false if another concurrent promoter already claimed it.
+// This closes the race where two invocations (e.g. per-minute cron + manual
+// promote-now) both select the same candidate and both call createSystemTopic,
+// producing duplicate topics.
+async function claimTopicCandidate(env: ApiEnv, candidateId: string): Promise<boolean> {
+  return runCas(
+    env.DB.prepare(
+      `UPDATE topic_candidates SET status = 'consumed' WHERE id = ? AND status = 'approved'`,
+    ).bind(candidateId),
+  );
+}
+
+async function recordPromotedTopic(env: ApiEnv, candidateId: string, topicId: string) {
   await runStatement(
     env.DB.prepare(
-      `
-        UPDATE topic_candidates
-        SET status = 'consumed', promoted_topic_id = ?, promotion_error = NULL
-        WHERE id = ?
-      `,
+      `UPDATE topic_candidates SET promoted_topic_id = ?, promotion_error = NULL WHERE id = ?`,
     ).bind(topicId, candidateId),
   );
 }
@@ -308,6 +378,23 @@ export async function batchUpsertTopicCandidates(
   const duplicates: BatchUpsertTopicCandidatesResponse["duplicates"] = [];
 
   for (const candidate of candidates) {
+    // Service-level guard (belt-and-suspenders with the Zod refinement in
+    // shared). Refinement candidates MUST carry sourceClaimId — the partial
+    // unique index idx_topic_candidates_refinement is `WHERE source = '...'
+    // AND source_claim_id IS NOT NULL`, so a refinement candidate without
+    // source_claim_id would silently bypass the dedup contract. This is an
+    // invalid input, not a duplicate condition.
+    if (candidate.source === REFINEMENT_CANDIDATE_SOURCE && !candidate.sourceClaimId) {
+      badRequest(
+        "invalid_refinement_candidate",
+        "Refinement candidates require sourceClaimId to enforce per-claim uniqueness.",
+      );
+    }
+
+    const mergedClaimIdsJson = candidate.mergedClaimIds && candidate.mergedClaimIds.length > 0
+      ? JSON.stringify(candidate.mergedClaimIds)
+      : null;
+
     const existing = await findDuplicateCandidate(env, candidate);
     if (!existing) {
       const ideaDuplicate = await findIdeaDuplicate(env, candidate);
@@ -320,15 +407,17 @@ export async function batchUpsertTopicCandidates(
         env.DB.prepare(
           `
             INSERT INTO topic_candidates (
-              id, source, source_id, source_url, domain_id, title, prompt, template_id, topic_format,
+              id, source, source_id, source_url, source_claim_id, merged_claim_ids_json, domain_id, title, prompt, template_id, topic_format,
               cadence_family, cadence_override_minutes, min_trust_tier, status, priority_score, published_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
           `,
         ).bind(
           createId("tcand"),
           candidate.source,
           candidate.sourceId ?? null,
           candidate.sourceUrl ?? null,
+          candidate.sourceClaimId ?? null,
+          mergedClaimIdsJson,
           candidate.domainId,
           candidate.title,
           candidate.prompt,
@@ -362,6 +451,7 @@ export async function batchUpsertTopicCandidates(
           UPDATE topic_candidates
           SET
             source_url = ?,
+            merged_claim_ids_json = ?,
             domain_id = ?,
             title = ?,
             prompt = ?,
@@ -378,6 +468,7 @@ export async function batchUpsertTopicCandidates(
         `,
       ).bind(
         candidate.sourceUrl ?? null,
+        mergedClaimIdsJson,
         candidate.domainId,
         candidate.title,
         candidate.prompt,
@@ -444,10 +535,102 @@ export async function getTopicCandidate(env: ApiEnv, candidateId: string): Promi
   return mapCandidateDetail(row);
 }
 
+async function promoteOneCandidate(
+  env: ApiEnv,
+  candidate: TopicCandidateRow,
+  now: Date,
+  mutatedTopicIds: string[],
+) {
+  // Claim the candidate before doing any work. If a concurrent promoter
+  // already claimed it, skip — otherwise we'd create a duplicate topic.
+  const claimed = await claimTopicCandidate(env, candidate.id);
+  if (!claimed) {
+    return;
+  }
+
+  try {
+    const topic = await createSystemTopic(env, validatePromotableCandidate(candidate));
+    await recordPromotedTopic(env, candidate.id, topic.id);
+    if (candidate.source === REFINEMENT_CANDIDATE_SOURCE && candidate.source_id) {
+      try {
+        await linkRefinementChild(env, candidate.source_id, topic.id);
+      } catch (linkError) {
+        await archiveRefinementFailure(env, {
+          topicId: topic.id,
+          domainId: topic.domainId,
+          stage: "link_child",
+          message: linkError instanceof Error ? linkError.message : String(linkError),
+          parentTopicId: candidate.source_id,
+        });
+        console.error("refinement linkage failed", { parentId: candidate.source_id, childId: topic.id, error: linkError });
+      }
+    }
+    // If this candidate came from one or more refinement_claims rows, mark
+    // every covered claim as refined (promoted_topic_id = this new topic).
+    // Two paths:
+    //   - Modern: merged_claim_ids_json lists every claim the candidate
+    //     covers (primary + any LLM-merged siblings). We parse defensively
+    //     (see parseMergedClaimIds — NULL, malformed JSON, non-array, and
+    //     empty/non-string entries all normalize to []).
+    //   - Legacy: pre-030 rows have no merged_claim_ids_json — fall back to
+    //     source_claim_id alone.
+    // The entire block is non-fatal: the child topic already exists and must
+    // not be orphaned by a bad JSON blob. linkClaimToPromotedTopic is also
+    // CAS-idempotent (returns false on a losing race), so repeats are safe.
+    const mergedClaimIds = parseMergedClaimIds(candidate.merged_claim_ids_json);
+    const claimIdsToLink = mergedClaimIds.length > 0
+      ? mergedClaimIds
+      : (candidate.source_claim_id ? [candidate.source_claim_id] : []);
+    for (const claimId of claimIdsToLink) {
+      try {
+        await linkClaimToPromotedTopic(env, claimId, topic.id);
+      } catch (claimLinkError) {
+        console.error("refinement claim link failed", {
+          claimId,
+          childId: topic.id,
+          error: claimLinkError,
+        });
+      }
+    }
+    await invalidateTopicPublicSurfaces(env, {
+      topicId: topic.id,
+      domainId: topic.domainId,
+      reason: "topic_candidate_promoted",
+      occurredAt: nowIso(now),
+    });
+    mutatedTopicIds.push(topic.id);
+  } catch (error) {
+    await failTopicCandidate(env, candidate.id, error);
+  }
+}
+
 export async function promoteTopicCandidates(env: ApiEnv, options?: { cron?: string; now?: Date }): Promise<PromoteResult> {
   const now = options?.now ?? new Date();
   const cron = options?.cron ?? "manual";
   const mutatedTopicIds: string[] = [];
+
+  // Phase 1: refinement candidates bypass the one-per-domain gap check. They
+  // have real pedigree (narrowing a closed debate) and we want them to
+  // promote as soon as they're generated, even if the domain already has a
+  // general rolling_research topic sitting open.
+  const refinementCandidates = await allRows<TopicCandidateRow>(
+    env.DB,
+    `
+      SELECT *
+      FROM topic_candidates
+      WHERE source = ?
+        AND status = 'approved'
+        AND topic_format IN ('scheduled_research', 'rolling_research')
+      ORDER BY priority_score DESC, created_at DESC
+    `,
+    REFINEMENT_CANDIDATE_SOURCE,
+  );
+  for (const candidate of refinementCandidates) {
+    await promoteOneCandidate(env, candidate, now, mutatedTopicIds);
+  }
+
+  // Phase 2: non-refinement (speculative source) candidates still follow the
+  // one-active-topic-per-domain rule so we don't flood a quiet domain.
   const domainsNeedingPromotion = await allRows<DomainInventoryGapRow>(
     env.DB,
     `
@@ -472,44 +655,19 @@ export async function promoteTopicCandidates(env: ApiEnv, options?: { cron?: str
         SELECT *
         FROM topic_candidates
         WHERE domain_id = ?
+          AND source != ?
           AND status = 'approved'
           AND topic_format IN ('scheduled_research', 'rolling_research')
         ORDER BY priority_score DESC, created_at DESC
         LIMIT 1
       `,
       domain.id,
+      REFINEMENT_CANDIDATE_SOURCE,
     );
     if (!candidate) {
       continue;
     }
-
-    try {
-      const topic = await createSystemTopic(env, validatePromotableCandidate(candidate));
-      await consumeTopicCandidate(env, candidate.id, topic.id);
-      if (candidate.source === REFINEMENT_CANDIDATE_SOURCE && candidate.source_id) {
-        try {
-          await linkRefinementChild(env, candidate.source_id, topic.id);
-        } catch (linkError) {
-          await archiveRefinementFailure(env, {
-            topicId: topic.id,
-            domainId: topic.domainId,
-            stage: "link_child",
-            message: linkError instanceof Error ? linkError.message : String(linkError),
-            parentTopicId: candidate.source_id,
-          });
-          console.error("refinement linkage failed", { parentId: candidate.source_id, childId: topic.id, error: linkError });
-        }
-      }
-      await invalidateTopicPublicSurfaces(env, {
-        topicId: topic.id,
-        domainId: topic.domainId,
-        reason: "topic_candidate_promoted",
-        occurredAt: nowIso(now),
-      });
-      mutatedTopicIds.push(topic.id);
-    } catch (error) {
-      await failTopicCandidate(env, candidate.id, error);
-    }
+    await promoteOneCandidate(env, candidate, now, mutatedTopicIds);
   }
 
   const result = {

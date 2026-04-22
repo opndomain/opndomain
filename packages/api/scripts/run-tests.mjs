@@ -35,6 +35,9 @@ function testSchemaContracts() {
   const phase26Sql = readFileSync(new URL("../src/db/024_contribution_model_provenance.sql", import.meta.url), "utf8");
   const debateSessionsSql = readFileSync(new URL("../src/db/025_debate_sessions.sql", import.meta.url), "utf8");
   const phase27Sql = readFileSync(new URL("../src/db/027_vertical_refinement.sql", import.meta.url), "utf8");
+  const phase28Sql = readFileSync(new URL("../src/db/028_refinement_claims.sql", import.meta.url), "utf8");
+  const phase29Sql = readFileSync(new URL("../src/db/029_knowledge_graph.sql", import.meta.url), "utf8");
+  const phase30Sql = readFileSync(new URL("../src/db/030_refinement_dedup_merged_claims.sql", import.meta.url), "utf8");
   assert.deepEqual(
     Array.from(schemaModuleSource.matchAll(/tag: "([^"]+)"/g), (match) => match[1]),
     [
@@ -64,6 +67,9 @@ function testSchemaContracts() {
       "024_contribution_model_provenance",
       "025_debate_sessions",
       "027_vertical_refinement",
+      "028_refinement_claims",
+      "029_knowledge_graph",
+      "030_refinement_dedup_merged_claims",
     ],
   );
   assert.match(launchCoreSql, /REFERENCES agents\(id\) ON DELETE RESTRICT ON UPDATE RESTRICT/);
@@ -142,6 +148,19 @@ function testSchemaContracts() {
   assert.match(phase27Sql, /ALTER TABLE topics ADD COLUMN parent_topic_id TEXT/);
   assert.match(phase27Sql, /ALTER TABLE verdicts ADD COLUMN refinement_status_json TEXT/);
   assert.match(phase27Sql, /CREATE TABLE IF NOT EXISTS topic_refinement_context/);
+  assert.match(phase28Sql, /CREATE TABLE IF NOT EXISTS refinement_claims/);
+  assert.match(phase28Sql, /promoted_topic_id TEXT REFERENCES topics\(id\)/);
+  assert.match(phase28Sql, /ALTER TABLE topic_candidates ADD COLUMN source_claim_id TEXT/);
+  assert.match(phase29Sql, /CREATE TABLE IF NOT EXISTS topic_links/);
+  assert.match(phase29Sql, /link_type TEXT NOT NULL CHECK \(link_type IN \('cites', 'addresses_claim', 'semantic_similarity'\)\)/);
+  assert.match(phase29Sql, /CHECK \(from_topic_id <> to_topic_id\)/);
+  assert.match(phase29Sql, /ALTER TABLE topics ADD COLUMN embedding_text_hash TEXT/);
+  assert.match(phase29Sql, /ALTER TABLE refinement_claims ADD COLUMN embedding_text_hash TEXT/);
+  assert.match(phase30Sql, /ALTER TABLE topic_candidates ADD COLUMN merged_claim_ids_json TEXT/);
+  assert.match(phase30Sql, /DROP INDEX IF EXISTS idx_topic_candidates_source_id/);
+  assert.match(phase30Sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_id_non_refinement/);
+  assert.match(phase30Sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_refinement/);
+  assert.match(phase30Sql, /WHERE source = 'vertical_refinement' AND source_claim_id IS NOT NULL/);
 }
 
 function testBaseEnvParsing() {
@@ -382,6 +401,18 @@ function copySchemaSqlFixtures() {
   copyFileSync(
     fileURLToPath(new URL("../src/db/027_vertical_refinement.sql", import.meta.url)),
     join(targetDir, "027_vertical_refinement.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/028_refinement_claims.sql", import.meta.url)),
+    join(targetDir, "028_refinement_claims.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/029_knowledge_graph.sql", import.meta.url)),
+    join(targetDir, "029_knowledge_graph.sql"),
+  );
+  copyFileSync(
+    fileURLToPath(new URL("../src/db/030_refinement_dedup_merged_claims.sql", import.meta.url)),
+    join(targetDir, "030_refinement_dedup_merged_claims.sql"),
   );
 }
 

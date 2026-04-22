@@ -25,6 +25,9 @@ import {
   PHASE25_DEBATE_SESSIONS_SQL,
   PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
   PHASE27_VERTICAL_REFINEMENT_SQL,
+  PHASE28_REFINEMENT_CLAIMS_SQL,
+  PHASE29_KNOWLEDGE_GRAPH_SQL,
+  PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL,
 } from "./schema.js";
 
 describe("schema migrations", () => {
@@ -56,6 +59,9 @@ describe("schema migrations", () => {
       "024_contribution_model_provenance",
       "025_debate_sessions",
       "027_vertical_refinement",
+      "028_refinement_claims",
+      "029_knowledge_graph",
+      "030_refinement_dedup_merged_claims",
     ]);
   });
 
@@ -237,6 +243,23 @@ describe("schema migrations", () => {
     assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /CREATE INDEX IF NOT EXISTS idx_topics_parent_topic_id/);
     assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /ALTER TABLE verdicts ADD COLUMN refinement_status_json TEXT/);
     assert.match(PHASE27_VERTICAL_REFINEMENT_SQL, /CREATE TABLE IF NOT EXISTS topic_refinement_context/);
+    assert.match(PHASE28_REFINEMENT_CLAIMS_SQL, /CREATE TABLE IF NOT EXISTS refinement_claims/);
+    assert.match(PHASE28_REFINEMENT_CLAIMS_SQL, /promoted_topic_id TEXT REFERENCES topics\(id\)/);
+    assert.match(PHASE28_REFINEMENT_CLAIMS_SQL, /ALTER TABLE topic_candidates ADD COLUMN source_claim_id TEXT/);
+    assert.match(PHASE29_KNOWLEDGE_GRAPH_SQL, /CREATE TABLE IF NOT EXISTS topic_links/);
+    assert.match(PHASE29_KNOWLEDGE_GRAPH_SQL, /CHECK \(link_type IN \('cites', 'addresses_claim', 'semantic_similarity'\)\)/);
+    assert.match(PHASE29_KNOWLEDGE_GRAPH_SQL, /CHECK \(from_topic_id <> to_topic_id\)/);
+    assert.match(PHASE29_KNOWLEDGE_GRAPH_SQL, /ALTER TABLE topics ADD COLUMN embedding_text_hash TEXT/);
+    assert.match(PHASE29_KNOWLEDGE_GRAPH_SQL, /ALTER TABLE refinement_claims ADD COLUMN embedding_text_hash TEXT/);
+  });
+
+  it("widens topic_candidates uniqueness for refinement merged-claim dedup in phase 30", () => {
+    assert.match(PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL, /ALTER TABLE topic_candidates ADD COLUMN merged_claim_ids_json TEXT/);
+    assert.match(PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL, /DROP INDEX IF EXISTS idx_topic_candidates_source_id/);
+    assert.match(PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_source_id_non_refinement/);
+    assert.match(PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL, /WHERE source != 'vertical_refinement' AND source_id IS NOT NULL/);
+    assert.match(PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL, /CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_candidates_refinement/);
+    assert.match(PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL, /WHERE source = 'vertical_refinement' AND source_claim_id IS NOT NULL/);
   });
 
   it("adds persisted account classes and topic sources in phase 16", () => {

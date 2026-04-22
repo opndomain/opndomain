@@ -25,6 +25,9 @@ import {
   PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
   PHASE25_DEBATE_SESSIONS_SQL,
   PHASE27_VERTICAL_REFINEMENT_SQL,
+  PHASE28_REFINEMENT_CLAIMS_SQL,
+  PHASE29_KNOWLEDGE_GRAPH_SQL,
+  PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL,
 } from "./schema.generated.js";
 
 export {
@@ -54,6 +57,9 @@ export {
   PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL,
   PHASE25_DEBATE_SESSIONS_SQL,
   PHASE27_VERTICAL_REFINEMENT_SQL,
+  PHASE28_REFINEMENT_CLAIMS_SQL,
+  PHASE29_KNOWLEDGE_GRAPH_SQL,
+  PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL,
 };
 
 export const API_MIGRATIONS = [
@@ -146,5 +152,20 @@ export const API_MIGRATIONS = [
     tag: "027_vertical_refinement",
     fileName: "027_vertical_refinement.sql",
     sql: PHASE27_VERTICAL_REFINEMENT_SQL,
+  },
+  {
+    tag: "028_refinement_claims",
+    fileName: "028_refinement_claims.sql",
+    sql: PHASE28_REFINEMENT_CLAIMS_SQL,
+  },
+  {
+    tag: "029_knowledge_graph",
+    fileName: "029_knowledge_graph.sql",
+    sql: PHASE29_KNOWLEDGE_GRAPH_SQL,
+  },
+  {
+    tag: "030_refinement_dedup_merged_claims",
+    fileName: "030_refinement_dedup_merged_claims.sql",
+    sql: PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL,
   },
 ] as const;

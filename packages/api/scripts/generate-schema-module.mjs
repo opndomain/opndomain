@@ -32,6 +32,9 @@ const schemaFiles = [
   ["PHASE26_CONTRIBUTION_MODEL_PROVENANCE_SQL", "024_contribution_model_provenance.sql"],
   ["PHASE25_DEBATE_SESSIONS_SQL", "025_debate_sessions.sql"],
   ["PHASE27_VERTICAL_REFINEMENT_SQL", "027_vertical_refinement.sql"],
+  ["PHASE28_REFINEMENT_CLAIMS_SQL", "028_refinement_claims.sql"],
+  ["PHASE29_KNOWLEDGE_GRAPH_SQL", "029_knowledge_graph.sql"],
+  ["PHASE30_REFINEMENT_DEDUP_MERGED_CLAIMS_SQL", "030_refinement_dedup_merged_claims.sql"],
 ];
 
 const output = [

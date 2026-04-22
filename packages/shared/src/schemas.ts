@@ -1112,11 +1112,131 @@ export const RefinementEligibleTopicSchema = z.object({
 });
 export type RefinementEligibleTopic = z.infer<typeof RefinementEligibleTopicSchema>;
 
+// A structured unresolved claim extracted from a closed verdict. Each claim
+// gets a stable id so the producer can track which claims have been refined
+// (promoted_topic_id is set) vs which remain open. classification is a free
+// string (e.g. "contested", "minority", "methodological") so the extraction
+// layer can emit whatever taxonomy it learns to produce.
+export const RefinementClaimClassificationSchema = z.string().min(1).max(64);
+
+export const ExtractedRefinementClaimSchema = z.object({
+  claimText: z.string().min(1).max(2000),
+  classification: RefinementClaimClassificationSchema.optional(),
+  sourceQuote: z.string().min(1).max(2000).optional(),
+});
+export type ExtractedRefinementClaim = z.infer<typeof ExtractedRefinementClaimSchema>;
+
+export const ExtractRefinementClaimsRequestSchema = z.object({
+  topicId: z.string().min(1),
+  claims: z.array(ExtractedRefinementClaimSchema).min(1).max(20),
+});
+export type ExtractRefinementClaimsRequest = z.infer<typeof ExtractRefinementClaimsRequestSchema>;
+
+export const RefinementClaimRecordSchema = z.object({
+  id: z.string().min(1),
+  topicId: z.string().min(1),
+  claimText: z.string().min(1),
+  classification: RefinementClaimClassificationSchema.nullable(),
+  sourceQuote: z.string().nullable(),
+  promotedTopicId: z.string().min(1).nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+export type RefinementClaimRecord = z.infer<typeof RefinementClaimRecordSchema>;
+
+// An unrefined claim: parent-topic context bundled with the claim so producer
+// can build a narrower prompt without a second round-trip. Returned by
+// GET /v1/internal/refinement-claims/unrefined.
+export const UnrefinedRefinementClaimSchema = z.object({
+  claim: RefinementClaimRecordSchema,
+  parentTopic: z.object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    prompt: z.string().min(1),
+    domainId: z.string().min(1),
+    refinementDepth: z.number().int().nonnegative(),
+  }),
+});
+export type UnrefinedRefinementClaim = z.infer<typeof UnrefinedRefinementClaimSchema>;
+
+// -----------------------------------------------------------------------------
+// Knowledge-graph: typed cross-topic edges + similarity + graph response shape
+// -----------------------------------------------------------------------------
+
+export const TopicLinkTypeSchema = z.enum(["cites", "addresses_claim", "semantic_similarity"]);
+export type TopicLinkType = z.infer<typeof TopicLinkTypeSchema>;
+
+// evidence column is a JSON string in D1. This schema describes the parsed
+// object; callers should JSON.parse before validating. `source` is the
+// authoritative origin tag — consumers should never infer link provenance
+// from link_type alone.
+export const TopicLinkEvidenceSchema = z.object({
+  source: z.enum(["citation_parser", "vectorize_knn", "claim_match"]),
+  claimId: z.string().min(1).optional(),
+  quote: z.string().min(1).max(2000).optional(),
+}).passthrough();
+export type TopicLinkEvidence = z.infer<typeof TopicLinkEvidenceSchema>;
+
+export const TopicLinkSchema = z.object({
+  id: z.string().min(1),
+  fromTopicId: z.string().min(1),
+  toTopicId: z.string().min(1),
+  linkType: TopicLinkTypeSchema,
+  confidence: z.number().finite().nullable(),
+  evidence: z.string().nullable(),
+  createdAt: z.string().datetime({ offset: true }).or(z.string().min(1)),
+});
+export type TopicLink = z.infer<typeof TopicLinkSchema>;
+
+// Condensed topic summary returned by k-NN similarity queries. The full
+// topic record is not needed for the "similar-to" UI surface.
+export const SimilarTopicSchema = z.object({
+  topicId: z.string().min(1),
+  title: z.string().min(1),
+  domainId: z.string().min(1),
+  status: z.string().min(1),
+  score: z.number().finite(),
+});
+export type SimilarTopic = z.infer<typeof SimilarTopicSchema>;
+
+// Topic-graph payload assembled by the router for topic pages. Single fetch
+// that bundles ancestry, children, unresolved claims, typed edges, and
+// nearest-neighbor similar topics. UI-facing consumers should only read
+// this shape through the shared schema.
+export const TopicGraphNodeSummarySchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  status: z.string().min(1),
+  refinementDepth: z.number().int().nonnegative(),
+  domainId: z.string().min(1),
+});
+export type TopicGraphNodeSummary = z.infer<typeof TopicGraphNodeSummarySchema>;
+
+export const TopicGraphResponseSchema = z.object({
+  topic: TopicGraphNodeSummarySchema,
+  ancestors: z.array(TopicGraphNodeSummarySchema),
+  descendants: z.array(TopicGraphNodeSummarySchema),
+  refinementClaims: z.array(RefinementClaimRecordSchema),
+  links: z.object({
+    outgoing: z.array(TopicLinkSchema),
+    incoming: z.array(TopicLinkSchema),
+  }),
+  similar: z.array(SimilarTopicSchema),
+});
+export type TopicGraphResponse = z.infer<typeof TopicGraphResponseSchema>;
+
 export const TopicCandidateSchema = z.object({
   id: z.string().min(1),
   source: z.string().min(1).max(100),
   sourceId: z.string().min(1).max(255).nullable().optional(),
   sourceUrl: z.string().url().nullable().optional(),
+  // For refinement candidates, sourceClaimId links back to the specific
+  // refinement_claims row this candidate addresses. The producer sets it and
+  // the promotion flow uses it to mark that claim as refined.
+  sourceClaimId: z.string().min(1).max(64).nullable().optional(),
+  // For refinement candidates, mergedClaimIds lists every refinement_claims
+  // row this candidate covers — non-empty, includes sourceClaimId as the
+  // primary, used by promotion to mark all merged siblings as refined.
+  mergedClaimIds: z.array(z.string().min(1).max(64)).max(50).optional(),
   domainId: z.string().min(1),
   title: z.string().min(1).max(200),
   prompt: z.string().min(1).max(4000),
@@ -1133,6 +1253,13 @@ export const TopicCandidateSchema = z.object({
       code: z.ZodIssueCode.custom,
       message: "sourceId or sourceUrl is required.",
       path: ["sourceId"],
+    });
+  }
+  if (value.source === "vertical_refinement" && !value.sourceClaimId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "sourceClaimId is required for refinement candidates.",
+      path: ["sourceClaimId"],
     });
   }
 });
@@ -1155,6 +1282,9 @@ export const TopicCandidateSummarySchema = z.object({
   source: z.string().min(1),
   sourceId: z.string().nullable(),
   sourceUrl: z.string().nullable(),
+  sourceClaimId: z.string().nullable(),
+  // Always an array. Row mappers normalize NULL / malformed DB values to [].
+  mergedClaimIds: z.array(z.string()),
   domainId: z.string().min(1),
   title: z.string().min(1),
   topicFormat: z.string().min(1),

@@ -33,6 +33,9 @@ const migrationFiles = [
   { tag: "024_contribution_model_provenance", fileName: "024_contribution_model_provenance.sql" },
   { tag: "025_debate_sessions", fileName: "025_debate_sessions.sql" },
   { tag: "027_vertical_refinement", fileName: "027_vertical_refinement.sql" },
+  { tag: "028_refinement_claims", fileName: "028_refinement_claims.sql" },
+  { tag: "029_knowledge_graph", fileName: "029_knowledge_graph.sql" },
+  { tag: "030_refinement_dedup_merged_claims", fileName: "030_refinement_dedup_merged_claims.sql" },
 ];
 const migrationsTable = "schema_migrations";
 
@@ -334,6 +337,27 @@ async function bootstrapKnownMigrations() {
         && await columnExists("topics", "refinement_depth")
         && await columnExists("verdicts", "refinement_status_json")
         && await tableExists("topic_refinement_context"),
+    },
+    {
+      tag: "028_refinement_claims",
+      fileName: "028_refinement_claims.sql",
+      applied: async () =>
+        await tableExists("refinement_claims")
+        && await columnExists("topic_candidates", "source_claim_id"),
+    },
+    {
+      tag: "029_knowledge_graph",
+      fileName: "029_knowledge_graph.sql",
+      applied: async () =>
+        await tableExists("topic_links")
+        && await columnExists("topics", "embedding_indexed_at")
+        && await columnExists("topics", "embedding_text_hash")
+        && await columnExists("refinement_claims", "embedding_indexed_at"),
+    },
+    {
+      tag: "030_refinement_dedup_merged_claims",
+      fileName: "030_refinement_dedup_merged_claims.sql",
+      applied: async () => await columnExists("topic_candidates", "merged_claim_ids_json"),
     },
   ];
 

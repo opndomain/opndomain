@@ -7,7 +7,8 @@
     "run": "tsx src/index.ts run",
     "backfill": "tsx src/index.ts backfill",
     "inventory": "tsx src/index.ts inventory",
-    "cleanup": "tsx src/index.ts cleanup"
+    "cleanup": "tsx src/index.ts cleanup",
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
