@@ -3,6 +3,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { describe, it } from "node:test";
 import { topicVerdictPresentationArtifactKey, verdictJsonCacheKey } from "@opndomain/shared";
 import { createApiApp } from "../index.js";
+import { signJwt, verifyJwt } from "../lib/jwt.js";
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
@@ -133,6 +134,7 @@ function buildEnv(db: FakeDb, options?: { cache?: FakeKv; artifacts?: FakeR2Buck
     ADMIN_ALLOWED_CLIENT_IDS_SET: new Set<string>(),
     ENABLE_TRANSCRIPT_GUARDRAILS: true,
     ENABLE_SEMANTIC_SCORING: false,
+    API_ORIGIN: "https://api.opndomain.com",
   } as never;
 }
 
@@ -429,6 +431,202 @@ describe("topic routes", () => {
     const query = db.allCalls.at(-1);
     assert.ok(query?.sql.includes("WHERE t.archived_at IS NULL AND t.status = ?"));
     assert.deepEqual(query?.bindings, ["open"]);
+  });
+
+  it("mints a short-lived ws-ticket with correct scope and claims", async () => {
+    const db = new FakeDb();
+    // Auth: session + agent for authenticateRequest
+    db.queueFirst("FROM sessions", [{
+      id: "ses_1", agent_id: "agt_1", scope: "web_session",
+      refresh_token_hash: null, access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z", revoked_at: null,
+    }]);
+    db.queueFirst("FROM agents", [{
+      id: "agt_1", client_id: "cli_1", name: "Agent", email: "agent@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z", account_class: "verified_participant",
+      trust_tier: "verified", status: "active",
+      created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    // assertAgentOwnsBeing
+    db.queueFirst("FROM beings WHERE id = ?", [{ id: "bng_1" }]);
+    // isActiveTopicMember
+    db.queueFirst("FROM topic_members WHERE topic_id", [{ count: 1 }]);
+
+    const env = buildEnv(db);
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/ws-ticket", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ beingId: "bng_1" }),
+      }),
+      env,
+      {} as never,
+    );
+    const payload = await response.json() as { ticket: string; expiresIn: number; url: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.expiresIn, 30);
+    assert.ok(payload.ticket);
+    assert.ok(payload.url.includes("ws://") || payload.url.includes("wss://"));
+    assert.ok(payload.url.includes("/v1/topics/top_1/ws?ticket="));
+
+    const claims = await verifyJwt(env as never, payload.ticket);
+    assert.equal(claims.scope, "ws_ticket");
+    assert.equal(claims.topic_id, "top_1");
+    assert.equal(claims.being_id, "bng_1");
+    assert.equal(claims.sub, "agt_1");
+    assert.ok(claims.exp - claims.iat <= 30);
+  });
+
+  it("rejects ws-ticket when being is not an active topic member", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM sessions", [{
+      id: "ses_1", agent_id: "agt_1", scope: "web_session",
+      refresh_token_hash: null, access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z", revoked_at: null,
+    }]);
+    db.queueFirst("FROM agents", [{
+      id: "agt_1", client_id: "cli_1", name: "Agent", email: "agent@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z", account_class: "verified_participant",
+      trust_tier: "verified", status: "active",
+      created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+    db.queueFirst("FROM beings WHERE id = ?", [{ id: "bng_1" }]);
+    // No membership row queued — isActiveTopicMember returns false
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/ws-ticket", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ beingId: "bng_1" }),
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { error: string };
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.error, "not_a_member");
+  });
+
+  it("rejects ws-ticket when beingId is missing", async () => {
+    const db = new FakeDb();
+    db.queueFirst("FROM sessions", [{
+      id: "ses_1", agent_id: "agt_1", scope: "web_session",
+      refresh_token_hash: null, access_token_id: "atk_1",
+      expires_at: "3026-01-01T00:00:00.000Z", revoked_at: null,
+    }]);
+    db.queueFirst("FROM agents", [{
+      id: "agt_1", client_id: "cli_1", name: "Agent", email: "agent@example.com",
+      email_verified_at: "2026-03-25T00:00:00.000Z", account_class: "verified_participant",
+      trust_tier: "verified", status: "active",
+      created_at: "2026-03-25T00:00:00.000Z", updated_at: "2026-03-25T00:00:00.000Z",
+    }]);
+
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/ws-ticket", {
+        method: "POST",
+        headers: {
+          cookie: "opn_session=ses_1",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+      buildEnv(db),
+      {} as never,
+    );
+    const payload = await response.json() as { error: string };
+
+    assert.equal(response.status, 400);
+    assert.equal(payload.error, "missing_being_id");
+  });
+
+  it("rejects ws upgrade without a ticket", async () => {
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/ws", {
+        headers: { upgrade: "websocket" },
+      }),
+      buildEnv(new FakeDb()),
+      {} as never,
+    );
+    const payload = await response.json() as { error: string };
+
+    assert.equal(response.status, 401);
+    assert.equal(payload.error, "missing_ticket");
+  });
+
+  it("rejects ws upgrade when ticket has wrong scope", async () => {
+    const env = buildEnv(new FakeDb());
+    const now = Math.floor(Date.now() / 1000);
+    const ticket = await signJwt(env as never, {
+      iss: "https://api.opndomain.com",
+      aud: "https://api.opndomain.com",
+      sub: "agt_1",
+      scope: "web_session",
+      exp: now + 30,
+      iat: now,
+      jti: "wst_wrong",
+      topic_id: "top_1",
+      being_id: "bng_1",
+    });
+
+    const response = await createApiApp().fetch(
+      new Request(`https://api.opndomain.com/v1/topics/top_1/ws?ticket=${encodeURIComponent(ticket)}`, {
+        headers: { upgrade: "websocket" },
+      }),
+      env,
+      {} as never,
+    );
+    const payload = await response.json() as { error: string };
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.error, "invalid_ticket");
+  });
+
+  it("rejects ws upgrade when ticket topicId does not match route", async () => {
+    const env = buildEnv(new FakeDb());
+    const now = Math.floor(Date.now() / 1000);
+    const ticket = await signJwt(env as never, {
+      iss: "https://api.opndomain.com",
+      aud: "https://api.opndomain.com",
+      sub: "agt_1",
+      scope: "ws_ticket",
+      exp: now + 30,
+      iat: now,
+      jti: "wst_mismatch",
+      topic_id: "top_other",
+      being_id: "bng_1",
+    });
+
+    const response = await createApiApp().fetch(
+      new Request(`https://api.opndomain.com/v1/topics/top_1/ws?ticket=${encodeURIComponent(ticket)}`, {
+        headers: { upgrade: "websocket" },
+      }),
+      env,
+      {} as never,
+    );
+    const payload = await response.json() as { error: string };
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.error, "invalid_ticket");
+  });
+
+  it("rejects ws upgrade without websocket upgrade header", async () => {
+    const response = await createApiApp().fetch(
+      new Request("https://api.opndomain.com/v1/topics/top_1/ws?ticket=foo"),
+      buildEnv(new FakeDb()),
+      {} as never,
+    );
+    const payload = await response.json() as { error: string };
+
+    assert.equal(response.status, 426);
+    assert.equal(payload.error, "upgrade_required");
   });
 
   it("rejects invalid topic status filters", async () => {

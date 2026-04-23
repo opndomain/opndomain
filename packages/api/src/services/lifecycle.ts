@@ -1,3 +1,4 @@
+import type { TopicWebSocketEvent } from "@opndomain/shared";
 import {
   CADENCE_PRESETS,
   DAILY_ROLLUP_CRON,
@@ -20,6 +21,23 @@ import { syncTopicSnapshots } from "../lib/snapshot-sync.js";
 import { forceFlushTopicState, runTerminalizationSequence } from "./terminalization.js";
 import { createRollingTopicSuccessor, rewritePendingRoundSchedules } from "./topics.js";
 import { finalizeContentRoundScores } from "./votes.js";
+
+async function broadcastToTopic(env: ApiEnv, topicId: string, event: TopicWebSocketEvent): Promise<void> {
+  try {
+    const doId = env.TOPIC_STATE_DO.idFromName(topicId);
+    const stub = env.TOPIC_STATE_DO.get(doId);
+    const resp = await stub.fetch("https://topic-state.internal/broadcast", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(event),
+    });
+    if (!resp.ok) {
+      console.error("ws broadcast rejected", topicId, resp.status);
+    }
+  } catch (error) {
+    console.error("ws broadcast failed", topicId, error);
+  }
+}
 
 type TopicSweepRow = {
   id: string;
@@ -225,6 +243,13 @@ async function activateRound(
     } catch (error) {
       console.error("round opened event archive failed", error);
     }
+    await broadcastToTopic(env, round.topic_id, {
+      type: "round_opened",
+      topicId: round.topic_id,
+      roundId: round.id,
+      roundKind: round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown"),
+      sequenceIndex: round.sequence_index,
+    });
   }
   return opened;
 }
@@ -665,6 +690,13 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
   } catch (error) {
     console.error("round closed event archive failed", error);
   }
+  await broadcastToTopic(env, round.topic_id, {
+    type: "round_closed",
+    topicId: round.topic_id,
+    roundId: round.id,
+    roundKind: round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown"),
+    sequenceIndex: round.sequence_index,
+  });
 
   const completingRoundKind = round.round_kind || String(parseConfig(round.config_json).roundKind ?? "unknown");
   if (completingRoundKind !== "vote") {
@@ -832,6 +864,20 @@ async function advanceRound(env: ApiEnv, round: ActiveRoundRow, now: Date): Prom
     );
     if (closed) {
       await runTerminalizationSequence(env, round.topic_id);
+      try {
+        const closeDoId = env.TOPIC_STATE_DO.idFromName(round.topic_id);
+        const closeStub = env.TOPIC_STATE_DO.get(closeDoId);
+        const closeResp = await closeStub.fetch("https://topic-state.internal/close-all", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ topicId: round.topic_id }),
+        });
+        if (!closeResp.ok) {
+          console.error("ws close-all rejected", round.topic_id, closeResp.status);
+        }
+      } catch (e) {
+        console.error("ws close-all failed", e);
+      }
     }
   }
 
@@ -919,6 +965,7 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
             env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'started'`).bind(nowIso(now), round.topic_id),
           );
           if (stalled) {
+            await broadcastToTopic(env, round.topic_id, { type: "topic_stalled", topicId: round.topic_id });
             await invalidateTopicPublicSurfaces(env, {
               topicId: round.topic_id,
               domainId: round.domain_id,
@@ -1009,6 +1056,7 @@ async function autoAdvanceRounds(env: ApiEnv, now: Date) {
       env.DB.prepare(`UPDATE topics SET status = 'stalled', stalled_at = ?, change_sequence = change_sequence + 1 WHERE id = ? AND status = 'started'`).bind(nowIsoStr, topic.id),
     );
     if (stalled) {
+      await broadcastToTopic(env, topic.id, { type: "topic_stalled", topicId: topic.id });
       mutatedTopicIds.add(topic.id);
     }
   }

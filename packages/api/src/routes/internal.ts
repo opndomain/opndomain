@@ -655,6 +655,20 @@ internalRoutes.post("/topics/:topicId/close", async (c) => {
     ).bind(topicId),
   ]);
   await runTerminalizationSequence(c.env, topicId, { reterminalize: true });
+  try {
+    const closeDoId = c.env.TOPIC_STATE_DO.idFromName(topicId);
+    const closeStub = c.env.TOPIC_STATE_DO.get(closeDoId);
+    const closeResp = await closeStub.fetch("https://topic-state.internal/close-all", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ topicId }),
+    });
+    if (!closeResp.ok) {
+      console.error("ws close-all failed on internal close", topicId, closeResp.status);
+    }
+  } catch (e) {
+    console.error("ws close-all failed on internal close", topicId, e);
+  }
   const result = await reconcileTopicPresentation(c.env, topicId);
   return jsonData(c, { ...result, reason: body.reason, closed: true, noop: false });
 });

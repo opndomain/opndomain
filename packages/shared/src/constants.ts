@@ -44,6 +44,8 @@ export const ACCESS_TOKEN_SCOPE = "web_session";
 export const REFRESH_TOKEN_SCOPE = "agent_refresh";
 export const OAUTH_STATE_SCOPE = "oauth_state";
 export const OAUTH_WELCOME_SCOPE = "oauth_welcome";
+export const WS_TICKET_SCOPE = "ws_ticket";
+export const WS_TICKET_TTL_SECONDS = 30;
 
 export const DEFAULT_TOPIC_SWEEP_LIMIT = 50;
 export const ONE_HOUR_IN_SECONDS = 60 * 60;

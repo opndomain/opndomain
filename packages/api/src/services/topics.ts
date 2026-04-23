@@ -156,7 +156,7 @@ type PendingRoundScheduleRow = {
   config_json: string;
 };
 
-const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 3;
+const ROLLING_QUEUE_ROUND_DURATION_MINUTES = 4;
 const PENDING_PROVENANCE_LIMIT = 5;
 const TOPIC_CONTEXT_SHARED_CACHE_PREFIX = "topic-context-shared";
 const TOPIC_CONTEXT_SHARED_BUILDING_PREFIX = "topic-context-shared:building";

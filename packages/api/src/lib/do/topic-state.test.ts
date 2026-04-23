@@ -285,6 +285,19 @@ class FakeStorage {
   async setAlarm(scheduledTime: number) {
     this.alarmAt = scheduledTime;
   }
+
+  private webSockets: Array<{ ws: FakeWebSocket; tags: string[] }> = [];
+
+  acceptWebSocket(ws: FakeWebSocket, tags: string[] = []) {
+    this.webSockets.push({ ws, tags });
+  }
+
+  getWebSockets(tag?: string): FakeWebSocket[] {
+    if (tag) {
+      return this.webSockets.filter((entry) => entry.tags.includes(tag)).map((entry) => entry.ws);
+    }
+    return this.webSockets.map((entry) => entry.ws);
+  }
 }
 
 class FakeDb {
@@ -434,6 +447,24 @@ class FakeBucket {
       throw new Error(`simulated bucket failure for ${key}`);
     }
     this.putCalls.push(key);
+  }
+}
+
+class FakeWebSocket {
+  readonly sent: string[] = [];
+  closed = false;
+  closeCode: number | null = null;
+  closeReason: string | null = null;
+
+  send(message: string) {
+    if (this.closed) throw new Error("WebSocket is closed");
+    this.sent.push(message);
+  }
+
+  close(code?: number, reason?: string) {
+    this.closed = true;
+    this.closeCode = code ?? null;
+    this.closeReason = reason ?? null;
   }
 }
 
@@ -1565,5 +1596,198 @@ describe("topic state durable object", () => {
 
     assert.equal(result.remainingCount, 1);
     assert.equal(Number(storage.sql.pendingAux.get("cnt_1")?.flushed ?? 0), 0);
+  });
+});
+
+describe("topic state websocket routes", () => {
+  it("rejects /ws without upgrade header", async () => {
+    const storage = new FakeStorage();
+    const object = new TopicStateDurableObject(
+      { storage } as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const response = await object.fetch(
+      new Request("https://topic-state.internal/ws?beingId=bng_1"),
+    );
+    assert.equal(response.status, 426);
+    const payload = await response.json() as { error: string };
+    assert.equal(payload.error, "upgrade_required");
+  });
+
+  it("broadcasts events to all connected sockets", async () => {
+    const storage = new FakeStorage();
+    const ws1 = new FakeWebSocket();
+    const ws2 = new FakeWebSocket();
+    storage.acceptWebSocket(ws1 as never, ["bng_1"]);
+    storage.acceptWebSocket(ws2 as never, ["bng_2"]);
+
+    const state = {
+      storage,
+      acceptWebSocket: storage.acceptWebSocket.bind(storage),
+      getWebSockets: storage.getWebSockets.bind(storage),
+    };
+    const object = new TopicStateDurableObject(
+      state as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const response = await object.fetch(
+      new Request("https://topic-state.internal/broadcast", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "round_opened", topicId: "top_1", roundId: "rnd_1", roundKind: "propose", sequenceIndex: 0 }),
+      }),
+    );
+    const payload = await response.json() as { delivered: number };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.delivered, 2);
+    assert.equal(ws1.sent.length, 1);
+    assert.equal(ws2.sent.length, 1);
+    const event = JSON.parse(ws1.sent[0]);
+    assert.equal(event.type, "round_opened");
+    assert.equal(event.topicId, "top_1");
+  });
+
+  it("skips closed sockets during broadcast without failing", async () => {
+    const storage = new FakeStorage();
+    const ws1 = new FakeWebSocket();
+    const ws2 = new FakeWebSocket();
+    ws1.close(); // simulate already-closed socket
+    storage.acceptWebSocket(ws1 as never, ["bng_1"]);
+    storage.acceptWebSocket(ws2 as never, ["bng_2"]);
+
+    const state = {
+      storage,
+      acceptWebSocket: storage.acceptWebSocket.bind(storage),
+      getWebSockets: storage.getWebSockets.bind(storage),
+    };
+    const object = new TopicStateDurableObject(
+      state as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const response = await object.fetch(
+      new Request("https://topic-state.internal/broadcast", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "topic_stalled", topicId: "top_1" }),
+      }),
+    );
+    const payload = await response.json() as { delivered: number };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.delivered, 1);
+    assert.equal(ws2.sent.length, 1);
+  });
+
+  it("close-all sends topic_closed and closes all sockets", async () => {
+    const storage = new FakeStorage();
+    const ws1 = new FakeWebSocket();
+    const ws2 = new FakeWebSocket();
+    storage.acceptWebSocket(ws1 as never, ["bng_1"]);
+    storage.acceptWebSocket(ws2 as never, ["bng_2"]);
+
+    const state = {
+      storage,
+      acceptWebSocket: storage.acceptWebSocket.bind(storage),
+      getWebSockets: storage.getWebSockets.bind(storage),
+    };
+    const object = new TopicStateDurableObject(
+      state as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const response = await object.fetch(
+      new Request("https://topic-state.internal/close-all", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ topicId: "top_1" }),
+      }),
+    );
+    const payload = await response.json() as { closed: number };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.closed, 2);
+    assert.ok(ws1.closed);
+    assert.ok(ws2.closed);
+    assert.equal(ws1.closeCode, 1000);
+    assert.equal(ws2.closeCode, 1000);
+    // Each socket should have received topic_closed before being closed
+    assert.equal(ws1.sent.length, 1);
+    const event = JSON.parse(ws1.sent[0]);
+    assert.equal(event.type, "topic_closed");
+    assert.equal(event.topicId, "top_1");
+  });
+
+  it("close-all without body closes sockets without sending an event", async () => {
+    const storage = new FakeStorage();
+    const ws1 = new FakeWebSocket();
+    storage.acceptWebSocket(ws1 as never, ["bng_1"]);
+
+    const state = {
+      storage,
+      acceptWebSocket: storage.acceptWebSocket.bind(storage),
+      getWebSockets: storage.getWebSockets.bind(storage),
+    };
+    const object = new TopicStateDurableObject(
+      state as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const response = await object.fetch(
+      new Request("https://topic-state.internal/close-all", {
+        method: "POST",
+      }),
+    );
+    const payload = await response.json() as { closed: number };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.closed, 1);
+    assert.ok(ws1.closed);
+    assert.equal(ws1.sent.length, 0);
+  });
+
+  it("webSocketMessage handler replies pong to ping", () => {
+    const storage = new FakeStorage();
+    const object = new TopicStateDurableObject(
+      { storage } as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const ws = new FakeWebSocket();
+    object.webSocketMessage(ws as never, "ping");
+
+    assert.equal(ws.sent.length, 1);
+    const reply = JSON.parse(ws.sent[0]);
+    assert.equal(reply.type, "pong");
+  });
+
+  it("webSocketMessage handler ignores non-ping messages", () => {
+    const storage = new FakeStorage();
+    const object = new TopicStateDurableObject(
+      { storage } as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const ws = new FakeWebSocket();
+    object.webSocketMessage(ws as never, "hello");
+
+    assert.equal(ws.sent.length, 0);
+  });
+
+  it("webSocketError closes socket with 1011", () => {
+    const storage = new FakeStorage();
+    const object = new TopicStateDurableObject(
+      { storage } as never,
+      { DB: new FakeDb() as never } as never,
+    );
+
+    const ws = new FakeWebSocket();
+    object.webSocketError(ws as never);
+
+    assert.ok(ws.closed);
+    assert.equal(ws.closeCode, 1011);
   });
 });

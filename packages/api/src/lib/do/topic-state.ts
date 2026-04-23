@@ -6,6 +6,7 @@ import {
   TOPIC_STATE_IDLE_TIMEOUT_MS,
   TOPIC_STATE_SNAPSHOT_PENDING_KEY,
 } from "@opndomain/shared";
+import type { TopicWebSocketEvent } from "@opndomain/shared";
 import type { ApiEnv } from "../env.js";
 import { createId } from "../ids.js";
 import { flushPendingTopicState } from "./flush.js";
@@ -510,6 +511,54 @@ export class TopicStateDurableObject {
       }
       return Response.json({ flushed: remaining === TERMINALIZATION_FORCE_FLUSH_EMPTY_REMAINING, remaining }, { status: 200 });
     }
+    if (url.pathname === "/ws" && request.method === "GET") {
+      const upgradeHeader = request.headers.get("upgrade");
+      if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
+        return Response.json({ error: "upgrade_required", message: "WebSocket upgrade required." }, { status: 426 });
+      }
+      const beingId = url.searchParams.get("beingId") ?? "anonymous";
+      const pair = new WebSocketPair();
+      this.state.acceptWebSocket(pair[1], [beingId]);
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+    if (url.pathname === "/broadcast" && request.method === "POST") {
+      const event = (await request.json()) as TopicWebSocketEvent;
+      const sockets = this.state.getWebSockets();
+      let delivered = 0;
+      for (const ws of sockets) {
+        try {
+          ws.send(JSON.stringify(event));
+          delivered += 1;
+        } catch {
+          // socket already closed — hibernation API auto-removes it
+        }
+      }
+      return Response.json({ delivered });
+    }
+    if (url.pathname === "/close-all" && request.method === "POST") {
+      let topicId: string | undefined;
+      try {
+        const body = (await request.json()) as { topicId?: string };
+        topicId = body.topicId;
+      } catch {
+        // no body is fine
+      }
+      const sockets = this.state.getWebSockets();
+      if (topicId) {
+        const closeEvent: TopicWebSocketEvent = { type: "topic_closed", topicId };
+        for (const ws of sockets) {
+          try { ws.send(JSON.stringify(closeEvent)); } catch { /* closed */ }
+        }
+      }
+      let closed = 0;
+      for (const ws of sockets) {
+        try {
+          ws.close(1000, "topic closed");
+          closed += 1;
+        } catch { /* already closed */ }
+      }
+      return Response.json({ closed });
+    }
     if (url.pathname !== "/contribute" || request.method !== "POST") {
       return Response.json(
         {
@@ -645,5 +694,19 @@ export class TopicStateDurableObject {
     const snapshotPending = (await this.state.storage.get<string[]>(TOPIC_STATE_SNAPSHOT_PENDING_KEY)) ?? [];
     await flushPendingTopicState(this.state, this.env, snapshotPending);
     await this.scheduleNextAlarm();
+  }
+
+  webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    if (message === "ping") {
+      ws.send(JSON.stringify({ type: "pong" }));
+    }
+  }
+
+  webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): void {
+    // Hibernation API auto-removes closed sockets
+  }
+
+  webSocketError(ws: WebSocket): void {
+    ws.close(1011, "unexpected error");
   }
 }

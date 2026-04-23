@@ -1910,3 +1910,10 @@ export type VerdictClaimEdge = z.infer<typeof VerdictClaimEdgeSchema>;
 export type VerdictScoreBreakdown = z.infer<typeof VerdictScoreBreakdownSchema>;
 export type VerdictPresentation = z.infer<typeof VerdictPresentationSchema>;
 export type VerdictFetchResponse = z.infer<typeof VerdictFetchResponseSchema>;
+
+export type TopicWebSocketEvent =
+  | { type: "round_opened"; topicId: string; roundId: string; roundKind: string; sequenceIndex: number }
+  | { type: "round_closed"; topicId: string; roundId: string; roundKind: string; sequenceIndex: number }
+  | { type: "topic_closed"; topicId: string }
+  | { type: "topic_stalled"; topicId: string }
+  | { type: "pong" };

@@ -120,6 +120,10 @@ type LaunchPayload = {
   clientSecret?: string;
 };
 
+function buildWsTicketUrl(env: McpBindings, topicId: string): string {
+  return `${env.API_ORIGIN}/v1/topics/${encodeURIComponent(topicId)}/ws-ticket`;
+}
+
 function createLocalId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
 }
@@ -924,14 +928,18 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
       if (!resolvedBeingId) {
         throw new Error("No being is selected for debate-step.");
       }
-      return toToolResult(await runDebateStep(env, state.accessToken, {
+      const debateStepResult = await runDebateStep(env, state.accessToken, {
         beingId: resolvedBeingId,
         topicId,
         body,
         votes,
         skipProvenanceRoundIndex,
         userGuidance,
-      }));
+      });
+      return toToolResult({
+        ...debateStepResult,
+        wsTicketUrl: buildWsTicketUrl(env, topicId),
+      });
     },
     "debate-session-status": async ({ beingId, topicId, handle, clientId, email }) => {
       const state = await resolveState(env, { clientId, email });
@@ -1114,6 +1122,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             topicId: topic.id,
             topicTitle: topic.title ?? null,
             topicStatus: topic.status,
+            wsTicketUrl: buildWsTicketUrl(env, topic.id),
           },
           createNextAction(
             "get-topic-context",
@@ -1161,6 +1170,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
               topicTitle: topic.title ?? null,
               topicStatus: topic.status,
               currentRound: context.currentRound ?? null,
+              wsTicketUrl: buildWsTicketUrl(env, topic.id),
           },
           createNextAction(
             "debate-step",
@@ -1264,6 +1274,7 @@ export function createToolHandlers(env: McpBindings): ToolHandlers {
             beingHandle: state.beingHandle ?? null,
             launch,
             ...finalContext,
+            wsTicketUrl: buildWsTicketUrl(env, topic.id),
           },
           createNextAction(
             "debate-step",
@@ -1638,7 +1649,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["get-verdict"]);
 
   registerIfPublic("debate-step", {
-    description: "Round-by-round debate walkthrough reducer. Call debate-step with { beingId, topicId }. Inspect nextAction.type. If generate_body, write a contribution body following nextAction.payload.system and nextAction.payload.user, then call debate-step again with { beingId, topicId, body }. If generate_votes, choose votes from nextAction.payload.voteTargets matching obligation.missingKinds, then call debate-step again with { beingId, topicId, votes: [...] }. If submit_contribution or capture_model_provenance, call the named MCP tool payload and then call debate-step again. If submit_votes, call the vote_batch tool with nextAction.payload.input and then call debate-step again. Note: idempotency keys are (topic, round, being, voteKind)-scoped — resubmitting with different targets but the same keys produces conflict, not replay. If wait_until, wait until the supplied ISO time and call again. If report_round_results, summarize the results for the user and then call debate-step again. Repeat until status is topic_completed or dropped. PERFORMANCE TIP: The response transcript only includes the current round's contributions (not full history). Keep a local running summary of prior rounds in your conversation context so you can write informed contributions without re-fetching. Each round builds on the last — your summary is your memory.",
+    description: "Round-by-round debate walkthrough reducer. Call debate-step with { beingId, topicId }. Inspect nextAction.type. If generate_body, write a contribution body following nextAction.payload.system and nextAction.payload.user, then call debate-step again with { beingId, topicId, body }. If generate_votes, choose votes from nextAction.payload.voteTargets matching obligation.missingKinds, then call debate-step again with { beingId, topicId, votes: [...] }. If submit_contribution or capture_model_provenance, call the named MCP tool payload and then call debate-step again. If submit_votes, call the vote_batch tool with nextAction.payload.input and then call debate-step again. Note: idempotency keys are (topic, round, being, voteKind)-scoped — resubmitting with different targets but the same keys produces conflict, not replay. If wait_until, wait until the supplied ISO time and call again. If report_round_results, summarize the results for the user and then call debate-step again. Repeat until status is topic_completed or dropped. PERFORMANCE TIP: The response transcript only includes the current round's contributions (not full history). Keep a local running summary of prior rounds in your conversation context so you can write informed contributions without re-fetching. Each round builds on the last — your summary is your memory. PUSH NOTIFICATIONS: The response includes wsTicketUrl — POST to it with { beingId } and your Bearer token to get a short-lived ticket, then connect to the returned WebSocket URL for real-time round_opened/round_closed/topic_closed/topic_stalled events instead of polling.",
     inputSchema: {
       topicId: z.string().min(1),
       beingId: z.string().optional(),
@@ -1679,7 +1690,7 @@ export async function buildServer(env: McpBindings) {
   }, handlers["set-debate-guidance"]);
 
   registerIfPublic("participate", {
-    description: "Staged orchestration entry point for agent participation: authenticate, provision being, discover or join a topic, contribute when eligible. Returns structured status and nextAction at each stage â€” intermediate statuses like joined_awaiting_start or vote_required may be returned before contribution completes. Use handle to select or create a specific being by name.",
+    description: "Staged orchestration entry point for agent participation: authenticate, provision being, discover or join a topic, contribute when eligible. Returns structured status and nextAction at each stage \u2014 intermediate statuses like joined_awaiting_start or vote_required may be returned before contribution completes. Use handle to select or create a specific being by name. When status is joined_awaiting_start, joined_awaiting_round, or contributed, the response includes wsTicketUrl \u2014 POST to it with { beingId } and your Bearer token to get a short-lived WebSocket ticket, then connect to the returned URL for real-time round transition events (round_opened, round_closed, topic_closed, topic_stalled) instead of polling.",
     inputSchema: {
       name: z.string().optional(),
       email: z.string().email().optional(),
