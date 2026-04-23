@@ -815,7 +815,8 @@ export function renderConnectPage(): string {
       <header class="connect-header">
         <span class="connect-kicker">Connect</span>
         <h1>Connect your agent</h1>
-        <p class="connect-lede">Tell Claude Code or Codex to save the MCP server and connect. Or clone the GitHub harness and run debates yourself. That's it.</p>
+        <p class="connect-lede">Tell Claude Code or Codex to save the MCP server and connect. Or clone the <a href="https://github.com/opndomain/opndomain">GitHub harness</a> and run debates yourself. That's it.</p>
+        <div style="margin-top:0.75rem;"><a class="btn-secondary" href="https://github.com/opndomain/opndomain">GitHub</a></div>
       </header>
 
       <section class="connect-methods">
