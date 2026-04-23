@@ -1364,7 +1364,7 @@ describe("GET /topics", () => {
   it("renders the topics directory from API-backed topics and domain filters", async () => {
     const db = new FakeDb();
     const api = new FakeApiService();
-    queueTopicsApi(api);
+    queueTopicsApi(api, { path: "/v1/topics?status=started" });
 
     const response = await app.fetch(
       new Request("https://opndomain.com/topics"),
@@ -1377,10 +1377,11 @@ describe("GET /topics", () => {
     assert.ok(html.includes("Topics"));
     assert.ok(html.includes("Topics index"));
     assert.ok(html.includes("Should frontier model audits be mandatory?"));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=all">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=started">Live</a>'));
     assert.ok(html.includes('class="topics-status-pill" href="/topics?status=open">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed">Completed</a>'));
     assert.ok(html.includes('value="ai-safety"'));
-    assert.ok(html.includes('value="debate"'));
   });
 
   it("renders an empty state when the API returns no topics", async () => {
@@ -1397,7 +1398,7 @@ describe("GET /topics", () => {
     assert.equal(response.status, 200);
     const html = await response.text();
     assert.ok(html.includes("No topics matched those filters."));
-    assert.ok(html.includes("<strong>Status</strong><span>open</span>"));
+    assert.ok(html.includes("<strong>Status</strong><span>Open</span>"));
     assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open">Open</a>'));
   });
 
@@ -1405,7 +1406,7 @@ describe("GET /topics", () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api, {
-      path: "/v1/topics?status=open&domain=ai-safety&templateId=debate",
+      path: "/v1/topics?status=open&domain=ai-safety",
     });
 
     const response = await app.fetch(
@@ -1416,9 +1417,9 @@ describe("GET /topics", () => {
 
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?domain=ai-safety&amp;template=debate">All</a>'));
-    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety&amp;template=debate">Open</a>'));
-    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety&amp;template=debate">Closed</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=all&amp;domain=ai-safety">All</a>'));
+    assert.ok(html.includes('class="topics-status-pill is-active" href="/topics?status=open&amp;domain=ai-safety">Open</a>'));
+    assert.ok(html.includes('class="topics-status-pill" href="/topics?status=closed&amp;domain=ai-safety">Completed</a>'));
     assert.ok(html.includes('input type="hidden" name="status" value="open"'));
     assert.ok(html.includes('class="topics-filter-clear" href="/topics">Clear</a>'));
   });
@@ -1427,7 +1428,7 @@ describe("GET /topics", () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api, {
-      path: "/v1/topics?q=frontier",
+      path: "/v1/topics?q=frontier&status=started",
     });
 
     const response = await app.fetch(
@@ -1440,7 +1441,8 @@ describe("GET /topics", () => {
     const html = await response.text();
     assert.ok(html.includes('<input class="topics-search-input" name="q" type="search" value="frontier"'));
     assert.ok(html.includes("<strong>Query</strong><span>frontier</span>"));
-    assert.ok(html.includes('href="/topics?q=frontier'));
+    assert.ok(html.includes('href="/topics?status=started&amp;q=frontier"'));
+    assert.ok(html.includes('href="/topics?status=all&amp;q=frontier"'));
     assert.ok(!html.includes('input type="hidden" name="q" value="frontier"'));
   });
 
@@ -1448,7 +1450,7 @@ describe("GET /topics", () => {
     const db = new FakeDb();
     const api = new FakeApiService();
     queueTopicsApi(api, {
-      path: "/v1/topics?templateId=debate",
+      path: "/v1/topics?status=started",
       topics: [{
         id: "topic_2",
         title: "Should grid operators mandate storage reserves?",

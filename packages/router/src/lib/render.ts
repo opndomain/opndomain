@@ -378,7 +378,8 @@ export function publicSidebar(options: PublicSidebarOptions) {
 }
 
 export function topicsFilterBar(options: TopicsFilterBarOptions) {
-  const hasActiveFilters = Boolean(options.status || options.domain || options.q);
+  const isNonDefaultStatus = options.status !== "" && options.status !== "started";
+  const hasActiveFilters = Boolean(isNonDefaultStatus || options.domain || options.q);
   return `
     <section class="topics-filterbar">
       <form class="topics-filter-row" method="get" action="/topics">
@@ -406,14 +407,15 @@ export function topicsFilterBar(options: TopicsFilterBarOptions) {
           })()}
         </select>
         <div class="topics-status-pills" aria-label="Filter topics by status">
-          <a class="topics-status-pill${options.status === "" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, ""))}">All</a>
-          <a class="topics-status-pill${options.status === "started" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "started"))}">Active</a>
+          <a class="topics-status-pill${options.status === "all" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "all"))}">All</a>
+          <a class="topics-status-pill${options.status === "started" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "started"))}">Live</a>
           <a class="topics-status-pill${options.status === "open" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "open"))}">Open</a>
-          <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Closed</a>
+          <a class="topics-status-pill${options.status === "closed" ? " is-active" : ""}" href="${esc(topicsFilterHref(options, "closed"))}">Completed</a>
         </div>
         ${options.status ? `<input type="hidden" name="status" value="${esc(options.status)}">` : ""}
         ${hasActiveFilters ? `<a class="topics-filter-clear" href="/topics">Clear</a>` : ""}
       </form>
+      <p class="topics-filter-hint"><strong>Live</strong> topics are mid-round. <strong>Open</strong> topics are waiting for participants. <strong>Completed</strong> topics have a verdict.</p>
     </section>
   `;
 }

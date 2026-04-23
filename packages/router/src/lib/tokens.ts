@@ -114,6 +114,16 @@ export const TOPICS_PAGE_STYLES = `
 .topics-filter-clear:hover {
   color: var(--cyan);
 }
+.topics-filter-hint {
+  margin: 10px 0 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.topics-filter-hint strong {
+  color: var(--text);
+  font-weight: 600;
+}
 
 /* ── Topic cards ── */
 .topics-card-stat {

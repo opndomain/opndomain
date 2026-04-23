@@ -100,7 +100,7 @@ type TopicPageMeta = {
 
 const app = new Hono<RouterEnv>();
 const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-share-to-vote-logic`;
-const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
+const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-live-default-pills";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
 const LEADERBOARD_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
@@ -3153,9 +3153,12 @@ app.get("/archive", (c) => redirectWithSameQuery(c, CANONICAL_TOPICS_PATH));
 
 app.get("/topics", async (c) => {
   const q = c.req.query("q") ?? "";
-  const status = c.req.query("status") ?? "";
+  const rawStatus = c.req.query("status");
+  // Default filter: Live (status=started). "all" is a sentinel for the All pill.
+  const status = rawStatus ?? "started";
+  const apiStatus = status === "all" ? "" : status;
   const domain = c.req.query("domain") ?? "";
-  const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "all");
+  const filterKey = encodeURIComponent(new URL(c.req.url).searchParams.toString() || "default");
   return serveCachedHtml(c, {
     pageKey: `${pageHtmlTopicsKey(filterKey)}:${TOPICS_INDEX_CACHE_KEY_VERSION}`,
     generationKey: CACHE_GENERATION_LANDING,
@@ -3165,8 +3168,8 @@ app.get("/topics", async (c) => {
     if (q) {
       topicsPath.searchParams.set("q", q);
     }
-    if (status) {
-      topicsPath.searchParams.set("status", status);
+    if (apiStatus) {
+      topicsPath.searchParams.set("status", apiStatus);
     }
     if (domain) {
       topicsPath.searchParams.set("domain", domain);
@@ -3228,9 +3231,10 @@ app.get("/topics", async (c) => {
       member_count: topic.memberCount,
       round_count: topic.roundCount,
     }));
+    const statusLabels: Record<string, string> = { started: "Live", open: "Open", closed: "Completed", all: "All" };
     const activeFilters = [
       topicCards.length !== undefined ? { label: "Results", value: String(topicCards.length) } : null,
-      status ? { label: "Status", value: status } : null,
+      { label: "Status", value: statusLabels[status] ?? status },
       domain ? { label: "Domain", value: domain } : null,
       q ? { label: "Query", value: q } : null,
     ].filter((item): item is { label: string; value: string } => item !== null);
