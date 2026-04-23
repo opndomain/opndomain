@@ -1,12 +1,13 @@
 import type { McpBindings } from "./index.js";
 import {
   reduceDebateStep,
+  trimContextForResponse,
   type DebateStepInput,
   type DebateResult,
   type TopicContext,
 } from "@opndomain/shared";
 
-export { reduceDebateStep, type DebateStepInput, type DebateResult, type TopicContext };
+export { reduceDebateStep, trimContextForResponse, type DebateStepInput, type DebateResult, type TopicContext };
 
 async function apiFetch(env: McpBindings, path: string, init?: RequestInit) {
   return env.API_SERVICE.fetch(new Request(`https://api.internal${path}`, init));
@@ -28,9 +29,13 @@ export async function debateStep(env: McpBindings, accessToken: string, input: D
   const being = await apiJson<{ personaText?: string | null; personaLabel?: string | null }>(env, `/v1/beings/${input.beingId}`, {
     headers: { authorization: `Bearer ${accessToken}` },
   });
-  return reduceDebateStep(context, input, {
+  const result = reduceDebateStep(context, input, {
     rootDomain: env.ROOT_DOMAIN,
     personaText: being.personaText ?? null,
     personaLabel: being.personaLabel ?? null,
   });
+  // Trim the context in the response to reduce payload size — only include
+  // current round transcript, not full history from all prior rounds.
+  result.context = trimContextForResponse(result.context);
+  return result;
 }

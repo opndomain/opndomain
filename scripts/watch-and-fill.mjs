@@ -524,13 +524,7 @@ async function driveTopic(topicId, rosterAuth, roster) {
   const existingCount = topicDetail.activeMemberCount ?? 0;
   const botsNeeded = TARGET_MEMBERS - existingCount;
 
-  if (botsNeeded <= 0) {
-    log("drive-skip", { topicId, reason: "already full", members: existingCount });
-    activeTopics.delete(topicId);
-    return;
-  }
-
-  // Pick roster beings to fill the topic (round-robin from roster, skip any already joined)
+  // Check which roster agents are already members
   const existingMembers = new Set();
   try {
     const topicContext = await api(`/v1/topics/${topicId}/context?beingId=${encodeURIComponent(roster.agents[0].beingId)}`, {
@@ -541,32 +535,38 @@ async function driveTopic(topicId, rosterAuth, roster) {
     }
   } catch {}
 
-  const availableRosterAgents = roster.agents.filter((r) => !existingMembers.has(r.beingId));
-  const agentsToJoin = availableRosterAgents.slice(0, botsNeeded);
+  const rosterAlreadyIn = roster.agents.filter((r) => existingMembers.has(r.beingId));
 
-  if (agentsToJoin.length === 0) {
+  if (botsNeeded <= 0 && rosterAlreadyIn.length === 0) {
+    log("drive-skip", { topicId, reason: "already full, no roster agents inside", members: existingCount });
+    activeTopics.delete(topicId);
+    return;
+  }
+
+  const availableRosterAgents = roster.agents.filter((r) => !existingMembers.has(r.beingId));
+  const agentsToJoin = botsNeeded > 0 ? availableRosterAgents.slice(0, botsNeeded) : [];
+
+  if (agentsToJoin.length === 0 && rosterAlreadyIn.length === 0) {
     log("drive-abort", { topicId, reason: "no available roster agents", existing: existingMembers.size, rosterSize: roster.agents.length });
     activeTopics.delete(topicId);
     return;
   }
 
-  // Build participants from roster beings — all share the admin agent's credentials
+  // Build participants: start with roster agents already inside, then add new joins
   const participants = [];
-  for (let i = 0; i < agentsToJoin.length; i++) {
-    const rosterEntry = agentsToJoin[i];
+
+  // Add roster agents that are already members (recovery path)
+  for (let i = 0; i < rosterAlreadyIn.length; i++) {
+    const rosterEntry = rosterAlreadyIn[i];
     const runner = rosterEntry.runner ?? (i < CODEX_AGENT_COUNT ? "codex" : "claude");
-
-    // Determine stance dynamically based on position
     const stances = ["support", "oppose", "neutral", "support", "oppose"];
-    const stance = stances[i % stances.length];
-
     const participant = attachTokenState({
       index: i,
       agentId: roster.adminAgentId,
       beingId: rosterEntry.beingId,
       handle: rosterEntry.handle,
       displayName: rosterEntry.displayName,
-      stance,
+      stance: stances[i % stances.length],
       bio: rosterEntry.bio,
       runner,
       _clientId: roster.adminClientId,
@@ -575,8 +575,32 @@ async function driveTopic(topicId, rosterAuth, roster) {
     participants.push(participant);
   }
 
-  // Join the topic
-  for (const p of participants) {
+  if (rosterAlreadyIn.length > 0) {
+    log("drive-recovery", { topicId: topicId.slice(-8), rosterAlreadyIn: rosterAlreadyIn.map((r) => `@${r.handle}`) });
+  }
+
+  // Add new agents to join
+  for (let i = 0; i < agentsToJoin.length; i++) {
+    const rosterEntry = agentsToJoin[i];
+    const runner = rosterEntry.runner ?? ((rosterAlreadyIn.length + i) < CODEX_AGENT_COUNT ? "codex" : "claude");
+    const stances = ["support", "oppose", "neutral", "support", "oppose"];
+    const participant = attachTokenState({
+      index: rosterAlreadyIn.length + i,
+      agentId: roster.adminAgentId,
+      beingId: rosterEntry.beingId,
+      handle: rosterEntry.handle,
+      displayName: rosterEntry.displayName,
+      stance: stances[(rosterAlreadyIn.length + i) % stances.length],
+      bio: rosterEntry.bio,
+      runner,
+      _clientId: roster.adminClientId,
+      _clientSecret: roster.adminClientSecret,
+    }, rosterAuth);
+    participants.push(participant);
+  }
+
+  // Join new agents to the topic (skip for recovery — they're already in)
+  for (const p of participants.slice(rosterAlreadyIn.length)) {
     try {
       await api(`/v1/topics/${topicId}/join`, {
         method: "POST", token: await freshToken(p), body: { beingId: p.beingId },
@@ -587,24 +611,11 @@ async function driveTopic(topicId, rosterAuth, roster) {
     }
   }
 
-  // Filter to only participants that actually joined
-  const joinedParticipants = [];
-  for (const p of participants) {
-    try {
-      const ctx = await api(`/v1/topics/${topicId}/context?beingId=${encodeURIComponent(p.beingId)}`, {
-        token: await freshToken(p),
-      });
-      if (isBeingActiveInContext(ctx, p.beingId)) {
-        joinedParticipants.push(p);
-      }
-    } catch {}
-  }
-
-  if (joinedParticipants.length === 0) {
-    log("drive-abort", { topicId, reason: "no bots joined" });
-    activeTopics.delete(topicId);
-    return;
-  }
+  // Trust the join responses — D1 consistency and topic state transitions
+  // make post-join verification unreliable. If the join API returned 200,
+  // the being is a member. The debate loop will gracefully handle any
+  // that aren't actually active (they just won't have contribution obligations).
+  const joinedParticipants = [...participants];
 
   log("drive-active", {
     topicId: topicId.slice(-8),
@@ -952,12 +963,18 @@ async function main() {
     try {
       await freshToken(rosterAuth);
 
-      // List open topics
-      const topics = await api("/v1/internal/admin/topics?status=open&pageSize=50", {
-        token: await freshToken(rosterAuth),
-      });
-
-      const topicList = Array.isArray(topics) ? topics : (topics.items ?? topics.topics ?? []);
+      // List open topics (paginate to cover all)
+      const topicList = [];
+      let page = 1;
+      while (true) {
+        const topics = await api(`/v1/internal/admin/topics?status=open&pageSize=100&page=${page}`, {
+          token: await freshToken(rosterAuth),
+        });
+        const batch = Array.isArray(topics) ? topics : (topics.items ?? topics.topics ?? []);
+        topicList.push(...batch);
+        if (batch.length < 100) break;
+        page++;
+      }
 
       for (const topic of topicList) {
         const memberCount = topic.activeMemberCount ?? 0;
@@ -996,6 +1013,39 @@ async function main() {
           activeTopics.delete(topic.id);
         });
       }
+      // Recovery: also check started/countdown topics where our bots are members
+      // but we're not actively driving (e.g. after a restart or a race condition abort).
+      try {
+        for (const status of ["started", "countdown"]) {
+          const recovery = await api(`/v1/internal/admin/topics?status=${status}&pageSize=50`, {
+            token: await freshToken(rosterAuth),
+          });
+          const recoveryList = Array.isArray(recovery) ? recovery : (recovery.items ?? recovery.topics ?? []);
+          for (const topic of recoveryList) {
+            if (activeTopics.has(topic.id)) continue;
+            // Check if any roster agent is a member
+            try {
+              const peekBeingId = roster.agents[0].beingId;
+              const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(peekBeingId)}`, {
+                token: await freshToken(rosterAuth),
+              });
+              const members = Array.isArray(ctx.members) ? ctx.members : [];
+              const rosterMembers = members.filter((m) => rosterBeingIds.has(m.beingId));
+              if (rosterMembers.length > 0) {
+                activeTopics.add(topic.id);
+                log("recovery-found", { id: topic.id, title: topic.title, status, rosterMembers: rosterMembers.length });
+                driveTopic(topic.id, rosterAuth, roster).catch((err) => {
+                  log("drive-error", { topicId: topic.id, error: renderError(err) });
+                  activeTopics.delete(topic.id);
+                });
+              }
+            } catch {}
+          }
+        }
+      } catch (err) {
+        log("recovery-error", { error: renderError(err) });
+      }
+
     } catch (err) {
       log("poll-error", { error: renderError(err) });
     }

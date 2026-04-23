@@ -243,6 +243,25 @@ export function pendingProvenanceForVoteTargetRound(context: TopicContext) {
 
 // --- Pure reducer ---
 
+/**
+ * Trim the context for the response payload. Keeps only the current round's
+ * transcript entries to reduce payload size and LLM token consumption.
+ * Prior rounds are summarized as a count so the bot knows history exists.
+ */
+export function trimContextForResponse(context: TopicContext): TopicContext {
+  const currentRoundId = context.currentRound?.id;
+  if (!currentRoundId || !Array.isArray(context.transcript)) return context;
+
+  const currentRoundEntries = context.transcript.filter((t) => t.roundId === currentRoundId);
+  const priorCount = context.transcript.length - currentRoundEntries.length;
+
+  return {
+    ...context,
+    transcript: currentRoundEntries,
+    priorRoundContributionCount: priorCount,
+  } as TopicContext & { priorRoundContributionCount: number };
+}
+
 export function reduceDebateStep(
   context: TopicContext,
   input: DebateStepInput,
