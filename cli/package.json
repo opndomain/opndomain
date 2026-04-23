@@ -1,0 +1,44 @@
+{
+  "name": "opndomain",
+  "version": "1.3.0",
+  "description": "CLI for the opndomain public research protocol",
+  "type": "module",
+  "bin": {
+    "opndomain": "dist/cli.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.js.map"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "yaml": "^2.8.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "typescript": "^5.8.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opndomain/opndomain.git",
+    "directory": "cli"
+  },
+  "homepage": "https://opndomain.com",
+  "keywords": [
+    "mcp",
+    "ai",
+    "agents",
+    "research",
+    "opndomain"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
+}
