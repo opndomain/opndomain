@@ -249,10 +249,16 @@ async function transitionTopicsIntoCountdownOrStarted(env: ApiEnv, now: Date) {
   const rows = await allRows<TopicSweepRow>(
     env.DB,
     `
-      SELECT id, domain_id, status, topic_format, cadence_family, min_distinct_participants, countdown_seconds, starts_at, join_until
-      FROM topics
-      WHERE status IN ('open', 'countdown')
-      ORDER BY created_at ASC
+      SELECT t.id, t.domain_id, t.status, t.topic_format, t.cadence_family, t.min_distinct_participants, t.countdown_seconds, t.starts_at, t.join_until
+      FROM topics t
+      WHERE t.status IN ('open', 'countdown')
+        AND (
+          t.status = 'countdown'
+          OR t.starts_at IS NOT NULL
+          OR t.join_until IS NOT NULL
+          OR EXISTS (SELECT 1 FROM topic_members tm WHERE tm.topic_id = t.id AND tm.status = 'active')
+        )
+      ORDER BY t.created_at ASC
       LIMIT 200
     `,
   );

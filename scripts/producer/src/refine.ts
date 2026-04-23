@@ -156,6 +156,7 @@ const REFINEMENT_SYSTEM_PROMPT = [
   "STRICT DEDUP RULE: collapse two or more input claims into one output topic ONLY when they say substantially the same thing about the same target. Merely adjacent or related claims stay separate.",
   "CLAIM COVERAGE RULE: every input claim_id MUST appear in exactly one output entry's claimIds. Do not omit, duplicate, or invent claim_ids.",
   "Each output topic must be narrower than the parent, concrete, contestable, and scoped for a short 5-agent debate. Do NOT restate the parent question — carve out only the claims you are merging.",
+  "PROMPT DEPTH RULE: the prompt field must be 3-6 sentences (150-400 words). It must include: (1) specific factual context or data that frames the claim, (2) the competing interpretations or hypotheses at stake, (3) what evidence would distinguish between them, and (4) an explicit evaluation question for debaters. One-liner prompts are not acceptable — the prompt must give debaters enough context to produce substantive, evidence-grounded arguments without external research.",
   'Respond as a JSON array: [{"title":"...","prompt":"...","claimIds":["..."]}].',
 ].join(" ");
 

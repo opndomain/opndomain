@@ -53,6 +53,10 @@ const LOG_PATH = path.join(LOG_DIR, `watch-${RUN_ID}.log`);
 // Track topics we're already driving so we don't double-attach
 const activeTopics = new Set();
 
+// Roster being IDs — used to distinguish lobby topics (1 roster agent waiting)
+// from topics where a real human joined and needs opponents
+let rosterBeingIds = new Set();
+
 // ---- Logging ----
 
 function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
@@ -912,6 +916,7 @@ async function main() {
 
   // Load roster
   const roster = loadRoster();
+  rosterBeingIds = new Set(roster.agents.map((a) => a.beingId));
   log("roster", {
     path: ROSTER_PATH,
     agents: roster.agents.map((a) => `@${a.handle} [${a.runner ?? "codex"}]`),
@@ -941,7 +946,7 @@ async function main() {
   }, rosterTokenData);
   log("admin", { agentId: rosterTokenData.agent.id });
 
-  log("polling", `Watching for open topics with 1-${TARGET_MEMBERS - 1} members every ${POLL_INTERVAL_S}s...`);
+  log("polling", `Watching for open topics with members every ${POLL_INTERVAL_S}s (skipping roster-only lobby topics)...`);
 
   while (true) {
     try {
@@ -956,20 +961,40 @@ async function main() {
 
       for (const topic of topicList) {
         const memberCount = topic.activeMemberCount ?? 0;
-        if (memberCount >= 1 && memberCount < TARGET_MEMBERS && !activeTopics.has(topic.id)) {
-          activeTopics.add(topic.id);
-          log("topic-found", {
-            id: topic.id,
-            title: topic.title,
-            members: memberCount,
-            filling: TARGET_MEMBERS - memberCount,
-          });
-          // Drive in background — don't block the poll loop
-          driveTopic(topic.id, rosterAuth, roster).catch((err) => {
-            log("drive-error", { topicId: topic.id, error: renderError(err) });
-            activeTopics.delete(topic.id);
-          });
+        if (memberCount < 1 || memberCount >= TARGET_MEMBERS || activeTopics.has(topic.id)) continue;
+
+        // For 1-member topics, check if that member is a roster agent (lobby).
+        // If the only member is one of ours, skip — lobby.mjs owns it until a
+        // real participant shows up. If it's someone else, fill immediately.
+        if (memberCount === 1) {
+          try {
+            const peekBeingId = roster.agents[0].beingId;
+            const ctx = await api(`/v1/topics/${topic.id}/context?beingId=${encodeURIComponent(peekBeingId)}`, {
+              token: await freshToken(rosterAuth),
+            });
+            const members = Array.isArray(ctx.members) ? ctx.members : [];
+            const allRoster = members.every((m) => rosterBeingIds.has(m.beingId));
+            if (allRoster) {
+              continue; // lobby topic — only roster agents, skip
+            }
+            log("human-detected", { id: topic.id, title: topic.title, members: members.map((m) => m.beingHandle ?? m.beingId) });
+          } catch {
+            continue; // can't peek, skip this cycle
+          }
         }
+
+        activeTopics.add(topic.id);
+        log("topic-found", {
+          id: topic.id,
+          title: topic.title,
+          members: memberCount,
+          filling: TARGET_MEMBERS - memberCount,
+        });
+        // Drive in background — don't block the poll loop
+        driveTopic(topic.id, rosterAuth, roster).catch((err) => {
+          log("drive-error", { topicId: topic.id, error: renderError(err) });
+          activeTopics.delete(topic.id);
+        });
       }
     } catch (err) {
       log("poll-error", { error: renderError(err) });

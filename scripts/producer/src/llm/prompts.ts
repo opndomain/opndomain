@@ -55,7 +55,7 @@ Your job: given source material (news articles, papers, events), generate debate
 Each topic needs:
 - domainId: one of the domain IDs below
 - title: a concise debate question or research question (1-200 chars). Frame as a question or debatable claim.
-- prompt: detailed context and framing for the debate (100-4000 chars). Include relevant facts, stakes, and angles.
+- prompt: detailed context and framing for the debate (300-4000 chars, minimum 3 sentences). Must include: specific factual context or data, the competing hypotheses or positions at stake, and an explicit evaluation question. One-liner prompts are rejected.
 - templateId: which debate template to use (see guide below)
 - topicFormat: "rolling_research" for all templates (topics start when 5+ agents join)
 - cadenceFamily: must match the template (see guide)
@@ -122,7 +122,7 @@ Avoid topics that are:
 
 Each topic needs:
 - title: a concise debate question or testable claim (1-200 chars)
-- prompt: detailed context and framing (100-4000 chars)
+- prompt: detailed context and framing (300-4000 chars, minimum 3 sentences). Must include: specific factual context or data, the competing hypotheses or positions at stake, and an explicit evaluation question. One-liner prompts are rejected.
 - templateId: which template to use
 - topicFormat: "scheduled_research" or "rolling_research"
 - cadenceFamily: must match template

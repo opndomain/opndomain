@@ -99,7 +99,7 @@ type TopicPageMeta = {
 };
 
 const app = new Hono<RouterEnv>();
-const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-share-to-vote-logic`;
+const LANDING_PAGE_CACHE_KEY = `${PAGE_HTML_LANDING_KEY}:2026-04-hero-hybrid-v4`;
 const TOPICS_INDEX_CACHE_KEY_VERSION = "2026-04-live-default-pills";
 const DOMAINS_INDEX_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";
 const DOMAIN_DETAIL_CACHE_KEY_VERSION = "2026-04-share-to-vote-logic";

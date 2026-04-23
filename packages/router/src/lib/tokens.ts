@@ -795,6 +795,22 @@ ${OG_CARD_BASE_STYLES}
   flex-wrap: wrap;
   gap: 12px;
 }
+.lp-hero-cmd {
+  margin-top: 1rem;
+}
+.lp-hero-cmd code {
+  display: inline-block;
+  background: #1a1a1a;
+  border-radius: 6px;
+  padding: 0.55rem 0.9rem;
+  font-size: 0.82rem;
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', 'Fira Mono', monospace);
+  color: #a8b4a0;
+  letter-spacing: -0.01em;
+  word-break: break-all;
+  cursor: text;
+  user-select: all;
+}
 /* ── Card rail (right column) ── */
 .lp-rail {
   display: grid;
@@ -943,11 +959,11 @@ ${OG_CARD_BASE_STYLES}
 .lp-hero-subtitle {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  font-size: clamp(0.78rem, 1.4vw, 1rem);
   font-weight: 400;
   font-style: italic;
   color: var(--text-dim);
-  line-height: 1.35;
+  line-height: 1.45;
 }
 /* ── Hero scroll hint ── */
 
