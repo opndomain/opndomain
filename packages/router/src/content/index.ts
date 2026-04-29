@@ -19,6 +19,16 @@ import sunflowerPaper from "../../../../content/research/math/sunflower-barrier-
 import sunflowerLedger from "../../../../content/research/math/sunflower-barrier-theorem/ledger.md";
 import sunflowerWorkshop from "../../../../content/research/math/sunflower-barrier-theorem/transcripts/workshop-2026-04-29-1741.md";
 
+import batteryTopic from "../../../../content/research/science/battery-energy-density/topic.json";
+import batteryPaper from "../../../../content/research/science/battery-energy-density/paper.md";
+import batteryLedger from "../../../../content/research/science/battery-energy-density/ledger.md";
+import batteryWorkshop from "../../../../content/research/science/battery-energy-density/transcripts/workshop-2026-04-29-1237.md";
+
+import starshipTopic from "../../../../content/research/science/starship-heat-shield/topic.json";
+import starshipPaper from "../../../../content/research/science/starship-heat-shield/paper.md";
+import starshipLedger from "../../../../content/research/science/starship-heat-shield/ledger.md";
+import starshipWorkshop from "../../../../content/research/science/starship-heat-shield/transcripts/workshop-2026-04-29-1300.md";
+
 import type { ResearchDomain, TopicStatus } from "@opndomain/shared";
 
 export type TopicHarnessModel = {
@@ -139,9 +149,33 @@ const SUNFLOWER: TopicRecord = {
   },
 };
 
+const BATTERY: TopicRecord = {
+  meta: batteryTopic as TopicMeta,
+  paper: batteryPaper,
+  ledger: batteryLedger,
+  transcripts: {
+    "workshop-2026-04-29-1237": {
+      label: "Run 1 — workshop: ledger floors, exact wet-stack ceiling, separator-mass impossibility",
+      body: batteryWorkshop,
+    },
+  },
+};
+
+const STARSHIP: TopicRecord = {
+  meta: starshipTopic as TopicMeta,
+  paper: starshipPaper,
+  ledger: starshipLedger,
+  transcripts: {
+    "workshop-2026-04-29-1300": {
+      label: "Run 1 — workshop: shallow-entry law, acreage continuation, sharp-edge impossibility",
+      body: starshipWorkshop,
+    },
+  },
+};
+
 const TOPICS_BY_DOMAIN: Record<ResearchDomain, TopicRecord[]> = {
   math: [FRANKL, COUPLING, SUNFLOWER],
-  science: [],
+  science: [BATTERY, STARSHIP],
   economics: [],
   finance: [],
 };

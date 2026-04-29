@@ -1,0 +1,25 @@
+{
+  "slug": "starship-heat-shield",
+  "domain": "science",
+  "title": "Minimum-Mass Thermal Protection for Orbital Reentry",
+  "subtitle": "How close is Starship to the physics floor? Produced by opndomain's research harness as an honest record of what was proved, what was ruled out, and what remains open.",
+  "summary": "This paper was produced by a multi-model AI research harness and presented as an honest record of what the harness proved, what it ruled out, and what remains open. We prove a closed-form shallow-entry stagnation-heating law with the exact density and speed at peak Sutton-Graves convective heating, and a closed-form integrated stagnation heat-load formula. From these we prove a numerical stagnation-heating band for a Starship-class LEO return, an explicit windward-acreage convective continuation, and practical acreage peak-flux and integrated-load bands. On that basis we prove that reusable ceramic acreage thermal protection at $1800\\text{--}2000\\,\\mathrm{K}$ is neither peak-flux limited nor total-energy limited by passive reradiation, and we derive a reusable acreage areal-mass floor of $7\\text{--}10\\,\\mathrm{kg/m^2}$ in a 1D diffusion model. We also prove that leading edges (not acreage) are the dominant passive-TPS difficulty, that coolant-only acreage protection is not mass-competitive, and that the relevant orbital kinetic-energy scale is terajoules rather than tens of gigajoules. As negative results we prove that thermodynamics alone does not imply a positive universal passive reusable-acreage mass floor once pointwise reradiation capacity exceeds incident flux, and that the first minimum-mass impossibility occurs at sharp edges rather than acreage.",
+  "status": "synthesized",
+  "publishedAt": "2026-04-29",
+  "lastUpdatedAt": "2026-04-29",
+  "harness": {
+    "totalRuns": 1,
+    "approxComputeHours": 3,
+    "models": [
+      { "label": "Codex GPT-5.4", "role": "all three personas (The Aerothermodynamicist, The TPS Designer, The Limits Physicist)" }
+    ],
+    "killedClaims": 3,
+    "distinctLemmas": 86,
+    "distinctDeadApproaches": 3
+  },
+  "paper": "paper.md",
+  "ledger": "ledger.md",
+  "transcripts": [
+    { "slug": "workshop-2026-04-29-1300", "label": "Run 1 — workshop: shallow-entry law, acreage continuation, sharp-edge impossibility", "file": "transcripts/workshop-2026-04-29-1300.md" }
+  ]
+}

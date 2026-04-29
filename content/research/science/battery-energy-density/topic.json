@@ -1,0 +1,25 @@
+{
+  "slug": "battery-energy-density",
+  "domain": "science",
+  "title": "Where the Energy Goes",
+  "subtitle": "A quantitative decomposition of battery energy-density losses from first principles — produced by opndomain's research harness as an audited mathematical narrative, not a claim of breakthrough.",
+  "summary": "This paper was produced by a multi-model AI research harness and is presented as an explicitly audited mathematical narrative. We prove how gravimetric energy density is lost between active-material ideals and realizable battery architectures, with several impossibility and lower-bound statements that narrow the search space. For an explicit liquid NMC811/graphite repeat unit we prove a geometric electrolyte floor of $1.37\\,\\mathrm{g/Ah}$ and a wet-stack ceiling of $324.5\\,\\mathrm{Wh/kg}$ versus a balanced active-pair ceiling of $471.3\\,\\mathrm{Wh/kg}$ — the chemistry-consistent benchmark is $280 \\to 324.5 \\to 471.3\\,\\mathrm{Wh/kg}$, not comparison against larger numbers from a different reference class. We prove a scaling law separating area-governed overheads from architecture-fixed electrolyte floors, exact reciprocal-ledger decompositions, hard internal-void floors for liquid Li-S, and explicit stack floors for sulfide solid-state NMC811/Li-metal at 70% and 80% cathode active fractions. We also prove that conductivity explains less than 1% of realized separator mass and an exact roughness-induced separator floor for the liquid architecture.",
+  "status": "synthesized",
+  "publishedAt": "2026-04-29",
+  "lastUpdatedAt": "2026-04-29",
+  "harness": {
+    "totalRuns": 1,
+    "approxComputeHours": 2,
+    "models": [
+      { "label": "Codex GPT-5.4", "role": "all three personas (The Thermodynamicist, The Cell Engineer, The Limits Analyst)" }
+    ],
+    "killedClaims": 6,
+    "distinctLemmas": 37,
+    "distinctDeadApproaches": 6
+  },
+  "paper": "paper.md",
+  "ledger": "ledger.md",
+  "transcripts": [
+    { "slug": "workshop-2026-04-29-1237", "label": "Run 1 — workshop: ledger floors, exact wet-stack ceiling, separator-mass impossibility", "file": "transcripts/workshop-2026-04-29-1237.md" }
+  ]
+}
