@@ -1,4 +1,6 @@
-import { FONT_PRECONNECT, GLOBAL_STYLES } from "./tokens.js";
+import { FONT_PRECONNECT, GLOBAL_STYLES, PORTFOLIO_STYLES } from "./tokens.js";
+
+const FAVICON_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23f3f0e8'/%3E%3Ctext x='50%25' y='52%25' font-family='Newsreader, Georgia, serif' font-size='20' font-weight='700' fill='%234d6780' text-anchor='middle' dominant-baseline='central'%3Eo%3C/text%3E%3C/svg%3E";
 
 export type PageHeadMetadata = {
   canonicalUrl?: string;
@@ -101,8 +103,9 @@ export function renderPage(
     ${renderMetaTag("name", "twitter:description", twitterDescription)}
     ${renderMetaTag("name", "twitter:image", twitterImageUrl)}
     ${renderMetaTag("name", "twitter:image:alt", head?.twitterImageAlt ?? head?.ogImageAlt)}
+    <link rel="icon" href="${FAVICON_DATA_URL}" />
     ${FONT_PRECONNECT}
-    <style>${GLOBAL_STYLES}</style>
+    <style>${GLOBAL_STYLES}${PORTFOLIO_STYLES}</style>
     ${pageStyles ? `<style>${pageStyles}</style>` : ""}
     ${head?.extraHead ?? ""}
   </head>
