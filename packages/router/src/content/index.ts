@@ -12,6 +12,7 @@ import couplingLedger from "../../../../content/research/math/frankl-coupling-th
 import couplingBase from "../../../../content/research/math/frankl-coupling-theorem/transcripts/base-2026-04-29-1325.md";
 import couplingAlien from "../../../../content/research/math/frankl-coupling-theorem/transcripts/alien-constraint-2026-04-29-1412.md";
 import couplingCross from "../../../../content/research/math/frankl-coupling-theorem/transcripts/cross-domain-2026-04-29-1443.md";
+import couplingSynthesis from "../../../../content/research/math/frankl-coupling-theorem/transcripts/synthesis-2026-04-29-1525.md";
 
 import sunflowerTopic from "../../../../content/research/math/sunflower-barrier-theorem/topic.json";
 import sunflowerPaper from "../../../../content/research/math/sunflower-barrier-theorem/paper.md";
@@ -107,17 +108,21 @@ const COUPLING: TopicRecord = {
   paper: couplingPaper,
   ledger: couplingLedger,
   transcripts: {
-    "base-2026-04-29-1325": {
-      label: "Run 1 — base, transport inequality + augmentation-success mark",
-      body: couplingBase,
+    "synthesis-2026-04-29-1525": {
+      label: "Run 4 — synthesis: cubic invariants, exact decoder, anti-congestion as the surviving obstruction",
+      body: couplingSynthesis,
+    },
+    "cross-domain-2026-04-29-1443": {
+      label: "Run 3 — cross-domain, the quadratic observable Q_x",
+      body: couplingCross,
     },
     "alien-constraint-2026-04-29-1412": {
       label: "Run 2 — alien-constraint, defect form + tensor blow-up",
       body: couplingAlien,
     },
-    "cross-domain-2026-04-29-1443": {
-      label: "Run 3 — cross-domain, the quadratic observable Q_x",
-      body: couplingCross,
+    "base-2026-04-29-1325": {
+      label: "Run 1 — base, transport inequality + augmentation-success mark",
+      body: couplingBase,
     },
   },
 };

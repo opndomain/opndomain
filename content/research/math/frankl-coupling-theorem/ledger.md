@@ -1,50 +1,74 @@
-# Knowledge Ledger — Coupling Theorem for Frankl k = 5
+# KNOWLEDGE LEDGER
 
-Distinct PROVEN / DEAD / OPEN entries from the three master-orchestrator runs (base, alien-constraint, cross-domain) on this scenario, deduplicated. The prior topic's ledger was inherited verbatim and is not duplicated here.
+## PROVEN RESULTS (use these, do not re-derive)
+- [P1] For each vertex x, the cubic invariant (by The Coupling Builder, iter 1)
+- [P2] The explicit dependent coupling Q_x defined by path-weighted sampling of three bad fibers and union output is supported on fibers with p_x(L_U)\ge 1/2. (by The Coupling Builder, iter 1)
+- [P3] If \Psi_x(b)>0, then there exists a fiber contributing positive localized good load through x. (by The Coupling Builder, iter 1)
+- [P4] A naive pointwise domination of the union-pushforward by the ambient measure cannot hold in general; the obstruction is many-to-one compression under the union map. (by The Coupling Builder, iter 1)
+- [P5] For the canonical singly-tagged family C_y=2^{M\setminus\{y\}}\cup\{M\}, the exact augmentation defects are \delta_x(C_y)=1 for x\neq y and \delta_y(C_y)=-15. (by The Defect Analyst, iter 1)
+- [P6] For the full family C_=2^M, \delta_x(C_)=0 for every x. (by The Defect Analyst, iter 1)
+- [P7] If \kappa_x(U) counts forced 4-cubes in L_U containing x, then for every rigid output fiber of the cubic path forcing, (by The Defect Analyst, iter 1)
+- [P8] The anti-congestion problem splits into a solved geometric factor 12\kappa_x(U) and an unresolved scalar mass-nesting factor \eta_x(U). (by The Defect Analyst, iter 1)
+- [P9] For each x and y != x, the refined cubic invariant (by The Structure Miner, iter 1)
+- [P10] The total localized invariant satisfies (by The Structure Miner, iter 1)
+- [P11] The ambient upper-mass profile (by The Structure Miner, iter 1)
+- [P12] The two-sample supermodularity gap (by The Structure Miner, iter 1)
+- [P13] The explicit dependent split coupling on a witness triple \((T_1,T_2,T_3)\) via cyclic pairings \((T_1\cup T_2,T_2\cup T_3)\), \((T_2\cup T_3,T_3\cup T_1)\), \((T_3\cup T_1,T_1\cup T_2)\). (by The Coupling Builder, iter 1)
+- [P14] For each pairing, the split indicator is (by The Coupling Builder, iter 1)
+- [P15] The best-pairing bonus satisfies (by The Coupling Builder, iter 1)
+- [P16] The total intrinsic split mass satisfies (by The Coupling Builder, iter 1)
+- [P17] At the isotropic point, (by The Coupling Builder, iter 1)
+- [P18] For every proper \(K\subsetneq M\), the cube-plus-top family \(E_K=2^K\cup\{M\}\) has exact defect counts (by The Defect Analyst, iter 1)
+- [P19] In particular, for a \(3\)-cube-plus-top \(E_K\) with \(|K|=3\), (by The Defect Analyst, iter 1)
+- [P20] Every doubly redundant cubic witness triple on a path \(ab,bc,cd\subseteq S_y\) forces the same rigid \(4\)-cube \(C_y=2^{S_y}\cup\{M\}\) on its output fiber: (by The Defect Analyst, iter 1)
+- [P21] Therefore every term in \(\Theta_x\) has the correct local sign for the tracked vertex \(x\): (by The Defect Analyst, iter 1)
+- [P22] The centered pair kernel (by The Structure Miner, iter 1)
+- [P23] On the isotropic adversary realized as the barycenter of Hamilton \(5\)-cycles, (by The Structure Miner, iter 1)
+- [P24] \(K^{\mathrm{iso}}\) annihilates the trivial summand and the vertex-load summand. (by The Structure Miner, iter 1)
+- [P25] On the hidden Petersen \(5\)-irreducible (by The Structure Miner, iter 1)
+- [P26] There exists an explicit chamber-state law \(\nu_{\mathrm{PM}}\) (uniform on the three perfect matchings of a \(K_4\) slice) such that (by The Coupling Builder, iter 1)
+- [P27] Therefore any transport inequality from the pair covariance kernel \(K\) alone to cubic path witness mass is false at the chamber-state level. (by The Coupling Builder, iter 1)
+- [P28] The structural feature missed by \(K\) is exactly bridge coherence: pair statistics detect disjoint endpoints, but not whether a connecting middle edge is present in the same chamber-state. (by The Coupling Builder, iter 1)
+- [P29] For \(E_K=2^K\cup\{M\}\), the bridge tensor has the exact form (by The Defect Analyst, iter 1)
+- [P30] The normalized bridge statistic (by The Defect Analyst, iter 1)
+- [P31] On the canonical singly-tagged family \(C_y=2^{M\setminus\{y\}}\cup\{M\}\), the support vertices \(x\neq y\) are characterized exactly by the existence of a unique omitted vertex \(z=y\) for which (by The Defect Analyst, iter 1)
+- [P32] On the same rigid family \(C_y\), every vertex has strictly positive raw total bridge mass, even though the exact defects are \(+1\) on the four support vertices and \(-15\) on the tag. So raw bridge positivity does not determine defect sign. (by The Defect Analyst, iter 1)
+- [P33] The nonlinear bridge-efficiency ratio (by The Structure Miner, iter 1)
+- [P34] For any actual output law \(\mu\) on \(2^M\), (by The Structure Miner, iter 1)
+- [P35] For any output law \(\mu\), (by The Structure Miner, iter 1)
+- [P36] On the rigid good outputs \(C_y\) and \(2^M\), (by The Structure Miner, iter 1)
+- [P37] doubly redundant cubic witness triples still force the same rigid \(4\)-cube \(C_y\), so their local sign at tracked \(x\neq y\) is \(+1\). (by verify, iter 1)
+- [P38] the covariance kernel \(K_{ef}=\operatorname{Cov}(Z_e,Z_f)\) is PSD and the isotropic Hamilton-cycle law acts by a positive scalar on the Petersen \(5\)-irreducible. (by verify, iter 1)
+- [P39] pair-kernel-only transport is dead at chamber-state level. (by verify, iter 1)
+- [P40] the bridge-efficiency ratio (by verify, iter 1)
+- [P41] after the union step, the normalized bridge statistic collapses exactly to a \(4\)-set marginal. (by verify, iter 1)
+- [P42] on rigid good outputs \(C_y\) and \(2^M\), localized good load is exactly decoded by (by verify, iter 1)
+- [P43] for any output law \(\mu\) on \(2^M\), the four events (by verify, iter 1)
+- [P44] on the isotropic Hamilton-cycle law, (by verify, iter 1)
+- [P45] the output-side “normalized bridge spike” is not a new third-order observable; it is exactly a \(4\)-set marginal. (by verify, iter 1)
+- [P46] the rigid singly-tagged family \(C_y=2^{M\setminus\{y\}}\cup\{M\}\) has exact defect counts (by verify, iter 1)
+- [P47] on rigid good outputs, the pair \((a_x,m)\) separates the cases needed for localized load: (by verify, iter 1)
+- [P48] the surviving obstruction remains anti-congestion, not local sign. (by verify, iter 1)
+- [P49] On the isotropic Hamilton-cycle law \(\nu_{\mathrm{iso}}\), (by verify, iter 1)
+- [P50] For any output law \(\mu\) on \(2^M\), the four events (by verify, iter 1)
+- [P51] Therefore, for every output law \(\mu\), (by verify, iter 1)
+- [P52] The output-side “normalized bridge spike” is not a genuinely third-order invariant; it is exactly the \(4\)-set marginal \(2\mu(S_y)\). (by verify, iter 1)
+- [P53] On the rigid good outputs \(C_y\) and \(2^M\), (by verify, iter 1)
+- [P54] The surviving obstruction is anti-congestion under the union pushforward, not local sign. (by verify, iter 1)
 
-## PROVEN
+## DEAD APPROACHES (do NOT retry these)
+- [D1] “Take the cubic path coupling and conclude \(\lambda_x \ge c\,\Psi_x(b)\) by a raw density comparison \(q_x\le C\mu\)” — REASON: union-pushforwards can concentrate exponentially on upper fibers; the coupling lacks an anti-congestion mechanism. (killed by The Coupling Builder, iter 1) (killed by compressed, iter 0)
+- [D2] Pointwise control \(\widetilde q_x(U)\le C\,\mu_U\,\kappa_x(U)\) — REASON: \(\kappa_x(U)\) counts only path skeletons and does not control lower-mass crowding inside a fixed skeleton. (killed by The Defect Analyst, iter 1) (killed by compressed, iter 0)
+- [D3] Treating cubic witness failure as generic congestion — REASON: the exact failure mode is narrower, namely endpoint-redundancy collapse rather than arbitrary many-to-one compression. (killed by The Coupling Builder, iter 1) (killed by compressed, iter 0)
+- [D4] Trying to extract an extra local defect bonus from the two adjacent \(3\)-cube certificates in the \(\rho_1=\rho_3=1\) case — REASON: after passage to the actual union-closed output, the closure is exactly \(C_y\), whose exact \(x\)-defect is only \(+1\). (killed by The Defect Analyst, iter 1) (killed by compressed, iter 0)
+- [D5] Testing the quadratic kernel on star/degree vectors — REASON: the isotropic Hamilton adversary has deterministic degree sequence and therefore zero variance on the vertex-load module. (killed by The Structure Miner, iter 1) (killed by compressed, iter 0)
+- [D6] The naive version of the \(x\)-localized PSD-kernel transport program — REASON: killed by the chamber-state counterexample / missing bridge coherence. (killed by The Coupling Builder, iter 1) (killed by compressed, iter 0)
+- [D7] Inferring the \(x\)-defect sign from mere positivity of the raw \(x\)-localized bridge tensor — REASON: \(C_y\) gives positive raw bridge mass for the uniquely worst vertex \(x=y\). (killed by The Defect Analyst, iter 1) (killed by compressed, iter 0)
+- [D8] The universal defect formula for \(E_K=2^K\cup\{M\}\) as stated in Defect Analyst pass 2 — REASON: failed verification. (killed by verify, iter 1) (killed by compressed, iter 0)
+- [D9] The centered bridge tensor — REASON: failed verification. (killed by verify, iter 1) (killed by compressed, iter 0)
 
-- **[P1] First-stage transport inequality.**
-$$\lambda_x \geq \frac{|\Omega_x|}{|\mathcal{F}|}\, \mathbb{E}_{\omega \in \Omega_x}\!\left[\frac{s_x(u_x(\omega))}{c_x(u_x(\omega))}\right] = \frac{1}{|\mathcal{F}|} \sum_{W \in I_x} s_x(W).$$
-
-- **[P2] Source factor.** $\Psi_x = \sum_{\{e,f\} \in \mathcal{P}_x} b_e b_f$, with $|\Omega_x| = |\mathcal{F}|^2 \Psi_x / 25$. At the LP adversary $b_e = B/10$: $\Psi_x = 3(B/10)^2 > 0$.
-
-- **[P3] Quadratic-observable equivalent.** Writing $a_i = b_{xi}$ for the four edges incident to $x$,
-$$Q_x = \sum_{1 \leq i < j \leq 4} a_i a_j = \tfrac{1}{2}\bigl((\textstyle\sum a_i)^2 - \sum a_i^2\bigr)$$
-is the second elementary symmetric polynomial on the local $x$-channel profile. $Q_x$ and $\Psi_x$ are the same forcing object in different bases. $Q_x = 6(B/10)^2$ at isotropy.
-
-- **[P4] Augmentation-success mark.** For every hit output $W$,
-$$\Sigma_x(W) := \sum_{i \neq x} \rho_{x, W}(i)\, \alpha_i(L_W) \in \{1/16, 1\},$$
-$1/16$ iff $L_W = Q_i$ (tagged), $1$ iff $L_W = 2^M$ (full).
-
-- **[P5] Exact load formula.** $s_x(W) = 16 + 16 \Sigma_x(W) = 32 - 15 D_x(W)$.
-
-- **[P6] Defect zero-one.** $D_x(W) := |R_x(L_W)| - |M_x(L_W)| \in \{0, 1\}$, with $D_x = 1 \iff$ tagged and $D_x = 0 \iff$ full.
-
-- **[P7] Comparable-fiber intersection lemma (unconditional, nonlinear).** For any two bad fibers $T \subseteq U$, their labels intersect.
-
-- **[P8] Star-or-triangle dichotomy.** Bad labels on any comparable chain are pairwise intersecting 2-edges. By EKR classification on $\binom{[5]}{2}$, they form either a star (common vertex) or a triangle. These are the only extremizers.
-
-## DEAD
-
-- **[D1] Transport from projection law alone.** Two tensor-blow-up families with identical projection law $\{\rho_{x, W}\}_{W \in I_x}$ have different average defect $\overline{D}_x$. Any closure must use joint $(W, \Sigma_x(W))$ data.
-
-- **[D2] Universal capacity bound.** $N_x(W) \leq C |L_W|$ killed by tensor blow-up: exponentially many certificates collapse onto one fiber while $|L_W|$ stays constant.
-
-- **[D3] Potts-type color-mixing.** Colored partition-energy invariants in the style of Potts statistics are strictly weaker than $\Sigma_x(W)$. They miss the monochromatic full-output case.
-
-- **[D4] Any linear observable on edge masses.** Inherited from the prior topic's no-go theorem; reaffirmed here against the isotropic point.
-
-## OPEN
-
-- **[O1] Source-to-mark transport.** Prove $\sum_{W \in I_x} \Sigma_x(W) \geq \Phi_x^{\text{src}}$ for a source-visible nonlinear functional positive at $b_e = B/10$.
-
-- **[O2] Average defect bound.** Equivalently, $\overline{D}_x \leq 1 - \varepsilon$ for some $\varepsilon > 0$ forced by source geometry.
-
-- **[O3] Monochromatic full detector.** Source-visible invariant detecting $L_W = 2^M$ with $\rho_{x, W} = \delta_i$ for some single $i$.
-
-- **[O4] Marked-transport inequality.** Use joint $(W, \Sigma_x(W))$, not $W$'s law alone.
-
-- **[O5] Entropy/SDP certificate.** A single observable whose output exactly lower-bounds $\overline{\Sigma}_x$ and survives tensor blow-up.
-
-- **[O6] Triangle-regime quantification.** The triangle case is the binding obstruction. Any closure has to be active there. (Star case is closed in the prior topic.)
+## OPEN QUESTIONS (attack these)
+- [O1] Convert the new correct-sign information into a quantitative anti-congestion bound by proving the witness-to-output routing for \(\Theta_x\) can be normalized so that the total mass of doubly redundant triples assigned to any output \(W\) is bounded by a constant multiple of the actual \(C_y\)-mass at \(W\). — CONTEXT: The Defect Analyst (iter 1) — CONTEXT: compressed (iter 0)
+- [O2] Prove a transport/coupling theorem from an \(x\)-localized bridge tensor \(T^{(x)}\), not from \(K\) alone. — CONTEXT: The Coupling Builder (iter 1) — CONTEXT: compressed (iter 0)
+- [O3] Lift the rigid-family support detector to the actual coupling output using a normalized omitted-vertex spike, rather than raw bridge mass. — CONTEXT: The Defect Analyst (iter 1) — CONTEXT: compressed (iter 0)
+- [O4] Localize the PSD kernel to a fixed \(x\) and prove an \(x\)-localized transport inequality, but only in a form that explicitly incorporates bridge coherence rather than relying on pair-kernel data alone. — CONTEXT: The Structure Miner (iter 1) — CONTEXT: compressed (iter 0)

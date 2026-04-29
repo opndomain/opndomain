@@ -1,28 +1,29 @@
 {
   "slug": "frankl-coupling-theorem",
   "domain": "math",
-  "title": "A Quadratic Forcing Observable for Frankl's k = 5 Residual",
-  "subtitle": "Continuation of the union-closed work: the harness, seeded with the prior topic's ledger, finds nonlinear signal where the no-go theorem said no linear proof could.",
-  "summary": "The earlier topic ([frankl-union-closed](/research/math/frankl-union-closed)) ended with a no-go theorem: every $S_5$-equivariant linear transfer from edge masses to vertex loads collapses to degree-plus-total-mass, so no symmetric linear scheme can close $\\max p_x \\geq 0.39$ on the $k=5$ residual. This follow-up scenario, run via the master orchestrator with the prior ledger inherited verbatim, attacked the gap with the linear obstruction baked in as a constraint. The cross-domain pass produced a quadratic observable $Q_x = \\sum_{i<j} a_i a_j$ on the local $x$-channel masses that is strictly positive at the LP adversary $b_e = B/10$ where every linear observable vanishes. The accompanying transport inequality reduces Frankl on the residual to a single inequality on an averaged augmentation-success mark.",
+  "title": "Nonlinear Coupling Structure for Frankl's Conjecture",
+  "subtitle": "Verified reduction of the k=5 residual to a pre-union transport problem — produced by opndomain's research harness as a survey of what's proven, ruled out, failed verification, and what remains open.",
+  "summary": "This paper was produced by a multi-model AI research harness. Its contribution is not a claimed breakthrough, but a verified reduction: we isolate what has been proved in the ledger, what has been ruled out by counterexample or impossibility argument, what failed verification, and what remains open in the $k=5$ residual program around Frankl's union-closed sets conjecture. The output-side normalized bridge statistic collapses identically to a $4$-set marginal $\\widehat T_\\mu^{(x)}(y;uv) = 2\\mu(S_y)$, so any post-union bridge spike is not a genuinely third-order invariant. On the rigid good outputs $C_y = 2^{S_y} \\cup \\{M\\}$ and $C_\\bullet = 2^M$, the exact affine decoder is $\\lambda_x = 8 a_x - \\tfrac{224}{15} m + \\tfrac{7}{15}$. Pair-kernel-only transport is killed at chamber-state level; the missing structure is bridge coherence. The surviving obstruction is anti-congestion under the union pushforward, not local sign.",
   "status": "synthesized",
   "publishedAt": "2026-04-29",
   "lastUpdatedAt": "2026-04-29",
   "harness": {
-    "totalRuns": 3,
-    "approxComputeHours": 2,
+    "totalRuns": 4,
+    "approxComputeHours": 3,
     "models": [
-      { "label": "Codex GPT-5.4", "role": "all three personas (Coupling Builder, Defect Analyst, Structure Miner)" }
+      { "label": "Codex GPT-5.4", "role": "all four personas (The Coupling Builder, The Defect Analyst, The Structure Miner, verify)" }
     ],
-    "killedClaims": 4,
-    "distinctLemmas": 8,
-    "distinctDeadApproaches": 4
+    "killedClaims": 9,
+    "distinctLemmas": 54,
+    "distinctDeadApproaches": 9
   },
   "paper": "paper.md",
   "ledger": "ledger.md",
   "transcripts": [
-    { "slug": "base-2026-04-29-1325", "label": "Run 1 — base, transport inequality + augmentation-success mark", "file": "transcripts/base-2026-04-29-1325.md" },
+    { "slug": "synthesis-2026-04-29-1525", "label": "Run 4 — synthesis: cubic invariants, exact decoder, anti-congestion as the surviving obstruction", "file": "transcripts/synthesis-2026-04-29-1525.md" },
+    { "slug": "cross-domain-2026-04-29-1443", "label": "Run 3 — cross-domain, the quadratic observable Q_x", "file": "transcripts/cross-domain-2026-04-29-1443.md" },
     { "slug": "alien-constraint-2026-04-29-1412", "label": "Run 2 — alien-constraint, defect form + tensor blow-up", "file": "transcripts/alien-constraint-2026-04-29-1412.md" },
-    { "slug": "cross-domain-2026-04-29-1443", "label": "Run 3 — cross-domain, the quadratic observable Q_x", "file": "transcripts/cross-domain-2026-04-29-1443.md" }
+    { "slug": "base-2026-04-29-1325", "label": "Run 1 — base, transport inequality + augmentation-success mark", "file": "transcripts/base-2026-04-29-1325.md" }
   ],
   "relatedTopics": [
     { "slug": "frankl-union-closed", "label": "Source topic — the union-closed paper this continues", "domain": "math" }
