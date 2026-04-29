@@ -9,6 +9,11 @@ import {
   type DomainMeta,
   type TopicRecord,
 } from "../content/index.js";
+
+function findContinuation(topic: TopicRecord): TopicRecord | null {
+  if (!topic.meta.continuedBy) return null;
+  return getTopic(topic.meta.domain, topic.meta.continuedBy);
+}
 import { renderPage } from "../lib/layout.js";
 import { breadcrumbs, dataBadge, hero, statRow } from "../lib/render.js";
 import { KATEX_HEAD, markdownExcerpt, renderMarkdown } from "../lib/markdown.js";
@@ -38,6 +43,10 @@ const PAPER_STYLES = `
 .topic-section-nav{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0 2rem}
 .topic-section-nav a{padding:.35rem .8rem;border:1px solid var(--rule);border-radius:999px;font-size:.85rem;text-decoration:none;color:var(--text-soft)}
 .topic-section-nav a:hover{border-color:var(--accent);color:var(--text)}
+.topic-continuation,.topic-related{border:1px solid var(--rule);border-radius:8px;padding:14px 18px;margin:1.6rem 0;background:color-mix(in srgb,var(--surface-alt) 60%,transparent);display:flex;flex-direction:column;gap:6px}
+.topic-continuation a,.topic-related a{font-family:var(--font-display);font-size:1.05rem;color:var(--text);text-decoration:none}
+.topic-continuation a:hover,.topic-related a:hover{color:var(--accent)}
+.topic-continuation-eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.72rem;color:var(--text-muted)}
 `;
 
 function topicCard(topic: TopicRecord): string {
@@ -169,6 +178,21 @@ app.get("/:domain/:topic", (c) => {
     `
     : "";
 
+  const continuation = findContinuation(topic);
+  const continuationCallout = continuation
+    ? `<aside class="topic-continuation">
+        <div class="topic-continuation-eyebrow">Continued in</div>
+        <a href="/research/${continuation.meta.domain}/${continuation.meta.slug}">${escapeText(continuation.meta.title)}</a>
+      </aside>`
+    : "";
+
+  const relatedCallout = (meta.relatedTopics ?? []).length
+    ? `<aside class="topic-related">
+        <div class="topic-continuation-eyebrow">Builds on</div>
+        ${(meta.relatedTopics ?? []).map((r) => `<a href="/research/${r.domain}/${r.slug}">${escapeText(r.label)}</a>`).join("")}
+      </aside>`
+    : "";
+
   const body = `
     <article class="research-paper">
       ${breadcrumbs([
@@ -177,8 +201,10 @@ app.get("/:domain/:topic", (c) => {
         { label: meta.title },
       ])}
       ${navHtml}
+      ${relatedCallout}
       ${harnessGrid}
       ${renderMarkdown(topic.paper)}
+      ${continuationCallout}
       ${transcriptList ? `<section id="transcripts"><h2>Workshop transcripts</h2><ul>${transcriptList}</ul></section>` : ""}
     </article>
   `;

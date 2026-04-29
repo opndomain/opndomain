@@ -6,6 +6,13 @@ import franklFramework from "../../../../content/research/math/frankl-union-clos
 import franklK4 from "../../../../content/research/math/frankl-union-closed/transcripts/k4-derivation-2026-04-28-1906.md";
 import franklK5 from "../../../../content/research/math/frankl-union-closed/transcripts/k5-residual-2026-04-29-1039.md";
 
+import couplingTopic from "../../../../content/research/math/frankl-coupling-theorem/topic.json";
+import couplingPaper from "../../../../content/research/math/frankl-coupling-theorem/paper.md";
+import couplingLedger from "../../../../content/research/math/frankl-coupling-theorem/ledger.md";
+import couplingBase from "../../../../content/research/math/frankl-coupling-theorem/transcripts/base-2026-04-29-1325.md";
+import couplingAlien from "../../../../content/research/math/frankl-coupling-theorem/transcripts/alien-constraint-2026-04-29-1412.md";
+import couplingCross from "../../../../content/research/math/frankl-coupling-theorem/transcripts/cross-domain-2026-04-29-1443.md";
+
 import type { ResearchDomain, TopicStatus } from "@opndomain/shared";
 
 export type TopicHarnessModel = {
@@ -27,6 +34,12 @@ export type TranscriptRef = {
   label: string;
 };
 
+export type RelatedTopicRef = {
+  slug: string;
+  label: string;
+  domain: ResearchDomain;
+};
+
 export type TopicMeta = {
   slug: string;
   domain: ResearchDomain;
@@ -36,7 +49,9 @@ export type TopicMeta = {
   status: TopicStatus;
   publishedAt: string;
   lastUpdatedAt: string;
+  continuedBy?: string;
   harness?: TopicHarnessStats;
+  relatedTopics?: RelatedTopicRef[];
 };
 
 export type TopicRecord = {
@@ -81,8 +96,28 @@ const FRANKL: TopicRecord = {
   },
 };
 
+const COUPLING: TopicRecord = {
+  meta: couplingTopic as TopicMeta,
+  paper: couplingPaper,
+  ledger: couplingLedger,
+  transcripts: {
+    "base-2026-04-29-1325": {
+      label: "Run 1 — base, transport inequality + augmentation-success mark",
+      body: couplingBase,
+    },
+    "alien-constraint-2026-04-29-1412": {
+      label: "Run 2 — alien-constraint, defect form + tensor blow-up",
+      body: couplingAlien,
+    },
+    "cross-domain-2026-04-29-1443": {
+      label: "Run 3 — cross-domain, the quadratic observable Q_x",
+      body: couplingCross,
+    },
+  },
+};
+
 const TOPICS_BY_DOMAIN: Record<ResearchDomain, TopicRecord[]> = {
-  math: [FRANKL],
+  math: [FRANKL, COUPLING],
   science: [],
   economics: [],
   finance: [],

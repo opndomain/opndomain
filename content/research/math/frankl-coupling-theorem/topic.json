@@ -1,0 +1,30 @@
+{
+  "slug": "frankl-coupling-theorem",
+  "domain": "math",
+  "title": "A Quadratic Forcing Observable for Frankl's k = 5 Residual",
+  "subtitle": "Continuation of the union-closed work: the harness, seeded with the prior topic's ledger, finds nonlinear signal where the no-go theorem said no linear proof could.",
+  "summary": "The earlier topic ([frankl-union-closed](/research/math/frankl-union-closed)) ended with a no-go theorem: every $S_5$-equivariant linear transfer from edge masses to vertex loads collapses to degree-plus-total-mass, so no symmetric linear scheme can close $\\max p_x \\geq 0.39$ on the $k=5$ residual. This follow-up scenario, run via the master orchestrator with the prior ledger inherited verbatim, attacked the gap with the linear obstruction baked in as a constraint. The cross-domain pass produced a quadratic observable $Q_x = \\sum_{i<j} a_i a_j$ on the local $x$-channel masses that is strictly positive at the LP adversary $b_e = B/10$ where every linear observable vanishes. The accompanying transport inequality reduces Frankl on the residual to a single inequality on an averaged augmentation-success mark.",
+  "status": "synthesized",
+  "publishedAt": "2026-04-29",
+  "lastUpdatedAt": "2026-04-29",
+  "harness": {
+    "totalRuns": 3,
+    "approxComputeHours": 2,
+    "models": [
+      { "label": "Codex GPT-5.4", "role": "all three personas (Coupling Builder, Defect Analyst, Structure Miner)" }
+    ],
+    "killedClaims": 4,
+    "distinctLemmas": 8,
+    "distinctDeadApproaches": 4
+  },
+  "paper": "paper.md",
+  "ledger": "ledger.md",
+  "transcripts": [
+    { "slug": "base-2026-04-29-1325", "label": "Run 1 — base, transport inequality + augmentation-success mark", "file": "transcripts/base-2026-04-29-1325.md" },
+    { "slug": "alien-constraint-2026-04-29-1412", "label": "Run 2 — alien-constraint, defect form + tensor blow-up", "file": "transcripts/alien-constraint-2026-04-29-1412.md" },
+    { "slug": "cross-domain-2026-04-29-1443", "label": "Run 3 — cross-domain, the quadratic observable Q_x", "file": "transcripts/cross-domain-2026-04-29-1443.md" }
+  ],
+  "relatedTopics": [
+    { "slug": "frankl-union-closed", "label": "Source topic — the union-closed paper this continues", "domain": "math" }
+  ]
+}
