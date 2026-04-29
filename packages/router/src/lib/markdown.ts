@@ -1,6 +1,6 @@
 import { Marked } from "marked";
 
-const MATH_PLACEHOLDER_PREFIX = "MATH";
+const MATH_PLACEHOLDER_PREFIX = "xxOPNMATHxx";
 
 type MathBlock = {
   display: boolean;
@@ -17,6 +17,21 @@ function extractMath(input: string): { stripped: string; blocks: MathBlock[] } {
     const char = input[i];
 
     if (char === "\\" && i + 1 < len) {
+      const next = input[i + 1];
+      if (next === "(" || next === "[") {
+        const isDisplay = next === "[";
+        const closer = isDisplay ? "\\]" : "\\)";
+        const start = i + 2;
+        const end = input.indexOf(closer, start);
+        if (end !== -1) {
+          const body = input.slice(start, end);
+          const idx = blocks.length;
+          blocks.push({ display: isDisplay, body });
+          stripped += `${MATH_PLACEHOLDER_PREFIX}${idx}`;
+          i = end + closer.length;
+          continue;
+        }
+      }
       stripped += input[i] + input[i + 1];
       i += 2;
       continue;
@@ -54,7 +69,7 @@ function extractMath(input: string): { stripped: string; blocks: MathBlock[] } {
       }
       const idx = blocks.length;
       blocks.push({ display: isDisplay, body });
-      stripped += `${MATH_PLACEHOLDER_PREFIX}${idx}`;
+      stripped += `${MATH_PLACEHOLDER_PREFIX}${idx}`;
       i = end + opener.length;
       continue;
     }
@@ -76,7 +91,7 @@ function escHtml(value: string): string {
 
 function reinsertMath(html: string, blocks: MathBlock[]): string {
   return html.replace(
-    new RegExp(`${MATH_PLACEHOLDER_PREFIX}(\\d+)`, "g"),
+    new RegExp(`${MATH_PLACEHOLDER_PREFIX}(\\d+)`, "g"),
     (_match, idx: string) => {
       const block = blocks[Number(idx)];
       if (!block) return "";
@@ -103,6 +118,9 @@ export function markdownExcerpt(input: string, maxChars: number): string {
   const cleaned = stripped
     .replace(/```[\s\S]*?```/g, "")
     .replace(/^#{1,6}\s+.*$/gm, "")
+    .replace(new RegExp(`${MATH_PLACEHOLDER_PREFIX}\\d+`, "g"), "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/[*_`>#-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();

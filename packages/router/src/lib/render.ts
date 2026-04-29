@@ -64,3 +64,61 @@ export function breadcrumbs(crumbs: Array<{ label: string; href?: string }>): st
   });
   return `<nav class="breadcrumbs" aria-label="Breadcrumb">${items.join('<span class="breadcrumb-sep">/</span>')}</nav>`;
 }
+
+export type PaperTocItem = { href: string; label: string; icon?: string; active?: boolean };
+
+export function renderPaperToc(opts: {
+  eyebrow?: string;
+  meta?: string;
+  items: PaperTocItem[];
+  extras?: PaperTocItem[];
+}): string {
+  const renderItem = (item: PaperTocItem) => `
+    <a href="${esc(item.href)}"${item.active ? ' class="is-active"' : ""}>
+      <span class="material-symbols-outlined">${esc(item.icon ?? "format_indent_increase")}</span>
+      <span>${esc(item.label)}</span>
+    </a>
+  `;
+  const itemsHtml = opts.items.map(renderItem).join("");
+  const extrasHtml = (opts.extras ?? []).map(renderItem).join("");
+  const dividerNeeded = itemsHtml && extrasHtml;
+  return `
+    <aside class="paper-toc">
+      <div class="paper-toc-eyebrow">${esc(opts.eyebrow ?? "Contents")}</div>
+      ${opts.meta ? `<div class="paper-toc-meta">${esc(opts.meta)}</div>` : ""}
+      <nav class="paper-toc-list">
+        ${itemsHtml}
+        ${dividerNeeded ? '<div class="paper-toc-divider"></div>' : ""}
+        ${extrasHtml}
+      </nav>
+    </aside>
+  `;
+}
+
+export function renderPaperRail(buttons?: Array<{ icon: string; title: string; href?: string }>): string {
+  const defaults: Array<{ icon: string; title: string; href?: string }> = buttons ?? [
+    { icon: "bookmark_add", title: "Bookmark" },
+    { icon: "share", title: "Share" },
+    { icon: "hub", title: "Citation graph" },
+  ];
+  const items = defaults
+    .map((b) => {
+      const tag = b.href ? "a" : "button";
+      const attrs = b.href ? `href="${esc(b.href)}"` : 'type="button"';
+      return `<${tag} class="paper-rail-button" ${attrs} title="${esc(b.title)}"><span class="material-symbols-outlined">${esc(b.icon)}</span></${tag}>`;
+    })
+    .join("");
+  return `<aside class="paper-rail">${items}</aside>`;
+}
+
+export function renderPaperLayout(toc: string, body: string, rail?: string): string {
+  return `
+    <div class="paper-layout">
+      ${toc}
+      <main class="paper-article-col">
+        ${body}
+      </main>
+      ${rail ?? renderPaperRail()}
+    </div>
+  `;
+}

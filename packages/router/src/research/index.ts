@@ -9,13 +9,8 @@ import {
   type DomainMeta,
   type TopicRecord,
 } from "../content/index.js";
-
-function findContinuation(topic: TopicRecord): TopicRecord | null {
-  if (!topic.meta.continuedBy) return null;
-  return getTopic(topic.meta.domain, topic.meta.continuedBy);
-}
 import { renderPage } from "../lib/layout.js";
-import { breadcrumbs, dataBadge, hero, statRow } from "../lib/render.js";
+import { breadcrumbs, dataBadge, hero, renderPaperLayout, renderPaperToc, type PaperTocItem } from "../lib/render.js";
 import { KATEX_HEAD, markdownExcerpt, renderMarkdown } from "../lib/markdown.js";
 
 type Bindings = {
@@ -25,29 +20,88 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>();
 
 const PAPER_STYLES = `
-.research-paper{max-width:780px;margin:0 auto;padding:0 1.5rem 4rem;line-height:1.65;font-size:1.02rem}
-.research-paper h1{font-size:2.05rem;line-height:1.2;margin:1.5rem 0 .8rem}
-.research-paper h2{margin-top:2.4rem;font-size:1.45rem}
-.research-paper h3{margin-top:1.8rem;font-size:1.15rem}
-.research-paper p,.research-paper ul,.research-paper ol{margin:1rem 0}
-.research-paper table{width:100%;border-collapse:collapse;margin:1.4rem 0;font-size:.95rem}
-.research-paper th,.research-paper td{border-bottom:1px solid var(--rule);padding:.55rem .7rem;text-align:left}
-.research-paper th{font-weight:600;background:var(--surface-soft)}
-.research-paper code{background:var(--surface-soft);padding:.1rem .35rem;border-radius:3px;font-size:.92em}
-.research-paper pre{background:var(--surface-soft);padding:1rem;border-radius:6px;overflow-x:auto}
-.research-paper pre code{background:transparent;padding:0}
-.research-paper blockquote{border-left:3px solid var(--accent);margin:1.2rem 0;padding:.2rem 0 .2rem 1.1rem;color:var(--text-soft)}
-.research-paper hr{border:none;border-top:1px solid var(--rule);margin:2.4rem 0}
-.research-paper .math-display{display:block;text-align:center;margin:1rem 0}
-.topic-meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.6rem;margin:1.4rem 0 2rem}
-.topic-section-nav{display:flex;flex-wrap:wrap;gap:.5rem;margin:1rem 0 2rem}
-.topic-section-nav a{padding:.35rem .8rem;border:1px solid var(--rule);border-radius:999px;font-size:.85rem;text-decoration:none;color:var(--text-soft)}
-.topic-section-nav a:hover{border-color:var(--accent);color:var(--text)}
-.topic-continuation,.topic-related{border:1px solid var(--rule);border-radius:8px;padding:14px 18px;margin:1.6rem 0;background:color-mix(in srgb,var(--surface-alt) 60%,transparent);display:flex;flex-direction:column;gap:6px}
-.topic-continuation a,.topic-related a{font-family:var(--font-display);font-size:1.05rem;color:var(--text);text-decoration:none}
-.topic-continuation a:hover,.topic-related a:hover{color:var(--accent)}
-.topic-continuation-eyebrow{text-transform:uppercase;letter-spacing:.12em;font-size:.72rem;color:var(--text-muted)}
+.topic-meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));column-gap:2.4rem;row-gap:0;margin:1.4rem 0 2.4rem;padding:1.2rem 1.6rem;border:1px solid var(--rule);background:var(--surface-alt)}
+.topic-meta-grid .stat-row{border-bottom:0;padding:.5rem 0}
+.topic-meta-grid .stat-row strong{font-size:.66rem;letter-spacing:.14em}
+
+.topic-continuation,.topic-related{border:0;border-left:3px solid var(--brand);border-radius:0;padding:.4rem 0 .4rem 1.2rem;margin:2rem 0;background:transparent;display:flex;flex-direction:column;gap:6px}
+.topic-continuation a,.topic-related a{font-family:var(--font-display);font-size:1.15rem;font-weight:600;color:var(--text);text-decoration:none}
+.topic-continuation a:hover,.topic-related a:hover{color:var(--brand)}
+.topic-continuation-eyebrow{font-family:var(--font-ui);text-transform:uppercase;letter-spacing:.16em;font-size:.66rem;font-weight:500;color:var(--text-muted)}
+
+.transcripts-section{margin-top:3rem;padding-top:1.4rem;border-top:1px solid var(--rule)}
+.transcripts-section h2{margin-top:0;font-size:1.3rem}
+.transcripts-section ul{list-style:none;padding:0;margin:0}
+.transcripts-section li{padding:.55rem 0;border-bottom:1px solid var(--rule);margin:0}
+.transcripts-section li:last-child{border-bottom:0}
+.transcripts-section a{font-family:var(--font-display);font-size:1.05rem;color:var(--text);text-decoration:none}
+.transcripts-section a:hover{color:var(--brand)}
 `;
+
+function escapeText(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function escapeAttr(value: string): string {
+  return escapeText(value);
+}
+
+function slugify(text: string): string {
+  const base = text
+    .toLowerCase()
+    .replace(/<[^>]+>/g, "")
+    .replace(/&[^;]+;/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 80);
+  return base || "section";
+}
+
+type TocEntry = { id: string; label: string };
+
+function processPaperHtml(html: string): { html: string; toc: TocEntry[] } {
+  const toc: TocEntry[] = [];
+  const seen = new Set<string>();
+
+  let processed = html.replace(/<h2(?![^>]*\sid=)([^>]*)>([\s\S]*?)<\/h2>/g, (_m, attrs, inner) => {
+    const text = inner.replace(/<[^>]+>/g, "").trim();
+    const baseSlug = slugify(text);
+    let slug = baseSlug;
+    let i = 2;
+    while (seen.has(slug)) {
+      slug = `${baseSlug}-${i++}`;
+    }
+    seen.add(slug);
+    toc.push({ id: slug, label: text });
+    return `<h2 id="${slug}"${attrs}>${inner}</h2>`;
+  });
+
+  processed = processed.replace(
+    /(<h2 id="abstract"[^>]*>[^<]*<\/h2>)\s*((?:<p>[\s\S]*?<\/p>\s*)+?)(?=<(?:h[1-6]|hr|aside|section|div))/i,
+    (_m, heading, body) => `${heading}<aside class="paper-abstract">${body}</aside>`,
+  );
+
+  return { html: processed, toc };
+}
+
+function buildTopicToc(opts: {
+  topicTitle: string;
+  pageKind: string;
+  toc: TocEntry[];
+  extras: PaperTocItem[];
+}): string {
+  return renderPaperToc({
+    eyebrow: "Contents",
+    meta: `${opts.pageKind} · ${opts.topicTitle}`,
+    items: opts.toc.map((e) => ({ href: `#${e.id}`, label: e.label, icon: "format_indent_increase" })),
+    extras: opts.extras,
+  });
+}
 
 function topicCard(topic: TopicRecord): string {
   const stats: string[] = [];
@@ -79,12 +133,27 @@ function domainCard(domain: DomainMeta, topicCount: number): string {
   `;
 }
 
-function escapeText(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+function findContinuation(topic: TopicRecord): TopicRecord | null {
+  if (!topic.meta.continuedBy) return null;
+  return getTopic(topic.meta.domain, topic.meta.continuedBy);
+}
+
+function topicExtras(topic: TopicRecord, domain: DomainMeta, currentKey: string): Array<{ href: string; label: string; icon?: string; active?: boolean }> {
+  const base = `/research/${domain.slug}/${topic.meta.slug}`;
+  const out: Array<{ href: string; label: string; icon?: string; active?: boolean }> = [
+    { href: base, label: "Paper", icon: "description", active: currentKey === "paper" },
+  ];
+  if (topic.ledger) out.push({ href: `${base}/ledger`, label: "Ledger", icon: "list_alt", active: currentKey === "ledger" });
+  if (topic.killed) out.push({ href: `${base}/killed`, label: "Killed claims", icon: "block", active: currentKey === "killed" });
+  for (const [slug, t] of Object.entries(topic.transcripts)) {
+    out.push({
+      href: `${base}/transcripts/${slug}`,
+      label: t.label,
+      icon: "forum",
+      active: currentKey === `transcript:${slug}`,
+    });
+  }
+  return out;
 }
 
 app.get("/", (c) => {
@@ -151,32 +220,6 @@ app.get("/:domain/:topic", (c) => {
   if (!domain || !topic) return c.notFound();
 
   const meta = topic.meta;
-  const harness = meta.harness;
-
-  const transcriptList = Object.entries(topic.transcripts)
-    .map(([slug, t]) => `<li><a href="/research/${domain.slug}/${meta.slug}/transcripts/${slug}">${escapeText(t.label)}</a></li>`)
-    .join("");
-
-  const sectionNav: Array<{ label: string; href: string }> = [];
-  if (topic.ledger) sectionNav.push({ label: "Ledger", href: `/research/${domain.slug}/${meta.slug}/ledger` });
-  if (topic.killed) sectionNav.push({ label: "Killed claims", href: `/research/${domain.slug}/${meta.slug}/killed` });
-  if (Object.keys(topic.transcripts).length) sectionNav.push({ label: "Transcripts", href: `#transcripts` });
-
-  const navHtml = sectionNav.length
-    ? `<nav class="topic-section-nav">${sectionNav.map((n) => `<a href="${escapeText(n.href)}">${escapeText(n.label)}</a>`).join("")}</nav>`
-    : "";
-
-  const harnessGrid = harness
-    ? `
-      <section class="topic-meta-grid">
-        ${statRow("Workshop runs", String(harness.totalRuns))}
-        ${statRow("Compute", `~${harness.approxComputeHours} hours`)}
-        ${statRow("Verified lemmas", String(harness.distinctLemmas))}
-        ${statRow("Killed claims", String(harness.killedClaims))}
-        ${statRow("Dead approaches", String(harness.distinctDeadApproaches))}
-      </section>
-    `
-    : "";
 
   const continuation = findContinuation(topic);
   const continuationCallout = continuation
@@ -193,26 +236,36 @@ app.get("/:domain/:topic", (c) => {
       </aside>`
     : "";
 
-  const body = `
+  const { html: paperHtml, toc } = processPaperHtml(renderMarkdown(topic.paper));
+
+  const tocSidebar = buildTopicToc({
+    topicTitle: meta.title,
+    pageKind: "Paper",
+    toc,
+    extras: topicExtras(topic, domain, "paper"),
+  });
+
+  const articleBody = `
+    ${breadcrumbs([
+      { label: "Research", href: "/research" },
+      { label: domain.title, href: `/research/${domain.slug}` },
+      { label: meta.title },
+    ])}
     <article class="research-paper">
-      ${breadcrumbs([
-        { label: "Research", href: "/research" },
-        { label: domain.title, href: `/research/${domain.slug}` },
-        { label: meta.title },
-      ])}
-      ${navHtml}
+      <div class="paper-categories">
+        <span class="paper-category-pill">${escapeText(domain.title)}</span>
+        <span class="paper-category-pill">${escapeText(meta.status)}</span>
+      </div>
       ${relatedCallout}
-      ${harnessGrid}
-      ${renderMarkdown(topic.paper)}
+      ${paperHtml}
       ${continuationCallout}
-      ${transcriptList ? `<section id="transcripts"><h2>Workshop transcripts</h2><ul>${transcriptList}</ul></section>` : ""}
     </article>
   `;
 
   return new Response(
     renderPage(
       meta.title,
-      body,
+      renderPaperLayout(tocSidebar, articleBody),
       markdownExcerpt(meta.summary, 200),
       PAPER_STYLES,
       {
@@ -221,7 +274,7 @@ app.get("/:domain/:topic", (c) => {
         ogDescription: markdownExcerpt(meta.summary, 200),
         extraHead: KATEX_HEAD,
       },
-      { navActiveKey: "research", variant: "reading" },
+      { navActiveKey: "research", variant: "paper" },
     ),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": CACHE_CONTROL_PORTFOLIO } },
   );
@@ -234,29 +287,41 @@ app.get("/:domain/:topic/ledger", (c) => {
   const topic = getTopic(domainSlug, topicSlug);
   if (!domain || !topic || !topic.ledger) return c.notFound();
 
-  const body = `
+  const { html: paperHtml, toc } = processPaperHtml(renderMarkdown(topic.ledger));
+  const tocSidebar = buildTopicToc({
+    topicTitle: topic.meta.title,
+    pageKind: "Ledger",
+    toc,
+    extras: topicExtras(topic, domain, "ledger"),
+  });
+
+  const articleBody = `
+    ${breadcrumbs([
+      { label: "Research", href: "/research" },
+      { label: domain.title, href: `/research/${domain.slug}` },
+      { label: topic.meta.title, href: `/research/${domain.slug}/${topic.meta.slug}` },
+      { label: "Ledger" },
+    ])}
     <article class="research-paper">
-      ${breadcrumbs([
-        { label: "Research", href: "/research" },
-        { label: domain.title, href: `/research/${domain.slug}` },
-        { label: topic.meta.title, href: `/research/${domain.slug}/${topic.meta.slug}` },
-        { label: "Ledger" },
-      ])}
-      ${renderMarkdown(topic.ledger)}
+      <div class="paper-categories">
+        <span class="paper-category-pill">${escapeText(domain.title)}</span>
+        <span class="paper-category-pill">Ledger</span>
+      </div>
+      ${paperHtml}
     </article>
   `;
 
   return new Response(
     renderPage(
       `Ledger — ${topic.meta.title}`,
-      body,
+      renderPaperLayout(tocSidebar, articleBody),
       "Verified PROVEN/DEAD/OPEN entries across all workshop runs.",
       PAPER_STYLES,
       {
         canonicalUrl: `https://opndomain.com/research/${domain.slug}/${topic.meta.slug}/ledger`,
         extraHead: KATEX_HEAD,
       },
-      { navActiveKey: "research", variant: "reading" },
+      { navActiveKey: "research", variant: "paper" },
     ),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": CACHE_CONTROL_PORTFOLIO } },
   );
@@ -269,29 +334,41 @@ app.get("/:domain/:topic/killed", (c) => {
   const topic = getTopic(domainSlug, topicSlug);
   if (!domain || !topic || !topic.killed) return c.notFound();
 
-  const body = `
+  const { html: paperHtml, toc } = processPaperHtml(renderMarkdown(topic.killed));
+  const tocSidebar = buildTopicToc({
+    topicTitle: topic.meta.title,
+    pageKind: "Killed claims",
+    toc,
+    extras: topicExtras(topic, domain, "killed"),
+  });
+
+  const articleBody = `
+    ${breadcrumbs([
+      { label: "Research", href: "/research" },
+      { label: domain.title, href: `/research/${domain.slug}` },
+      { label: topic.meta.title, href: `/research/${domain.slug}/${topic.meta.slug}` },
+      { label: "Killed claims" },
+    ])}
     <article class="research-paper">
-      ${breadcrumbs([
-        { label: "Research", href: "/research" },
-        { label: domain.title, href: `/research/${domain.slug}` },
-        { label: topic.meta.title, href: `/research/${domain.slug}/${topic.meta.slug}` },
-        { label: "Killed claims" },
-      ])}
-      ${renderMarkdown(topic.killed)}
+      <div class="paper-categories">
+        <span class="paper-category-pill">${escapeText(domain.title)}</span>
+        <span class="paper-category-pill">Killed claims</span>
+      </div>
+      ${paperHtml}
     </article>
   `;
 
   return new Response(
     renderPage(
       `Killed claims — ${topic.meta.title}`,
-      body,
+      renderPaperLayout(tocSidebar, articleBody),
       "False proofs caught by the verify step before they could ship.",
       PAPER_STYLES,
       {
         canonicalUrl: `https://opndomain.com/research/${domain.slug}/${topic.meta.slug}/killed`,
         extraHead: KATEX_HEAD,
       },
-      { navActiveKey: "research", variant: "reading" },
+      { navActiveKey: "research", variant: "paper" },
     ),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": CACHE_CONTROL_PORTFOLIO } },
   );
@@ -307,29 +384,41 @@ app.get("/:domain/:topic/transcripts/:run", (c) => {
   const transcript = topic.transcripts[runSlug];
   if (!transcript) return c.notFound();
 
-  const body = `
+  const { html: paperHtml, toc } = processPaperHtml(renderMarkdown(transcript.body));
+  const tocSidebar = buildTopicToc({
+    topicTitle: topic.meta.title,
+    pageKind: "Transcript",
+    toc,
+    extras: topicExtras(topic, domain, `transcript:${runSlug}`),
+  });
+
+  const articleBody = `
+    ${breadcrumbs([
+      { label: "Research", href: "/research" },
+      { label: domain.title, href: `/research/${domain.slug}` },
+      { label: topic.meta.title, href: `/research/${domain.slug}/${topic.meta.slug}` },
+      { label: transcript.label },
+    ])}
     <article class="research-paper">
-      ${breadcrumbs([
-        { label: "Research", href: "/research" },
-        { label: domain.title, href: `/research/${domain.slug}` },
-        { label: topic.meta.title, href: `/research/${domain.slug}/${topic.meta.slug}` },
-        { label: transcript.label },
-      ])}
-      ${renderMarkdown(transcript.body)}
+      <div class="paper-categories">
+        <span class="paper-category-pill">${escapeText(domain.title)}</span>
+        <span class="paper-category-pill">Transcript</span>
+      </div>
+      ${paperHtml}
     </article>
   `;
 
   return new Response(
     renderPage(
       `${transcript.label} — ${topic.meta.title}`,
-      body,
+      renderPaperLayout(tocSidebar, articleBody),
       "Workshop transcript: explore/build/verify rounds with full agent output.",
       PAPER_STYLES,
       {
         canonicalUrl: `https://opndomain.com/research/${domain.slug}/${topic.meta.slug}/transcripts/${runSlug}`,
         extraHead: KATEX_HEAD,
       },
-      { navActiveKey: "research", variant: "reading" },
+      { navActiveKey: "research", variant: "paper" },
     ),
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": CACHE_CONTROL_PORTFOLIO } },
   );

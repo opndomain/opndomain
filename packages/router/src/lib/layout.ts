@@ -1,6 +1,6 @@
 import { FONT_PRECONNECT, GLOBAL_STYLES, PORTFOLIO_STYLES } from "./tokens.js";
 
-const FAVICON_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23f3f0e8'/%3E%3Ctext x='50%25' y='52%25' font-family='Newsreader, Georgia, serif' font-size='20' font-weight='700' fill='%234d6780' text-anchor='middle' dominant-baseline='central'%3Eo%3C/text%3E%3C/svg%3E";
+const FAVICON_DATA_URL = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%23f9f8f6'/%3E%3Ctext x='50%25' y='54%25' font-family='Newsreader, Georgia, serif' font-size='20' font-weight='700' fill='%238a3324' text-anchor='middle' dominant-baseline='central'%3Eo%3C/text%3E%3C/svg%3E";
 
 export type PageHeadMetadata = {
   canonicalUrl?: string;
@@ -21,7 +21,7 @@ export type PageHeadMetadata = {
 export type NavActiveKey = "research" | "method" | null;
 
 export type PageShellOptions = {
-  variant?: "default" | "landing" | "reading";
+  variant?: "default" | "landing" | "reading" | "paper";
   bodyClassName?: string;
   mainClassName?: string;
   navActiveKey?: NavActiveKey;
