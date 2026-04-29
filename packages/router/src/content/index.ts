@@ -51,6 +51,7 @@ export type TopicMeta = {
   title: string;
   subtitle?: string;
   summary: string;
+  framingNote?: string;
   status: TopicStatus;
   publishedAt: string;
   lastUpdatedAt: string;

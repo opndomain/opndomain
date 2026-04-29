@@ -24,6 +24,14 @@ const PAPER_STYLES = `
 .topic-meta-grid .stat-row{border-bottom:0;padding:.5rem 0}
 .topic-meta-grid .stat-row strong{font-size:.66rem;letter-spacing:.14em}
 
+.paper-framing-note{margin:1rem 0 2rem;padding:1.1rem 1.4rem 1.2rem;border:1px solid color-mix(in srgb,var(--sage) 45%,transparent);background:color-mix(in srgb,var(--sage) 8%,transparent);font-family:var(--font-display);font-size:1rem;line-height:1.6;color:var(--text)}
+.paper-framing-note-eyebrow{font-family:var(--font-ui);font-size:.66rem;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--sage);margin-bottom:.5rem}
+.paper-framing-note p{margin:.5rem 0;color:var(--text);font-size:1rem;line-height:1.6}
+.paper-framing-note p:first-of-type{margin-top:0}
+.paper-framing-note p:last-child{margin-bottom:0}
+.paper-framing-note strong{font-weight:600;color:var(--text)}
+.paper-framing-note a{color:var(--brand);text-decoration-color:color-mix(in srgb,var(--brand) 40%,transparent)}
+
 .topic-continuation,.topic-related{border:0;border-left:3px solid var(--brand);border-radius:0;padding:.4rem 0 .4rem 1.2rem;margin:2rem 0;background:transparent;display:flex;flex-direction:column;gap:6px}
 .topic-continuation a,.topic-related a{font-family:var(--font-display);font-size:1.15rem;font-weight:600;color:var(--text);text-decoration:none}
 .topic-continuation a:hover,.topic-related a:hover{color:var(--brand)}
@@ -238,6 +246,13 @@ app.get("/:domain/:topic", (c) => {
 
   const { html: paperHtml, toc } = processPaperHtml(renderMarkdown(topic.paper));
 
+  const framingNote = meta.framingNote
+    ? `<aside class="paper-framing-note">
+        <div class="paper-framing-note-eyebrow">Framing note</div>
+        ${renderMarkdown(meta.framingNote)}
+      </aside>`
+    : "";
+
   const tocSidebar = buildTopicToc({
     topicTitle: meta.title,
     pageKind: "Paper",
@@ -257,6 +272,7 @@ app.get("/:domain/:topic", (c) => {
         <span class="paper-category-pill">${escapeText(meta.status)}</span>
       </div>
       ${relatedCallout}
+      ${framingNote}
       ${paperHtml}
       ${continuationCallout}
     </article>
