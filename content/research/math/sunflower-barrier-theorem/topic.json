@@ -1,0 +1,25 @@
+{
+  "slug": "sunflower-barrier-theorem",
+  "domain": "math",
+  "title": "Locality Barriers for Spread Regularization",
+  "subtitle": "Impossibility theorems for linear and product families: the workshop set out to prove an exp(Ω(w log w)) lower bound and ended with a layered no-go instead.",
+  "summary": "We study whether local-link regularization can force strong spread properties at multiplicative cost $\\exp(\\Omega(w \\log w))$ for $w$-uniform families. The main contribution is negative. First, the original fixed-$C$ target is false as stated: if the regularity parameter satisfies $\\kappa(w) = \\Theta(\\log w)$, then for every fixed $C > 1$ and all sufficiently large $w$, the initial family is already $C$-spread, so the proposed regularization may terminate at time $0$. Second, for $q$-linear transversal kernel families $\\mathcal{H}(G, q)$ we derive an exact witness-probability formula $\\Pr[S \\subseteq A] = q^{-r_N(S)}$ and show linking is exactly contraction in the dual matroid; this caps every link-only regularization at multiplicative loss $\\exp(O(w \\log \\log w))$, far below the desired barrier. Several no-go theorems then rule out scalar-threshold, size-only, single-weighted-witness, and full-symmetrization repairs.",
+  "status": "synthesized",
+  "publishedAt": "2026-04-29",
+  "lastUpdatedAt": "2026-04-29",
+  "harness": {
+    "totalRuns": 1,
+    "approxComputeHours": 1,
+    "models": [
+      { "label": "Codex GPT-5.4", "role": "all three personas (The Builder, The Formalizer, The Adversary)" }
+    ],
+    "killedClaims": 4,
+    "distinctLemmas": 9,
+    "distinctDeadApproaches": 4
+  },
+  "paper": "paper.md",
+  "ledger": "ledger.md",
+  "transcripts": [
+    { "slug": "workshop-2026-04-29-1741", "label": "Run 1 — adversarial workshop: original target falsified, link-only impossibility proven", "file": "transcripts/workshop-2026-04-29-1741.md" }
+  ]
+}

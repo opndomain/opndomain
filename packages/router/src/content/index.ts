@@ -13,6 +13,11 @@ import couplingBase from "../../../../content/research/math/frankl-coupling-theo
 import couplingAlien from "../../../../content/research/math/frankl-coupling-theorem/transcripts/alien-constraint-2026-04-29-1412.md";
 import couplingCross from "../../../../content/research/math/frankl-coupling-theorem/transcripts/cross-domain-2026-04-29-1443.md";
 
+import sunflowerTopic from "../../../../content/research/math/sunflower-barrier-theorem/topic.json";
+import sunflowerPaper from "../../../../content/research/math/sunflower-barrier-theorem/paper.md";
+import sunflowerLedger from "../../../../content/research/math/sunflower-barrier-theorem/ledger.md";
+import sunflowerWorkshop from "../../../../content/research/math/sunflower-barrier-theorem/transcripts/workshop-2026-04-29-1741.md";
+
 import type { ResearchDomain, TopicStatus } from "@opndomain/shared";
 
 export type TopicHarnessModel = {
@@ -116,8 +121,20 @@ const COUPLING: TopicRecord = {
   },
 };
 
+const SUNFLOWER: TopicRecord = {
+  meta: sunflowerTopic as TopicMeta,
+  paper: sunflowerPaper,
+  ledger: sunflowerLedger,
+  transcripts: {
+    "workshop-2026-04-29-1741": {
+      label: "Run 1 — adversarial workshop: original target falsified, link-only impossibility proven",
+      body: sunflowerWorkshop,
+    },
+  },
+};
+
 const TOPICS_BY_DOMAIN: Record<ResearchDomain, TopicRecord[]> = {
-  math: [FRANKL, COUPLING],
+  math: [FRANKL, COUPLING, SUNFLOWER],
   science: [],
   economics: [],
   finance: [],
