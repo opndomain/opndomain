@@ -8,37 +8,9 @@ importers:
 
   .:
     dependencies:
-      hermes-paperclip-adapter:
-        specifier: ^0.2.1
-        version: 0.2.1
       undici:
         specifier: ^8.0.2
         version: 8.0.2
-
-  packages/api:
-    dependencies:
-      '@opndomain/shared':
-        specifier: workspace:*
-        version: link:../shared
-      hono:
-        specifier: ^4.7.2
-        version: 4.12.9
-      zod:
-        specifier: ^3.24.2
-        version: 3.25.76
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20250303.0
-        version: 4.20260317.1
-      '@types/node':
-        specifier: ^22.13.10
-        version: 22.19.15
-      typescript:
-        specifier: ^5.8.2
-        version: 5.9.3
-      wrangler:
-        specifier: ^4.7.1
-        version: 4.77.0(@cloudflare/workers-types@4.20260317.1)
 
   packages/cli:
     dependencies:
@@ -62,31 +34,6 @@ importers:
         specifier: ^5.8.2
         version: 5.9.3
 
-  packages/mcp:
-    dependencies:
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.12.0
-        version: 1.27.1(zod@3.25.76)
-      '@opndomain/shared':
-        specifier: workspace:*
-        version: link:../shared
-      hono:
-        specifier: ^4.7.2
-        version: 4.12.9
-      zod:
-        specifier: ^3.24.2
-        version: 3.25.76
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: ^4.20250303.0
-        version: 4.20260317.1
-      typescript:
-        specifier: ^5.8.2
-        version: 5.9.3
-      wrangler:
-        specifier: ^4.7.1
-        version: 4.77.0(@cloudflare/workers-types@4.20260317.1)
-
   packages/router:
     dependencies:
       '@opndomain/shared':
@@ -95,6 +42,9 @@ importers:
       hono:
         specifier: ^4.7.2
         version: 4.12.9
+      marked:
+        specifier: ^15.0.7
+        version: 15.0.12
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20250303.0
@@ -505,9 +455,6 @@ packages:
       '@cfworker/json-schema':
         optional: true
 
-  '@paperclipai/adapter-utils@2026.325.0':
-    resolution: {integrity: sha512-YDVSAgjkeJ0PvxXDJVN9MZDX7oYRzidLtGHmGgRGd6gSk/bF2ygAKvND4FI1YxDc/cRLQjqAFCpCYaC/9wqIEA==}
-
   '@poppinss/colors@4.1.6':
     resolution: {integrity: sha512-H9xkIdFswbS8n1d6vmRd8+c10t2Qe+rZITbbDHHkQixH5+2x1FDGmi/0K+WgWiqQFKPSlIYB7jlH6Kpfn6Fleg==}
 
@@ -714,10 +661,6 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
-  hermes-paperclip-adapter@0.2.1:
-    resolution: {integrity: sha512-9D4SrmMXm4AhOZ08lnlGCZBzwfRnGjzZjkvPlkRfoPTODM2YeIAaEk+zO0vInh8DI4Qr3ySN8hLFxV1eKRYFaA==}
-    engines: {node: '>=20.0.0'}
-
   hono@4.12.9:
     resolution: {integrity: sha512-wy3T8Zm2bsEvxKZM5w21VdHDDcwVS1yUFFY6i8UobSsKfFceT7TOwhbhfKsDyx7tYQlmRM5FLpIuYvNFyjctiA==}
     engines: {node: '>=16.9.0'}
@@ -759,6 +702,11 @@ packages:
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
+
+  marked@15.0.12:
+    resolution: {integrity: sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==}
+    engines: {node: '>= 18'}
+    hasBin: true
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -823,9 +771,6 @@ packages:
 
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
-
-  picocolors@1.1.1:
-    resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
@@ -1258,8 +1203,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@paperclipai/adapter-utils@2026.325.0': {}
-
   '@poppinss/colors@4.1.6':
     dependencies:
       kleur: 4.1.5
@@ -1508,11 +1451,6 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  hermes-paperclip-adapter@0.2.1:
-    dependencies:
-      '@paperclipai/adapter-utils': 2026.325.0
-      picocolors: 1.1.1
-
   hono@4.12.9: {}
 
   http-errors@2.0.1:
@@ -1544,6 +1482,8 @@ snapshots:
   json-schema-typed@8.0.2: {}
 
   kleur@4.1.5: {}
+
+  marked@15.0.12: {}
 
   math-intrinsics@1.1.0: {}
 
@@ -1594,8 +1534,6 @@ snapshots:
   path-to-regexp@8.3.0: {}
 
   pathe@2.0.3: {}
-
-  picocolors@1.1.1: {}
 
   pkce-challenge@5.0.1: {}
 

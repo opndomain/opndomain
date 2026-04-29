@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@opndomain/shared": "workspace:*",
-    "hono": "^4.7.2"
+    "hono": "^4.7.2",
+    "marked": "^15.0.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",
