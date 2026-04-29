@@ -16,15 +16,13 @@ export type PageHeadMetadata = {
   extraHead?: string;
 };
 
+export type NavActiveKey = "research" | "method" | null;
+
 export type PageShellOptions = {
-  variant?: "default" | "landing" | "interior-sidebar" | "top-nav-only";
-  sidebarHtml?: string | null;
-  navHtml?: string | null;
-  footer?: string | null;
-  footerClassName?: string;
+  variant?: "default" | "landing" | "reading";
   bodyClassName?: string;
   mainClassName?: string;
-  navActiveKey?: "domains" | "topics" | "analytics" | "leaderboard" | "about" | "access" | "auth" | null;
+  navActiveKey?: NavActiveKey;
 };
 
 function escapeHeadContent(value: string): string {
@@ -42,16 +40,12 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
   return `<meta ${attribute}="${escapeHeadContent(key)}" content="${escapeHeadContent(value)}" />`;
 }
 
-function renderPrimaryNav(activeKey: PageShellOptions["navActiveKey"] = null) {
+function renderPrimaryNav(activeKey: NavActiveKey = null) {
   return `
-    <div class="shell-nav-left" data-nav-group="left">
-      <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-    </div>
-    <form class="shell-search" action="/search" method="get" data-nav-group="center">
-      <input class="shell-search-input" type="search" name="q" placeholder="Find anything..." autocomplete="off" />
-    </form>
-    <div class="shell-links shell-links--auth" data-nav-group="auth">
-      <a class="shell-link shell-link-auth${activeKey === "access" || activeKey === "auth" ? " is-active" : ""}" href="/login">Access</a>
+    <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+    <div class="shell-links">
+      <a class="shell-link${activeKey === "research" ? " is-active" : ""}" href="/research">Research</a>
+      <a class="shell-link${activeKey === "method" ? " is-active" : ""}" href="/method">Method</a>
     </div>
   `;
 }
@@ -60,13 +54,9 @@ function renderFooterContent() {
   return `
     <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
     <div class="footer-links">
-      <a href="/domains">Domains</a>
-      <a href="/topics">Topics</a>
-      <a href="/leaderboard">Leaderboard</a>
-      <a href="/about">About</a>
-      <a href="/access">Access</a>
-      <a href="/terms">Terms</a>
-      <a href="/privacy">Privacy</a>
+      <a href="/research">Research</a>
+      <a href="/method">Method</a>
+      <a href="https://github.com/opndomain" rel="noopener">GitHub</a>
     </div>
   `;
 }
@@ -74,15 +64,14 @@ function renderFooterContent() {
 export function renderPage(
   title: string,
   body: string,
-  description = "Protocol-centric research surfaces for opndomain.",
+  description = "AI research workshop output: papers, transcripts, and the harness that produces them.",
   pageStyles?: string,
   head?: PageHeadMetadata,
   shell?: PageShellOptions,
 ) {
-  const pageTitle = `${title} | opndomain`;
-  const metaDescription = description;
+  const pageTitle = title === "opndomain" ? title : `${title} | opndomain`;
   const ogTitle = head?.ogTitle ?? pageTitle;
-  const ogDescription = head?.ogDescription ?? metaDescription;
+  const ogDescription = head?.ogDescription ?? description;
   const twitterTitle = head?.twitterTitle ?? ogTitle;
   const twitterDescription = head?.twitterDescription ?? ogDescription;
   const ogImageUrl = head?.ogImageUrl;
@@ -91,42 +80,6 @@ export function renderPage(
   const variant = shell?.variant ?? "default";
   const bodyClassName = shell?.bodyClassName ? ` ${escapeHeadContent(shell.bodyClassName)}` : "";
   const mainClassName = shell?.mainClassName ? ` ${escapeHeadContent(shell.mainClassName)}` : "";
-  const footerClassName = shell?.footerClassName ? ` class="${escapeHeadContent(shell.footerClassName)}"` : "";
-  const footerContent = shell?.footer === undefined ? renderFooterContent() : shell.footer;
-  const topbar = `
-    <header class="shell-topbar shell-topbar--${variant}">
-      <div class="shell-topbar-inner">
-        ${shell?.navHtml ?? renderPrimaryNav(shell?.navActiveKey)}
-      </div>
-    </header>
-  `;
-  const mainMarkup = variant === "default"
-    ? `
-      <header class="shell">
-        <nav>
-          <a class="wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
-          <div class="nav-links">
-            <a href="/topics">Topics</a>
-            <a href="/about">Metadata</a>
-            <a href="/about">About</a>
-            <a href="/login">Access</a>
-          </div>
-        </nav>
-      </header>
-      <main>${body}</main>
-    `
-    : variant === "interior-sidebar"
-    ? `
-      ${topbar}
-      <div class="page-shell">
-        <aside class="page-sidebar">${shell?.sidebarHtml ?? ""}</aside>
-        <main class="page-main${mainClassName}">${body}</main>
-      </div>
-    `
-    : `
-      ${topbar}
-      <main class="page-main page-main--${variant}${mainClassName}">${body}</main>
-    `;
 
   return `<!doctype html>
 <html lang="en">
@@ -134,7 +87,7 @@ export function renderPage(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHeadContent(pageTitle)}</title>
-    <meta name="description" content="${escapeHeadContent(metaDescription)}" />
+    <meta name="description" content="${escapeHeadContent(description)}" />
     ${head?.canonicalUrl ? `<link rel="canonical" href="${escapeHeadContent(head.canonicalUrl)}" />` : ""}
     ${renderMetaTag("property", "og:site_name", "opndomain")}
     ${renderMetaTag("property", "og:type", head?.ogType ?? "website")}
@@ -142,7 +95,6 @@ export function renderPage(
     ${renderMetaTag("property", "og:title", ogTitle)}
     ${renderMetaTag("property", "og:description", ogDescription)}
     ${renderMetaTag("property", "og:image", ogImageUrl)}
-    ${renderMetaTag("property", "og:image:type", ogImageUrl ? "image/png" : undefined)}
     ${renderMetaTag("property", "og:image:alt", head?.ogImageAlt)}
     ${renderMetaTag("name", "twitter:card", twitterCard)}
     ${renderMetaTag("name", "twitter:title", twitterTitle)}
@@ -153,17 +105,15 @@ export function renderPage(
     <style>${GLOBAL_STYLES}</style>
     ${pageStyles ? `<style>${pageStyles}</style>` : ""}
     ${head?.extraHead ?? ""}
-    <noscript><style>[data-animate]{opacity:1!important;transform:none!important}</style></noscript>
   </head>
-  <body${variant === "default" ? "" : ` class="shell-body shell-body--${variant}${bodyClassName}"`}>
-    ${variant === "default" ? "" : `
-    <div class="shell-frame" aria-hidden="true">
-      <div class="shell-glow shell-glow-left"></div>
-      <div class="shell-glow shell-glow-right"></div>
-    </div>`}
-    ${mainMarkup}
-    <script>(function(){if(!('IntersectionObserver'in window)){document.querySelectorAll('[data-animate]').forEach(function(e){e.classList.add('is-visible')});return;}var o=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('is-visible');o.unobserve(e.target)}})},{threshold:0.12,rootMargin:'0px 0px -40px 0px'});document.querySelectorAll('[data-animate]').forEach(function(e){o.observe(e)});})();</script>
-    ${footerContent === null ? "" : `<footer${footerClassName}>${footerContent}</footer>`}
+  <body class="shell-body shell-body--${variant}${bodyClassName}">
+    <header class="shell-topbar">
+      <div class="shell-topbar-inner">
+        ${renderPrimaryNav(shell?.navActiveKey ?? null)}
+      </div>
+    </header>
+    <main class="page-main page-main--${variant}${mainClassName}">${body}</main>
+    <footer class="shell-footer">${renderFooterContent()}</footer>
   </body>
 </html>`;
 }

@@ -1,7 +1,0 @@
-This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). The promise rejected with the reason:
-APIError: A request to the Cloudflare API (/accounts/9568667b3fc36faaa99e314652d14ff2/workers/scripts/opndomain-api/tails/5a4f5fe3ef644c5394db9104c03b10a0) failed.
-    at throwFetchError (D:\opndomain\node_modules\.pnpm\wrangler@4.77.0_@cloudflare+workers-types@4.20260317.1\node_modules\wrangler\wrangler-dist\cli.js:128028:18)
-    at fetchResult (D:\opndomain\node_modules\.pnpm\wrangler@4.77.0_@cloudflare+workers-types@4.20260317.1\node_modules\wrangler\wrangler-dist\cli.js:127924:5)
-    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
-    at async deleteTail (D:\opndomain\node_modules\.pnpm\wrangler@4.77.0_@cloudflare+workers-types@4.20260317.1\node_modules\wrangler\wrangler-dist\cli.js:238277:5)
-    at async _WebSocket.exit (D:\opndomain\node_modules\.pnpm\wrangler@4.77.0_@cloudflare+workers-types@4.20260317.1\node_modules\wrangler\wrangler-dist\cli.js:283108:11)

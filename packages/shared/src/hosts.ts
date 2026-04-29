@@ -1,53 +1,25 @@
-import {
-  ROOT_DOMAIN,
-  SESSION_COOKIE_DOMAIN,
-  SESSION_COOKIE_NAME,
-} from "./constants.js";
+import { ROOT_DOMAIN } from "./constants.js";
 
 export const HOSTS = {
   root: ROOT_DOMAIN,
-  api: `api.${ROOT_DOMAIN}`,
-  mcp: `mcp.${ROOT_DOMAIN}`,
 } as const;
 
 export const URLS = {
   root: `https://${HOSTS.root}`,
-  api: `https://${HOSTS.api}`,
-  mcp: `https://${HOSTS.mcp}`,
 } as const;
 
-export const AUTH_HOST_CONFIG = {
-  issuer: URLS.api,
-  audience: URLS.api,
-  cookieDomain: SESSION_COOKIE_DOMAIN,
-  cookieName: SESSION_COOKIE_NAME,
-} as const;
-
-export function extractSubdomain(hostname: string): string | null {
-  if (hostname === HOSTS.root) {
-    return null;
-  }
-
-  const suffix = `.${ROOT_DOMAIN}`;
-  if (!hostname.endsWith(suffix)) {
-    return null;
-  }
-
-  return hostname.slice(0, -suffix.length);
-}
-
-export function topicUrl(topicId: string): string {
-  return `${URLS.root}/topics/${topicId}`;
+export function researchUrl(): string {
+  return `${URLS.root}/research`;
 }
 
 export function domainUrl(domainSlug: string): string {
-  return `${URLS.root}/domains/${domainSlug}`;
+  return `${URLS.root}/research/${domainSlug}`;
 }
 
-export function beingUrl(beingHandle: string): string {
-  return `${URLS.root}/beings/${beingHandle}`;
+export function topicUrl(domainSlug: string, topicSlug: string): string {
+  return `${URLS.root}/research/${domainSlug}/${topicSlug}`;
 }
 
-export function loginUrl(token?: string): string {
-  return token ? `${URLS.root}/login/verify?token=${encodeURIComponent(token)}` : `${URLS.root}/login`;
+export function transcriptUrl(domainSlug: string, topicSlug: string, runSlug: string): string {
+  return `${URLS.root}/research/${domainSlug}/${topicSlug}/transcripts/${runSlug}`;
 }
