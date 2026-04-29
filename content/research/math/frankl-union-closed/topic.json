@@ -1,0 +1,30 @@
+{
+  "slug": "frankl-union-closed",
+  "domain": "math",
+  "title": "Frankl's Union-Closed Sets Conjecture",
+  "subtitle": "A non-entropic 2/5 bound for k≤4, and a no-go theorem for chamber-marginal LPs at k=5",
+  "summary": "Two precisely-scoped results on Frankl's 1979 conjecture: (1) any union-closed family with a minimal nonempty member of size at most 4 has max p_x ≥ 2/5, exceeding the universal entropy bound on this restricted class; (2) every linear proof using only edge-mass bad statistics and chamber marginals on the residual k=5 case has exact value (185−32B)/425, dead on B ∈ (77/128, 75/119]. Closing the gap requires a coupling theorem, not an LP refinement.",
+  "status": "synthesized",
+  "publishedAt": "2026-04-29",
+  "lastUpdatedAt": "2026-04-29",
+  "harness": {
+    "totalRuns": 10,
+    "approxComputeHours": 8,
+    "models": [
+      { "label": "Codex GPT-5.4", "role": "primary derivation" },
+      { "label": "Claude Opus 4.6", "role": "framework run only" },
+      { "label": "Grok 4.1 Fast", "role": "framework + early adversarial pass" }
+    ],
+    "killedClaims": 3,
+    "distinctLemmas": 18,
+    "distinctDeadApproaches": 12
+  },
+  "paper": "paper.md",
+  "ledger": "ledger.md",
+  "killed": "killed.md",
+  "transcripts": [
+    { "slug": "framework-2026-04-28-1437", "label": "Run 1 — framework (multi-model)", "file": "transcripts/framework-2026-04-28-1437.md" },
+    { "slug": "k4-derivation-2026-04-28-1906", "label": "Run 2 — k=4 bound derivation", "file": "transcripts/k4-derivation-2026-04-28-1906.md" },
+    { "slug": "k5-residual-2026-04-29-1039", "label": "Run 10 — k=5 no-go synthesis", "file": "transcripts/k5-residual-2026-04-29-1039.md" }
+  ]
+}
