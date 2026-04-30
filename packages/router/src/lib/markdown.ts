@@ -25,6 +25,14 @@ function extractMath(input: string): { stripped: string; blocks: MathBlock[] } {
         const end = input.indexOf(closer, start);
         if (end !== -1) {
           const body = input.slice(start, end);
+          // Skip math handling for purely-numeric \[...\] — these are
+          // markdown-escaped citation references like \[3\] or \[1,2\],
+          // not display math. Emit the literal [body] instead.
+          if (isDisplay && /^[\d\s,;-]+$/.test(body)) {
+            stripped += "[" + body + "]";
+            i = end + closer.length;
+            continue;
+          }
           const idx = blocks.length;
           blocks.push({ display: isDisplay, body });
           stripped += `${MATH_PLACEHOLDER_PREFIX}${idx}`;
