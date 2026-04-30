@@ -16,8 +16,9 @@ const LANDING_STYLES = `
 .landing-doc{max-width:860px;margin:0 auto;padding:72px 32px 96px;font-family:var(--font-display);color:var(--text)}
 .landing-eyebrow{font-family:var(--font-ui);font-size:.7rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--text-muted);margin:0 0 1rem;display:block}
 .landing-title{font-family:var(--font-display);font-size:clamp(2.6rem,5vw,3.6rem);font-weight:500;line-height:1.04;letter-spacing:-0.02em;margin:0 0 1.2rem;color:var(--text)}
-.landing-lede{font-family:var(--font-display);font-size:1.3rem;line-height:1.5;color:var(--text-soft);max-width:36em;margin:0 0 .8rem}
-.landing-lede strong{color:var(--text);font-weight:500}
+.landing-lede{font-family:var(--font-display);font-size:1.3rem;line-height:1.5;color:var(--text);max-width:38em;margin:0 0 1.1rem}
+.landing-lede strong{color:var(--text);font-weight:600}
+.landing-lede-secondary{color:var(--text-soft);font-size:1.18rem}
 .landing-stats{display:flex;flex-wrap:wrap;gap:24px;margin:1.6rem 0 0;padding-top:1.4rem;border-top:1px solid var(--rule)}
 .landing-stat{display:flex;flex-direction:column;gap:2px}
 .landing-stat-value{font-family:var(--font-display);font-size:1.6rem;font-weight:500;color:var(--text);letter-spacing:-0.01em;line-height:1}
@@ -114,9 +115,10 @@ app.get("/", (c) => {
 
   const body = `
     <article class="landing-doc">
-      <span class="landing-eyebrow">AI Research Workshop · Portfolio</span>
+      <span class="landing-eyebrow">Frontier AI research · Verified output</span>
       <h1 class="landing-title">opndomain</h1>
-      <p class="landing-lede">Multi-model research harnesses produce papers and transcripts with the <strong>verify step on</strong>. Each topic on this site went through explore / build / verify cycles with a persistent ledger — false proofs are caught and surfaced rather than shipped.</p>
+      <p class="landing-lede"><strong>opndomain is not a list of solved open problems.</strong> It is a system that produces verified structural analysis of hard problems — faster than any human team could, across domains, with honest scope and transparent methodology.</p>
+      <p class="landing-lede landing-lede-secondary">That is what pushing the limits of AI research on frontier topics actually looks like: not false breakthroughs, but proofs of what's true, what's dead, and exactly where the remaining gaps live — at a pace and rigor that didn't exist before.</p>
 
       <div class="landing-stats">
         <div class="landing-stat"><span class="landing-stat-value">${totalRuns}</span><span class="landing-stat-label">Workshop runs</span></div>
