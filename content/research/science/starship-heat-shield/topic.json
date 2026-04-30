@@ -1,25 +1,26 @@
 {
   "slug": "starship-heat-shield",
   "domain": "science",
-  "title": "Minimum-Mass Thermal Protection for Orbital Reentry",
-  "subtitle": "How close is Starship to the physics floor? Produced by opndomain's research harness as an honest record of what was proved, what was ruled out, and what remains open.",
-  "summary": "This paper was produced by a multi-model AI research harness and presented as an honest record of what the harness proved, what it ruled out, and what remains open. We prove a closed-form shallow-entry stagnation-heating law with the exact density and speed at peak Sutton-Graves convective heating, and a closed-form integrated stagnation heat-load formula. From these we prove a numerical stagnation-heating band for a Starship-class LEO return, an explicit windward-acreage convective continuation, and practical acreage peak-flux and integrated-load bands. On that basis we prove that reusable ceramic acreage thermal protection at $1800\\text{--}2000\\,\\mathrm{K}$ is neither peak-flux limited nor total-energy limited by passive reradiation, and we derive a reusable acreage areal-mass floor of $7\\text{--}10\\,\\mathrm{kg/m^2}$ in a 1D diffusion model. We also prove that leading edges (not acreage) are the dominant passive-TPS difficulty, that coolant-only acreage protection is not mass-competitive, and that the relevant orbital kinetic-energy scale is terajoules rather than tens of gigajoules. As negative results we prove that thermodynamics alone does not imply a positive universal passive reusable-acreage mass floor once pointwise reradiation capacity exceeds incident flux, and that the first minimum-mass impossibility occurs at sharp edges rather than acreage.",
+  "title": "How Close Is SpaceX's Starship to the Physics Floor?",
+  "subtitle": "A multi-model analysis of minimum-mass thermal protection — produced by opndomain's research harness as a verified survey of what can be proved, what's been ruled out, and what remains open.",
+  "summary": "This paper was produced by a multi-model AI research harness. Our contribution is not a claim of breakthrough closure on Starship-specific TPS mass, but a verified organization of what can already be proved, what can be ruled out, and what remains open. We prove a local mechanism-wise lower bound for TPS areal mass, show that there is no single material-independent universal TPS floor in $\\mathrm{kg/m^2}$, correct the orbital-entry kinetic-energy scale for a $100$–$120\\,\\mathrm{t}$ vehicle at $7.8\\,\\mathrm{km/s}$, establish a conditional acreage-versus-leading-edge regime split, derive conditional sink-limited lower bounds for ablative and transpiration-based acreage protection, and prove two no-go results: methane cannot be the acreage areal-mass minimizer against water transpiration or the ideal ablative lower bound on the stated load band, and passive reusable ordinary leading edges are excluded below high-temperature-class reradiation. What remains open is the vehicle-specific closure of the local incident and absorbed heat-load history $q''_{\\mathrm{inc}}(x,t)$ and $Q''_{\\mathrm{abs}}$, especially for Starship-class belly acreage, as well as any nontrivial theorem lower-bounding architectural overhead $m''_{\\mathrm{attach}}$ for tiled reusable systems.",
   "status": "synthesized",
   "publishedAt": "2026-04-29",
-  "lastUpdatedAt": "2026-04-29",
+  "lastUpdatedAt": "2026-04-30",
   "harness": {
-    "totalRuns": 1,
-    "approxComputeHours": 3,
+    "totalRuns": 2,
+    "approxComputeHours": 5,
     "models": [
-      { "label": "Codex GPT-5.4", "role": "all three personas (The Aerothermodynamicist, The TPS Designer, The Limits Physicist)" }
+      { "label": "Codex GPT-5.4", "role": "all personas (The Aerothermodynamicist, The TPS Designer, The Limits Physicist, verify)" }
     ],
     "killedClaims": 3,
-    "distinctLemmas": 86,
+    "distinctLemmas": 29,
     "distinctDeadApproaches": 3
   },
   "paper": "paper.md",
   "ledger": "ledger.md",
   "transcripts": [
+    { "slug": "run2-cross-domain-2026-04-30", "label": "Run 2 — cross-domain: local mechanism-wise TPS floor, methane no-go, leading-edge exclusion", "file": "transcripts/run2-cross-domain-2026-04-30.md" },
     { "slug": "workshop-2026-04-29-1300", "label": "Run 1 — workshop: shallow-entry law, acreage continuation, sharp-edge impossibility", "file": "transcripts/workshop-2026-04-29-1300.md" }
   ]
 }

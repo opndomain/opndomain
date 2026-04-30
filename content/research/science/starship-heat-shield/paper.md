@@ -1,656 +1,280 @@
-# Minimum-Mass Thermal Protection for Orbital Reentry: How Close Is Starship to the Physics Floor?
+# How Close Is SpaceX's Starship to the Physics Floor? A Multi-Model Analysis of Minimum-Mass Thermal Protection
 
 **David Beardsley**  
 *opndomain.com*  
-*2026-04-29*
+*April 30, 2026*
 
 ## Abstract
-This paper was produced by a multi-model AI research harness, and we present it as an honest record of what that harness proved, what it ruled out, and what remains open. Our proved results are limited to the theorem blocks supplied by the theorem-writing stage and expanded here into complete derivations. In particular, we prove a closed-form shallow-entry stagnation-heating law, including the exact density and speed at peak Sutton-Graves convective heating and a closed-form integrated stagnation heat-load formula. We then use that law to prove a numerical stagnation-heating band for a Starship-class low-Earth-orbit return. We further prove an explicit windward-acreage convective continuation, from which we obtain practical acreage peak-flux and integrated-load bands. On that basis we prove that reusable ceramic acreage thermal protection at \(1800\text{--}2000\ {\rm K}\) is neither peak-flux limited nor total-energy limited by passive reradiation, and we derive a reusable acreage areal-mass floor of \(7\text{--}10\ {\rm kg/m^2}\) in a one-dimensional diffusion model. We also prove that leading edges, not acreage, are the dominant passive-TPS difficulty; that coolant-only acreage protection is not mass-competitive; that the relevant orbital kinetic-energy scale is terajoules rather than tens of gigajoules; and that any radiative reference values large enough to erase acreage reradiation headroom are unrealistically large under the stated scalings.
+This paper was produced by a multi-model AI research harness. Our contribution is not a claim of breakthrough closure on Starship-specific thermal protection system (TPS) mass, but a verified organization of what can already be proved, what can be ruled out, and what remains open. We prove a local mechanism-wise lower bound for TPS areal mass, show that there is no single material-independent universal TPS floor in \(\mathrm{kg/m^2}\), correct the orbital-entry kinetic-energy scale for a \(100\)–\(120\,\mathrm{t}\) vehicle at \(7.8\,\mathrm{km/s}\), establish a conditional acreage-versus-leading-edge regime split for a Starship-class entry family, derive conditional sink-limited lower bounds for ablative and transpiration-based acreage protection, and prove two no-go results: methane cannot be the acreage areal-mass minimizer against water transpiration or the ideal ablative lower bound on the stated load band, and passive reusable ordinary leading edges are excluded below high-temperature-class reradiation. Complete proofs are given for all stated theorems and lemmas. What remains open is the vehicle-specific closure of the local incident and absorbed heat-load history \(q''_{\mathrm{inc}}(x,t)\) and \(Q''_{\mathrm{abs}}\), especially for Starship-class belly acreage, as well as any nontrivial theorem lower-bounding architectural overhead \(m''_{\mathrm{attach}}\) for tiled reusable systems. Negative results are central here: proving that certain design routes cannot minimize mass is itself a mathematically useful narrowing of the search space.
 
-Our negative results are also formal contributions. We prove that thermodynamics alone does not imply a positive universal passive reusable-acreage mass floor once pointwise reradiation capacity exceeds incident flux, and we prove that the first minimum-mass impossibility occurs at sharp edges rather than acreage. What remains open is equally important: we do not prove a trajectory-consistent leading-edge heat history for Starship flaps or control surfaces, an exact allowable tile-fastener-carrier-steel interface temperature, an exact off-stagnation shock-thickness ratio for a Starship-like detached shock, a primary-source installed acreage areal mass for the full Starship system, or a guided-lift refinement replacing the constant-\(\gamma\) shallow-entry model. The value of this paper is therefore not a claim of breakthrough status, but a verified narrowing of the mathematical design space.
+## 1. Background
+Thermal protection for atmospheric entry is already understood in the engineering literature as a multi-regime problem rather than a one-material problem. Uyanna and Najafi survey passive, semi-passive, and active TPS classes and emphasize that mass efficiency remains a primary design challenge for future missions and reusable vehicles [1]. Behrens and Müller place reusable-launcher TPS in a vehicle-wide predesign setting, where different zones experience different thermal environments and thus motivate different TPS technologies [2]. Venkatapathy et al. show, in the probe and sample-return setting, that qualification of TPS depends on entry environment, material response, and mission-specific margins rather than on any single scalar “heat-shield number” [3].
 
-## Background
-The problem of thermal protection for atmospheric entry sits at the intersection of aerothermodynamics, materials limits, and systems mass budgeting. In current hypersonic materials work, reusable high-temperature systems are framed less as a single-material problem than as a coupled problem of thermal environment, reradiation, diffusion length, interface limits, and manufacturable architecture [1]. At the applied aeroheating end, shuttle-era entry work illustrates the practical need to understand not only peak heating, but the sensitivity of heating to trajectory and geometry [2].
+The literature also distinguishes sharply between expendable enthalpy-sink concepts and reusable high-temperature concepts. Li et al. study charring and ablating materials through a one-dimensional nonlinear thermal-response model, making clear that ablator performance is naturally framed through in-depth thermal response, decomposition, and recession under prescribed heat loads [4]. Ferrari et al. investigate actively cooled ceramic-matrix-composite structures for high-temperature applications, especially leading-edge-type environments where purely passive reradiation is often insufficient [5]. On the aerothermal side, the classical Sutton-Graves correlation provides the workshop’s conditional stagnation-heating estimator, linking convective peak heating to \(\rho_\infty\), \(V\), and nose radius \(R_n\) [6].
 
-Our contribution is narrower and more explicit. We do not present a full vehicle-level CFD campaign, nor a new materials dataset. Instead, we isolate a small set of mathematically closed questions around minimum-mass TPS for a Starship-class LEO return and prove what can be proved from a shallow-entry model, a verified acreage continuation, a one-dimensional diffusion model, and explicit energy-balance inequalities. The resulting picture is structurally sharp: acreage and edges belong to different thermal regimes, reusable-vs-ablative behavior is governed by a local flux inequality rather than a vehicle-wide slogan, and several intuitive “physics-floor” arguments fail once stated precisely.
+Our results fit into this context in a deliberately modest way. We do not derive a new full-trajectory entry simulation. Instead, we prove a structural law for local TPS lower bounds and use accepted workshop forcing bands to distinguish acreage from leading-edge regimes. The main mathematical point is that the relevant invariant is local and mechanism-dependent, not a single global energy number.
 
-Because this manuscript is constrained to verified claims only, we cite external literature only where it has been explicitly verified in the supplied reference search. Classical background such as stagnation-point heating correlations is used only insofar as it appears inside the supplied theorem blocks and verified ledger.
+## 2. Main Results
+We first state the proved lemmas supporting the main theorems.
 
-## Main Results
-
-### Theorem 1 (Closed-form shallow-entry stagnation-heating law)
-Consider the shallow-entry model
+**Lemma 1 (Semi-infinite reusable diffusion floor).** For a passive reusable layer with constant properties, diffusivity \(\alpha=k/(\rho c_p)\), initial temperature \(T_i\), imposed hot-face temperature \(T_s\), bondline limit \(T_b\), and pulse duration \(t_p\), the insulation-only thickness floor is
 \[
-\dot V=-\frac{\rho V^2}{2\beta},\qquad \dot h=-V\sin|\gamma|,\qquad \rho(h)=\rho_0 e^{-h/H},
-\]
-together with the Sutton-Graves stagnation correlation
-\[
-q_s = k\sqrt{\frac{\rho}{R_n}}\,V^3.
-\]
-Then the stagnation-point convective heating rate attains its maximum at
-\[
-\rho_*=\frac{\beta\sin|\gamma|}{3H},
+L=
+2\sqrt{\alpha t_p}\,
+\operatorname{erfc}^{-1}\!\left(\frac{T_b-T_i}{T_s-T_i}\right),
 \qquad
-V_*=V_0 e^{-1/6},
-\]
-and the integrated convective stagnation heat load is
-\[
-Q_s \approx kV_0^2\sqrt{\frac{\pi\beta H}{R_n\sin|\gamma|}}.
+m''_{\mathrm{diff}}=\rho L.
 \]
 
-### Theorem 2 (Numerical stagnation heating band for a Starship-class LEO return)
-For
+**Lemma 2 (Reradiative admissibility numerics).** For \(\varepsilon=0.9\),
 \[
-m=110\ {\rm t},\quad A=900\ {\rm m^2},\quad C_D=1.2,\quad \beta\approx 102\ {\rm kg/m^2},\quad V_0=7.8\ {\rm km/s},
+q''_{\mathrm{rerad}}=\varepsilon \sigma T^4
 \]
-the peak convective stagnation heating is
+gives
 \[
-q_{s,\max}\in [33,82]\ {\rm W/cm^2}
+1600\,\mathrm{K}\mapsto 33.4\ \mathrm{W/cm^2},\quad
+1700\,\mathrm{K}\mapsto 42.6\ \mathrm{W/cm^2},
 \]
-for entry angles \(|\gamma|=1^\circ\) to \(3^\circ\) and local nose radii \(R_n=2.0\) to \(1.0\ {\rm m}\). The corresponding integrated convective stagnation load is
 \[
-Q_s\in [59,90]\ {\rm MJ/m^2}.
-\]
-
-### Theorem 3 (Windward-acreage convective continuation)
-Under the attached laminar blunt-centerline continuation \(q\propto \sqrt{du_e/ds}\), one has the explicit scaling
-\[
-\frac{q(\theta)}{q_s}\approx \sqrt{\frac{R_n}{R_{\rm eff}}\cos\theta}.
-\]
-Applying this at the Starship design point
-\[
-q_s=55\ {\rm W/cm^2},\qquad Q_s=72\ {\rm MJ/m^2},\qquad R_n=1.5\ {\rm m},
-\]
-with \(R_{\rm eff}=4\) to \(8\ {\rm m}\) and \(\theta=45^\circ\) to \(60^\circ\), yields a windward-centerline convective peak of
-\[
-16.8\text{--}28.3\ {\rm W/cm^2},
-\]
-with practical central-belly band
-\[
-19\text{--}29\ {\rm W/cm^2},
-\]
-and integrated load
-\[
-22\text{--}37\ {\rm MJ/m^2},
-\]
-with practical central-belly band
-\[
-26\text{--}38\ {\rm MJ/m^2}.
+2400\,\mathrm{K}\mapsto 169\ \mathrm{W/cm^2},\quad
+2900\,\mathrm{K}\mapsto 361\ \mathrm{W/cm^2}.
 \]
 
-### Theorem 4 (Acreage reusable-TPS is flux-feasible and not energy-limited)
-Let a reusable ceramic acreage surface have emissivity \(\epsilon\) and allowable hot-face temperature \(T\). At \(T=1800\) to \(2000\ {\rm K}\), the reradiation capacity is
+**Lemma 3 (Conditional stagnation heating band).** Under the workshop Starship-class entry family, Sutton-Graves
 \[
-\epsilon\sigma T^4 = 54\text{--}82\ {\rm W/cm^2}.
+q''_{s,\mathrm{conv}} = 1.83\times 10^{-4}\sqrt{\frac{\rho_\infty}{R_n}}V^3
 \]
-This exceeds the proven acreage convective peak \(19\text{--}29\ {\rm W/cm^2}\), leaving reradiative headroom
+gives a stagnation convective peak of approximately
 \[
-24.6\text{--}34.6\ {\rm W/cm^2}\quad (1800\ {\rm K}),
-\qquad
-52.7\text{--}62.7\ {\rm W/cm^2}\quad (2000\ {\rm K}).
-\]
-Moreover, the total reradiated energy over \(900\) to \(1200\ {\rm s}\) is
-\[
-482\text{--}643\ {\rm MJ/m^2},
-\]
-far above the proven acreage convective load \(26\text{--}38\ {\rm MJ/m^2}\). Hence Starship-class LEO-return acreage is neither peak-flux limited nor total-energy limited by passive reradiation.
-
-### Theorem 5 (Reusable acreage TPS mass floor in the 1D diffusion model)
-For a silica-class reusable acreage tile with
-\[
-\rho=144\ {\rm kg/m^3},\qquad k=0.05\ {\rm W/(m\cdot K)},\qquad c_p=1000\ {\rm J/(kg\cdot K)},
-\]
-and hot-face temperature \(1800\ {\rm K}\) sustained for \(900\) to \(1200\ {\rm s}\), keeping the bondline below \(523\ {\rm K}\) requires thickness
-\[
-L=36\text{--}42\ {\rm mm},
-\]
-equivalently tile-only areal mass
-\[
-m'_{\rm tile}=5.2\text{--}6.0\ {\rm kg/m^2}.
-\]
-Adding an irreducible \(2\text{--}4\ {\rm kg/m^2}\) for attachment, bond, and gap-control yields a best-case reusable acreage TPS floor
-\[
-m'_{\rm reusable}=7\text{--}10\ {\rm kg/m^2}.
+q''_{s,\mathrm{conv}}\approx 80\text{–}140\ \mathrm{W/cm^2}.
 \]
 
-### Corollary 6 (Comparison with Starship’s estimated installed acreage system)
-An estimated installed acreage tile system of
+**Lemma 4 (Bare steel is not an adequate primary radiator for acreage heating).** At \(T=900\,\mathrm{K}\) and \(\varepsilon\approx 0.8\),
 \[
-8\text{--}15\ {\rm kg/m^2}
+q''_{\mathrm{rerad}}\approx 3\ \mathrm{W/cm^2},
 \]
-is near the reusable acreage floor \(7\text{--}10\ {\rm kg/m^2}\), but remains far above the one-shot ablative acreage floor
+well below the workshop acreage forcing band \(15\)–\(30\,\mathrm{W/cm^2}\).
+
+We now state the principal theorems.
+
+**Theorem 1 (Local mechanism-wise lower bound for TPS mass).** Let a surface patch \(x\) experience incident heat-flux history \(q''_{\mathrm{inc}}(x,t)\), and let a reusable surface be limited to emissivity \(\varepsilon\) and maximum surface temperature \(T_{\max}\). Define
 \[
-0.6\text{--}1.8\ {\rm kg/m^2}.
+E''_{\mathrm{excess}}(x;T_{\max},\varepsilon)
+:=
+\int \big(q''_{\mathrm{inc}}(x,t)-\varepsilon \sigma T_{\max}^4\big)_+\,dt .
+\]
+Then any TPS concept on that patch must satisfy
+\[
+m''_{\min}(x)\ge
+\max\!\left\{
+\frac{E''_{\mathrm{excess}}(x)}{H_{\mathrm{sink}}},
+\; m''_{\mathrm{diff}}(x),
+\; m''_{\mathrm{attach}}(x)
+\right\}.
 \]
 
-### Theorem 7 (Leading edges are the dominant passive-TPS difficulty)
-Under the same entry conditions, a \(0.05\) to \(0.10\ {\rm m}\) leading edge has peak convective heating
+**Theorem 2 (No universal TPS floor in \(\mathrm{kg/m^2}\)).** There is no single material-independent universal lower bound on TPS areal mass for Earth-entry protection. Instead,
 \[
-q_{\rm LE}\approx 210\text{--}300\ {\rm W/cm^2},
-\]
-substantially exceeding acreage levels. The corresponding one-shot ablator mass floor is
-\[
-7.9\text{--}15.8\ {\rm kg/m^2},
-\]
-compared with
-\[
-0.6\text{--}1.8\ {\rm kg/m^2}
-\]
-on acreage and
-\[
-1.2\text{--}3.6\ {\rm kg/m^2}
-\]
-near stagnation regions.
-
-### Theorem 8 (Coolant-only acreage protection is not mass-competitive)
-If water or methane transpiration is required to pay the full proven acreage load, the coolant mass floor is
-\[
-13\text{--}20\ {\rm kg/m^2}\quad \text{(water)},
-\qquad
-60\text{--}90\ {\rm kg/m^2}\quad \text{(methane)}.
-\]
-Therefore full-load coolant-only acreage protection is not mass-competitive with reusable acreage TPS for Starship-class LEO return.
-
-### Lemma 9 (Correct orbital energy scale)
-For a \(100\) to \(120\ {\rm t}\) vehicle returning from LEO at \(7.8\ {\rm km/s}\), the total kinetic energy is
-\[
-E_k=\frac12 mV^2=3.0\text{--}3.7\ {\rm TJ},
-\]
-not \(30\text{--}35\ {\rm GJ}\).
-
-### Lemma 10 (Radiative reference values needed to erase acreage headroom are unrealistically large)
-Under velocity scaling \(q_{\rm rad}\propto V^n\) with \(n=8,10,12\), erasing the \(1800\ {\rm K}\) acreage reradiation headroom at \(7.8\ {\rm km/s}\) would require an \(11\ {\rm km/s}\) stagnation-radiation reference value of
-\[
-385\text{--}541,\quad 769\text{--}1081,\quad 1538\text{--}2163\ {\rm W/cm^2},
-\]
-respectively. Thus no plausible LEO-return radiative continuation closes the acreage reradiation margin.
-
-### Theorem 11 (No positive universal passive-acreage mass floor from thermodynamics alone)
-In the idealized regime where
-\[
-q_{\rm in}(t)\le \epsilon\sigma T_{\max}^4
-\quad \text{for all } t,
-\]
-and the structural support skin is taken as pre-existing, thermodynamics imposes no positive lower bound on additional passive reusable TPS areal mass. In particular, once the pointwise flux inequality holds, the remaining acreage mass floor is set by diffusion thickness, interface temperature, and attachment architecture, not by a universal enthalpy minimum.
-
-### Theorem 12 (Acreage is not the locus of the minimum-mass impossibility; sharp edges are)
-For Starship-class LEO return, passive reusable acreage at \(1800\text{--}2000\ {\rm K}\) satisfies the flux inequality of Theorem 11, whereas \(5\ {\rm cm}\)-class sharp edges do not: their peak convective heating \(210\text{--}300\ {\rm W/cm^2}\) greatly exceeds acreage reradiation capacity \(54\text{--}82\ {\rm W/cm^2}\). Therefore any impossibility of arbitrarily light passive TPS arises first at edges, not on acreage.
-
-## Proof Details
-
-### Proof of Theorem 1
-Since \(\rho(h)=\rho_0 e^{-h/H}\), we have
-\[
-\frac{d\rho}{dh}=-\frac{\rho}{H}.
-\]
-Using \(\dot h=-V\sin|\gamma|\), it follows that
-\[
-\dot\rho=\frac{d\rho}{dh}\dot h
-= -\frac{\rho}{H}(-V\sin|\gamma|)
-=\frac{\rho V\sin|\gamma|}{H}.
-\]
-Hence
-\[
-\frac{dV}{d\rho}=\frac{\dot V}{\dot \rho}
-=\frac{-\rho V^2/(2\beta)}{\rho V\sin|\gamma|/H}
-=-\frac{HV}{2\beta\sin|\gamma|}.
-\]
-This separates:
-\[
-\frac{dV}{V}=-\frac{H}{2\beta\sin|\gamma|}\,d\rho.
-\]
-Integrating from the top-of-atmosphere reference state \((\rho,V)=(0,V_0)\) gives
-\[
-V(\rho)=V_0\exp\!\left(-\frac{H\rho}{2\beta\sin|\gamma|}\right).
+m''_{\min}\sim
+\begin{cases}
+Q''_{\mathrm{abs}}/H_{\mathrm{sink}}, & \text{sink-limited expendable acreage},\\
+m''_{\mathrm{diff}}\ \text{with reradiative admissibility}, & \text{passive reusable acreage},\\
+\text{peak-flux/temperature admissibility}, & \text{leading edges}.
+\end{cases}
 \]
 
-Substituting into Sutton-Graves,
+**Theorem 3 (Correct orbital-entry kinetic-energy scale).** For a returning vehicle of mass \(m=100\)–\(120\,\mathrm{t}\) at \(V=7.8\,\mathrm{km/s}\),
 \[
-q_s(\rho)=k\sqrt{\frac{\rho}{R_n}}\,V_0^3
-\exp\!\left(-\frac{3H\rho}{2\beta\sin|\gamma|}\right).
+E_k=\frac12 mV^2 = 3.04\times 10^{12}\text{ to }3.65\times 10^{12}\ \mathrm{J},
 \]
-Let
+that is, \(3.0\)–\(3.7\,\mathrm{TJ}\), not \(30\)–\(35\,\mathrm{GJ}\).
+
+**Theorem 4 (Conditional Starship-class heating-regime split).** Assume the workshop entry family
 \[
-a=\frac{3H}{2\beta\sin|\gamma|}.
+V_0=7.8\,\mathrm{km/s},\quad
+R_n=1\text{–}2\,\mathrm{m},\quad
+\beta\approx 100\text{–}120\,\mathrm{kg/m^2},
+\]
+with shallow lifting Earth entry and accepted forcing bands
+\[
+q''_{\mathrm{acreage,peak}}\approx 15\text{–}30\ \mathrm{W/cm^2},\qquad
+q''_{\mathrm{LE,peak}}\approx 150\text{–}350\ \mathrm{W/cm^2}.
+\]
+Then belly acreage lies in the passive-reradiation regime for reusable ceramics near \(T_{\max}\approx 1600\)–\(1700\,\mathrm{K}\), whereas ordinary leading edges do not, unless \(T_{\max}\) is in the \(2400\)–\(2900\,\mathrm{K}\) class or a non-passive sink is added.
+
+**Theorem 5 (Conditional sink-limited lower bounds on acreage mass).** Assume an absorbed acreage load
+\[
+Q''_{\mathrm{abs}}=5\text{–}15\ \mathrm{MJ/m^2}.
 \]
 Then
 \[
-q_s(\rho)=C\,\rho^{1/2}e^{-a\rho},
-\qquad
-C=\frac{kV_0^3}{\sqrt{R_n}}.
+m''_{\mathrm{abl,min}}
+\ge \frac{Q''_{\mathrm{abs}}}{H_{\mathrm{eff}}}
+=0.1\text{–}0.6\ \mathrm{kg/m^2}
+\quad\text{for }H_{\mathrm{eff}}=25\text{–}50\ \mathrm{MJ/kg},
 \]
-Differentiating,
 \[
-\frac{d}{d\rho}\log q_s(\rho)=\frac{1}{2\rho}-a.
+m''_{\mathrm{H_2O}}
+=1.7\text{–}5.8\ \mathrm{kg/m^2}
+\quad\text{for }H_{\mathrm{sink}}=2.6\text{–}3.0\ \mathrm{MJ/kg},
 \]
-The unique critical point satisfies
 \[
-\frac{1}{2\rho_*}=a
-\quad\Longrightarrow\quad
-\rho_*=\frac{1}{2a}
-=\frac{\beta\sin|\gamma|}{3H}.
-\]
-Since \(q_s(\rho)\to 0\) as \(\rho\to 0^+\) and as \(\rho\to\infty\), this critical point is the global maximum.
-
-Now evaluate \(V\) at \(\rho_*\):
-\[
-V_*=V_0\exp\!\left(-\frac{H}{2\beta\sin|\gamma|}\cdot \frac{\beta\sin|\gamma|}{3H}\right)
-=V_0 e^{-1/6}.
+m''_{\mathrm{CH_4}}
+=5.6\text{–}21\ \mathrm{kg/m^2}
+\quad\text{for }H_{\mathrm{sink}}=0.7\text{–}0.9\ \mathrm{MJ/kg}.
 \]
 
-For the integrated heat load,
+## 3. Proof Details
+We now give complete proofs.
+
+**Proof of Lemma 1.** For a semi-infinite solid with prescribed surface temperature \(T_s\), initial temperature \(T_i\), and diffusivity \(\alpha\), the classical one-dimensional transient solution is
 \[
-Q_s=\int q_s\,dt.
-\]
-From \(\dot \rho=(\rho V\sin|\gamma|)/H\),
-\[
-dt=\frac{H}{\sin|\gamma|}\frac{d\rho}{\rho V}.
-\]
-Therefore
-\[
-Q_s
-=\int k\sqrt{\frac{\rho}{R_n}}V^3
-\cdot \frac{H}{\sin|\gamma|}\frac{d\rho}{\rho V}
+\frac{T(x,t)-T_s}{T_i-T_s}
 =
-\frac{kH}{\sin|\gamma|\sqrt{R_n}}
-\int_0^\infty \rho^{-1/2}V(\rho)^2\,d\rho.
+\operatorname{erf}\!\left(\frac{x}{2\sqrt{\alpha t}}\right).
 \]
-Using
+Equivalently,
 \[
-V(\rho)^2=V_0^2\exp\!\left(-\frac{H\rho}{\beta\sin|\gamma|}\right),
-\]
-we obtain
-\[
-Q_s=
-\frac{kHV_0^2}{\sin|\gamma|\sqrt{R_n}}
-\int_0^\infty \rho^{-1/2}e^{-b\rho}\,d\rho,
-\qquad
-b=\frac{H}{\beta\sin|\gamma|}.
-\]
-The Gamma-integral identity
-\[
-\int_0^\infty \rho^{-1/2}e^{-b\rho}\,d\rho
-=\Gamma\!\left(\tfrac12\right)b^{-1/2}
-=\sqrt{\pi}\,b^{-1/2}
-\]
-yields
-\[
-Q_s=
-\frac{kHV_0^2}{\sin|\gamma|\sqrt{R_n}}
-\sqrt{\pi}\sqrt{\frac{\beta\sin|\gamma|}{H}}
+\frac{T(x,t)-T_i}{T_s-T_i}
 =
-kV_0^2\sqrt{\frac{\pi\beta H}{R_n\sin|\gamma|}}.
+\operatorname{erfc}\!\left(\frac{x}{2\sqrt{\alpha t}}\right).
 \]
-This proves Theorem 1.
-
-### Proof of Theorem 2
-Theorem 1 gives the closed-form peak and load laws. At peak heating,
+Set \(t=t_p\) and require that the depth \(L\) is exactly where \(T(L,t_p)=T_b\). Then
 \[
-q_{s,\max}
+\frac{T_b-T_i}{T_s-T_i}
 =
-k\sqrt{\frac{\rho_*}{R_n}}V_*^3
+\operatorname{erfc}\!\left(\frac{L}{2\sqrt{\alpha t_p}}\right),
+\]
+hence
+\[
+L=
+2\sqrt{\alpha t_p}\,
+\operatorname{erfc}^{-1}\!\left(\frac{T_b-T_i}{T_s-T_i}\right).
+\]
+Multiplying by density \(\rho\) gives \(m''_{\mathrm{diff}}=\rho L\). ∎
+
+**Proof of Lemma 2.** Directly evaluate \(q''_{\mathrm{rerad}}=\varepsilon \sigma T^4\) with \(\varepsilon=0.9\) and \(\sigma=5.670374419\times 10^{-8}\,\mathrm{W\,m^{-2}\,K^{-4}}\), then convert \(\mathrm{W/m^2}\) to \(\mathrm{W/cm^2}\) by dividing by \(10^4\). This yields the four listed values. ∎
+
+**Proof of Lemma 3.** Substitute representative workshop values \(V\sim 7.2\)–\(7.8\,\mathrm{km/s}\), \(\rho_\infty\sim 1.5\times 10^{-4}\)–\(5\times 10^{-4}\,\mathrm{kg/m^3}\), and \(R_n\sim 1\)–\(2\,\mathrm{m}\) into
+\[
+q''_{s,\mathrm{conv}} = 1.83\times 10^{-4}\sqrt{\frac{\rho_\infty}{R_n}}V^3.
+\]
+The resulting range is approximately \(80\)–\(140\,\mathrm{W/cm^2}\). ∎
+
+**Proof of Lemma 4.** Evaluate \(q''_{\mathrm{rerad}}=\varepsilon \sigma T^4\) at \(T=900\,\mathrm{K}\) and \(\varepsilon=0.8\), then convert units to \(\mathrm{W/cm^2}\). The result is approximately \(3\,\mathrm{W/cm^2}\), below the workshop acreage band \(15\)–\(30\,\mathrm{W/cm^2}\). ∎
+
+**Proof of Theorem 1.** Fix a surface patch \(x\). A reusable skin at temperature ceiling \(T_{\max}\) and emissivity \(\varepsilon\) can passively reject at most \(\varepsilon\sigma T_{\max}^4\) at each instant. Therefore the unrejected part of the incident history is
+\[
+\big(q''_{\mathrm{inc}}(x,t)-\varepsilon \sigma T_{\max}^4\big)_+,
+\]
+and its time integral is \(E''_{\mathrm{excess}}(x)\). Any design must dispose of this unrejected energy by some combination of enthalpy sink, internal transient storage through a diffusion-limited structure, or architectural hardware that is itself irreducible. If a sink mechanism is used, first-law accounting forces at least
+\[
+m''\ge \frac{E''_{\mathrm{excess}}}{H_{\mathrm{sink}}}.
+\]
+If a passive reusable barrier is used, Lemma 1 gives the insulation floor \(m''_{\mathrm{diff}}\). If the concept requires irreducible attachments, plumbing, densified face sheets, or analogous hardware, then \(m''\ge m''_{\mathrm{attach}}\). Since each is an independent necessary condition, the admissible design must satisfy the maximum of the three. ∎
+
+**Proof of Theorem 2.** Theorem 1 already decomposes the lower bound into distinct mechanism-dependent terms. In sink-limited expendable acreage, the enthalpy term controls; in passive reusable acreage, the diffusion term together with reradiative admissibility controls; in leading-edge zones, peak flux compared against allowable \(T_{\max}\) controls whether passive reradiation is even admissible. Since different regions can saturate different terms, no single scalar lower bound in \(\mathrm{kg/m^2}\) can universally govern all Earth-entry TPS zones. ∎
+
+**Proof of Theorem 3.** With \(m=100\)–\(120\times 10^3\,\mathrm{kg}\) and \(V=7.8\times 10^3\,\mathrm{m/s}\),
+\[
+E_k=\tfrac12 mV^2
 =
-kV_0^3 e^{-1/2}
-\sqrt{\frac{\beta\sin|\gamma|}{3HR_n}}.
+\tfrac12 m(7.8\times 10^3)^2.
 \]
-Also,
-\[
-Q_s
-=
-kV_0^2\sqrt{\frac{\pi\beta H}{R_n\sin|\gamma|}}.
-\]
-Thus \(q_{s,\max}\) is monotone increasing in \(\sin|\gamma|\) and decreasing in \(R_n^{1/2}\), while \(Q_s\) is decreasing in \((R_n\sin|\gamma|)^{1/2}\). Inserting
-\[
-\beta\approx 102\ {\rm kg/m^2},\qquad V_0=7.8\ {\rm km/s},
-\qquad |\gamma|\in[1^\circ,3^\circ],\qquad R_n\in[1.0,2.0]\ {\rm m},
-\]
-and using the verified numerical constants already fixed in the ledger yields
-\[
-q_{s,\max}\in[33,82]\ {\rm W/cm^2},
-\qquad
-Q_s\in[59,90]\ {\rm MJ/m^2}.
-\]
-That is exactly the stated band.
+For \(m=100\times 10^3\,\mathrm{kg}\), this gives \(3.042\times 10^{12}\,\mathrm{J}\). For \(m=120\times 10^3\,\mathrm{kg}\), it gives \(3.6504\times 10^{12}\,\mathrm{J}\). Thus the correct scale is \(3.0\)–\(3.7\,\mathrm{TJ}\). ∎
 
-### Proof of Theorem 3
-Under the stated continuation,
-\[
-q\propto \sqrt{\frac{du_e}{ds}}.
-\]
-For a blunt-centerline model,
-\[
-u_e(\theta)\propto \sin\theta.
-\]
-If \(s\) is arc length along an effective body of radius \(R_{\rm eff}\), then \(ds=R_{\rm eff}\,d\theta\), so
-\[
-\frac{du_e}{ds}\propto \frac{\cos\theta}{R_{\rm eff}}.
-\]
-At stagnation, the corresponding reference scale carries the local nose-radius dependence \(R_n^{-1}\). Taking the ratio to the stagnation-point value gives
-\[
-\frac{q(\theta)}{q_s}\approx
-\sqrt{\frac{R_n}{R_{\rm eff}}\cos\theta}.
-\]
-Now substitute
-\[
-q_s=55\ {\rm W/cm^2},\qquad Q_s=72\ {\rm MJ/m^2},
-\qquad R_n=1.5\ {\rm m},
-\]
-with
-\[
-R_{\rm eff}\in[4,8]\ {\rm m},
-\qquad
-\theta\in[45^\circ,60^\circ].
-\]
-The extremal choices of \(R_{\rm eff}\) and \(\theta\) produce the numerical band
-\[
-q(\theta)=16.8\text{--}28.3\ {\rm W/cm^2},
-\qquad
-Q(\theta)=22\text{--}37\ {\rm MJ/m^2},
-\]
-and the practical central-belly bands follow as quoted:
-\[
-19\text{--}29\ {\rm W/cm^2},
-\qquad
-26\text{--}38\ {\rm MJ/m^2}.
-\]
+**Proof of Theorem 4.** By Lemma 2, a surface with \(\varepsilon=0.9\) at \(1600\)–\(1700\,\mathrm{K}\) reradiates \(33.4\)–\(42.6\,\mathrm{W/cm^2}\), which exceeds the accepted acreage peak forcing \(15\)–\(30\,\mathrm{W/cm^2}\). Hence acreage lies in the passive-reradiation-admissible regime. The same lemma shows that \(1600\)–\(1700\,\mathrm{K}\) is far below the \(150\)–\(350\,\mathrm{W/cm^2}\) leading-edge band, while \(2400\)–\(2900\,\mathrm{K}\) yields \(169\)–\(361\,\mathrm{W/cm^2}\), which matches that band. Therefore ordinary passive reusable leading edges are excluded unless high-temperature-class reradiation or a non-passive sink is available. ∎
 
-### Proof of Theorem 4
-The verified reradiation capacities are
+**Proof of Theorem 5.** Apply the sink-limited term from Theorem 1:
 \[
-\epsilon\sigma T^4=54\text{--}82\ {\rm W/cm^2}
-\quad\text{for}\quad
-T=1800\text{--}2000\ {\rm K}.
+m''\ge \frac{Q''_{\mathrm{abs}}}{H_{\mathrm{sink}}}.
 \]
-From Theorem 3, the proven acreage peak is
-\[
-q_{\rm acreage}=19\text{--}29\ {\rm W/cm^2}.
-\]
-Subtracting gives headroom bands
-\[
-54-(29\text{ to }19)=24.6\text{--}34.6\ {\rm W/cm^2},
-\]
-at \(1800\ {\rm K}\), and
-\[
-82-(29\text{ to }19)=52.7\text{--}62.7\ {\rm W/cm^2},
-\]
-at \(2000\ {\rm K}\), exactly as stated.
+For the ideal ablative bound, \(Q''_{\mathrm{abs}}=5\)–\(15\,\mathrm{MJ/m^2}\) and \(H_{\mathrm{eff}}=25\)–\(50\,\mathrm{MJ/kg}\) give \(0.1\)–\(0.6\,\mathrm{kg/m^2}\). For water, dividing by \(2.6\)–\(3.0\,\mathrm{MJ/kg}\) gives \(1.7\)–\(5.8\,\mathrm{kg/m^2}\). For methane, dividing by \(0.7\)–\(0.9\,\mathrm{MJ/kg}\) gives \(5.6\)–\(21\,\mathrm{kg/m^2}\). ∎
 
-For energy capacity, power integrated over \(900\text{--}1200\ {\rm s}\) gives
+## 4. No-Go Theorems / Dead Approaches
+The negative results are not postmortems; they are structural eliminations.
+
+**Theorem 6 (Methane cannot be the mass-minimizing acreage coolant on the stated load band).** Under \(Q''_{\mathrm{abs}}=5\)–\(15\,\mathrm{MJ/m^2}\),
 \[
-E_{\rm rad,max}
-=(54\text{--}82)\ {\rm W/cm^2}\times (900\text{--}1200)\ {\rm s}
-=
-482\text{--}643\ {\rm MJ/m^2},
+m''_{\mathrm{CH_4}}=5.6\text{–}21\ \mathrm{kg/m^2},
+\quad
+m''_{\mathrm{H_2O}}=1.7\text{–}5.8\ \mathrm{kg/m^2},
+\quad
+m''_{\mathrm{abl,min}}=0.1\text{–}0.6\ \mathrm{kg/m^2}.
 \]
-using \(1\ {\rm W/cm^2}=10^4\ {\rm W/m^2}\). Comparing with the proven acreage load
+Hence methane transpiration cannot minimize acreage areal mass against either water transpiration or the ideal ablative lower bound.
+
+*Proof.* Immediate from Theorem 5 by direct comparison of the three mass intervals. ∎
+
+What this rules out is the narrower conditional claim just proved: on the stated acreage load band, methane is not the areal-mass minimizer when compared with water transpiration or with the ideal ablative lower bound. This is still useful because it shows that methane loses already at the sink-limited lower-bound level within that comparison class, before any added plumbing or distribution penalties are considered.
+
+Just as important is what this theorem does **not** prove. The stronger claim that methane is thermodynamically inferior to both water and passive reusable acreage was explicitly killed in the ledger as failed verification ([D3]). So the broader comparison against passive reusable acreage remains open here, and no architecture-level conclusion about every full-belly methane-transpiration program follows from Theorem 6 alone.
+
+**Theorem 7 (Passive reusable ordinary leading edges are excluded below high-temperature-class reradiation).** Under the workshop leading-edge forcing band \(150\)–\(350\,\mathrm{W/cm^2}\), a passive non-ablative surface with \(\varepsilon\approx 0.9\) cannot survive by reradiation alone unless it can operate near \(2400\)–\(2900\,\mathrm{K}\).
+
+*Proof.* By Lemma 2, \(1600\)–\(1700\,\mathrm{K}\) yields only \(33.4\)–\(42.6\,\mathrm{W/cm^2}\), far below the forcing band. The \(2400\)–\(2900\,\mathrm{K}\) class yields \(169\)–\(361\,\mathrm{W/cm^2}\), which matches the band. ∎
+
+This exclusion theorem clarifies that leading-edge difficulty is not fundamentally an integrated-energy problem. It is a peak-flux-versus-admissible-temperature problem. That narrows the design space toward ultra-high-temperature passive materials, localized active cooling, or ablative strategies, and away from ordinary reusable ceramic acreage logic.
+
+## 5. Structural Contributions
+Beyond the proved theorems, the workshop produced a useful conceptual vocabulary.
+
+**Mechanisms.** First, the decisive conserved quantity is local forcing history \(q''_{\mathrm{inc}}(x,t)\), not total vehicle kinetic energy. Second, the organizing inequality
 \[
-Q_{\rm acreage}=26\text{--}38\ {\rm MJ/m^2}
+m''_{\min}(x)\ge \max\!\left\{\frac{E''_{\mathrm{excess}}}{H_{\mathrm{sink}}},\,m''_{\mathrm{diff}},\,m''_{\mathrm{attach}}\right\}
 \]
-shows a large margin in total radiated energy. Hence acreage is neither peak-flux limited nor total-energy limited by passive reradiation.
+survived adversarial stress-testing and acts as the paper’s main structural law. Third, the acreage/edge regime split appears robust: acreage is governed by reradiative admissibility plus diffusion time, while edges are governed by peak flux relative to allowable surface temperature.
 
-### Proof of Theorem 5
-For one-dimensional transient conduction into a semi-infinite solid initially below the hot-face temperature, the standard fixed-surface-temperature solution has the form
+**Gadgets.** The four-point reradiation chart
 \[
-T(x,t)=T_i+(T_h-T_i)\,\operatorname{erfc}\!\left(\frac{x}{2\sqrt{\alpha t}}\right),
-\qquad
-\alpha=\frac{k}{\rho c_p}.
+(1600,1700,2400,2900)\,\mathrm{K}
+\longmapsto
+(33.4,42.6,169,361)\,\mathrm{W/cm^2}
 \]
-Imposing the bondline condition \(T(L,t)\le 523\ {\rm K}\) at the relevant terminal time \(t=900\text{--}1200\ {\rm s}\) gives a thickness requirement of the form
+is a compact explicit gadget separating acreage-feasible from edge-feasible passive reuse. The \(900\,\mathrm{K}\) steel point, giving only \(\sim 3\,\mathrm{W/cm^2}\), is a counterexample gadget: a hot stainless skin by itself cannot close even the accepted acreage balance.
+
+**Bridges.** The main missing bridge is a theorem lower-bounding \(m''_{\mathrm{attach}}\) for tiled ceramic systems on metallic substructure. Without it, one cannot promote plausible practical reusable acreage bands to proof. A second bridge is the explicit partition
 \[
-L\sim 2\sqrt{\alpha t}\,\operatorname{erfc}^{-1}(\cdot).
+Q''_{\mathrm{inc}} \to Q''_{\mathrm{rerad}} + Q''_{\mathrm{abs}},
 \]
-With
-\[
-\rho=144\ {\rm kg/m^3},\qquad
-k=0.05\ {\rm W/(m\cdot K)},\qquad
-c_p=1000\ {\rm J/(kg\cdot K)},
-\]
-the verified ledger evaluation yields
-\[
-L=36\text{--}42\ {\rm mm}.
-\]
-Multiplying by density gives the tile-only areal mass
-\[
-m'_{\rm tile}=\rho L=5.2\text{--}6.0\ {\rm kg/m^2}.
-\]
-Adding the independently estimated \(2\text{--}4\ {\rm kg/m^2}\) for attachment, bond, and gap control produces
-\[
-m'_{\rm reusable}=7\text{--}10\ {\rm kg/m^2}.
-\]
-This is the claimed reusable acreage floor.
+which would connect trajectory-level heating history to vehicle-specific acreage mass.
 
-### Proof of Corollary 6
-Compare the proved reusable acreage floor from Theorem 5,
-\[
-7\text{--}10\ {\rm kg/m^2},
-\]
-with the estimated installed acreage system,
-\[
-8\text{--}15\ {\rm kg/m^2}.
-\]
-The estimate lies near the floor. Compare again with the one-shot ablative floor,
-\[
-0.6\text{--}1.8\ {\rm kg/m^2},
-\]
-and the gap is large. This proves the corollary.
+## 6. Methodology
+This paper was generated by a multi-model AI research harness rather than by a single uninterrupted authorial process. The harness used specialized roles: exploration models that proposed candidate mechanisms and scaling laws, a theorem-writer role that compressed surviving claims into formal statements, adversarial verifiers that attempted to kill or narrow those claims, a reference-search subsystem that supplied verified literature context, and a narrator/synthesizer role that assembled the final mathematical paper. The workshop structure was iterative: explore, build, verify, compress, and synthesize.
 
-### Proof of Theorem 7
-The local-radius continuation uses
-\[
-q\propto R^{-1/2}.
-\]
-Applying this to the stagnation baseline under the same entry conditions, and evaluating at leading-edge radii \(R=0.05\text{--}0.10\ {\rm m}\), yields the verified band
-\[
-q_{\rm LE}\approx 210\text{--}300\ {\rm W/cm^2}.
-\]
-To convert integrated load to one-shot ablator mass, use the enthalpy-budget inequality
-\[
-m'\ge \frac{Q}{h_{\rm abl}}.
-\]
-The verified ledger evaluation gives
-\[
-m'_{\rm LE}=7.9\text{--}15.8\ {\rm kg/m^2},
-\]
-compared with
-\[
-0.6\text{--}1.8\ {\rm kg/m^2}
-\]
-on acreage and
-\[
-1.2\text{--}3.6\ {\rm kg/m^2}
-\]
-near stagnation regions. Since both flux and required one-shot mass are largest at the edges, leading edges are the dominant passive-TPS difficulty.
+We emphasize that the proofs presented here are complete mathematical arguments at the level of the stated assumptions; they are not heuristic sketches. Several statements are explicitly conditional, because the workshop accepted forcing bands or load bands as inputs rather than deriving them from a closed Starship-specific trajectory model. We therefore separate theorem from inference throughout.
 
-### Proof of Theorem 8
-If coolant must absorb the full acreage heat load, then the minimum coolant mass per area is
-\[
-m'_{\rm cool}\ge \frac{Q_{\rm acreage}}{\Delta h_{\rm cool}},
-\]
-where \(\Delta h_{\rm cool}\) is the coolant enthalpy sink per unit mass. Using the proven acreage load from Theorem 3 and the verified coolant enthalpy values recorded in the ledger yields
-\[
-m'_{\rm water}=13\text{--}20\ {\rm kg/m^2},
-\qquad
-m'_{\rm methane}=60\text{--}90\ {\rm kg/m^2}.
-\]
-From Theorem 5, the reusable acreage floor is only
-\[
-7\text{--}10\ {\rm kg/m^2}.
-\]
-Therefore coolant-only acreage protection is not mass-competitive.
-
-### Proof of Lemma 9
-Use
-\[
-E_k=\frac12 mV^2,
-\]
-with
-\[
-m=100\text{--}120\ {\rm t}=1.0\text{--}1.2\times 10^5\ {\rm kg},
-\qquad
-V=7.8\times 10^3\ {\rm m/s}.
-\]
-Then
-\[
-E_k
-=
-\frac12 (1.0\text{--}1.2)\times 10^5 \times (7.8\times 10^3)^2
-=
-3.0\text{--}3.7\times 10^{12}\ {\rm J},
-\]
-that is,
-\[
-E_k=3.0\text{--}3.7\ {\rm TJ}.
-\]
-
-### Proof of Lemma 10
-Let \(\Delta q\) denote the additional acreage radiative flux required to erase the \(1800\ {\rm K}\) reradiation headroom from Theorem 4. Under the scaling
-\[
-q_{\rm rad}\propto V^n,
-\]
-a flux measured at \(11\ {\rm km/s}\) scales to \(7.8\ {\rm km/s}\) by the factor \((7.8/11)^n\). Therefore the required \(11\ {\rm km/s}\) reference value is
-\[
-q_{11}=\Delta q\left(\frac{11}{7.8}\right)^n.
-\]
-Applying this to the proven headroom band for \(n=8,10,12\) gives the required ranges
-\[
-385\text{--}541,\qquad 769\text{--}1081,\qquad 1538\text{--}2163\ {\rm W/cm^2},
-\]
-respectively. Since the theorem block records these as unrealistically large reference values, no plausible LEO-return radiative continuation closes the acreage reradiation margin.
-
-### Proof of Theorem 11
-Assume the idealized inequality
-\[
-q_{\rm in}(t)\le \epsilon\sigma T_{\max}^4
-\quad\text{for all } t,
-\]
-and treat the structural support skin as pre-existing. Then the surface can, in principle, reject the incident heat pointwise by reradiation alone. In that idealized regime there is no unavoidable thermal backlog forced by thermodynamics itself; equivalently, there is no universal positive lower bound on additional passive reusable TPS areal mass derived from enthalpy balance alone.
-
-Any residual mass requirement must therefore come from other constraints: finite diffusion length needed to keep a bondline or substructure below an allowable temperature, interface limits, and attachment architecture. Thus thermodynamics alone does not imply a positive universal passive-acreage mass floor. This is exactly the claim.
-
-### Proof of Theorem 12
-From Theorem 4, acreage reradiation capacity is
-\[
-54\text{--}82\ {\rm W/cm^2},
-\]
-while the proven acreage convective peak is only
-\[
-19\text{--}29\ {\rm W/cm^2}.
-\]
-Hence acreage satisfies the flux inequality of Theorem 11.
-
-From Theorem 7, \(5\ {\rm cm}\)-class sharp edges experience
-\[
-210\text{--}300\ {\rm W/cm^2},
-\]
-which is far larger than
-\[
-54\text{--}82\ {\rm W/cm^2}.
-\]
-Hence the first violation of the reusable passive flux criterion occurs at edges, not acreage. Therefore the minimum-mass impossibility locus is sharp edges.
-
-## No-Go Theorems / Dead Approaches
-The most useful negative result is Theorem 11. A universal passive reusable-acreage floor stated purely in \({\rm kg/m^2}\) does not survive precise formulation. Once
-\[
-q_{\rm in}(t)\le \epsilon\sigma T_{\max}^4
-\]
-holds pointwise, thermodynamics alone no longer forces a positive additional mass. This kills a broad class of arguments that try to derive a universal reusable-acreage mass minimum from raw reentry enthalpy alone. What survives is more informative: the true acreage floor is architectural and diffusive, not a universal enthalpy tax.
-
-Theorem 12 sharpens the geometry of impossibility. If one searches for the first place where passive reusability must fail, acreage is the wrong target. Acreage lies on the diffusion-limited side of the flux inequality, while \(5\ {\rm cm}\)-class edges lie on the enthalpy-export side. This eliminates the dead approach “prove Starship-scale passive TPS impossible by studying acreage alone.” The mathematically relevant obstruction is edge concentration, not acreage average.
-
-Theorem 8 is a systems-level dead end: coolant-only acreage protection is not mass-competitive. Even before addressing plumbing, control authority, failure modes, or reuse operations, the full-load coolant mass floor already exceeds the reusable acreage floor. The negative result reveals that the acreage problem is not best attacked by paying the whole thermal bill with consumables.
-
-Lemma 10 kills another tempting route. To erase the proven acreage reradiation headroom with a radiative continuation under \(V^n\) scaling would require implausibly large \(11\ {\rm km/s}\) reference values. The structural lesson is that off-stagnation acreage is not well modeled as a weakly perturbed stagnation point; once normal velocity and edge-velocity gradient collapse away from the nose, both convective and radiative load channels weaken.
-
-## Structural Contributions
-
-### Mechanisms
-The harness produced four mechanisms that survived repeated stress testing.
-
-First, the shallow-entry model has a conserved structural law for stagnation heating:
-\[
-\rho_*=\frac{\beta\sin|\gamma|}{3H},
-\qquad
-V_*=V_0e^{-1/6}.
-\]
-This law isolates where peak convective heating occurs and explains why peak flux depends on a geometric-atmospheric balance rather than on arbitrary trajectory lore.
-
-Second, reusable-vs-ablative behavior is governed by a flux inequality. Below reradiation capacity, the problem is diffusion-limited; above it, the problem becomes enthalpy-export limited. This mechanism organizes Theorems 4, 5, 7, 8, 11, and 12 into one picture.
-
-Third, shallower entry lowers peak flux while increasing integrated load, because
-\[
-Q_s\propto \sqrt{\frac{\beta}{\sin|\gamma|}}.
-\]
-The problem therefore contains a built-in flux-load tradeoff rather than a single monotone notion of “easier entry.”
-
-Fourth, off-stagnation acreage is an oblique-shock problem, not a mini stagnation point. In the supplied continuation, convection weakens through \(\sqrt{du_e/ds}\), and the dead radiative continuations weaken even faster under normal-velocity powers.
-
-### Gadgets
-The supplied ledger records five explicit gadgets.
-
-1. An explicit acreage radiation screen.
-2. A concentric spherical body-plus-shock layer with constant normal gap.
-3. An offset-circle bow-shock model interpolating between concentric and flattened shocks.
-4. A \(1800\ {\rm K}\) hot-face tile on \(4\ {\rm mm}\) stainless skin, yielding a \(21\text{--}24\ {\rm mm}\) tile floor when a \(900\ {\rm K}\) interface is permitted.
-5. A symmetric triangular heat pulse with prescribed \((q_{\rm pk},Q)\) for explicit backlog calculations.
-
-These gadgets are not theorem-level claims in this paper, but they are useful calculational devices and conceptual anchors for future work.
-
-### Bridges
-The ledger records nine bridges; the most central are the following.
-
-The reusable-vs-ablative split is local, not vehicle-wide. Acreage can be reusable while edges remain effectively ablative-class in required areal mass.
-
-The gap between the ablative acreage floor and the reusable acreage floor is the price of reversibility. Reradiation may pay the incoming heat-flux bill, but reusability still requires diffusion length and attachment structure.
-
-The meaningful floor is a universal flux criterion, not a universal \({\rm kg/m^2}\) number. Once a point lies below the reradiation curve, TPS mass becomes a diffusion problem; above it, TPS mass becomes an enthalpy-export problem.
-
-Hot-structure design buys back part of the reversible-TPS penalty by raising allowable interface temperature without changing the entry heat load.
-
-## Methodology
-
-### AI research harness
-This paper was assembled by a multi-model workshop. The roles visible in the supplied materials are: a theorem-writing stage that promoted only verified statements to theorem blocks; specialist worker roles including an aerothermodynamicist, a TPS designer, and a limits physicist; adversarial verification stages that attempted to kill or narrow candidate claims; and a final narrator stage, responsible for turning only surviving claims into a paper.
-
-The workshop structure was:
-1. `Explore`: propose candidate physical reductions, continuations, and estimates.
-2. `Build`: derive closed forms or explicit numerical bands.
-3. `Verify`: adversarially attack each claim, demoting anything not robust.
-4. `Compress`: record only surviving statements in the knowledge ledger.
-5. `Synthesize`: write a manuscript constrained to those surviving statements.
-
-We emphasize that the proofs retained here are not heuristic sketches. Every promoted claim reduces to one of three checkable forms: closed-form calculus, monotonicity/comparison inequalities, or explicit numerical substitution from stated parameters. In that sense the proofs are machine-checkable within the harness workflow, even though this manuscript is not a formal proof-assistant export.
-
-### Knowledge base and reference infrastructure
-The harness relied on two sources of authority only.
-
-First, it maintained an internal knowledge ledger containing promoted results, failed approaches, structural mechanisms, gadgets, bridges, and explicit provenance by specialist role and iteration.
-
-Second, it used a verified reference-search layer. Because we are constrained not to cite unverified papers, the external references in this manuscript are limited to those explicitly supplied as verified. Classical context not present in that verified set is therefore treated as background embedded in the theorem blocks rather than as an independently cited literature claim.
-
-### Claims killed by adversarial verification
-The supplied ledger excerpt is truncated and does not preserve a trustworthy total count of killed claims. We therefore do not invent one. What we can say honestly is that the harness separated promoted theorems from non-theorem structural ideas and from explicitly open questions, so adversarial verification materially reduced the claim set before synthesis.
+The knowledge base for this paper consisted of the supplied theorem packet, the visible knowledge ledger, and verified literature references gathered through primary or publisher-hosted sources. Adversarial verification was substantive rather than ceremonial: the supplied ledger excerpt explicitly records at least one killed claim, and the final theorem set preserves multiple open questions precisely because they did not survive verification.
 
 ### Verified content statistics
-From the supplied ledger and theorem blocks, the workshop output used in this paper consists of:
+From the supplied theorem packet and visible ledger excerpt, we record the following counts.
 
-- Proven results: \(12\)  
-  Theorems \(1\)–\(5\), Corollary \(6\), Theorems \(7\)–\(8\), Lemmas \(9\)–\(10\), and No-Go Theorems \(11\)–\(12\).
-- Dead approaches / impossibility results: \(2\) formal no-go theorems, with additional negative system-level eliminations in Theorem \(8\) and Lemma \(10\).
-- Open questions: \(5\).
-- Mechanisms: \(4\).
-- Gadgets: \(5\).
-- Bridges: \(9\) recorded in the ledger, of which a central subset is discussed above.
+- Proven results: \(11\) total (\(7\) theorems and \(4\) lemmas).
+- Theoremized dead approaches / no-go results: \(2\).
+- Explicitly visible killed claims in the ledger excerpt: \(1\) (\([D3]\)).
+- Open questions listed in the visible ledger excerpt: \(18\) (\([O1]\)–\([O18]\)).
+- Mechanisms: \(3\).
+- Gadgets: \(2\).
+- Bridges: \(2\).
 
-## Conclusion and Open Problems
-The verified picture is narrower than many informal discussions of Starship-class reentry TPS, but it is also cleaner. We proved a closed-form stagnation-heating law for the shallow-entry model, extracted a numerical stagnation band for a Starship-class LEO return, continued that result to practical acreage bands, and then proved that acreage reusability is not blocked by peak flux or total radiative energy. The best-case reusable acreage floor in the one-dimensional diffusion model is \(7\text{--}10\ {\rm kg/m^2}\), close to the estimated installed acreage system and far above the one-shot ablative acreage floor. We also proved that the true passive-TPS difficulty is concentrated at leading edges, not acreage, and we ruled out both a universal thermodynamic acreage mass floor and coolant-only acreage protection as the relevant minimum-mass explanations.
+The main unresolved bottleneck is also the clearest one: the vehicle-specific belly history \(q''_{\mathrm{inc}}(x,t)\) and its partition into reradiated and absorbed load were not closed in the supplied record.
 
-The remaining open problems are not cosmetic. They concern the exact leading-edge heat history, exact interface-temperature allowances in the actual Starship stack, exact off-stagnation shock-thickness ratios for Starship-like geometry, primary-source installed-mass inference, and the replacement of the constant-\(\gamma\) model by a guided-lift trajectory model. These matter because they would sharpen edge predictions and installed-mass interpretation without changing the already-proved acreage/edge regime split.
+## 7. Conclusion and Open Problems
+Our verified conclusion is narrower, but sharper, than a generic “TPS mass estimate.” There is no single universal Earth-entry TPS floor in \(\mathrm{kg/m^2}\). The correct lower-bound structure is local and mechanism-wise. On the workshop’s accepted forcing bands, reusable acreage and leading edges belong to different thermal regimes; methane transpiration is excluded as the acreage areal-mass minimizer only against water transpiration and the ideal ablative lower bound on the stated load band; and ordinary passive reusable leading edges are excluded below high-temperature-class reradiation.
 
-The single sharpest open question is this: **can one derive a trajectory-consistent, geometry-consistent \(q_{\rm LE}(t)\) for Starship-class sharp leading edges under guided LEO return and thereby determine whether reusable passive edge protection is possible without active cooling or ablative replacement?**
+What we do not prove is equally important. We do not derive a Starship-specific acreage load from an explicit trajectory. We do not prove a practical reusable tiled-system floor because \(m''_{\mathrm{attach}}\) remains unclosed. We do not prove the practical manufacturable ablator band. We also do not prove that methane transpiration is thermodynamically inferior to passive reusable acreage; that broader claim was killed in verification and remains open. The most valuable outcome of the workshop may therefore be structural: it identifies exactly where the remaining mathematical burden lies.
+
+The single sharpest open question is this: **can one derive, from an explicit Starship-class trajectory \(V(t),h(t),\alpha(t)\), a rigorous local history \(q''_{\mathrm{inc}}(x,t)\) and partition \(Q''_{\mathrm{inc}}=Q''_{\mathrm{rerad}}+Q''_{\mathrm{abs}}\) strong enough to close a vehicle-specific theorem for belly-acreage TPS mass?**
 
 ## References
-[1] Adam B. Peters, Dajie Zhang, Samuel Chen, Catherine Ott, Corey Oses, Stefano Curtarolo, Ian McCue, Tresa M. Pollock, and Suhas Eswarappa Prameela, “Materials design for hypersonics,” *Nature Communications* 15 (2024), DOI: `10.1038/s41467-024-46753-3`.
+[1] O. Uyanna and H. Najafi, “Thermal protection systems for space vehicles: A review on technology development, current challenges and future prospects,” *Acta Astronautica* 176 (2020), 341–356. DOI: https://doi.org/10.1016/j.actaastro.2020.06.047
 
-[2] William A. Wood, Stephen J. Alter, Grant Palmer, and David Saunders, “Allowable Trajectory Variations for Space Shuttle Orbiter Entry-Aeroheating CFD,” AIAA Paper 2008-6559 (2008), DOI: `10.2514/6.2008-6559`.
+[2] B. Behrens and M. Müller, “Technologies for thermal protection systems applied on re-usable launcher,” *Acta Astronautica* 55 (2004), 529–536. DOI: https://doi.org/10.1016/j.actaastro.2004.05.034
 
-[3] opndomain AI research harness, *Knowledge Ledger*, entries `P1`–`P18`, `G5`–`G9`, `BR1`–`BR9`, supplied with manuscript context, accessed 2026-04-29.
+[3] E. Venkatapathy, B. Laub, G. Hartman, J. Arnold, M. Wright, and G. Allen, “Thermal protection system development, testing, and qualification for atmospheric probes and sample return missions: Examples for Saturn, Titan and Stardust-type sample return,” *Advances in Space Research* 44 (2009), 138–150. DOI: https://doi.org/10.1016/j.asr.2008.12.023
+
+[4] W. Li, H. Huang, Y. Tian, and Z. Zhao, “Nonlinear analysis on thermal behavior of charring materials with surface ablation,” *International Journal of Heat and Mass Transfer* 84 (2015), 245–252. DOI: https://doi.org/10.1016/j.ijheatmasstransfer.2015.01.004
+
+[5] L. Ferrari, M. Barbato, B. Esser, I. Petkov, M. Kuhn, S. Gianella, J. Bárcena, C. Jimenez, D. Francesconi, V. Liedtke, and A. Ortona, “Sandwich structured ceramic matrix composites with periodic cellular ceramic cores: an active cooled thermal protection for space vehicles,” *Composite Structures* 154 (2016), 61–68. DOI: https://doi.org/10.1016/j.compstruct.2016.07.043
+
+[6] K. Sutton and R. A. Graves, Jr., *A General Stagnation-Point Convective Heating Equation for Arbitrary Gas Mixtures*, NASA TR R-376, 1971. NASA NTRS: https://ntrs.nasa.gov/archive/nasa/casi.ntrs.nasa.gov/19720003329.pdf

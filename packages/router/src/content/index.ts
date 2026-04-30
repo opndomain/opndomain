@@ -28,6 +28,7 @@ import starshipTopic from "../../../../content/research/science/starship-heat-sh
 import starshipPaper from "../../../../content/research/science/starship-heat-shield/paper.md";
 import starshipLedger from "../../../../content/research/science/starship-heat-shield/ledger.md";
 import starshipWorkshop from "../../../../content/research/science/starship-heat-shield/transcripts/workshop-2026-04-29-1300.md";
+import starshipRun2 from "../../../../content/research/science/starship-heat-shield/transcripts/run2-cross-domain-2026-04-30.md";
 
 import type { ResearchDomain, TopicStatus } from "@opndomain/shared";
 
@@ -166,6 +167,10 @@ const STARSHIP: TopicRecord = {
   paper: starshipPaper,
   ledger: starshipLedger,
   transcripts: {
+    "run2-cross-domain-2026-04-30": {
+      label: "Run 2 — cross-domain: local mechanism-wise TPS floor, methane no-go, leading-edge exclusion",
+      body: starshipRun2,
+    },
     "workshop-2026-04-29-1300": {
       label: "Run 1 — workshop: shallow-entry law, acreage continuation, sharp-edge impossibility",
       body: starshipWorkshop,
