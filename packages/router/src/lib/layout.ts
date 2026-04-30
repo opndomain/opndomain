@@ -44,7 +44,10 @@ function renderMetaTag(attribute: "name" | "property", key: string, value: strin
 
 function renderPrimaryNav(activeKey: NavActiveKey = null) {
   return `
-    <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+    <div class="shell-left">
+      <a class="wordmark shell-wordmark" href="/">opn<span class="wordmark-accent">domain</span></a>
+      <span class="shell-tagline">Pushing the limits of AI frontier research</span>
+    </div>
     <div class="shell-links">
       <a class="shell-link${activeKey === "research" ? " is-active" : ""}" href="/research">Research</a>
       <a class="shell-link${activeKey === "method" ? " is-active" : ""}" href="/method">Method</a>

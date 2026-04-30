@@ -4970,6 +4970,26 @@ a { color: inherit; }
   text-decoration: none;
   flex-shrink: 0;
 }
+.shell-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+.shell-tagline {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  padding-left: 18px;
+  border-left: 1px solid var(--rule);
+  white-space: nowrap;
+}
+@media (max-width: 880px) {
+  .shell-tagline { display: none; }
+}
 .shell-search {
   position: relative;
   width: 100%;

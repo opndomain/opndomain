@@ -22,12 +22,6 @@ const LANDING_STYLES = `
 .landing-statbar .landing-stat-label{font-family:var(--font-ui);font-size:.66rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted)}
 
 .landing-doc{max-width:860px;margin:0 auto;padding:56px 0 0;font-family:var(--font-display);color:var(--text)}
-.landing-hero{margin:0 0 64px}
-.landing-eyebrow{font-family:var(--font-ui);font-size:.7rem;font-weight:500;letter-spacing:.18em;text-transform:uppercase;color:var(--text-muted);margin:0 0 .8rem;display:block}
-.landing-title{font-family:var(--font-display);font-size:clamp(1.8rem,2.6vw,2.4rem);font-weight:500;line-height:1.08;letter-spacing:-0.015em;margin:0 0 1rem;color:var(--text)}
-.landing-lede{font-family:var(--font-display);font-size:1.15rem;line-height:1.55;color:var(--text);max-width:38em;margin:0 0 .9rem}
-.landing-lede strong{color:var(--text);font-weight:600}
-.landing-lede-secondary{color:var(--text-soft);font-size:1.05rem;margin-bottom:0}
 
 .landing-section{margin-top:3.6rem}
 .landing-section--latest{margin-top:0}
@@ -68,11 +62,6 @@ const LANDING_STYLES = `
 .landing-domain-blurb{color:var(--text-soft);font-size:.98rem;line-height:1.55;flex:1;font-family:var(--font-display)}
 .landing-domain-count{font-family:var(--font-ui);font-size:.66rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--text-muted);white-space:nowrap}
 
-.landing-method-card{margin-top:1rem;padding:1.4rem 1.6rem;border:1px solid var(--rule);background:var(--surface);font-family:var(--font-display);font-size:1.02rem;line-height:1.6;color:var(--text-soft)}
-.landing-method-card strong{color:var(--text);font-weight:500}
-.landing-method-card a{color:var(--brand);text-decoration:none;font-family:var(--font-ui);font-size:.72rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;display:inline-block;margin-top:.6rem}
-.landing-method-card a:hover{text-decoration:underline}
-
 @media (max-width:820px){
   .landing-statbar{grid-template-columns:repeat(2,1fr)}
   .landing-statbar .landing-stat:nth-child(2){border-right:0}
@@ -83,8 +72,7 @@ const LANDING_STYLES = `
   .landing-statbar{margin-bottom:36px}
   .landing-statbar .landing-stat{padding:14px 18px}
   .landing-statbar .landing-stat-value{font-size:1.6rem}
-  .landing-doc{padding:0 0 72px}
-  .landing-hero{margin-bottom:44px}
+  .landing-doc{padding:36px 0 0}
   .landing-domain-list>li{flex-direction:column;gap:.3rem}
   .landing-domain-name{flex:none}
 }
@@ -175,13 +163,6 @@ app.get("/", (c) => {
   const body = `
     <div class="landing-wrap">
       <article class="landing-doc">
-        <header class="landing-hero">
-          <span class="landing-eyebrow">Frontier AI research · Verified output</span>
-          <h1 class="landing-title">opndomain</h1>
-          <p class="landing-lede"><strong>opndomain is not a list of solved open problems.</strong> It is a system that produces verified structural analysis of hard problems — faster than any human team could, across domains, with honest scope and transparent methodology.</p>
-          <p class="landing-lede landing-lede-secondary">Proofs of what's true, what's dead, and exactly where the remaining gaps live — at a pace and rigor that didn't exist before.</p>
-        </header>
-
         <section class="landing-section landing-section--latest">
           <div class="landing-section-head">
             <h2>Latest</h2>
@@ -196,18 +177,6 @@ app.get("/", (c) => {
             <h2>Domains</h2>
           </div>
           ${domainList}
-        </section>
-
-        <section class="landing-section">
-          <div class="landing-section-head">
-            <h2>Method</h2>
-            <a class="landing-section-link" href="/method">Read the essay →</a>
-          </div>
-          <div class="landing-method-card">
-            Each workshop run executes <strong>explore → build → verify</strong> with a persistent ledger that prevents re-derivation of dead approaches. False proofs are tagged DEAD with the killing argument inline; only PROVEN entries reach the synthesized paper.
-            <br>
-            <a href="/method">How the harness works</a>
-          </div>
         </section>
       </article>
 
