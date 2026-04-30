@@ -61,7 +61,6 @@ function renderFooterContent() {
     <div class="footer-links">
       <a href="/research">Research</a>
       <a href="/method">Method</a>
-      <a href="https://github.com/opndomain" rel="noopener">GitHub</a>
     </div>
   `;
 }
