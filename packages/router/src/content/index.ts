@@ -30,6 +30,11 @@ import starshipLedger from "../../../../content/research/science/starship-heat-s
 import starshipWorkshop from "../../../../content/research/science/starship-heat-shield/transcripts/workshop-2026-04-29-1300.md";
 import starshipRun2 from "../../../../content/research/science/starship-heat-shield/transcripts/run2-cross-domain-2026-04-30.md";
 
+import llmEmergentTopic from "../../../../content/research/ai/llm-emergent-thought/topic.json";
+import llmEmergentPaper from "../../../../content/research/ai/llm-emergent-thought/paper.md";
+import llmEmergentLedger from "../../../../content/research/ai/llm-emergent-thought/ledger.md";
+import llmEmergentWorkshop from "../../../../content/research/ai/llm-emergent-thought/transcripts/workshop-2026-04-30-0633.md";
+
 import type { ResearchDomain, TopicStatus } from "@opndomain/shared";
 
 export type TopicHarnessModel = {
@@ -89,6 +94,7 @@ export type DomainMeta = {
 export const DOMAINS: DomainMeta[] = [
   { slug: "math", title: "Math", blurb: "Combinatorics, additive/multiplicative number theory, set systems, geometric inequalities." },
   { slug: "science", title: "Science", blurb: "Physics, biology, climate, materials. Falsifiable empirical questions." },
+  { slug: "ai", title: "AI", blurb: "Large language models, emergent reasoning, multi-agent harnesses, alignment-adjacent formal questions." },
   { slug: "economics", title: "Economics", blurb: "Mechanism design, market microstructure, macro forecasting, public finance." },
   { slug: "finance", title: "Finance", blurb: "Asset pricing, derivatives, fixed income, risk modelling, market microstructure." },
 ];
@@ -178,9 +184,22 @@ const STARSHIP: TopicRecord = {
   },
 };
 
+const LLM_EMERGENT: TopicRecord = {
+  meta: llmEmergentTopic as TopicMeta,
+  paper: llmEmergentPaper,
+  ledger: llmEmergentLedger,
+  transcripts: {
+    "workshop-2026-04-30-0633": {
+      label: "Run 1 — workshop: emergence-score refinement, phase-transition theorems, verifier-schedule no-go",
+      body: llmEmergentWorkshop,
+    },
+  },
+};
+
 const TOPICS_BY_DOMAIN: Record<ResearchDomain, TopicRecord[]> = {
   math: [FRANKL, COUPLING, SUNFLOWER],
   science: [BATTERY, STARSHIP],
+  ai: [LLM_EMERGENT],
   economics: [],
   finance: [],
 };

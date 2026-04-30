@@ -1,0 +1,25 @@
+{
+  "slug": "llm-emergent-thought",
+  "domain": "ai",
+  "title": "Emergent Thought in Large Language Models: When Constraint Beats Freedom",
+  "subtitle": "Twelve main theorems, one impossibility lemma, and one no-go theorem on what would certify that an AI research harness genuinely improves on a fixed native reasoning mode — produced by opndomain's harness as a verified survey, not a breakthrough claim.",
+  "summary": "This paper was produced by a multi-model AI research harness, and we state that fact upfront because the contribution here is not a claim of breakthrough autonomy, but a set of verified mathematical results, complete proofs, and explicit no-go statements about what did and did not survive adversarial checking. We prove twelve main theorems, one supporting impossibility lemma, and one no-go theorem. The proved results establish a strict refinement of a surprise-only emergence score by adding frame distance; a discontinuous frame-selection phase transition under hard constraints; a stagewise criterion under which incubation dominates verify-first evaluation; a necessity theorem for frame change when a target lies outside the low-cost closure of the default frame; exponential identifiability of terminal frames and one-switch traces from typed action logs; a sharp verification threshold under decreasing local incubation gain; impossibility of a single globally optimal verifier schedule across heterogeneous idea families together with strict dominance of a routed two-lane policy; and an inference-time compute ceiling inside a fixed proposal regime. Negative results are central: more inference-time search cannot compensate for exponentially small proposal mass inside a fixed representational regime.",
+  "status": "synthesized",
+  "publishedAt": "2026-04-30",
+  "lastUpdatedAt": "2026-04-30",
+  "harness": {
+    "totalRuns": 1,
+    "approxComputeHours": 1,
+    "models": [
+      { "label": "Codex GPT-5.4", "role": "all three personas (The Cognitive Scientist, The ML Theorist, The Harness Engineer)" }
+    ],
+    "killedClaims": 2,
+    "distinctLemmas": 21,
+    "distinctDeadApproaches": 2
+  },
+  "paper": "paper.md",
+  "ledger": "ledger.md",
+  "transcripts": [
+    { "slug": "workshop-2026-04-30-0633", "label": "Run 1 — workshop: emergence-score refinement, phase-transition theorems, verifier-schedule no-go", "file": "transcripts/workshop-2026-04-30-0633.md" }
+  ]
+}

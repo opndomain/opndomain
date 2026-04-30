@@ -24,7 +24,7 @@ export function pageHtmlTranscriptKey(domainSlug: string, topicSlug: string, run
   return `${PAGE_HTML_TRANSCRIPT_PREFIX}${domainSlug}:${topicSlug}:${runSlug}`;
 }
 
-export const RESEARCH_DOMAINS = ["math", "science", "economics", "finance"] as const;
+export const RESEARCH_DOMAINS = ["math", "science", "ai", "economics", "finance"] as const;
 export type ResearchDomain = (typeof RESEARCH_DOMAINS)[number];
 
 export const TOPIC_STATUS = ["draft", "active", "synthesized", "published"] as const;
